@@ -109,6 +109,19 @@
                 <ul id="game-players-list"></ul>
             </div>
         </div>
+        
+        <div id="host-game-view" class="screen hidden">
+            <h2>Game in Progress</h2>
+            <div class="game-info">
+                <p>Game Code: <span id="host-game-code-display" class="game-code-small"></span></p>
+            </div>
+            <div class="players-roles-container">
+                <h3>Players and Roles:</h3>
+                <div id="players-roles-list" class="players-roles-list"></div>
+            </div>
+            <button id="end-game-btn" class="btn">End Game</button>
+            <button id="back-to-main-from-game" class="btn secondary">Back to Main</button>
+        </div>
     </div>
     
     <!-- Firebase SDK -->

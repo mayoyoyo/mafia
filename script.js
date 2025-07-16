@@ -20,21 +20,26 @@ const hostScreen = document.getElementById('host-screen');
 const joinScreen = document.getElementById('join-screen');
 const playerLobbyScreen = document.getElementById('player-lobby');
 const gameScreen = document.getElementById('game-screen');
+const hostGameView = document.getElementById('host-game-view');
 const hostBtn = document.getElementById('host-btn');
 const joinBtn = document.getElementById('join-btn');
 const backToMainHostBtn = document.getElementById('back-to-main-host');
 const backToMainJoinBtn = document.getElementById('back-to-main-join');
 const gameCodeDisplay = document.getElementById('game-code');
 const playerGameCodeDisplay = document.getElementById('player-game-code');
+const hostGameCodeDisplay = document.getElementById('host-game-code-display');
 const gameCodeInput = document.getElementById('game-code-input');
 const playerNameInput = document.getElementById('player-name');
 const playerNameDisplay = document.getElementById('player-name-display');
 const joinGameBtn = document.getElementById('join-game-btn');
 const startGameBtn = document.getElementById('start-game-btn');
 const leaveGameBtn = document.getElementById('leave-game-btn');
+const endGameBtn = document.getElementById('end-game-btn');
+const backToMainFromGameBtn = document.getElementById('back-to-main-from-game');
 const connectedPlayersList = document.getElementById('connected-players');
 const lobbyPlayersList = document.getElementById('lobby-players-list');
 const gamePlayersList = document.getElementById('game-players-list');
+const playersRolesList = document.getElementById('players-roles-list');
 const playerRole = document.getElementById('player-role');
 const roleDescription = document.getElementById('role-description');
 
@@ -127,6 +132,12 @@ function init() {
     backToMainJoinBtn.addEventListener('click', backToMain);
     joinGameBtn.addEventListener('click', joinGame);
     leaveGameBtn.addEventListener('click', leaveGame);
+    endGameBtn.addEventListener('click', endGame);
+    backToMainFromGameBtn.addEventListener('click', () => {
+        cleanupGame();
+        localStorage.removeItem('mafiaGameState');
+        backToMain();
+    });
     
     // Game settings event listeners
     mafiaMinusBtn.addEventListener('click', () => {
@@ -187,8 +198,8 @@ function init() {
                                 if (snapshot.exists()) {
                                     const status = snapshot.val();
                                     if (status === 'in_progress') {
-                                        // Game has started, update UI for host
-                                        alert('Game has started! You can now see all players and their roles.');
+                                        // Game has started, show host game view
+                                        showHostGameView();
                                     }
                                 }
                             });
@@ -307,6 +318,9 @@ function showJoinScreen() {
 function backToMain() {
     hostScreen.classList.add('hidden');
     joinScreen.classList.add('hidden');
+    playerLobbyScreen.classList.add('hidden');
+    gameScreen.classList.add('hidden');
+    hostGameView.classList.add('hidden');
     mainMenu.classList.remove('hidden');
 }
 
@@ -451,7 +465,60 @@ function startGame() {
         players: playersObj
     });
     
-    alert('Game started! Roles have been assigned to all players.');
+    // Show host game view
+    showHostGameView();
+}
+
+// Show host game view with all players and their roles
+function showHostGameView() {
+    if (!gameState.isHost) return;
+    
+    hostScreen.classList.add('hidden');
+    mainMenu.classList.add('hidden');
+    joinScreen.classList.add('hidden');
+    playerLobbyScreen.classList.add('hidden');
+    gameScreen.classList.add('hidden');
+    hostGameView.classList.remove('hidden');
+    
+    hostGameCodeDisplay.textContent = gameState.gameCode;
+    
+    // Display all players and their roles
+    updatePlayersRolesList();
+}
+
+// Update the list of players and their roles in the host view
+function updatePlayersRolesList() {
+    playersRolesList.innerHTML = '';
+    
+    gameState.players.forEach(player => {
+        const playerRoleItem = document.createElement('div');
+        playerRoleItem.className = 'player-role-item';
+        
+        const playerName = document.createElement('div');
+        playerName.className = 'player-name';
+        playerName.textContent = player.name;
+        
+        const playerRoleElement = document.createElement('div');
+        playerRoleElement.className = 'player-role role-' + player.role;
+        playerRoleElement.textContent = player.role.charAt(0).toUpperCase() + player.role.slice(1);
+        
+        playerRoleItem.appendChild(playerName);
+        playerRoleItem.appendChild(playerRoleElement);
+        playersRolesList.appendChild(playerRoleItem);
+    });
+}
+
+// End the game
+function endGame() {
+    if (!gameState.isHost || !gameRef) return;
+    
+    gameRef.update({
+        status: 'ended',
+        endedAt: firebase.database.ServerValue.TIMESTAMP
+    });
+    
+    alert('Game ended!');
+    backToMain();
 }
 
 // Function to update game settings in Firebase
