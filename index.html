@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mafia Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Mafia Game</h1>
+        <div class="main-menu">
+            <button id="host-btn" class="btn">Host Game</button>
+            <button id="join-btn" class="btn">Join Game</button>
+        </div>
+        
+        <div id="host-screen" class="screen hidden">
+            <h2>You are the Host</h2>
+            <div class="game-code-container">
+                <p>Share this code with players:</p>
+                <div id="game-code" class="game-code"></div>
+            </div>
+            <div id="players-list" class="players-list">
+                <h3>Players:</h3>
+                <ul id="connected-players"></ul>
+            </div>
+            <button id="start-game-btn" class="btn" disabled>Start Game</button>
+            <button id="back-to-main-host" class="btn secondary">Back</button>
+        </div>
+        
+        <div id="join-screen" class="screen hidden">
+            <h2>Join a Game</h2>
+            <div class="join-form">
+                <input type="text" id="player-name" placeholder="Your Name" maxlength="20">
+                <input type="text" id="game-code-input" placeholder="Enter 4-digit code" maxlength="4">
+                <button id="join-game-btn" class="btn">Join</button>
+            </div>
+            <button id="back-to-main-join" class="btn secondary">Back</button>
+        </div>
+    </div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    
+    <script src="script.js"></script>
+</body>
+</html>
