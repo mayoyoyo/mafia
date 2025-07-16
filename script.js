@@ -569,6 +569,10 @@ function showGameScreen(role) {
     playerLobbyScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
     
+    // Display player name
+    document.getElementById('game-player-name').textContent = gameState.playerName;
+    
+    // Display player role
     playerRole.textContent = role.charAt(0).toUpperCase() + role.slice(1);
     playerRole.className = 'role-display role-' + role;
     

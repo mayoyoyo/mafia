@@ -248,8 +248,9 @@ input:checked + .toggle-slider:before {
     color: #e91e63;
 }
 
-#player-name-display {
+#player-name-display, .player-name-display {
     font-weight: bold;
+    color: #e91e63;
 }
 
 #waiting-message {
