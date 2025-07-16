@@ -20,6 +20,51 @@
                 <p>Share this code with players:</p>
                 <div id="game-code" class="game-code"></div>
             </div>
+            
+            <div class="game-settings">
+                <h3>Game Settings</h3>
+                <div class="setting-item">
+                    <label for="mafia-count">Number of Mafia:</label>
+                    <div class="number-input">
+                        <button type="button" class="minus-btn">-</button>
+                        <input type="number" id="mafia-count" min="1" max="5" value="1">
+                        <button type="button" class="plus-btn">+</button>
+                    </div>
+                </div>
+                
+                <div class="setting-item">
+                    <label for="enable-doctor">Enable Doctor:</label>
+                    <label class="toggle">
+                        <input type="checkbox" id="enable-doctor" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-item">
+                    <label for="enable-investigator">Enable Investigator:</label>
+                    <label class="toggle">
+                        <input type="checkbox" id="enable-investigator" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-item">
+                    <label for="enable-joker">Enable Joker:</label>
+                    <label class="toggle">
+                        <input type="checkbox" id="enable-joker">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-item">
+                    <label for="enable-lovers">Enable Star-Crossed Lovers:</label>
+                    <label class="toggle">
+                        <input type="checkbox" id="enable-lovers">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            
             <div id="players-list" class="players-list">
                 <h3>Players:</h3>
                 <ul id="connected-players"></ul>
@@ -36,6 +81,33 @@
                 <button id="join-game-btn" class="btn">Join</button>
             </div>
             <button id="back-to-main-join" class="btn secondary">Back</button>
+        </div>
+        
+        <div id="player-lobby" class="screen hidden">
+            <h2>Waiting for Game to Start</h2>
+            <div class="game-info">
+                <p>Game Code: <span id="player-game-code" class="game-code-small"></span></p>
+                <p>Your Name: <span id="player-name-display"></span></p>
+            </div>
+            <div class="players-list">
+                <h3>Players in Lobby:</h3>
+                <ul id="lobby-players-list"></ul>
+            </div>
+            <p id="waiting-message">Waiting for the host to start the game...</p>
+            <button id="leave-game-btn" class="btn secondary">Leave Game</button>
+        </div>
+        
+        <div id="game-screen" class="screen hidden">
+            <h2>Game Started</h2>
+            <div class="role-container">
+                <h3>Your Role:</h3>
+                <div id="player-role" class="role-display"></div>
+                <p id="role-description"></p>
+            </div>
+            <div class="players-in-game">
+                <h3>Players:</h3>
+                <ul id="game-players-list"></ul>
+            </div>
         </div>
     </div>
     

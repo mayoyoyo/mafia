@@ -139,6 +139,184 @@ h3 {
     font-weight: bold;
 }
 
+/* Game Settings */
+.game-settings {
+    width: 100%;
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #2a2a2a;
+    border-radius: 5px;
+}
+
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 10px 0;
+    padding: 5px 0;
+}
+
+/* Number input with buttons */
+.number-input {
+    display: flex;
+    align-items: center;
+}
+
+.number-input input {
+    width: 50px;
+    text-align: center;
+    margin: 0 5px;
+}
+
+.minus-btn, .plus-btn {
+    width: 30px;
+    height: 30px;
+    background-color: #424242;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.minus-btn:hover, .plus-btn:hover {
+    background-color: #616161;
+}
+
+/* Toggle switch */
+.toggle {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #424242;
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: #e91e63;
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
+}
+
+/* Player lobby */
+.game-info {
+    margin: 15px 0;
+    padding: 10px;
+    background-color: #2a2a2a;
+    border-radius: 5px;
+    width: 100%;
+    text-align: center;
+}
+
+.game-code-small {
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: #e91e63;
+}
+
+#player-name-display {
+    font-weight: bold;
+}
+
+#waiting-message {
+    margin: 20px 0;
+    font-style: italic;
+    color: #9e9e9e;
+}
+
+/* Game screen */
+.role-container {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #2a2a2a;
+    border-radius: 5px;
+    width: 100%;
+    text-align: center;
+}
+
+.role-display {
+    font-size: 2rem;
+    font-weight: bold;
+    margin: 15px 0;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+#role-description {
+    margin-top: 10px;
+    font-style: italic;
+}
+
+.players-in-game {
+    width: 100%;
+    margin: 20px 0;
+}
+
+/* Role colors */
+.role-mafia {
+    background-color: #d32f2f;
+    color: white;
+}
+
+.role-civilian {
+    background-color: #388e3c;
+    color: white;
+}
+
+.role-doctor {
+    background-color: #1976d2;
+    color: white;
+}
+
+.role-investigator {
+    background-color: #7b1fa2;
+    color: white;
+}
+
+.role-joker {
+    background-color: #f57c00;
+    color: white;
+}
+
+.role-lover {
+    background-color: #c2185b;
+    color: white;
+}
+
 /* Join screen */
 .join-form {
     display: flex;
