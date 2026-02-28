@@ -1830,7 +1830,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.22_202602281345";
+  const APP_VERSION = "v1.23_202602281348";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
