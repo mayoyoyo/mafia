@@ -293,6 +293,14 @@ input::placeholder { color: var(--text-secondary); }
 .peel-flap.hidden-flap {
   opacity: 0;
 }
+.peel-flap.dragging {
+  background: #1a1a2e;
+  clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
+  border: none;
+  border-radius: 0;
+  opacity: 1;
+  filter: drop-shadow(-2px -2px 3px rgba(0,0,0,0.3));
+}
 @keyframes peel-hint {
   0%, 100% { clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%); }
   50% { clip-path: polygon(0% 0%, 100% 0%, 100% 85%, 85% 85%, 85% 100%, 0% 100%); }

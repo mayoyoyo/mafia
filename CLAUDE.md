@@ -11,7 +11,7 @@
 - Bun runtime, TypeScript server, vanilla JS client
 - Single-file frontend: `public/app.js`, `public/app.css`, `public/index.html`
 - Tests: `bun test` (runs all test files in `tests/`)
-- Deploy: push to `main` auto-deploys via Railway
+- Deploy: push to `main` auto-deploys via Fly.io
 
 ## Key Files
 - `src/server.ts` - WebSocket server + static file serving

@@ -1002,9 +1002,16 @@
   }
 
   function resetCardPeel() {
-    const back = $("role-card").querySelector(".card-back");
+    const card = $("role-card");
+    const back = card.querySelector(".card-back");
     back.classList.remove("dragging");
     back.style.clipPath = "";
+    const flap = card.querySelector(".peel-flap");
+    flap.classList.remove("dragging");
+    flap.style.left = "";
+    flap.style.top = "";
+    flap.style.right = "";
+    flap.style.bottom = "";
   }
 
   // ============================================================
@@ -1013,6 +1020,7 @@
   (function () {
     const card = $("role-card");
     const back = card.querySelector(".card-back");
+    const flap = card.querySelector(".peel-flap");
     const GRAB_ZONE = 60; // px from bottom-right corner to start drag
     let dragging = false;
     let cardRect = null;
@@ -1031,11 +1039,22 @@
       const cx = (1 - px) * 100;
       const cy = (1 - py) * 100;
       back.style.clipPath = `polygon(0% 0%, 100% 0%, 100% ${cy}%, ${cx}% ${cy}%, ${cx}% 100%, 0% 100%)`;
+      // Move peel-flap to follow the fold point
+      flap.classList.add("dragging");
+      flap.style.right = "auto";
+      flap.style.bottom = "auto";
+      flap.style.left = `${cx}%`;
+      flap.style.top = `${cy}%`;
     }
 
     function resetPeel() {
       back.classList.remove("dragging");
       back.style.clipPath = "";
+      flap.classList.remove("dragging");
+      flap.style.left = "";
+      flap.style.top = "";
+      flap.style.right = "";
+      flap.style.bottom = "";
       dragging = false;
       cardRect = null;
     }
@@ -2043,7 +2062,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.27_202602281506";
+  const APP_VERSION = "v1.28_202602281520";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
