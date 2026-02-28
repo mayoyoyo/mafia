@@ -113,6 +113,7 @@ input::placeholder { color: var(--text-secondary); }
 .passcode-row { display: flex; gap: 8px; }
 .passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; }
 .error-msg { color: var(--danger); font-size: 14px; text-align: center; min-height: 20px; }
+.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; }
 
 /* HEADER */
 .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

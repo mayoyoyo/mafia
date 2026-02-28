@@ -1609,6 +1609,9 @@
   // ============================================================
   // INIT
   // ============================================================
+  const APP_VERSION = "v1.14_202602281226";
+  document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
+
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
