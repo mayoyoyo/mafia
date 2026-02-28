@@ -3,8 +3,8 @@ import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
   getPlayerInfo, startGame, submitMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay,
-  callVote, castVote, resolveVote, endDay, endGame as endGameEngine,
-  getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame,
+  callVote, castVote, resolveVote, cancelVote, endDay, forceEndGame,
+  getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, getAllGames,
 } from "./game-engine";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
 import path from "path";
@@ -77,7 +77,7 @@ function sendNightActionPrompts(game: Game): void {
       isAdmin: p.id === game.adminId,
     }));
     for (const d of aliveDoctor) {
-      sendToUser(d.id, { type: "doctor_targets", players: allAlive });
+      sendToUser(d.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
     }
   }
 
@@ -122,7 +122,7 @@ function sendNightActionPromptsForPlayer(game: Game, player: import("./types").P
       isAlive: true,
       isAdmin: p.id === game.adminId,
     }));
-    sendToUser(player.id, { type: "doctor_targets", players: allAlive });
+    sendToUser(player.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
   }
 
   if (player.role === "detective" && game.detectiveTarget === null) {
@@ -243,6 +243,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
           }
 
+          // If game is over, send game_over so client shows the right screen
+          if (game.phase === "game_over") {
+            send(ws, {
+              type: "game_over",
+              winner: game.winner!,
+              message: game.forceEnded ? "Host has ended the game." : (game.winner === "town" ? "Citizens win!" : game.winner === "mafia" ? "Mafia wins!" : "Joker wins!"),
+              forceEnded: game.forceEnded,
+              players: getPlayerInfo(game, true),
+            });
+          }
+
           // If player is dead, notify
           if (!rejoined.isAlive) {
             send(ws, { type: "you_died", message: "You were killed." });
@@ -273,23 +284,70 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         client.gameCode = null;
         return;
       }
+
       if (game.phase === "game_over") {
-        // During game_over, just silently remove the player
+        // During game_over, remove the player
         removePlayer(game, client.userId);
-        client.gameCode = null;
-        // If admin leaves during game_over, clean up the game
+        // If admin leaves during game_over, destroy the room (nobody can restart)
         if (client.userId === game.adminId) {
-          removeGame(game.code);
+          broadcastToGame(game.code, { type: "room_closed", message: "The host has left. Room closed." });
+          const leftCode = game.code;
+          removeGame(leftCode);
+          for (const [, c] of clients) {
+            if (c.gameCode === leftCode) {
+              c.gameCode = null;
+            }
+          }
         }
+        client.gameCode = null;
         return;
       }
-      if (client.userId === game.adminId) {
-        // Admin leaves = game ends
-        broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The admin has ended the game.", players: getPlayerInfo(game, true) });
-        removeGame(game.code);
+
+      if (game.phase === "lobby") {
+        if (client.userId === game.adminId) {
+          // Admin leaves lobby = end game for everyone
+          broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The host has left the lobby.", forceEnded: true, players: getPlayerInfo(game, true) });
+          removeGame(game.code);
+          for (const [, c] of clients) {
+            if (c.gameCode === client.gameCode) {
+              c.gameCode = null;
+            }
+          }
+        } else {
+          removePlayer(game, client.userId);
+          broadcastLobbyUpdate(game);
+        }
       } else {
-        removePlayer(game, client.userId);
-        broadcastLobbyUpdate(game);
+        // Active game (night/day/voting)
+        if (client.userId === game.adminId) {
+          // Admin leaves active game = force end (room persists at game_over)
+          forceEndGame(game);
+          broadcastToGame(game.code, {
+            type: "phase_change",
+            phase: "game_over",
+            round: game.round,
+            messages: ["The host has left the game."],
+            events: game.eventHistory,
+          });
+          broadcastToGame(game.code, {
+            type: "game_over",
+            winner: "town",
+            message: "The host has left the game.",
+            forceEnded: true,
+            players: getPlayerInfo(game, true),
+          });
+          // Remove the game since admin explicitly left (can't restart)
+          removeGame(game.code);
+          for (const [, c] of clients) {
+            if (c.gameCode === client.gameCode) {
+              c.gameCode = null;
+            }
+          }
+        } else {
+          // Non-admin leaves active game — just mark disconnected (they can rejoin)
+          const player = game.players.get(client.userId);
+          if (player) player.connected = false;
+        }
       }
       client.gameCode = null;
       break;
@@ -446,6 +504,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         if (checkNightReady(game)) {
           resolveNightAndTransition(game);
         }
+      } else {
+        send(ws, { type: "error", message: "You cannot protect the same player two nights in a row." });
       }
       break;
     }
@@ -499,6 +559,23 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
+    case "cancel_vote": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+
+      if (cancelVote(game, client.userId)) {
+        broadcastToGame(game.code, {
+          type: "phase_change",
+          phase: "day",
+          round: game.round,
+          messages: ["The vote has been cancelled by the admin."],
+          events: game.eventHistory,
+        });
+      }
+      break;
+    }
+
     case "cast_vote": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
@@ -525,7 +602,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         ...(game.voteAnonymous ? {} : { voterNames }),
       });
 
-      if (result.allVoted) {
+      if (result.allVoted || result.earlyResolve) {
+        const isAnon = game.voteAnonymous;
         const voteResult = resolveVote(game);
         if (voteResult) {
           broadcastToGame(game.code, {
@@ -534,7 +612,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             executed: voteResult.executed,
             votesFor: voteResult.votesFor,
             votesAgainst: voteResult.votesAgainst,
-            ...(game.voteAnonymous ? {} : { voterNames: voteResult.voterNames }),
+            ...(isAnon ? {} : { voterNames: voteResult.voterNames }),
           });
 
           for (const k of voteResult.killed) {
@@ -547,8 +625,6 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
           }
 
-          // Sync event history without re-sending messages (vote_result already showed them)
-          // Only send actual messages on game_over transition
           if (game.phase === "game_over") {
             broadcastToGame(game.code, {
               type: "phase_change",
@@ -557,22 +633,31 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               messages: voteResult.messages,
               events: game.eventHistory,
             });
+            broadcastToGame(game.code, {
+              type: "game_over",
+              winner: game.winner!,
+              message: voteResult.messages[voteResult.messages.length - 1],
+              players: getPlayerInfo(game, true),
+            });
+          } else if (game.phase === "night") {
+            // Auto-transition to night after execution
+            broadcastToGame(game.code, {
+              type: "phase_change",
+              phase: "night",
+              round: game.round,
+              messages: voteResult.messages,
+              events: game.eventHistory,
+            });
+            broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
+            sendNightActionPrompts(game);
           } else {
+            // Spared — stay in day
             broadcastToGame(game.code, {
               type: "phase_change",
               phase: game.phase,
               round: game.round,
               messages: [],
               events: game.eventHistory,
-            });
-          }
-
-          if (game.phase === "game_over") {
-            broadcastToGame(game.code, {
-              type: "game_over",
-              winner: game.winner!,
-              message: voteResult.messages[voteResult.messages.length - 1],
-              players: getPlayerInfo(game, true),
             });
           }
         }
@@ -602,16 +687,36 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
+      forceEndGame(game);
+      broadcastToGame(game.code, {
+        type: "phase_change",
+        phase: "game_over",
+        round: game.round,
+        messages: ["Host has ended the game."],
+        events: game.eventHistory,
+      });
       broadcastToGame(game.code, {
         type: "game_over",
         winner: "town",
-        message: "The game has been ended by the admin.",
+        message: "Host has ended the game.",
+        forceEnded: true,
         players: getPlayerInfo(game, true),
       });
-      endGameEngine(game);
-      // Reset all clients in this game
+      // Room persists — do NOT removeGame or clear gameCode refs
+      break;
+    }
+
+    case "close_room": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+
+      broadcastToGame(game.code, { type: "room_closed", message: "The host has closed the room." });
+      const closedCode = game.code;
+      removeGame(closedCode);
+      // Clear all clients' gameCode refs
       for (const [, c] of clients) {
-        if (c.gameCode === client.gameCode) {
+        if (c.gameCode === closedCode) {
           c.gameCode = null;
         }
       }
@@ -809,17 +914,7 @@ const server = Bun.serve({
             if (player) {
               player.connected = false;
             }
-            // Only destroy game if admin disconnects in lobby
-            if (client.userId === game.adminId && game.phase === "lobby") {
-              broadcastToGame(game.code, {
-                type: "game_over",
-                winner: "town",
-                message: "The host has disconnected. Game closed.",
-                players: getPlayerInfo(game, true),
-              });
-              removeGame(game.code);
-            }
-            // During active game, just mark disconnected — player can rejoin
+            // All disconnects are non-destructive — player can rejoin via auto-rejoin
           }
         }
         clients.delete(ws);
@@ -827,5 +922,27 @@ const server = Bun.serve({
     },
   },
 });
+
+// Auto-kill games older than 2 hours
+const TWO_HOURS = 2 * 60 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, game] of getAllGames()) {
+    if (now - game.createdAt > TWO_HOURS) {
+      broadcastToGame(code, {
+        type: "game_over",
+        winner: "town",
+        message: "Game ended: exceeded 2-hour time limit.",
+        players: getPlayerInfo(game, true),
+      });
+      removeGame(code);
+      for (const [, c] of clients) {
+        if (c.gameCode === code) {
+          c.gameCode = null;
+        }
+      }
+    }
+  }
+}, 60_000);
 
 console.log(`Mafia server running on http://localhost:${PORT}`);

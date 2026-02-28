@@ -20,12 +20,49 @@
     <div id="screen-auth" class="screen active">
       <div class="logo">
         <div class="logo-icon">
-          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="32" cy="42" rx="28" ry="6" fill="#e91e63"/>
-            <ellipse cx="32" cy="40" rx="18" ry="14" fill="#e91e63"/>
-            <rect x="14" y="34" width="36" height="8" rx="2" fill="#e91e63"/>
-            <path d="M10 42 C10 42 14 40 32 40 C50 40 54 42 54 42" stroke="#c2185b" stroke-width="1.5" fill="none"/>
-            <rect x="26" y="26" width="12" height="4" rx="1" fill="#c2185b" opacity="0.5"/>
+          <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+            <!-- Fedora hat -->
+            <rect x="3" y="0" width="10" height="1" fill="#333"/>
+            <rect x="2" y="1" width="12" height="1" fill="#333"/>
+            <rect x="1" y="2" width="14" height="1" fill="#444"/>
+            <rect x="3" y="3" width="10" height="1" fill="#333"/>
+            <!-- Hat band -->
+            <rect x="3" y="3" width="10" height="1" fill="#e91e63"/>
+            <!-- Face -->
+            <rect x="4" y="4" width="8" height="1" fill="#fdd"/>
+            <rect x="4" y="5" width="8" height="1" fill="#fdd"/>
+            <!-- Eyes (menacing) -->
+            <rect x="5" y="5" width="2" height="1" fill="#fff"/>
+            <rect x="9" y="5" width="2" height="1" fill="#fff"/>
+            <rect x="6" y="5" width="1" height="1" fill="#222"/>
+            <rect x="10" y="5" width="1" height="1" fill="#222"/>
+            <!-- Nose + mouth area -->
+            <rect x="4" y="6" width="8" height="1" fill="#fdd"/>
+            <rect x="7" y="6" width="2" height="1" fill="#dbb"/>
+            <rect x="4" y="7" width="8" height="1" fill="#fdd"/>
+            <rect x="5" y="7" width="1" height="1" fill="#b77"/>
+            <rect x="10" y="7" width="1" height="1" fill="#b77"/>
+            <!-- Suit collar + tie -->
+            <rect x="4" y="8" width="8" height="1" fill="#222"/>
+            <rect x="7" y="8" width="2" height="1" fill="#e91e63"/>
+            <!-- Suit body -->
+            <rect x="3" y="9" width="10" height="1" fill="#222"/>
+            <rect x="7" y="9" width="2" height="1" fill="#e91e63"/>
+            <rect x="3" y="10" width="10" height="1" fill="#333"/>
+            <rect x="7" y="10" width="2" height="1" fill="#e91e63"/>
+            <rect x="3" y="11" width="10" height="1" fill="#333"/>
+            <!-- Hands -->
+            <rect x="2" y="10" width="1" height="2" fill="#fdd"/>
+            <rect x="13" y="10" width="1" height="2" fill="#fdd"/>
+            <!-- Gun in right hand -->
+            <rect x="14" y="9" width="1" height="1" fill="#888"/>
+            <rect x="14" y="10" width="1" height="1" fill="#888"/>
+            <!-- Pants -->
+            <rect x="4" y="12" width="3" height="1" fill="#222"/>
+            <rect x="9" y="12" width="3" height="1" fill="#222"/>
+            <!-- Shoes -->
+            <rect x="4" y="13" width="3" height="1" fill="#111"/>
+            <rect x="9" y="13" width="3" height="1" fill="#111"/>
           </svg>
         </div>
         <h1>MAFIA</h1>
@@ -132,21 +169,42 @@
       <div class="game-header">
         <div class="phase-indicator" id="phase-indicator">Night</div>
         <div class="round-indicator">Round <span id="round-number">1</span></div>
+        <div id="day-timer" class="day-timer hidden">00:00</div>
         <button id="btn-sound-toggle" class="btn btn-icon" title="Toggle Sound">&#128263;</button>
       </div>
 
       <!-- Role Card -->
       <div id="role-card" class="role-card">
-        <div id="role-image" class="role-image"></div>
-        <div id="role-name" class="role-name"></div>
-        <div id="role-description" class="role-description"></div>
-        <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
+        <div class="card-inner">
+          <div class="card-front">
+            <div id="role-image" class="role-image"></div>
+            <div id="role-name" class="role-name"></div>
+            <div id="role-description" class="role-description"></div>
+            <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
+          </div>
+          <div class="card-back">
+            <div id="card-back-art" class="card-back-art"></div>
+            <div class="card-back-label">MEMBERSHIP CARD</div>
+          </div>
+        </div>
       </div>
+      <button id="btn-peek" class="btn btn-peek">Hold to Peek</button>
 
       <!-- Event History -->
       <div id="event-history" class="event-history hidden">
-        <h4 class="event-history-title">Event History</h4>
-        <div id="event-history-list" class="event-history-list"></div>
+        <div class="event-history-header">
+          <h4 class="event-history-title">Event History</h4>
+          <button id="btn-flip-events" class="btn btn-icon btn-flip-events" title="Flip">&#8635;</button>
+        </div>
+        <div class="eh-inner">
+          <div class="eh-front">
+            <div id="event-history-list" class="event-history-list"></div>
+          </div>
+          <div class="eh-back">
+            <h4 class="event-history-title">Player Status</h4>
+            <div id="player-status-list" class="player-status-list"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Narrator Messages -->
@@ -177,12 +235,13 @@
       <!-- Day Voting -->
       <div id="voting-panel" class="voting-panel hidden">
         <h3>Vote: Execute <span id="vote-target-name"></span>?</h3>
-        <div class="vote-buttons">
+        <div id="vote-buttons-wrapper" class="vote-buttons">
           <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes">&#128077;</button>
           <button id="btn-vote-no" class="btn btn-vote btn-vote-no">&#128078;</button>
         </div>
         <div id="vote-progress" class="vote-progress"></div>
         <div id="vote-names" class="vote-names"></div>
+        <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel Vote</button>
       </div>
 
       <!-- Admin Day Controls -->
@@ -198,7 +257,6 @@
           <label class="toggle"><input type="checkbox" id="toggle-anon-vote" checked><span class="slider"></span></label>
         </div>
         <div class="admin-buttons">
-          <button id="btn-abstain" class="btn btn-secondary">Abstain</button>
           <button id="btn-end-day" class="btn btn-primary">End Day</button>
         </div>
       </div>
@@ -219,12 +277,15 @@
 
     <!-- GAME OVER SCREEN -->
     <div id="screen-gameover" class="screen">
+      <div class="gameover-header">
+        <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave Room</button>
+      </div>
       <div class="gameover-content">
         <h1 id="gameover-title"></h1>
         <p id="gameover-message"></p>
         <div id="role-reveal" class="role-reveal"></div>
         <button id="btn-play-again" class="btn btn-primary btn-large hidden">Play Again</button>
-        <button id="btn-back-menu" class="btn btn-secondary btn-large">Back to Menu</button>
+        <button id="btn-close-room" class="btn btn-danger btn-large hidden">Close Room</button>
       </div>
     </div>
 

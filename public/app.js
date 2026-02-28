@@ -24,6 +24,9 @@
   let anonVoteChecked = true;
   let narratorTranscript = [];
   let deadDismissTimer = null;
+  let dayTimerInterval = null;
+  let dayTimerStart = null;
+  let detectiveHistory = [];
 
   // ============================================================
   // DOM REFS
@@ -170,8 +173,13 @@
         hasVoted = false;
         dayVoteCount = 0;
         narratorTranscript = [];
+        detectiveHistory = [];
+        stopDayTimer();
         showScreen("game");
         updateRoleCard();
+        // Card starts face-down
+        $("role-card").classList.remove("flipped");
+        $("card-back-art").innerHTML = pixelArtToSvg(DRAGON_ART);
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
         $("event-history").classList.add("hidden");
@@ -195,7 +203,7 @@
         break;
 
       case "doctor_targets":
-        showNightAction("Choose someone to protect", msg.players, "doctor_save");
+        showNightAction("Choose someone to protect", msg.players, "doctor_save", msg.lastDoctorTarget);
         break;
 
       case "detective_targets":
@@ -235,13 +243,7 @@
         isDead = true;
         $("dead-overlay").classList.remove("hidden");
         $("death-message").textContent = msg.message;
-        if (isAdmin) {
-          $("dead-dismiss-hint").classList.remove("hidden");
-          deadDismissTimer = setTimeout(() => {
-            $("dead-overlay").classList.add("hidden");
-            $("dead-dismiss-hint").classList.add("hidden");
-          }, 3000);
-        }
+        $("dead-dismiss-hint").classList.remove("hidden");
         break;
 
       case "game_over":
@@ -250,6 +252,17 @@
 
       case "configs_list":
         showConfigList(msg.configs, false);
+        break;
+
+      case "room_closed":
+        localStorage.removeItem("mafia_game_code");
+        gameCode = null;
+        isAdmin = false;
+        $("narrator-messages").innerHTML = "";
+        $("role-reveal").innerHTML = "";
+        $("event-history-list").innerHTML = "";
+        narratorTranscript = [];
+        showScreen("menu");
         break;
 
       case "config_saved":
@@ -689,6 +702,20 @@
     return `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${rects}</svg>`;
   }
 
+  // Dragon pixel art for card back
+  const DRAGON_ART = [
+    [_,_,_,"#4a4","#4a4",_,_,_,_,_],
+    [_,_,"#4a4","#6c6","#6c6","#4a4",_,_,_,_],
+    [_,"#4a4","#6c6","#fff","#6c6","#6c6","#4a4",_,_,_],
+    [_,"#4a4","#6c6","#6c6","#6c6","#6c6","#4a4",_,_,_],
+    [_,_,"#4a4","#6c6","#6c6","#4a4",_,_,_,"#4a4"],
+    [_,_,_,"#4a4","#4a4","#6c6","#4a4","#4a4","#4a4",_],
+    [_,_,_,_,"#4a4","#6c6","#6c6","#6c6",_,_],
+    [_,_,_,"#4a4","#6c6","#6c6","#4a4",_,_,_],
+    [_,_,"#4a4","#6c6","#4a4","#4a4",_,_,_,_],
+    [_,"#4a4","#4a4",_,_,"#4a4","#4a4",_,_,_],
+  ];
+
   function getRoleImage(role, variant) {
     if (role === "citizen") {
       const grids = PIXEL_ART.citizen;
@@ -740,6 +767,52 @@
   }
 
   // ============================================================
+  // PEEK BUTTON (hold to reveal role card)
+  // ============================================================
+  (function () {
+    const btn = $("btn-peek");
+    const card = $("role-card");
+    function peekStart(e) {
+      e.preventDefault();
+      card.classList.add("flipped");
+    }
+    function peekEnd(e) {
+      e.preventDefault();
+      card.classList.remove("flipped");
+    }
+    btn.addEventListener("mousedown", peekStart);
+    btn.addEventListener("mouseup", peekEnd);
+    btn.addEventListener("mouseleave", peekEnd);
+    btn.addEventListener("touchstart", peekStart, { passive: false });
+    btn.addEventListener("touchend", peekEnd, { passive: false });
+  })();
+
+  // ============================================================
+  // DAY TIMER
+  // ============================================================
+  function startDayTimer() {
+    if (dayTimerInterval) return;
+    dayTimerStart = Date.now();
+    $("day-timer").classList.remove("hidden");
+    $("day-timer").textContent = "00:00";
+    dayTimerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - dayTimerStart) / 1000);
+      const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
+      const secs = String(elapsed % 60).padStart(2, "0");
+      $("day-timer").textContent = `${mins}:${secs}`;
+    }, 1000);
+  }
+
+  function stopDayTimer() {
+    if (dayTimerInterval) {
+      clearInterval(dayTimerInterval);
+      dayTimerInterval = null;
+    }
+    dayTimerStart = null;
+    $("day-timer").classList.add("hidden");
+  }
+
+  // ============================================================
   // PHASE CHANGE (with suspense for night->day)
   // ============================================================
   function handlePhaseChange(msg) {
@@ -782,9 +855,16 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
 
-    if (msg.phase === "day" && isAdmin) {
-      showAdminDayControls();
-      setTimeout(() => populateAdminTargets(knownPlayers), 100);
+    if (msg.phase === "day") {
+      startDayTimer();
+      if (isAdmin) {
+        showAdminDayControls();
+        setTimeout(() => populateAdminTargets(knownPlayers), 100);
+      }
+    }
+
+    if (msg.phase === "night" || msg.phase === "game_over") {
+      stopDayTimer();
     }
 
     if (msg.phase === "night") {
@@ -792,6 +872,7 @@
       dayVoteCount = 0;
       $("event-history").classList.add("hidden");
       clearDetectiveResult();
+      $("mafia-vote-details").innerHTML = "";
     }
 
     // Show event history during day/voting
@@ -850,6 +931,12 @@
       : `\u{1F50D} Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
     el.textContent = text;
     el.classList.remove("hidden");
+    narratorTranscript.push(text);
+    detectiveHistory.push({
+      round: parseInt($("round-number").textContent) || 1,
+      targetName: msg.targetName,
+      isMafia: msg.isMafia,
+    });
   }
 
   function clearDetectiveResult() {
@@ -883,11 +970,25 @@
       execution: "Executed",
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
+      investigation_mafia: "Investigated — MAFIA",
+      investigation_clear: "Investigated — Clear",
     };
+
+    // Merge detective history (private) into events for display
+    let allEvents = [...events];
+    if (myRole === "detective" && detectiveHistory.length > 0) {
+      for (const inv of detectiveHistory) {
+        allEvents.push({
+          round: inv.round,
+          type: inv.isMafia ? "investigation_mafia" : "investigation_clear",
+          playerName: inv.targetName,
+        });
+      }
+    }
 
     // Group by round
     const grouped = {};
-    for (const ev of events) {
+    for (const ev of allEvents) {
       if (!grouped[ev.round]) grouped[ev.round] = [];
       grouped[ev.round].push(ev);
     }
@@ -907,12 +1008,31 @@
     }
 
     $("event-history").classList.remove("hidden");
+    updatePlayerStatus();
   }
+
+  function updatePlayerStatus() {
+    const container = $("player-status-list");
+    if (!container) return;
+    container.innerHTML = knownPlayers
+      .map((p) => {
+        const status = p.isAlive ? "alive" : "dead";
+        return `<div class="player-status-item">
+          <span class="player-status-dot ${status}"></span>
+          <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
+        </div>`;
+      })
+      .join("");
+  }
+
+  $("btn-flip-events").addEventListener("click", () => {
+    $("event-history").classList.toggle("flipped");
+  });
 
   // ============================================================
   // NIGHT ACTIONS
   // ============================================================
-  function showNightAction(title, players, actionType) {
+  function showNightAction(title, players, actionType, disabledId) {
     if (isDead) return;
 
     const panel = $("night-actions");
@@ -922,10 +1042,14 @@
 
     const list = $("action-targets");
     list.innerHTML = players
-      .map((p) => `<li data-id="${p.id}">${p.username}</li>`)
+      .map((p) => {
+        const isDisabled = disabledId != null && p.id === disabledId;
+        const suffix = isDisabled ? " (protected last night)" : "";
+        return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}">${p.username}${suffix}</li>`;
+      })
       .join("");
 
-    list.querySelectorAll("li").forEach((li) => {
+    list.querySelectorAll("li:not(.disabled)").forEach((li) => {
       li.addEventListener("click", () => {
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
@@ -1000,16 +1124,11 @@
     });
   }
 
-  $("btn-abstain").addEventListener("click", () => {
-    wsSend({ type: "abstain_vote" });
-  });
-
   $("btn-end-day").addEventListener("click", () => {
     wsSend({ type: "end_day" });
   });
 
   function handleVoteCalled(msg) {
-    if (isDead) return;
     hasVoted = false;
 
     const panel = $("voting-panel");
@@ -1019,10 +1138,23 @@
     $("vote-progress").textContent = "Waiting for votes...";
     $("vote-names").innerHTML = "";
 
-    $("btn-vote-yes").classList.remove("selected");
-    $("btn-vote-no").classList.remove("selected");
-    $("btn-vote-yes").disabled = false;
-    $("btn-vote-no").disabled = false;
+    // Hide vote buttons if dead, show otherwise
+    if (isDead) {
+      $("vote-buttons-wrapper").classList.add("hidden");
+    } else {
+      $("vote-buttons-wrapper").classList.remove("hidden");
+      $("btn-vote-yes").classList.remove("selected");
+      $("btn-vote-no").classList.remove("selected");
+      $("btn-vote-yes").disabled = false;
+      $("btn-vote-no").disabled = false;
+    }
+
+    // Show cancel vote button for admin
+    if (isAdmin) {
+      $("btn-cancel-vote").classList.remove("hidden");
+    } else {
+      $("btn-cancel-vote").classList.add("hidden");
+    }
   }
 
   $("btn-vote-yes").addEventListener("click", () => {
@@ -1041,6 +1173,10 @@
     $("btn-vote-yes").disabled = true;
     $("btn-vote-no").disabled = true;
     wsSend({ type: "cast_vote", approve: false });
+  });
+
+  $("btn-cancel-vote").addEventListener("click", () => {
+    wsSend({ type: "cancel_vote" });
   });
 
   function updateVoteProgress(msg) {
@@ -1101,43 +1237,43 @@
     $("modal-transcript").classList.add("hidden");
   });
 
-  // Dead overlay click-to-dismiss (for admin)
+  // Dead overlay click-to-dismiss (for all players)
   $("dead-overlay").addEventListener("click", () => {
-    if (isAdmin) {
-      if (deadDismissTimer) clearTimeout(deadDismissTimer);
-      $("dead-overlay").classList.add("hidden");
-      $("dead-dismiss-hint").classList.add("hidden");
-    }
+    $("dead-overlay").classList.add("hidden");
+    $("dead-dismiss-hint").classList.add("hidden");
   });
 
   // ============================================================
   // GAME OVER (Phase 1: show all roles)
   // ============================================================
-  let gameForceEnded = false;
-
   $("btn-end-game").addEventListener("click", () => {
     if (confirm("Are you sure you want to end the game?")) {
-      gameForceEnded = true;
       wsSend({ type: "end_game" });
     }
   });
 
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
-    localStorage.removeItem("mafia_game_code");
+    // Do NOT clear localStorage — room persists, player stays
     showScreen("gameover");
 
-    const titles = {
-      town: "Citizens Win!",
-      mafia: "Mafia Wins!",
-      joker: "Joker Wins!",
-    };
-
-    $("gameover-title").textContent = titles[msg.winner] || "Game Over";
-    $("gameover-title").style.color =
-      msg.winner === "town" ? "var(--role-citizen)" :
-      msg.winner === "mafia" ? "var(--role-mafia)" :
-      msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
+    if (msg.forceEnded) {
+      // Force-ended by host
+      $("gameover-title").textContent = "Game Over";
+      $("gameover-title").style.color = "var(--text)";
+    } else {
+      // Natural game end
+      const titles = {
+        town: "Citizens Win!",
+        mafia: "Mafia Wins!",
+        joker: "Joker Wins!",
+      };
+      $("gameover-title").textContent = titles[msg.winner] || "Game Over";
+      $("gameover-title").style.color =
+        msg.winner === "town" ? "var(--role-citizen)" :
+        msg.winner === "mafia" ? "var(--role-mafia)" :
+        msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
+    }
     $("gameover-message").textContent = msg.message;
 
     // Render role reveal (Phase 1)
@@ -1151,13 +1287,15 @@
     previousPhase = null;
     dayVoteCount = 0;
 
-    // Show Play Again button for admin (only for natural game endings)
-    if (isAdmin && !gameForceEnded) {
+    // Admin: show Play Again + Close Room
+    // Non-admin: hide both (they wait for host, or leave via Leave Room)
+    if (isAdmin) {
       $("btn-play-again").classList.remove("hidden");
+      $("btn-close-room").classList.remove("hidden");
     } else {
       $("btn-play-again").classList.add("hidden");
+      $("btn-close-room").classList.add("hidden");
     }
-    gameForceEnded = false;
   }
 
   function renderRoleReveal(players) {
@@ -1195,8 +1333,9 @@
     wsSend({ type: "restart_game" });
   });
 
-  $("btn-back-menu").addEventListener("click", () => {
-    if (gameCode) wsSend({ type: "leave_game" });
+  $("btn-leave-room").addEventListener("click", () => {
+    wsSend({ type: "leave_game" });
+    localStorage.removeItem("mafia_game_code");
     $("narrator-messages").innerHTML = "";
     $("role-reveal").innerHTML = "";
     $("event-history-list").innerHTML = "";
@@ -1205,8 +1344,13 @@
     narratorTranscript = [];
     gameCode = null;
     isAdmin = false;
-    localStorage.removeItem("mafia_game_code");
     showScreen("menu");
+  });
+
+  $("btn-close-room").addEventListener("click", () => {
+    if (confirm("Close room? All players will be removed.")) {
+      wsSend({ type: "close_room" });
+    }
   });
 
   // ============================================================

@@ -41,6 +41,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
   const game: Game = {
     code,
     adminId,
+    createdAt: Date.now(),
     phase: "lobby",
     round: 0,
     mafiaVariant: 0,
@@ -58,6 +59,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
     mafiaTarget: null,
     doctorTarget: null,
     detectiveTarget: null,
+    lastDoctorTarget: null,
     voteTarget: null,
     votes: new Map(),
     voteAnonymous: true,
@@ -65,6 +67,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
     doctorSaved: false,
     detectiveResult: null,
     winner: null,
+    forceEnded: false,
     pendingMessages: [],
     eventHistory: [],
   };
@@ -79,6 +82,10 @@ export function getGame(code: string): Game | undefined {
 
 export function removeGame(code: string): void {
   games.delete(code);
+}
+
+export function getAllGames(): Map<string, Game> {
+  return games;
 }
 
 export function addPlayer(game: Game, userId: number, username: string): Player | null {
@@ -250,6 +257,7 @@ export function submitDoctorSave(game: Game, doctorId: number, targetId: number)
   if (!doctor || doctor.role !== "doctor" || !doctor.isAlive) return false;
   const target = game.players.get(targetId);
   if (!target || !target.isAlive) return false;
+  if (targetId === game.lastDoctorTarget) return false;
 
   game.doctorTarget = targetId;
   return true;
@@ -368,6 +376,7 @@ export function transitionToDay(game: Game): NightResult {
   }
 
   // Reset night state
+  game.lastDoctorTarget = game.doctorTarget;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
   game.doctorTarget = null;
@@ -405,17 +414,33 @@ export function callVote(game: Game, adminId: number, targetId: number, anonymou
   return true;
 }
 
-export function castVote(game: Game, voterId: number, approve: boolean): { allVoted: boolean } {
-  if (game.phase !== "voting") return { allVoted: false };
+export function castVote(game: Game, voterId: number, approve: boolean): { allVoted: boolean; earlyResolve: boolean } {
+  if (game.phase !== "voting") return { allVoted: false, earlyResolve: false };
   const voter = game.players.get(voterId);
-  if (!voter || !voter.isAlive) return { allVoted: false };
+  if (!voter || !voter.isAlive) return { allVoted: false, earlyResolve: false };
 
   game.votes.set(voterId, approve);
 
   const alive = getAlivePlayers(game);
   const allVoted = alive.every((p) => game.votes.has(p.id));
 
-  return { allVoted };
+  let earlyResolve = false;
+  if (!game.voteAnonymous && !allVoted) {
+    const totalAlive = alive.length;
+    let votesFor = 0;
+    let votesAgainst = 0;
+    for (const [, v] of game.votes) {
+      if (v) votesFor++;
+      else votesAgainst++;
+    }
+    const remaining = totalAlive - votesFor - votesAgainst;
+    // Majority already reached — execute early
+    if (votesFor > totalAlive / 2) earlyResolve = true;
+    // Impossible to reach majority — spare early
+    if (votesFor + remaining <= totalAlive / 2) earlyResolve = true;
+  }
+
+  return { allVoted, earlyResolve };
 }
 
 export interface VoteResult {
@@ -465,7 +490,19 @@ export function resolveVote(game: Game): VoteResult | null {
       result.messages.push(Narrator.jokerWin(target.username));
       game.winner = "joker";
       game.phase = "game_over";
-      game.eventHistory.push({ round: game.round, type: "execution", playerName: target.username });
+
+      const killResult = killPlayer(game, target.id);
+      if (killResult) {
+        game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
+        result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
+
+        if (killResult.loverKilled) {
+          const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
+          result.messages.push(loverMsg);
+          result.killed.push({ player: killResult.loverKilled, message: loverMsg });
+          game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
+        }
+      }
       return result;
     }
 
@@ -491,7 +528,6 @@ export function resolveVote(game: Game): VoteResult | null {
   // Reset vote state
   game.voteTarget = null;
   game.votes.clear();
-  game.phase = "day";
 
   // Check win condition
   const winner = checkWinCondition(game);
@@ -500,9 +536,30 @@ export function resolveVote(game: Game): VoteResult | null {
     game.phase = "game_over";
     if (winner === "town") result.messages.push(Narrator.townWin());
     else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
+  } else if (result.executed) {
+    // Auto-transition to night after execution
+    game.phase = "night";
+    game.round++;
+    game.mafiaVotes.clear();
+    game.mafiaTarget = null;
+    game.doctorTarget = null;
+    game.detectiveTarget = null;
+    result.messages.push(Narrator.nightFalls());
+  } else {
+    // Spared — stay in day
+    game.phase = "day";
   }
 
   return result;
+}
+
+export function cancelVote(game: Game, adminId: number): boolean {
+  if (game.phase !== "voting") return false;
+  if (adminId !== game.adminId) return false;
+  game.voteTarget = null;
+  game.votes.clear();
+  game.phase = "day";
+  return true;
 }
 
 export function endDay(game: Game): string[] {
@@ -532,9 +589,9 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
   return null;
 }
 
-export function endGame(game: Game): void {
+export function forceEndGame(game: Game): void {
   game.phase = "game_over";
-  games.delete(game.code);
+  game.forceEnded = true;
 }
 
 export function restartGame(game: Game): string[] | null {
@@ -548,6 +605,7 @@ export function restartGame(game: Game): string[] | null {
   }
 
   // Reset game state
+  game.createdAt = Date.now();
   game.phase = "lobby";
   game.round = 0;
   game.mafiaVotes.clear();
@@ -557,10 +615,12 @@ export function restartGame(game: Game): string[] | null {
   game.voteTarget = null;
   game.votes.clear();
   game.voteAnonymous = game.settings.anonymousVoting;
+  game.lastDoctorTarget = null;
   game.nightKill = null;
   game.doctorSaved = false;
   game.detectiveResult = null;
   game.winner = null;
+  game.forceEnded = false;
   game.pendingMessages = [];
   game.eventHistory = [];
 

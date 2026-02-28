@@ -3,8 +3,8 @@ import {
   createGame, getGame, addPlayer, updateSettings, startGame,
   submitMafiaVote, submitDoctorSave, submitDetectiveInvestigation,
   checkNightReady, transitionToDay, callVote, castVote, resolveVote,
-  endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
-  getPlayerInfo, endGame, removeGame,
+  cancelVote, endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
+  getPlayerInfo, forceEndGame, removeGame, restartGame,
 } from "../src/game-engine";
 import type { Game } from "../src/types";
 
@@ -454,6 +454,301 @@ describe("Player Info", () => {
     for (const p of info) {
       expect(p.role).toBeDefined();
     }
+    removeGame(game.code);
+  });
+});
+
+describe("Doctor Consecutive Save Restriction", () => {
+  test("doctor cannot save the same player two nights in a row", () => {
+    const game = setupGame(5, { enableDoctor: true });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const doctor = getAliveByRole(game, "doctor")[0];
+    const citizens = getAliveByRole(game, "citizen");
+
+    // Night 1: doctor saves citizen[0]
+    const target = citizens[0].id;
+    submitMafiaVote(game, mafia[0].id, citizens[1].id);
+    submitDoctorSave(game, doctor.id, target);
+    transitionToDay(game);
+
+    // Transition to night 2
+    endDay(game);
+
+    // Night 2: doctor tries to save same target — should fail
+    const result = submitDoctorSave(game, doctor.id, target);
+    expect(result).toBe(false);
+
+    // But can save a different target
+    const result2 = submitDoctorSave(game, doctor.id, citizens[2].id);
+    expect(result2).toBe(true);
+    removeGame(game.code);
+  });
+});
+
+describe("Game createdAt", () => {
+  test("game has createdAt timestamp", () => {
+    const before = Date.now();
+    const game = createGame(1, "Admin");
+    expect(game.createdAt).toBeGreaterThanOrEqual(before);
+    expect(game.createdAt).toBeLessThanOrEqual(Date.now());
+    removeGame(game.code);
+  });
+
+  test("restartGame resets createdAt", () => {
+    const game = setupGame(4);
+    startGame(game);
+    const originalCreatedAt = game.createdAt;
+
+    // Small delay to ensure new timestamp differs
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    transitionToDay(game);
+
+    restartGame(game);
+    expect(game.createdAt).toBeGreaterThanOrEqual(originalCreatedAt);
+    removeGame(game.code);
+  });
+});
+
+describe("Auto-night after execution", () => {
+  function setupDayPhaseForVote(playerCount = 6) {
+    const game = setupGame(playerCount);
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    transitionToDay(game);
+    return game;
+  }
+
+  test("execution auto-transitions to night", () => {
+    const game = setupDayPhaseForVote();
+    const alive = getAlivePlayers(game);
+    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
+    const roundBefore = game.round;
+
+    callVote(game, game.adminId, target.id);
+
+    for (const p of getAlivePlayers(game)) {
+      castVote(game, p.id, true);
+    }
+
+    const result = resolveVote(game);
+    expect(result!.executed).toBe(true);
+    expect(game.phase).toBe("night");
+    expect(game.round).toBe(roundBefore + 1);
+    removeGame(game.code);
+  });
+
+  test("sparing keeps phase as day", () => {
+    const game = setupDayPhaseForVote();
+    const alive = getAlivePlayers(game);
+    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
+
+    callVote(game, game.adminId, target.id);
+
+    for (const p of getAlivePlayers(game)) {
+      castVote(game, p.id, false);
+    }
+
+    const result = resolveVote(game);
+    expect(result!.executed).toBe(false);
+    expect(game.phase).toBe("day");
+    removeGame(game.code);
+  });
+});
+
+describe("Early Vote Resolution", () => {
+  function setupVoting(playerCount = 7) {
+    const game = setupGame(playerCount);
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    transitionToDay(game);
+    return game;
+  }
+
+  test("majority for triggers early resolve (non-anonymous)", () => {
+    const game = setupVoting(7);
+    game.voteAnonymous = false;
+    const alive = getAlivePlayers(game);
+    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
+
+    callVote(game, game.adminId, target.id);
+
+    // Vote yes until majority reached
+    const voters = getAlivePlayers(game);
+    const majority = Math.floor(voters.length / 2) + 1;
+    let earlyResult = { allVoted: false, earlyResolve: false };
+    for (let i = 0; i < majority; i++) {
+      earlyResult = castVote(game, voters[i].id, true);
+    }
+
+    expect(earlyResult.earlyResolve).toBe(true);
+    expect(earlyResult.allVoted).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("impossible to pass triggers early spare (non-anonymous)", () => {
+    const game = setupVoting(7);
+    game.voteAnonymous = false;
+    const alive = getAlivePlayers(game);
+    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
+
+    callVote(game, game.adminId, target.id);
+
+    // Vote no until impossible to reach majority
+    const voters = getAlivePlayers(game);
+    const totalAlive = voters.length;
+    const noNeeded = Math.ceil(totalAlive / 2);
+    let earlyResult = { allVoted: false, earlyResolve: false };
+    for (let i = 0; i < noNeeded; i++) {
+      earlyResult = castVote(game, voters[i].id, false);
+    }
+
+    expect(earlyResult.earlyResolve).toBe(true);
+    expect(earlyResult.allVoted).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("no early resolve in anonymous mode", () => {
+    const game = setupVoting(7);
+    game.voteAnonymous = true;
+    const alive = getAlivePlayers(game);
+    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
+
+    callVote(game, game.adminId, target.id);
+
+    const voters = getAlivePlayers(game);
+    const majority = Math.floor(voters.length / 2) + 1;
+    let earlyResult = { allVoted: false, earlyResolve: false };
+    for (let i = 0; i < majority; i++) {
+      earlyResult = castVote(game, voters[i].id, true);
+    }
+
+    expect(earlyResult.earlyResolve).toBe(false);
+    removeGame(game.code);
+  });
+});
+
+describe("Cancel Vote", () => {
+  test("admin can cancel an active vote", () => {
+    const game = setupGame(5);
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    transitionToDay(game);
+
+    const alive = getAlivePlayers(game);
+    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
+    callVote(game, game.adminId, target.id);
+    expect(game.phase).toBe("voting");
+
+    const cancelled = cancelVote(game, game.adminId);
+    expect(cancelled).toBe(true);
+    expect(game.phase).toBe("day");
+    expect(game.voteTarget).toBeNull();
+    removeGame(game.code);
+  });
+});
+
+describe("Joker Execution with Lovers", () => {
+  test("joker is marked dead when executed", () => {
+    const game = setupGame(5, { enableJoker: true });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+    const joker = getAliveByRole(game, "joker")[0];
+
+    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    transitionToDay(game);
+
+    callVote(game, game.adminId, joker.id);
+    for (const p of getAlivePlayers(game)) castVote(game, p.id, true);
+    const result = resolveVote(game);
+
+    expect(result!.jokerWin).toBe(true);
+    expect(game.winner).toBe("joker");
+    expect(joker.isAlive).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("joker execution kills their lover via heartbreak", () => {
+    const game = setupGame(5, { enableJoker: true, enableLovers: true });
+    startGame(game);
+
+    const players = Array.from(game.players.values());
+    for (const p of players) { p.role = "citizen"; p.isLover = false; p.loverId = null; }
+    players[0].role = "mafia";
+    players[1].role = "joker";
+    players[2].role = "citizen";
+    players[3].role = "citizen";
+    players[4].role = "citizen";
+    // Joker and citizen are lovers
+    players[1].isLover = true; players[1].loverId = players[2].id;
+    players[2].isLover = true; players[2].loverId = players[1].id;
+
+    game.phase = "night";
+    game.round = 1;
+    submitMafiaVote(game, players[0].id, players[3].id);
+    transitionToDay(game);
+
+    callVote(game, game.adminId, players[1].id);
+    for (const p of getAlivePlayers(game)) castVote(game, p.id, true);
+    const result = resolveVote(game);
+
+    expect(result!.jokerWin).toBe(true);
+    expect(players[1].isAlive).toBe(false); // joker dead
+    expect(players[2].isAlive).toBe(false); // lover dead from heartbreak
+    expect(result!.killed.length).toBe(2);  // joker + lover
+    removeGame(game.code);
+  });
+});
+
+describe("Room Lifecycle", () => {
+  test("createGame initializes forceEnded as false", () => {
+    const game = createGame(1, "Admin");
+    expect(game.forceEnded).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("forceEndGame sets phase to game_over and forceEnded to true but keeps game in map", () => {
+    const game = setupGame(4);
+    startGame(game);
+    const code = game.code;
+
+    forceEndGame(game);
+
+    expect(game.phase).toBe("game_over");
+    expect(game.forceEnded).toBe(true);
+    // Game should still be in the map
+    expect(getGame(code)).toBeDefined();
+    removeGame(game.code);
+  });
+
+  test("removeGame actually deletes the game from the map", () => {
+    const game = createGame(1, "Admin");
+    const code = game.code;
+    expect(getGame(code)).toBeDefined();
+
+    removeGame(code);
+    expect(getGame(code)).toBeUndefined();
+  });
+
+  test("restartGame resets forceEnded to false", () => {
+    const game = setupGame(4);
+    startGame(game);
+
+    forceEndGame(game);
+    expect(game.forceEnded).toBe(true);
+
+    restartGame(game);
+    expect(game.forceEnded).toBe(false);
+    expect(game.phase).toBe("night"); // restarted into active game
     removeGame(game.code);
   });
 });

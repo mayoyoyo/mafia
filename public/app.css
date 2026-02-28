@@ -103,7 +103,7 @@ input::placeholder { color: var(--text-secondary); }
   width: 80px; height: 80px; margin: 0 auto 16px;
   display: flex; align-items: center; justify-content: center;
 }
-.logo-icon svg { width: 80px; height: 80px; }
+.logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
 .logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 800; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
@@ -213,21 +213,77 @@ input::placeholder { color: var(--text-secondary); }
 .phase-indicator.voting { background: var(--primary); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
+.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* ROLE CARD */
 .role-card {
-  background: var(--bg-card);
-  border: 2px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 20px;
-  padding: 24px;
   text-align: center;
   position: relative;
+  perspective: 600px;
+  min-height: 180px;
 }
-.role-card.mafia { border-color: var(--role-mafia); }
-.role-card.citizen { border-color: var(--role-citizen); }
-.role-card.doctor { border-color: var(--role-doctor); }
-.role-card.detective { border-color: var(--role-detective); }
-.role-card.joker { border-color: var(--role-joker); }
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.4s;
+}
+.card-front, .card-back {
+  backface-visibility: hidden;
+  border-radius: 20px;
+  padding: 24px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+}
+.card-front {
+  transform: rotateY(180deg);
+}
+.card-back {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a2e;
+  border: 2px solid #3a3a5e;
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
+}
+.role-card.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+.card-back-art { width: 64px; height: 64px; image-rendering: pixelated; margin-bottom: 12px; }
+.card-back-art svg { width: 64px; height: 64px; display: block; }
+.card-back-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #5a5a8a;
+}
+.btn-peek {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  padding: 8px 20px;
+  font-size: 13px;
+  border-radius: 10px;
+  margin-top: 8px;
+  width: auto;
+  align-self: center;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+.role-card.mafia .card-front { border-color: var(--role-mafia); }
+.role-card.citizen .card-front { border-color: var(--role-citizen); }
+.role-card.doctor .card-front { border-color: var(--role-doctor); }
+.role-card.detective .card-front { border-color: var(--role-detective); }
+.role-card.joker .card-front { border-color: var(--role-joker); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
 .role-name { font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; }
@@ -305,6 +361,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 .target-list li:active { background: var(--primary); }
 .target-list li.selected { background: var(--primary); border-color: var(--primary); }
+.target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
 .action-status { font-size: 14px; color: var(--text-secondary); margin-top: 8px; text-align: center; }
 
 /* VOTE STATUS */
@@ -365,6 +422,11 @@ input::placeholder { color: var(--text-secondary); }
 .admin-end-game { position: fixed; bottom: calc(20px + var(--safe-bottom)); right: 20px; z-index: 150; }
 
 /* GAME OVER */
+.gameover-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px 0;
+}
 .gameover-content {
   display: flex;
   flex-direction: column;
@@ -457,6 +519,29 @@ input::placeholder { color: var(--text-secondary); }
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 12px 16px;
+  perspective: 600px;
+}
+.event-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.btn-flip-events { font-size: 20px; padding: 2px 6px; }
+.eh-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.4s;
+}
+.eh-front, .eh-back {
+  backface-visibility: hidden;
+}
+.eh-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+}
+.event-history.flipped .eh-inner {
+  transform: rotateY(180deg);
 }
 .event-history-title {
   font-size: 13px;
@@ -465,6 +550,14 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 1px;
   margin-bottom: 8px;
 }
+.player-status-list { font-size: 13px; line-height: 1.8; }
+.player-status-item { display: flex; align-items: center; gap: 8px; }
+.player-status-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.player-status-dot.alive { background: var(--success); }
+.player-status-dot.dead { background: var(--danger); }
+.player-status-name.dead { text-decoration: line-through; color: var(--text-secondary); }
 .event-history-list { font-size: 13px; line-height: 1.6; }
 .event-history-round {
   font-size: 11px;
@@ -481,6 +574,8 @@ input::placeholder { color: var(--text-secondary); }
 .event-item.save { color: var(--success); }
 .event-item.execution { color: #ff9800; }
 .event-item.spared { color: var(--text-secondary); }
+.event-item.investigation_mafia { color: var(--danger); }
+.event-item.investigation_clear { color: var(--success); }
 
 /* SUSPENSE OVERLAY */
 .suspense-overlay {
