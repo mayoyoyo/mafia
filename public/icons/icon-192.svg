@@ -1,11 +1,52 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
   <rect width="192" height="192" rx="36" fill="#0a0a0a"/>
-  <rect x="8" y="8" width="176" height="176" rx="30" fill="#151515"/>
-  <g transform="translate(96,96)">
-    <ellipse cx="0" cy="18" rx="56" ry="12" fill="#e91e63"/>
-    <ellipse cx="0" cy="14" rx="36" ry="28" fill="#e91e63"/>
-    <rect x="-36" y="4" width="72" height="16" rx="4" fill="#e91e63"/>
-    <path d="M-50 18 C-50 18 -36 14 0 14 C36 14 50 18 50 18" stroke="#c2185b" stroke-width="2.5" fill="none"/>
-    <rect x="-12" y="-10" width="24" height="6" rx="2" fill="#c2185b" opacity="0.5"/>
+  <rect x="8" y="8" width="176" height="176" rx="30" fill="#111"/>
+  <!-- Pixel mafioso scaled to 192x192 (each pixel = 10px, offset to center) -->
+  <g transform="translate(16, 20) scale(10)">
+    <!-- Fedora hat - wider brim, more imposing -->
+    <rect x="2" y="0" width="12" height="1" fill="#1a1a1a"/>
+    <rect x="1" y="1" width="14" height="1" fill="#222"/>
+    <rect x="0" y="2" width="16" height="1" fill="#2a2a2a"/>
+    <rect x="2" y="3" width="12" height="1" fill="#1a1a1a"/>
+    <!-- Hat band - blood red -->
+    <rect x="2" y="3" width="12" height="1" fill="#b71c1c"/>
+    <!-- Face in shadow - darker skin from hat shadow -->
+    <rect x="4" y="4" width="8" height="1" fill="#8b7355"/>
+    <!-- Brow shadow -->
+    <rect x="4" y="5" width="8" height="1" fill="#6b5a42"/>
+    <!-- Eyes - narrow menacing slits with red tint -->
+    <rect x="5" y="5" width="2" height="1" fill="#1a1a1a"/>
+    <rect x="9" y="5" width="2" height="1" fill="#1a1a1a"/>
+    <rect x="5.5" y="5" width="1" height="1" fill="#c62828"/>
+    <rect x="9.5" y="5" width="1" height="1" fill="#c62828"/>
+    <!-- Mid face - shadowed -->
+    <rect x="4" y="6" width="8" height="1" fill="#9b8468"/>
+    <rect x="7" y="6" width="2" height="1" fill="#7a6a52"/>
+    <!-- Lower face with sinister smirk -->
+    <rect x="4" y="7" width="8" height="1" fill="#9b8468"/>
+    <rect x="6" y="7" width="4" height="1" fill="#5a1a1a"/>
+    <rect x="5" y="7" width="1" height="1" fill="#4a3a2a"/>
+    <rect x="10" y="7" width="1" height="1" fill="#4a3a2a"/>
+    <!-- Suit collar + tie -->
+    <rect x="4" y="8" width="8" height="1" fill="#111"/>
+    <rect x="7" y="8" width="2" height="1" fill="#b71c1c"/>
+    <!-- Suit body - dark -->
+    <rect x="3" y="9" width="10" height="1" fill="#111"/>
+    <rect x="7" y="9" width="2" height="1" fill="#b71c1c"/>
+    <rect x="3" y="10" width="10" height="1" fill="#1a1a1a"/>
+    <rect x="7" y="10" width="2" height="1" fill="#b71c1c"/>
+    <rect x="3" y="11" width="10" height="1" fill="#1a1a1a"/>
+    <!-- Hands - shadowed skin -->
+    <rect x="2" y="10" width="1" height="2" fill="#8b7355"/>
+    <rect x="13" y="10" width="1" height="2" fill="#8b7355"/>
+    <!-- Gun - steel with muzzle flash hint -->
+    <rect x="14" y="9" width="2" height="1" fill="#555"/>
+    <rect x="14" y="10" width="1" height="1" fill="#666"/>
+    <!-- Pants -->
+    <rect x="4" y="12" width="3" height="1" fill="#0a0a0a"/>
+    <rect x="9" y="12" width="3" height="1" fill="#0a0a0a"/>
+    <!-- Shoes -->
+    <rect x="4" y="13" width="3" height="1" fill="#050505"/>
+    <rect x="9" y="13" width="3" height="1" fill="#050505"/>
   </g>
 </svg>
