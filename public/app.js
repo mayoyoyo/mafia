@@ -200,8 +200,12 @@
         showScreen("game");
         updateRoleCard();
         // Card starts face-down
-        $("role-card").classList.remove("flipped");
+        resetCardPeel();
         $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_ART);
+        // Hint animation on first game
+        const backEl = $("role-card").querySelector(".card-back");
+        backEl.classList.add("peel-hint");
+        backEl.addEventListener("animationend", () => backEl.classList.remove("peel-hint"), { once: true });
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
         $("event-history").classList.add("hidden");
@@ -362,7 +366,7 @@
     // 8. Show game screen with role card (face-down by default, like fresh start)
     showScreen("game");
     updateRoleCard();
-    $("role-card").classList.remove("flipped");
+    resetCardPeel();
     $("card-back-art").innerHTML = pixelArtToSvg(isDead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
     $("dead-dismiss-hint").classList.add("hidden");
     $("round-number").textContent = msg.round;
@@ -990,25 +994,74 @@
     }
   }
 
+  function resetCardPeel() {
+    const back = $("role-card").querySelector(".card-back");
+    back.classList.remove("dragging");
+    back.style.clipPath = "";
+  }
+
   // ============================================================
-  // PEEK BUTTON (hold to reveal role card)
+  // CORNER-PEEL DRAG (poker-style card reveal)
   // ============================================================
   (function () {
-    const btn = $("btn-peek");
     const card = $("role-card");
-    function peekStart(e) {
-      e.preventDefault();
-      card.classList.add("flipped");
+    const back = card.querySelector(".card-back");
+    const GRAB_ZONE = 60; // px from bottom-right corner to start drag
+    let dragging = false;
+    let cardRect = null;
+
+    function inGrabZone(clientX, clientY) {
+      if (!cardRect) return false;
+      const dx = cardRect.right - clientX;
+      const dy = cardRect.bottom - clientY;
+      return dx >= 0 && dx <= GRAB_ZONE && dy >= 0 && dy <= GRAB_ZONE;
     }
-    function peekEnd(e) {
-      e.preventDefault();
-      card.classList.remove("flipped");
+
+    function setPeel(clientX, clientY) {
+      if (!cardRect) return;
+      const px = Math.max(0, Math.min(1, (cardRect.right - clientX) / cardRect.width));
+      const py = Math.max(0, Math.min(1, (cardRect.bottom - clientY) / cardRect.height));
+      const cx = (1 - px) * 100;
+      const cy = (1 - py) * 100;
+      back.style.clipPath = `polygon(0% 0%, 100% 0%, 100% ${cy}%, ${cx}% 100%, 0% 100%)`;
     }
-    btn.addEventListener("mousedown", peekStart);
-    btn.addEventListener("mouseup", peekEnd);
-    btn.addEventListener("mouseleave", peekEnd);
-    btn.addEventListener("touchstart", peekStart, { passive: false });
-    btn.addEventListener("touchend", peekEnd, { passive: false });
+
+    function resetPeel() {
+      back.classList.remove("dragging");
+      back.style.clipPath = "";
+      dragging = false;
+      cardRect = null;
+    }
+
+    function onStart(e) {
+      const touch = e.touches ? e.touches[0] : e;
+      cardRect = card.getBoundingClientRect();
+      if (!inGrabZone(touch.clientX, touch.clientY)) return;
+      e.preventDefault();
+      dragging = true;
+      back.classList.add("dragging");
+      setPeel(touch.clientX, touch.clientY);
+    }
+
+    function onMove(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      const touch = e.touches ? e.touches[0] : e;
+      setPeel(touch.clientX, touch.clientY);
+    }
+
+    function onEnd(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      resetPeel();
+    }
+
+    card.addEventListener("touchstart", onStart, { passive: false });
+    card.addEventListener("touchmove", onMove, { passive: false });
+    card.addEventListener("touchend", onEnd, { passive: false });
+    card.addEventListener("mousedown", onStart);
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onEnd);
   })();
 
   // ============================================================
@@ -1983,7 +2036,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.25_202602281441";
+  const APP_VERSION = "v1.26_202602281457";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
