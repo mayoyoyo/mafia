@@ -3,22 +3,23 @@
   <rect x="8" y="8" width="176" height="176" rx="30" fill="#111"/>
   <!-- Pixel mafioso scaled to 192x192 (each pixel = 10px, offset to center) -->
   <g transform="translate(16, 20) scale(10)">
-    <!-- Fedora hat - wider brim, more imposing -->
-    <rect x="2" y="0" width="12" height="1" fill="#1a1a1a"/>
-    <rect x="1" y="1" width="14" height="1" fill="#222"/>
-    <rect x="0" y="2" width="16" height="1" fill="#2a2a2a"/>
-    <rect x="2" y="3" width="12" height="1" fill="#1a1a1a"/>
+    <!-- Fedora hat - classic shape -->
+    <rect x="5" y="0" width="6" height="1" fill="#1a1a1a"/>
+    <rect x="4" y="1" width="8" height="1" fill="#222"/>
+    <rect x="4" y="2" width="8" height="1" fill="#2a2a2a"/>
+    <rect x="2" y="3" width="12" height="1" fill="#2a2a2a"/>
     <!-- Hat band - blood red -->
-    <rect x="2" y="3" width="12" height="1" fill="#b71c1c"/>
-    <!-- Face in shadow - darker skin from hat shadow -->
+    <rect x="4" y="3" width="8" height="1" fill="#b71c1c"/>
+    <!-- Face in shadow -->
     <rect x="4" y="4" width="8" height="1" fill="#8b7355"/>
-    <!-- Brow shadow -->
+    <!-- Brow area -->
     <rect x="4" y="5" width="8" height="1" fill="#6b5a42"/>
-    <!-- Eyes - narrow menacing slits with red tint -->
-    <rect x="5" y="5" width="2" height="1" fill="#1a1a1a"/>
-    <rect x="9" y="5" width="2" height="1" fill="#1a1a1a"/>
-    <rect x="5.5" y="5" width="1" height="1" fill="#c62828"/>
-    <rect x="9.5" y="5" width="1" height="1" fill="#c62828"/>
+    <!-- Sunglasses -->
+    <rect x="5" y="5" width="2" height="1" fill="#111"/>
+    <rect x="9" y="5" width="2" height="1" fill="#111"/>
+    <rect x="7" y="5" width="2" height="1" fill="#333"/>
+    <rect x="5" y="5" width="1" height="1" fill="#2a2a2a"/>
+    <rect x="9" y="5" width="1" height="1" fill="#2a2a2a"/>
     <!-- Mid face - shadowed -->
     <rect x="4" y="6" width="8" height="1" fill="#9b8468"/>
     <rect x="7" y="6" width="2" height="1" fill="#7a6a52"/>
