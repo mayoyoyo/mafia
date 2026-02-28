@@ -22,6 +22,8 @@
   let suspenseActive = false;
   let suspenseQueue = [];
   let anonVoteChecked = true;
+  let narratorTranscript = [];
+  let deadDismissTimer = null;
 
   // ============================================================
   // DOM REFS
@@ -153,10 +155,15 @@
         isDead = false;
         hasVoted = false;
         dayVoteCount = 0;
+        narratorTranscript = [];
         showScreen("game");
         updateRoleCard();
+        $("narrator-messages").innerHTML = "";
         $("event-history").classList.add("hidden");
         $("event-history-list").innerHTML = "";
+        $("dead-overlay").classList.add("hidden");
+        $("dead-dismiss-hint").classList.add("hidden");
+        $("btn-play-again").classList.add("hidden");
         if (isAdmin) $("admin-end-game").classList.remove("hidden");
         break;
 
@@ -217,6 +224,13 @@
         isDead = true;
         $("dead-overlay").classList.remove("hidden");
         $("death-message").textContent = msg.message;
+        if (isAdmin) {
+          $("dead-dismiss-hint").classList.remove("hidden");
+          deadDismissTimer = setTimeout(() => {
+            $("dead-overlay").classList.add("hidden");
+            $("dead-dismiss-hint").classList.add("hidden");
+          }, 3000);
+        }
         break;
 
       case "game_over":
@@ -336,10 +350,6 @@
     });
   });
 
-  $("toggle-anon").addEventListener("change", (e) => {
-    wsSend({ type: "update_settings", settings: { anonymousVoting: e.target.checked } });
-  });
-
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
 
@@ -369,7 +379,6 @@
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-lovers").checked = settings.enableLovers;
-    $("toggle-anon").checked = settings.anonymousVoting;
     anonVoteChecked = settings.anonymousVoting;
     if ($("toggle-anon-vote")) $("toggle-anon-vote").checked = anonVoteChecked;
   }
@@ -504,6 +513,9 @@
     indicator.className = `phase-indicator ${msg.phase}`;
     indicator.textContent = msg.phase === "game_over" ? "GAME OVER" : msg.phase.toUpperCase();
 
+    // Clear visible narrator for new phase (transcript preserves history)
+    $("narrator-messages").innerHTML = "";
+
     if (msg.messages && msg.messages.length > 0) {
       for (const m of msg.messages) {
         showNarratorMessage(m);
@@ -516,7 +528,7 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
 
-    if (msg.phase === "day" && isAdmin && !isDead) {
+    if (msg.phase === "day" && isAdmin) {
       showAdminDayControls();
       setTimeout(() => populateAdminTargets(knownPlayers), 100);
     }
@@ -577,6 +589,7 @@
   }
 
   function showNarratorMessage(text) {
+    narratorTranscript.push(text);
     const container = $("narrator-messages");
     const div = document.createElement("div");
     div.className = "narrator-line";
@@ -673,7 +686,7 @@
   // DAY VOTING (Phase 3: per-vote anon, Phase 4: multi-vote)
   // ============================================================
   function showAdminDayControls() {
-    if (!isAdmin || isDead) return;
+    if (!isAdmin) return;
     const panel = $("admin-day-controls");
     panel.classList.remove("hidden");
 
@@ -790,17 +803,51 @@
     }
 
     // Re-show admin controls if still day (Phase 4: multi-vote)
-    if (isAdmin && !isDead && currentPhase === "day") {
+    if (isAdmin && currentPhase === "day") {
       showAdminDayControls();
       setTimeout(() => populateAdminTargets(knownPlayers), 100);
     }
   }
 
   // ============================================================
+  // TRANSCRIPT
+  // ============================================================
+  $("btn-transcript").addEventListener("click", () => {
+    const list = $("transcript-list");
+    const empty = $("transcript-empty");
+    if (narratorTranscript.length === 0) {
+      list.innerHTML = "";
+      empty.classList.remove("hidden");
+    } else {
+      empty.classList.add("hidden");
+      list.innerHTML = narratorTranscript
+        .map((msg) => `<div class="transcript-line">${escapeHtml(msg)}</div>`)
+        .join("");
+    }
+    $("modal-transcript").classList.remove("hidden");
+  });
+
+  $("btn-close-transcript").addEventListener("click", () => {
+    $("modal-transcript").classList.add("hidden");
+  });
+
+  // Dead overlay click-to-dismiss (for admin)
+  $("dead-overlay").addEventListener("click", () => {
+    if (isAdmin) {
+      if (deadDismissTimer) clearTimeout(deadDismissTimer);
+      $("dead-overlay").classList.add("hidden");
+      $("dead-dismiss-hint").classList.add("hidden");
+    }
+  });
+
+  // ============================================================
   // GAME OVER (Phase 1: show all roles)
   // ============================================================
+  let gameForceEnded = false;
+
   $("btn-end-game").addEventListener("click", () => {
     if (confirm("Are you sure you want to end the game?")) {
+      gameForceEnded = true;
       wsSend({ type: "end_game" });
     }
   });
@@ -825,15 +872,21 @@
     // Render role reveal (Phase 1)
     renderRoleReveal(msg.players);
 
-    // Reset state
-    gameCode = null;
-    isAdmin = false;
+    // Reset gameplay state but keep gameCode/isAdmin for Play Again
     myRole = null;
     isLover = false;
     isDead = false;
     currentPhase = null;
     previousPhase = null;
     dayVoteCount = 0;
+
+    // Show Play Again button for admin (only for natural game endings)
+    if (isAdmin && !gameForceEnded) {
+      $("btn-play-again").classList.remove("hidden");
+    } else {
+      $("btn-play-again").classList.add("hidden");
+    }
+    gameForceEnded = false;
   }
 
   function renderRoleReveal(players) {
@@ -867,11 +920,20 @@
       .join("");
   }
 
+  $("btn-play-again").addEventListener("click", () => {
+    wsSend({ type: "restart_game" });
+  });
+
   $("btn-back-menu").addEventListener("click", () => {
+    if (gameCode) wsSend({ type: "leave_game" });
     $("narrator-messages").innerHTML = "";
     $("role-reveal").innerHTML = "";
     $("event-history-list").innerHTML = "";
     $("event-history").classList.add("hidden");
+    $("admin-end-game").classList.add("hidden");
+    narratorTranscript = [];
+    gameCode = null;
+    isAdmin = false;
     showScreen("menu");
   });
 

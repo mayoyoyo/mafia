@@ -88,7 +88,8 @@ export type ClientMessage =
   | { type: "end_day" }
   | { type: "end_game" }
   | { type: "toggle_anonymous_voting" }
-  | { type: "toggle_sound" };
+  | { type: "toggle_sound" }
+  | { type: "restart_game" };
 
 export type ServerMessage =
   | { type: "error"; message: string }

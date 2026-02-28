@@ -91,11 +91,6 @@
           <label class="toggle"><input type="checkbox" id="toggle-lovers"><span class="slider"></span></label>
         </div>
 
-        <div class="setting-row">
-          <span>Anonymous Voting</span>
-          <label class="toggle"><input type="checkbox" id="toggle-anon" checked><span class="slider"></span></label>
-        </div>
-
         <div class="config-buttons">
           <button id="btn-save-config" class="btn btn-small btn-ghost">Save Preset</button>
           <button id="btn-load-config" class="btn btn-small btn-ghost">Load Preset</button>
@@ -148,6 +143,10 @@
 
       <!-- Narrator Messages -->
       <div id="narrator-area" class="narrator-area">
+        <div class="narrator-header">
+          <span class="narrator-label">Narrator</span>
+          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript">&#128220;</button>
+        </div>
         <div id="narrator-messages" class="narrator-messages"></div>
       </div>
 
@@ -198,6 +197,7 @@
         <div class="skull">&#128128;</div>
         <p class="dead-text">You are dead</p>
         <p id="death-message" class="death-message"></p>
+        <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
       </div>
 
       <!-- Admin End Game -->
@@ -212,7 +212,8 @@
         <h1 id="gameover-title"></h1>
         <p id="gameover-message"></p>
         <div id="role-reveal" class="role-reveal"></div>
-        <button id="btn-back-menu" class="btn btn-primary btn-large">Back to Menu</button>
+        <button id="btn-play-again" class="btn btn-primary btn-large hidden">Play Again</button>
+        <button id="btn-back-menu" class="btn btn-secondary btn-large">Back to Menu</button>
       </div>
     </div>
 
@@ -234,6 +235,18 @@
         </div>
         <ul id="config-list" class="config-list"></ul>
         <p id="config-empty" class="empty-text hidden">No saved presets</p>
+      </div>
+    </div>
+
+    <!-- TRANSCRIPT MODAL -->
+    <div id="modal-transcript" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Full Transcript</h3>
+          <button id="btn-close-transcript" class="btn btn-icon">&times;</button>
+        </div>
+        <div id="transcript-list" class="transcript-list"></div>
+        <p id="transcript-empty" class="empty-text hidden">No messages yet</p>
       </div>
     </div>
 

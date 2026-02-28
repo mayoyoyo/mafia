@@ -513,6 +513,36 @@ export function endGame(game: Game): void {
   games.delete(game.code);
 }
 
+export function restartGame(game: Game): string[] | null {
+  // Reset all players
+  for (const [, player] of game.players) {
+    player.role = null;
+    player.isAlive = true;
+    player.isLover = false;
+    player.loverId = null;
+  }
+
+  // Reset game state
+  game.phase = "lobby";
+  game.round = 0;
+  game.mafiaVotes.clear();
+  game.mafiaTarget = null;
+  game.doctorTarget = null;
+  game.detectiveTarget = null;
+  game.voteTarget = null;
+  game.votes.clear();
+  game.voteAnonymous = game.settings.anonymousVoting;
+  game.nightKill = null;
+  game.doctorSaved = false;
+  game.detectiveResult = null;
+  game.winner = null;
+  game.pendingMessages = [];
+  game.eventHistory = [];
+
+  // Start fresh game with same settings
+  return startGame(game);
+}
+
 export function getMafiaVoteStatus(game: Game): { votes: Record<string, number>; voters: string[] } {
   const votes: Record<string, number> = {};
   const voters: string[] = [];

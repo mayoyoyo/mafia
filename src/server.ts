@@ -4,7 +4,7 @@ import {
   getPlayerInfo, startGame, submitMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay,
   callVote, castVote, resolveVote, endDay, endGame as endGameEngine,
-  getAlivePlayers, getAliveByRole, getMafiaVoteStatus,
+  getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame,
 } from "./game-engine";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
 import path from "path";
@@ -178,6 +178,16 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game) {
         client.gameCode = null;
+        return;
+      }
+      if (game.phase === "game_over") {
+        // During game_over, just silently remove the player
+        removePlayer(game, client.userId);
+        client.gameCode = null;
+        // If admin leaves during game_over, clean up the game
+        if (client.userId === game.adminId) {
+          removeGame(game.code);
+        }
         return;
       }
       if (client.userId === game.adminId) {
@@ -443,12 +453,22 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
           }
 
-          if (voteResult.messages.length > 0) {
+          // Sync event history without re-sending messages (vote_result already showed them)
+          // Only send actual messages on game_over transition
+          if (game.phase === "game_over") {
             broadcastToGame(game.code, {
               type: "phase_change",
               phase: game.phase,
               round: game.round,
               messages: voteResult.messages,
+              events: game.eventHistory,
+            });
+          } else {
+            broadcastToGame(game.code, {
+              type: "phase_change",
+              phase: game.phase,
+              round: game.round,
+              messages: [],
               events: game.eventHistory,
             });
           }
@@ -501,6 +521,44 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           c.gameCode = null;
         }
       }
+      break;
+    }
+
+    case "restart_game": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) {
+        send(ws, { type: "error", message: "Only the admin can restart the game" });
+        return;
+      }
+      const messages = restartGame(game);
+      if (!messages) {
+        send(ws, { type: "error", message: "Cannot restart game" });
+        return;
+      }
+
+      // Send each player their new role
+      for (const [playerId, player] of game.players) {
+        sendToUser(playerId, {
+          type: "game_started",
+          role: player.role!,
+          isLover: player.isLover,
+        });
+      }
+
+      // Send night phase
+      broadcastToGame(game.code, {
+        type: "phase_change",
+        phase: "night",
+        round: game.round,
+        messages,
+      });
+
+      // Sound cue
+      broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
+
+      // Send night action prompts
+      sendNightActionPrompts(game);
       break;
     }
 
