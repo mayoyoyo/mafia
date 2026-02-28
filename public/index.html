@@ -368,12 +368,19 @@
           <button id="btn-close-settings" class="btn btn-icon">&times;</button>
         </div>
         <div class="settings-modal-body">
+          <div id="settings-room-code" class="setting-row hidden">
+            <span>Room Code</span>
+            <span id="settings-room-code-value" style="font-weight:700;letter-spacing:2px;font-size:18px"></span>
+          </div>
           <div class="setting-row">
             <span>Sound Effects</span>
             <label class="toggle"><input type="checkbox" id="toggle-sound"><span class="slider"></span></label>
           </div>
           <div id="settings-end-game" class="settings-end-game hidden">
             <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End Game</button>
+          </div>
+          <div id="settings-leave-game" class="hidden" style="margin-top:12px">
+            <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%">Leave Game</button>
           </div>
         </div>
       </div>

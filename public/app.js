@@ -359,10 +359,12 @@
       return;
     }
 
-    // 8. Show game screen with role card
+    // 8. Show game screen with role card (face-down by default, like fresh start)
     showScreen("game");
     updateRoleCard();
-    $("role-card").classList.add("flipped");
+    $("role-card").classList.remove("flipped");
+    $("card-back-art").innerHTML = pixelArtToSvg(isDead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
+    $("dead-dismiss-hint").classList.add("hidden");
     $("round-number").textContent = msg.round;
 
     // Phase indicator
@@ -1589,11 +1591,24 @@
   // ============================================================
   $("btn-settings").addEventListener("click", () => {
     $("toggle-sound").checked = soundEnabled;
+    // Show room code for admin
+    if (isAdmin && gameCode) {
+      $("settings-room-code").classList.remove("hidden");
+      $("settings-room-code-value").textContent = gameCode;
+    } else {
+      $("settings-room-code").classList.add("hidden");
+    }
     // Show end-game button only for admin during active game
     if (isAdmin && currentPhase && currentPhase !== "game_over") {
       $("settings-end-game").classList.remove("hidden");
     } else {
       $("settings-end-game").classList.add("hidden");
+    }
+    // Show leave-game button for non-admin players during active game
+    if (!isAdmin && gameCode && currentPhase && currentPhase !== "game_over") {
+      $("settings-leave-game").classList.remove("hidden");
+    } else {
+      $("settings-leave-game").classList.add("hidden");
     }
     $("modal-settings").classList.remove("hidden");
   });
@@ -1616,6 +1631,17 @@
     if (confirm("Are you sure you want to end the game?")) {
       wsSend({ type: "end_game" });
       closeSettingsModal();
+    }
+  });
+
+  $("btn-settings-leave").addEventListener("click", () => {
+    if (confirm("Leave the game? You can rejoin later with the same room code.")) {
+      wsSend({ type: "leave_game" });
+      localStorage.removeItem("mafia_game_code");
+      gameCode = null;
+      isAdmin = false;
+      closeSettingsModal();
+      showScreen("menu");
     }
   });
 
@@ -1957,7 +1983,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.24_202602281427";
+  const APP_VERSION = "v1.25_202602281441";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
