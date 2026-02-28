@@ -1226,11 +1226,14 @@
   }
 
   $("btn-end-day").addEventListener("click", () => {
-    wsSend({ type: "end_day" });
+    if (confirm("End the day and transition to night?")) {
+      wsSend({ type: "end_day" });
+    }
   });
 
   function handleVoteCalled(msg) {
-    // Don't reset hasVoted — may be pre-set by rejoin_state
+    // Reset hasVoted for new votes, but preserve it on rejoin
+    if (!isRejoining) hasVoted = false;
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
@@ -1652,7 +1655,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.17_202602281304";
+  const APP_VERSION = "v1.18_202602281314";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
