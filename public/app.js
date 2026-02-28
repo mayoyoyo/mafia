@@ -84,19 +84,28 @@
   // ============================================================
   // PLAYER TRACKING (for admin target list)
   // ============================================================
+  let gotPlayerList = false; // true when rejoin provides accurate alive/dead state
+
   function trackPlayers(msg) {
     if (msg.type === "lobby_update") {
       knownPlayers = msg.players;
     }
     if (msg.type === "player_list") {
       knownPlayers = msg.players;
+      gotPlayerList = true;
     }
     if (msg.type === "player_died") {
       const p = knownPlayers.find((pl) => pl.id === msg.playerId);
       if (p) p.isAlive = false;
     }
     if (msg.type === "game_started") {
-      knownPlayers = knownPlayers.map((p) => ({ ...p, isAlive: true }));
+      if (gotPlayerList) {
+        // Rejoin — player_list already has correct alive/dead state, don't overwrite
+        gotPlayerList = false;
+      } else {
+        // Fresh game start — everyone is alive
+        knownPlayers = knownPlayers.map((p) => ({ ...p, isAlive: true }));
+      }
     }
   }
 
