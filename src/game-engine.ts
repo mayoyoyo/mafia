@@ -51,12 +51,12 @@ export function createGame(adminId: number, adminUsername: string): Game {
       enableDetective: false,
       enableJoker: false,
       enableLovers: false,
-      anonymousVoting: true,
       soundEnabled: false,
     },
     players: new Map([[adminId, admin]]),
     mafiaVotes: new Map(),
     mafiaTarget: null,
+    mafiaConfirmed: false,
     doctorTarget: null,
     detectiveTarget: null,
     lastDoctorTarget: null,
@@ -307,8 +307,8 @@ function killPlayer(game: Game, playerId: number): { killed: Player; loverKilled
 export function checkNightReady(game: Game): boolean {
   if (game.phase !== "night") return false;
 
-  // Mafia must have unanimous vote
-  if (game.mafiaTarget === null) return false;
+  // Mafia must have unanimous vote AND confirmed
+  if (game.mafiaTarget === null || !game.mafiaConfirmed) return false;
 
   // Doctor must act (if alive and enabled)
   if (game.settings.enableDoctor) {
@@ -332,6 +332,9 @@ export interface NightResult {
   savedName: string | null;
 }
 
+// DESIGN: Night actions resolve simultaneously. If mafia kills the doctor or detective,
+// their submitted action still takes effect (doctor save, detective investigation).
+// The detective receives their result even if killed the same night.
 export function resolveNight(game: Game): NightResult {
   const result: NightResult = { messages: [], killed: [], saved: false, savedName: null };
 
@@ -388,6 +391,7 @@ export function transitionToDay(game: Game): NightResult {
   game.lastDoctorTarget = game.doctorTarget;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
+  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.voteTarget = null;
@@ -473,6 +477,7 @@ export function resolveVote(game: Game): VoteResult | null {
 
   for (const [voterId, approve] of game.votes) {
     const voter = game.players.get(voterId)!;
+    if (!voter.isAlive) continue; // skip dead players' votes
     voterNames[voter.username] = approve;
     if (approve) votesFor++;
     else votesAgainst++;
@@ -493,7 +498,8 @@ export function resolveVote(game: Game): VoteResult | null {
   };
 
   if (executed) {
-    // Check for Joker
+    // DESIGN: Joker win takes priority. If executing the joker also kills the last
+    // mafia (via lover chain), the joker still wins — checkWinCondition is not called.
     if (target.role === "joker") {
       result.jokerWin = true;
       result.messages.push(Narrator.jokerWin(target.username));
@@ -571,6 +577,24 @@ export function cancelVote(game: Game, adminId: number): boolean {
   return true;
 }
 
+export function forceDawn(game: Game): string[] {
+  if (game.phase !== "night") return [];
+
+  // Reset night state without resolving
+  game.mafiaVotes.clear();
+  game.mafiaTarget = null;
+  game.mafiaConfirmed = false;
+  game.doctorTarget = null;
+  game.detectiveTarget = null;
+  game.voteTarget = null;
+  game.votes.clear();
+  game.phase = "day";
+
+  const messages = ["The host has forced dawn. No one was killed tonight."];
+  game.pendingMessages = messages;
+  return messages;
+}
+
 export function endDay(game: Game): string[] {
   if (game.phase !== "day") return [];
 
@@ -578,6 +602,7 @@ export function endDay(game: Game): string[] {
   game.round++;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
+  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
 
@@ -619,11 +644,12 @@ export function restartGame(game: Game): string[] | null {
   game.round = 0;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
+  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.voteTarget = null;
   game.votes.clear();
-  game.voteAnonymous = game.settings.anonymousVoting;
+  game.voteAnonymous = true;
   game.lastDoctorTarget = null;
   game.nightKill = null;
   game.doctorSaved = false;

@@ -17,7 +17,6 @@ export interface GameSettings {
   enableDetective: boolean;
   enableJoker: boolean;
   enableLovers: boolean;
-  anonymousVoting: boolean;
   soundEnabled: boolean;
 }
 
@@ -27,7 +26,6 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableDetective: false,
   enableJoker: false,
   enableLovers: false,
-  anonymousVoting: true,
   soundEnabled: false,
 };
 
@@ -45,6 +43,7 @@ export interface Game {
   // Night actions
   mafiaVotes: Map<number, number>; // mafiaPlayerId -> targetId
   mafiaTarget: number | null;
+  mafiaConfirmed: boolean;
   doctorTarget: number | null;
   detectiveTarget: number | null;
   lastDoctorTarget: number | null;
@@ -90,6 +89,7 @@ export type ClientMessage =
   | { type: "delete_config"; configId: number }
   | { type: "start_game" }
   | { type: "mafia_vote"; targetId: number }
+  | { type: "confirm_mafia_kill" }
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
   | { type: "call_vote"; targetId: number; anonymous?: boolean }
@@ -97,8 +97,8 @@ export type ClientMessage =
   | { type: "cancel_vote" }
   | { type: "cast_vote"; approve: boolean }
   | { type: "end_day" }
+  | { type: "force_dawn" }
   | { type: "end_game" }
-  | { type: "toggle_anonymous_voting" }
   | { type: "toggle_sound" }
   | { type: "restart_game" }
   | { type: "close_room" };
@@ -114,6 +114,7 @@ export type ServerMessage =
   | { type: "game_started"; role: Role; isLover: boolean; variant: number }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[] }
   | { type: "mafia_vote_update"; voterTargets: Record<string, string> }
+  | { type: "mafia_confirm_ready"; targetName: string }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }

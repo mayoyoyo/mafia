@@ -367,6 +367,7 @@ input::placeholder { color: var(--text-secondary); }
 .target-list li:active { background: var(--primary); }
 .target-list li.selected { background: var(--primary); border-color: var(--primary); }
 .target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
+.btn-confirm-action { width: 100%; margin-top: 12px; }
 .action-status { font-size: 14px; color: var(--text-secondary); margin-top: 8px; text-align: center; }
 
 /* VOTE STATUS */

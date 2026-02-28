@@ -241,6 +241,10 @@
         updateMafiaVoteStatus(msg);
         break;
 
+      case "mafia_confirm_ready":
+        handleMafiaConfirmReady(msg);
+        break;
+
       case "night_action_done":
         $("action-status").textContent = msg.message;
         break;
@@ -436,7 +440,6 @@
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-lovers").checked = settings.enableLovers;
-    anonVoteChecked = settings.anonymousVoting;
     if ($("toggle-anon-vote")) $("toggle-anon-vote").checked = anonVoteChecked;
   }
 
@@ -909,6 +912,7 @@
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
+    $("admin-night-controls").classList.add("hidden");
 
     if (msg.phase === "day") {
       if (rejoinDayStartedAt) {
@@ -930,9 +934,13 @@
     if (msg.phase === "night") {
       hasVoted = false;
       dayVoteCount = 0;
+      nightActionLocked = false;
       $("event-history").classList.add("hidden");
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
+      if (isAdmin) {
+        $("admin-night-controls").classList.remove("hidden");
+      }
     }
 
     // Show event history during day/voting
@@ -1133,6 +1141,8 @@
   // ============================================================
   // NIGHT ACTIONS
   // ============================================================
+  let nightActionLocked = false; // true after doctor/detective confirm
+
   function showNightAction(title, players, actionType, disabledId) {
     if (isDead) return;
 
@@ -1140,28 +1150,54 @@
     panel.classList.remove("hidden");
     $("action-title").textContent = title;
     $("action-status").textContent = "";
+    nightActionLocked = false;
+
+    const confirmBtn = $("btn-confirm-action");
+    confirmBtn.classList.add("hidden");
+    confirmBtn.replaceWith(confirmBtn.cloneNode(true)); // remove old listeners
 
     const list = $("action-targets");
     list.innerHTML = players
       .map((p) => {
         const isDisabled = disabledId != null && p.id === disabledId;
         const suffix = isDisabled ? " (protected last night)" : "";
-        return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}">${p.username}${suffix}</li>`;
+        return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}">${escapeHtml(p.username)}${suffix}</li>`;
       })
       .join("");
 
-    list.querySelectorAll("li:not(.disabled)").forEach((li) => {
-      li.addEventListener("click", () => {
-        list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
-        li.classList.add("selected");
-
-        const targetId = parseInt(li.dataset.id);
-        wsSend({ type: actionType, targetId });
-      });
-    });
+    let selectedTargetId = null;
 
     if (actionType === "mafia_vote") {
+      // Mafia: clicking sends vote to server immediately (for tracking)
+      list.querySelectorAll("li:not(.disabled)").forEach((li) => {
+        li.addEventListener("click", () => {
+          if (nightActionLocked) return;
+          list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
+          li.classList.add("selected");
+          const targetId = parseInt(li.dataset.id);
+          wsSend({ type: actionType, targetId });
+        });
+      });
       $("mafia-vote-status").classList.remove("hidden");
+    } else {
+      // Doctor/Detective: clicking selects visually, Confirm sends to server
+      list.querySelectorAll("li:not(.disabled)").forEach((li) => {
+        li.addEventListener("click", () => {
+          if (nightActionLocked) return;
+          list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
+          li.classList.add("selected");
+          selectedTargetId = parseInt(li.dataset.id);
+          $("btn-confirm-action").classList.remove("hidden");
+        });
+      });
+
+      $("btn-confirm-action").addEventListener("click", () => {
+        if (nightActionLocked || selectedTargetId === null) return;
+        nightActionLocked = true;
+        wsSend({ type: actionType, targetId: selectedTargetId });
+        $("btn-confirm-action").classList.add("hidden");
+        list.querySelectorAll("li").forEach((l) => l.style.pointerEvents = "none");
+      });
     }
   }
 
@@ -1173,8 +1209,28 @@
       return;
     }
     details.innerHTML = entries
-      .map(([voter, target]) => `<div>${escapeHtml(voter)} \u2192 ${escapeHtml(target)}</div>`)
+      .map(([voter, target]) => `<div><span style="color:#d32f2f;font-weight:bold">${escapeHtml(voter)}</span> votes ${escapeHtml(target)}</div>`)
       .join("");
+  }
+
+  function handleMafiaConfirmReady(msg) {
+    if (nightActionLocked) return;
+    $("action-status").textContent = `Unanimous! Target: ${msg.targetName}. Confirm to lock in.`;
+    const confirmBtn = $("btn-confirm-action");
+    confirmBtn.classList.remove("hidden");
+    confirmBtn.textContent = "Confirm Kill";
+
+    // Remove old listeners
+    const newBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+
+    newBtn.addEventListener("click", () => {
+      if (nightActionLocked) return;
+      nightActionLocked = true;
+      wsSend({ type: "confirm_mafia_kill" });
+      newBtn.classList.add("hidden");
+      $("action-targets").querySelectorAll("li").forEach((l) => l.style.pointerEvents = "none");
+    });
   }
 
   // ============================================================
@@ -1224,6 +1280,12 @@
       anonVoteChecked = e.target.checked;
     });
   }
+
+  $("btn-force-dawn").addEventListener("click", () => {
+    if (confirm("Force dawn? Night actions will be skipped and no one will be killed.")) {
+      wsSend({ type: "force_dawn" });
+    }
+  });
 
   $("btn-end-day").addEventListener("click", () => {
     if (confirm("End the day and transition to night?")) {
@@ -1312,11 +1374,6 @@
       showNarratorMessage(`Votes: ${breakdown}`);
     }
 
-    // Re-show admin controls if still day (Phase 4: multi-vote)
-    if (isAdmin && currentPhase === "day") {
-      showAdminDayControls();
-      setTimeout(() => populateAdminTargets(knownPlayers), 100);
-    }
   }
 
   // ============================================================
@@ -1655,7 +1712,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.18_202602281314";
+  const APP_VERSION = "v1.19_202602282019";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {

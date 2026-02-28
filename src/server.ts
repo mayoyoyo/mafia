@@ -3,7 +3,7 @@ import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
   getPlayerInfo, startGame, submitMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay,
-  callVote, castVote, resolveVote, cancelVote, endDay, forceEndGame,
+  callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, getAllGames,
 } from "./game-engine";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
@@ -499,9 +499,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     case "mafia_vote": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
-      if (!game) return;
+      if (!game || game.phase !== "night") return;
 
       const result = submitMafiaVote(game, client.userId, msg.targetId);
+
+      // Only broadcast if vote was actually recorded
+      if (!game.mafiaVotes.has(client.userId)) break;
 
       // Broadcast vote status to all mafia
       const status = getMafiaVoteStatus(game);
@@ -511,13 +514,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
 
       if (result.allVoted && result.target !== null) {
-        // Mafia agreed - notify them
+        // Mafia agreed - send confirm prompt (any mafia can confirm)
+        const targetPlayer = game.players.get(result.target)!;
         for (const m of aliveMafia) {
-          sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
-        }
-        // Check if night is ready to resolve
-        if (checkNightReady(game)) {
-          resolveNightAndTransition(game);
+          sendToUser(m.id, { type: "mafia_confirm_ready", targetName: targetPlayer.username });
         }
       } else if (result.allVoted && result.target === null) {
         // All voted but not unanimous - reset
@@ -526,6 +526,30 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           sendToUser(m.id, { type: "night_action_done", message: "The Mafia could not agree. Vote again." });
         }
         sendNightActionPrompts(game);
+      }
+      break;
+    }
+
+    case "confirm_mafia_kill": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.phase !== "night") return;
+
+      // Only mafia can confirm
+      const confirmer = game.players.get(client.userId);
+      if (!confirmer || confirmer.role !== "mafia" || !confirmer.isAlive) return;
+
+      // Must have unanimous target and not already confirmed
+      if (game.mafiaTarget === null || game.mafiaConfirmed) return;
+
+      game.mafiaConfirmed = true;
+      const aliveMafia = getAliveByRole(game, "mafia");
+      for (const m of aliveMafia) {
+        sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
+      }
+
+      if (checkNightReady(game)) {
+        resolveNightAndTransition(game);
       }
       break;
     }
@@ -712,6 +736,40 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
+    case "force_dawn": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+
+      const messages = forceDawn(game);
+      if (messages.length === 0) return;
+      game.dayStartedAt = Date.now();
+      recordNarrator(game, messages);
+
+      // Send detective result if investigation was submitted before force dawn
+      if (game.detectiveResult) {
+        const allDetectives = Array.from(game.players.values()).filter((p) => p.role === "detective");
+        for (const d of allDetectives) {
+          sendToUser(d.id, {
+            type: "detective_result",
+            targetName: game.players.get(game.detectiveResult.targetId)?.username ?? "Unknown",
+            isMafia: game.detectiveResult.isMafia,
+          });
+        }
+        game.detectiveResult = null;
+      }
+
+      broadcastToGame(game.code, { type: "sound_cue", sound: "day" });
+      broadcastToGame(game.code, {
+        type: "phase_change",
+        phase: "day",
+        round: game.round,
+        messages,
+        events: game.eventHistory,
+      });
+      break;
+    }
+
     case "end_day": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
@@ -814,16 +872,6 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
-    case "toggle_anonymous_voting": {
-      if (!client.gameCode || !client.userId) return;
-      const game = getGame(client.gameCode);
-      if (!game || client.userId !== game.adminId) return;
-      game.settings.anonymousVoting = !game.settings.anonymousVoting;
-      game.voteAnonymous = game.settings.anonymousVoting;
-      broadcastToGame(game.code, { type: "settings_updated", settings: game.settings });
-      break;
-    }
-
     case "toggle_sound": {
       // Sound toggle is client-side only, but we acknowledge it
       break;
@@ -832,6 +880,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 }
 
 function resolveNightAndTransition(game: Game): void {
+  if (!getGame(game.code)) return; // game was removed (e.g., admin left)
   const nightResult = transitionToDay(game);
   recordNarrator(game, nightResult.messages);
 
@@ -840,10 +889,10 @@ function resolveNightAndTransition(game: Game): void {
     game.dayStartedAt = Date.now();
   }
 
-  // Send detective result privately
+  // Send detective result privately (even if detective died this night)
   if (game.detectiveResult) {
-    const aliveDetective = getAliveByRole(game, "detective");
-    for (const d of aliveDetective) {
+    const allDetectives = Array.from(game.players.values()).filter((p) => p.role === "detective");
+    for (const d of allDetectives) {
       sendToUser(d.id, {
         type: "detective_result",
         targetName: game.players.get(game.detectiveResult.targetId)?.username ?? "Unknown",
