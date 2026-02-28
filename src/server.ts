@@ -1,6 +1,6 @@
 import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig } from "./db";
 import {
-  createGame, getGame, removeGame, addPlayer, removePlayer, updateSettings,
+  createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
   getPlayerInfo, startGame, submitMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay,
   callVote, castVote, resolveVote, endDay, endGame as endGameEngine,
@@ -98,6 +98,46 @@ function sendNightActionPrompts(game: Game): void {
   }
 }
 
+function sendNightActionPromptsForPlayer(game: Game, player: import("./types").Player): void {
+  if (!player.isAlive || !player.role) return;
+
+  if (player.role === "mafia") {
+    const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
+    const targets = aliveNonMafia.map((p) => ({
+      id: p.id,
+      username: p.username,
+      isAlive: true,
+      isAdmin: p.id === game.adminId,
+    }));
+    sendToUser(player.id, { type: "mafia_targets", players: targets });
+    // Also send current vote status
+    const status = getMafiaVoteStatus(game);
+    sendToUser(player.id, { type: "mafia_vote_update", voterTargets: status.voterTargets });
+  }
+
+  if (player.role === "doctor" && game.doctorTarget === null) {
+    const allAlive = getAlivePlayers(game).map((p) => ({
+      id: p.id,
+      username: p.username,
+      isAlive: true,
+      isAdmin: p.id === game.adminId,
+    }));
+    sendToUser(player.id, { type: "doctor_targets", players: allAlive });
+  }
+
+  if (player.role === "detective" && game.detectiveTarget === null) {
+    const targets = getAlivePlayers(game)
+      .filter((p) => p.role !== "detective")
+      .map((p) => ({
+        id: p.id,
+        username: p.username,
+        isAlive: true,
+        isAdmin: p.id === game.adminId,
+      }));
+    sendToUser(player.id, { type: "detective_targets", players: targets });
+  }
+}
+
 function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
   switch (msg.type) {
     case "register": {
@@ -161,6 +201,59 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Game not found" });
         return;
       }
+
+      // Try rejoin first (player already exists in game)
+      const rejoined = rejoinPlayer(game, client.userId);
+      if (rejoined) {
+        client.gameCode = code;
+        send(ws, { type: "game_joined", code, isAdmin: client.userId === game.adminId });
+
+        // If game is active (not lobby), send full state to bring player up to speed
+        if (game.phase !== "lobby") {
+          // Send role info
+          send(ws, {
+            type: "game_started",
+            role: rejoined.role!,
+            isLover: rejoined.isLover,
+            variant: rejoined.variant,
+          });
+
+          // Send current phase
+          send(ws, {
+            type: "phase_change",
+            phase: game.phase,
+            round: game.round,
+            messages: [],
+            events: game.eventHistory,
+          });
+
+          // If night phase and player is alive, re-send action prompts
+          if (game.phase === "night" && rejoined.isAlive) {
+            sendNightActionPromptsForPlayer(game, rejoined);
+          }
+
+          // If voting in progress, re-send vote state
+          if (game.phase === "voting" && game.voteTarget !== null) {
+            const target = game.players.get(game.voteTarget)!;
+            send(ws, {
+              type: "vote_called",
+              targetName: target.username,
+              targetId: game.voteTarget,
+              anonymous: game.voteAnonymous,
+            });
+          }
+
+          // If player is dead, notify
+          if (!rejoined.isAlive) {
+            send(ws, { type: "you_died", message: "You were killed." });
+          }
+        } else {
+          broadcastLobbyUpdate(game);
+        }
+        break;
+      }
+
+      // Normal join (lobby only)
       const username = getUsernameFromClients(client.userId);
       const player = addPlayer(game, client.userId, username);
       if (!player) {
@@ -288,6 +381,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           type: "game_started",
           role: player.role!,
           isLover: player.isLover,
+          variant: player.variant,
         });
       }
 
@@ -318,7 +412,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const status = getMafiaVoteStatus(game);
       const aliveMafia = getAliveByRole(game, "mafia");
       for (const m of aliveMafia) {
-        sendToUser(m.id, { type: "mafia_vote_update", votes: status.votes, voters: status.voters });
+        sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets });
       }
 
       if (result.allVoted && result.target !== null) {
@@ -543,6 +637,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           type: "game_started",
           role: player.role!,
           isLover: player.isLover,
+          variant: player.variant,
         });
       }
 
@@ -714,8 +809,8 @@ const server = Bun.serve({
             if (player) {
               player.connected = false;
             }
+            // Only destroy game if admin disconnects in lobby
             if (client.userId === game.adminId && game.phase === "lobby") {
-              // If admin disconnects in lobby, clean up
               broadcastToGame(game.code, {
                 type: "game_over",
                 winner: "town",
@@ -724,6 +819,7 @@ const server = Bun.serve({
               });
               removeGame(game.code);
             }
+            // During active game, just mark disconnected — player can rejoin
           }
         }
         clients.delete(ws);

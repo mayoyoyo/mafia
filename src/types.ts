@@ -8,6 +8,7 @@ export interface Player {
   isLover: boolean;
   loverId: number | null; // the other lover's player id
   connected: boolean;
+  variant: number; // pixel art variant index
 }
 
 export interface GameSettings {
@@ -27,7 +28,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableJoker: false,
   enableLovers: false,
   anonymousVoting: true,
-  soundEnabled: true,
+  soundEnabled: false,
 };
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
@@ -39,6 +40,7 @@ export interface Game {
   round: number;
   settings: GameSettings;
   players: Map<number, Player>;
+  mafiaVariant: number; // shared pixel art variant for all mafia
   // Night actions
   mafiaVotes: Map<number, number>; // mafiaPlayerId -> targetId
   mafiaTarget: number | null;
@@ -99,9 +101,9 @@ export type ServerMessage =
   | { type: "game_joined"; code: string; isAdmin: boolean }
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
-  | { type: "game_started"; role: Role; isLover: boolean }
+  | { type: "game_started"; role: Role; isLover: boolean; variant: number }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[] }
-  | { type: "mafia_vote_update"; votes: Record<string, number>; voters: string[] }
+  | { type: "mafia_vote_update"; voterTargets: Record<string, string> }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[] }
   | { type: "detective_targets"; players: PlayerInfo[] }

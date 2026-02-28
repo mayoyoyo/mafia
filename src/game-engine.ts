@@ -35,6 +35,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
     isLover: false,
     loverId: null,
     connected: true,
+    variant: 0,
   };
 
   const game: Game = {
@@ -42,6 +43,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
     adminId,
     phase: "lobby",
     round: 0,
+    mafiaVariant: 0,
     settings: {
       mafiaCount: 1,
       enableDoctor: false,
@@ -49,7 +51,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
       enableJoker: false,
       enableLovers: false,
       anonymousVoting: true,
-      soundEnabled: true,
+      soundEnabled: false,
     },
     players: new Map([[adminId, admin]]),
     mafiaVotes: new Map(),
@@ -96,9 +98,17 @@ export function addPlayer(game: Game, userId: number, username: string): Player 
     isLover: false,
     loverId: null,
     connected: true,
+    variant: 0,
   };
 
   game.players.set(userId, player);
+  return player;
+}
+
+export function rejoinPlayer(game: Game, userId: number): Player | null {
+  const player = game.players.get(userId);
+  if (!player) return null;
+  player.connected = true;
   return player;
 }
 
@@ -163,6 +173,20 @@ function assignRoles(game: Game): void {
   while (idx < totalPlayers) {
     game.players.get(playerIds[idx])!.role = "citizen";
     idx++;
+  }
+
+  // Assign pixel art variants
+  game.mafiaVariant = Math.floor(Math.random() * 4);
+  let citizenVariantIdx = 0;
+  for (const [, player] of game.players) {
+    if (player.role === "mafia") {
+      player.variant = game.mafiaVariant;
+    } else if (player.role === "citizen") {
+      player.variant = citizenVariantIdx % 8;
+      citizenVariantIdx++;
+    } else {
+      player.variant = 0; // doctor, detective, joker have single variant
+    }
   }
 
   // Assign lovers if enabled
@@ -520,6 +544,7 @@ export function restartGame(game: Game): string[] | null {
     player.isAlive = true;
     player.isLover = false;
     player.loverId = null;
+    player.variant = 0;
   }
 
   // Reset game state
@@ -543,16 +568,14 @@ export function restartGame(game: Game): string[] | null {
   return startGame(game);
 }
 
-export function getMafiaVoteStatus(game: Game): { votes: Record<string, number>; voters: string[] } {
-  const votes: Record<string, number> = {};
-  const voters: string[] = [];
+export function getMafiaVoteStatus(game: Game): { voterTargets: Record<string, string> } {
+  const voterTargets: Record<string, string> = {};
 
   for (const [mafiaId, targetId] of game.mafiaVotes) {
     const mafiaPlayer = game.players.get(mafiaId)!;
     const target = game.players.get(targetId)!;
-    votes[target.username] = (votes[target.username] || 0) + 1;
-    voters.push(mafiaPlayer.username);
+    voterTargets[mafiaPlayer.username] = target.username;
   }
 
-  return { votes, voters };
+  return { voterTargets };
 }

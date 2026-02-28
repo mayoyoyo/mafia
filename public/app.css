@@ -101,13 +101,10 @@ input::placeholder { color: var(--text-secondary); }
 .logo { text-align: center; padding: 60px 0 40px; }
 .logo-icon {
   width: 80px; height: 80px; margin: 0 auto 16px;
-  background: var(--primary);
-  border-radius: 20px;
-  font-size: 40px; font-weight: 800; color: #fff;
   display: flex; align-items: center; justify-content: center;
 }
+.logo-icon svg { width: 80px; height: 80px; }
 .logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 800; }
-.subtitle { color: var(--text-secondary); font-size: 14px; margin-top: 4px; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
 .passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; }
@@ -231,6 +228,8 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.doctor { border-color: var(--role-doctor); }
 .role-card.detective { border-color: var(--role-detective); }
 .role-card.joker { border-color: var(--role-joker); }
+.role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
+.role-image svg { width: 64px; height: 64px; display: block; }
 .role-name { font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; }
 .role-card.mafia .role-name { color: var(--role-mafia); }
 .role-card.citizen .role-name { color: var(--role-citizen); }
@@ -273,6 +272,17 @@ input::placeholder { color: var(--text-secondary); }
 }
 .narrator-messages .narrator-line:last-child { border-bottom: none; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* DETECTIVE RESULT */
+.detective-result {
+  background: var(--bg-card);
+  border: 2px solid var(--role-detective);
+  border-radius: 16px;
+  padding: 14px 16px;
+  font-size: 15px;
+  line-height: 1.5;
+  animation: fadeIn 0.5s ease;
+}
 
 /* ACTION PANEL */
 .action-panel {
@@ -536,7 +546,8 @@ input::placeholder { color: var(--text-secondary); }
 /* Responsive fixes */
 @media (max-height: 700px) {
   .logo { padding: 30px 0 20px; }
-  .logo-icon { width: 60px; height: 60px; font-size: 30px; }
+  .logo-icon { width: 60px; height: 60px; }
+  .logo-icon svg { width: 60px; height: 60px; }
   .logo h1 { font-size: 26px; }
   .menu-buttons { margin-top: 20px; }
 }

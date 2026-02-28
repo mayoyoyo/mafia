@@ -19,9 +19,16 @@
     <!-- AUTH SCREEN -->
     <div id="screen-auth" class="screen active">
       <div class="logo">
-        <div class="logo-icon">M</div>
+        <div class="logo-icon">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="32" cy="42" rx="28" ry="6" fill="#e91e63"/>
+            <ellipse cx="32" cy="40" rx="18" ry="14" fill="#e91e63"/>
+            <rect x="14" y="34" width="36" height="8" rx="2" fill="#e91e63"/>
+            <path d="M10 42 C10 42 14 40 32 40 C50 40 54 42 54 42" stroke="#c2185b" stroke-width="1.5" fill="none"/>
+            <rect x="26" y="26" width="12" height="4" rx="1" fill="#c2185b" opacity="0.5"/>
+          </svg>
+        </div>
         <h1>MAFIA</h1>
-        <p class="subtitle">The Party Game</p>
       </div>
       <div class="auth-form">
         <input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off">
@@ -125,11 +132,12 @@
       <div class="game-header">
         <div class="phase-indicator" id="phase-indicator">Night</div>
         <div class="round-indicator">Round <span id="round-number">1</span></div>
-        <button id="btn-sound-toggle" class="btn btn-icon" title="Toggle Sound">&#128264;</button>
+        <button id="btn-sound-toggle" class="btn btn-icon" title="Toggle Sound">&#128263;</button>
       </div>
 
       <!-- Role Card -->
       <div id="role-card" class="role-card">
+        <div id="role-image" class="role-image"></div>
         <div id="role-name" class="role-name"></div>
         <div id="role-description" class="role-description"></div>
         <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
@@ -149,6 +157,9 @@
         </div>
         <div id="narrator-messages" class="narrator-messages"></div>
       </div>
+
+      <!-- Detective Result (persistent) -->
+      <div id="detective-result" class="detective-result hidden"></div>
 
       <!-- Night Actions -->
       <div id="night-actions" class="action-panel hidden">

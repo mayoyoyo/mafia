@@ -14,7 +14,7 @@
   let isDead = false;
   let currentPhase = null;
   let previousPhase = null;
-  let soundEnabled = true;
+  let soundEnabled = false;
   let hasVoted = false;
   let audioCtx = null;
   let knownPlayers = [];
@@ -107,6 +107,10 @@
     switch (msg.type) {
       case "error":
         showError(msg.message);
+        // Clear stored game code if game not found (auto-rejoin failed)
+        if (msg.message === "Game not found") {
+          localStorage.removeItem("mafia_game_code");
+        }
         break;
 
       case "registered":
@@ -120,11 +124,19 @@
         $("menu-username").textContent = username;
         showScreen("menu");
         clearErrors();
+        // Auto-rejoin if we have a stored game code
+        {
+          const storedCode = localStorage.getItem("mafia_game_code");
+          if (storedCode) {
+            wsSend({ type: "join_game", code: storedCode });
+          }
+        }
         break;
 
       case "game_created":
         gameCode = msg.code;
         isAdmin = true;
+        localStorage.setItem("mafia_game_code", gameCode);
         $("lobby-code").textContent = gameCode;
         showScreen("lobbyAdmin");
         break;
@@ -132,6 +144,7 @@
       case "game_joined":
         gameCode = msg.code;
         isAdmin = msg.isAdmin;
+        localStorage.setItem("mafia_game_code", gameCode);
         if (isAdmin) {
           $("lobby-code").textContent = gameCode;
           showScreen("lobbyAdmin");
@@ -152,6 +165,7 @@
       case "game_started":
         myRole = msg.role;
         isLover = msg.isLover;
+        myVariant = msg.variant || 0;
         isDead = false;
         hasVoted = false;
         dayVoteCount = 0;
@@ -159,6 +173,7 @@
         showScreen("game");
         updateRoleCard();
         $("narrator-messages").innerHTML = "";
+        clearDetectiveResult();
         $("event-history").classList.add("hidden");
         $("event-history-list").innerHTML = "";
         $("dead-overlay").classList.add("hidden");
@@ -196,11 +211,7 @@
         break;
 
       case "detective_result":
-        showNarratorMessage(
-          msg.isMafia
-            ? `Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
-            : `Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`
-        );
+        showDetectiveResult(msg);
         break;
 
       case "vote_called":
@@ -273,6 +284,7 @@
 
   $("btn-logout").addEventListener("click", () => {
     localStorage.removeItem("mafia_user");
+    localStorage.removeItem("mafia_game_code");
     userId = null;
     username = null;
     gameCode = null;
@@ -313,12 +325,14 @@
     wsSend({ type: "leave_game" });
     gameCode = null;
     isAdmin = false;
+    localStorage.removeItem("mafia_game_code");
     showScreen("menu");
   });
 
   $("btn-leave-player").addEventListener("click", () => {
     wsSend({ type: "leave_game" });
     gameCode = null;
+    localStorage.removeItem("mafia_game_code");
     showScreen("menu");
   });
 
@@ -457,6 +471,239 @@
   // ============================================================
   // GAME
   // ============================================================
+  let myVariant = 0;
+
+  // ============================================================
+  // PIXEL ART ROLE IMAGES
+  // ============================================================
+  const _ = null; // transparent
+  const PIXEL_ART = {
+    doctor: [
+      [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+      [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
+      [_,"#fff","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fff",_],
+      [_,"#fff","#fdd","#29f","#fdd","#fdd","#29f","#fdd","#fff",_],
+      [_,_,"#fff","#fdd","#fdd","#fdd","#fdd","#fff",_,_],
+      [_,_,"#fff","#fdd","#222","#222","#fdd","#fff",_,_],
+      [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
+      [_,"#fff","#29f","#fff","#29f","#29f","#fff","#29f","#fff",_],
+      [_,"#fff","#29f","#29f","#29f","#29f","#29f","#29f","#fff",_],
+      [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+    ],
+    detective: [
+      [_,_,"#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2",_,_,_],
+      [_,"#7b1fa2","#7b1fa2","#9c27b0","#9c27b0","#9c27b0","#7b1fa2","#7b1fa2",_,_],
+      ["#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2",_],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+      [_,_,"#555","#555","#555","#555","#555","#555",_,_],
+      [_,_,_,_,_,_,_,"#ff0","#ff0",_],
+      [_,_,_,_,_,_,"#ff0","#ccc","#ff0","#ff0"],
+    ],
+    joker: [
+      [_,"#f00","#ff0",_,_,"#0f0","#00f",_,_,_],
+      ["#f00","#f00","#ff0","#ff0",_,"#0f0","#0f0","#00f",_,_],
+      [_,"#ff0","#ff0","#ff0","#f0f","#0f0","#0f0","#00f","#00f",_],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#fdd","#f00","#f00","#f00","#f00","#fdd",_,_],
+      [_,_,"#ff0","#0f0","#ff0","#0f0","#ff0","#0f0",_,_],
+      [_,_,"#ff0","#0f0","#ff0","#0f0","#ff0","#0f0",_,_],
+      [_,_,_,"#f00",_,_,"#00f",_,_,_],
+    ],
+    citizen: [
+      // 0: farmer
+      [
+        [_,_,"#8b4","#8b4","#8b4","#8b4","#8b4","#8b4",_,_],
+        [_,"#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4",_],
+        ["#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4"],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#a62","#a62","#fdd","#fdd",_,_],
+        [_,_,"#27a","#27a","#27a","#27a","#27a","#27a",_,_],
+        [_,_,"#27a","#27a","#27a","#27a","#27a","#27a",_,_],
+        [_,_,"#a62","#a62",_,_,"#a62","#a62",_,_],
+      ],
+      // 1: engineer
+      [
+        [_,_,"#ff0","#ff0","#ff0","#ff0","#ff0","#ff0",_,_],
+        [_,"#ff0","#ff0","#ff0","#ff0","#ff0","#ff0","#ff0","#ff0",_],
+        [_,"#ff0","#222","#222","#222","#222","#222","#222","#ff0",_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        [_,_,"#f80","#f80","#f80","#f80","#f80","#f80",_,_],
+        [_,_,"#f80","#f80","#f80","#f80","#f80","#f80",_,_],
+        [_,_,"#555","#555",_,_,"#555","#555",_,_],
+      ],
+      // 2: baker
+      [
+        [_,_,_,"#fff","#fff","#fff","#fff",_,_,_],
+        [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
+        [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+        [_,_,"#fff","#da4","#fff","#fff","#da4","#fff",_,_],
+        [_,_,"#555","#555",_,_,"#555","#555",_,_],
+      ],
+      // 3: chef
+      [
+        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+        [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
+        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+        [_,_,"#fff","#222","#fff","#fff","#222","#fff",_,_],
+        [_,_,"#333","#333",_,_,"#333","#333",_,_],
+      ],
+      // 4: astronaut
+      [
+        [_,_,"#ccc","#ccc","#ccc","#ccc","#ccc","#ccc",_,_],
+        [_,"#ccc","#48f","#48f","#48f","#48f","#48f","#48f","#ccc",_],
+        [_,"#ccc","#48f","#48f","#48f","#48f","#48f","#48f","#ccc",_],
+        [_,"#ccc","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#ccc",_],
+        [_,"#ccc","#fdd","#222","#fdd","#fdd","#222","#fdd","#ccc",_],
+        [_,_,"#ccc","#fdd","#fdd","#fdd","#fdd","#ccc",_,_],
+        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+        [_,_,"#fff","#f80","#fff","#fff","#f80","#fff",_,_],
+        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+        [_,_,"#ccc","#ccc",_,_,"#ccc","#ccc",_,_],
+      ],
+      // 5: musician
+      [
+        [_,_,_,_,_,_,_,_,_,_],
+        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
+        [_,"#333","#333","#333","#333","#333","#333","#333","#333",_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+        [_,_,"#222","#f00","#222","#222","#f00","#222",_,_],
+        [_,_,"#222","#222",_,_,"#222","#222",_,_],
+      ],
+      // 6: artist
+      [
+        [_,_,"#e44","#e44","#e44","#e44","#e44",_,_,_],
+        [_,"#e44","#e44","#e44","#e44","#e44","#e44","#e44",_,_],
+        [_,_,"#e44","#e44","#e44","#e44","#e44",_,_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        [_,_,"#48f","#48f","#48f","#48f","#48f","#48f",_,_],
+        [_,_,"#48f","#ff0","#0f0","#f0f","#f80","#48f",_,_],
+        [_,_,"#333","#333",_,_,"#333","#333",_,_],
+      ],
+      // 7: firefighter
+      [
+        [_,_,"#d00","#d00","#d00","#d00","#d00","#d00",_,_],
+        [_,"#d00","#ff0","#ff0","#ff0","#ff0","#ff0","#ff0","#d00",_],
+        [_,"#d00","#d00","#d00","#d00","#d00","#d00","#d00","#d00",_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        [_,_,"#d00","#d00","#d00","#d00","#d00","#d00",_,_],
+        [_,_,"#d00","#ff0","#d00","#d00","#ff0","#d00",_,_],
+        [_,_,"#333","#333",_,_,"#333","#333",_,_],
+      ],
+    ],
+    mafia: [
+      // 0: gun robber
+      [
+        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
+        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
+        [_,_,"#fdd","#222","#222","#222","#222","#fdd",_,_],
+        [_,_,"#fdd","#fff","#fdd","#fdd","#fff","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
+        [_,_,"#333","#333","#333","#333","#333","#333",_,"#888"],
+        [_,_,"#222","#222",_,_,"#222","#222",_,_],
+      ],
+      // 1: sword warrior
+      [
+        [_,_,"#555","#555","#555","#555","#555","#555",_,_],
+        [_,"#555","#555","#555","#555","#555","#555","#555","#555",_],
+        [_,"#555","#555","#555","#555","#555","#555","#555","#555",_],
+        [_,_,"#fdd","#555","#555","#555","#555","#fdd",_,_],
+        [_,_,"#fdd","#d00","#fdd","#fdd","#d00","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+        ["#ccc",_,"#444","#444","#444","#444","#444","#444",_,_],
+        ["#ccc",_,"#444","#d00","#444","#444","#d00","#444",_,_],
+        ["#a82",_,"#222","#222",_,_,"#222","#222",_,_],
+      ],
+      // 2: ninja
+      [
+        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
+        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
+        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+        [_,_,"#222","#fff","#222","#222","#fff","#222",_,_],
+        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
+        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
+        [_,_,"#222","#222",_,_,"#222","#222",_,_],
+      ],
+      // 3: mafia boss
+      [
+        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
+        [_,"#333","#333","#333","#333","#333","#333","#333","#333",_],
+        ["#333","#333","#333","#333","#333","#333","#333","#333","#333","#333"],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+        [_,_,"#fdd","#fdd","#a62","#a62","#fdd","#fdd",_,_],
+        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+        [_,_,"#222","#fff","#222","#222","#fff","#222",_,_],
+        [_,_,"#222","#222",_,_,"#222","#222",_,_],
+      ],
+    ],
+  };
+
+  function pixelArtToSvg(grid) {
+    const size = grid.length;
+    let rects = "";
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < grid[y].length; x++) {
+        if (grid[y][x]) {
+          rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${grid[y][x]}"/>`;
+        }
+      }
+    }
+    return `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${rects}</svg>`;
+  }
+
+  function getRoleImage(role, variant) {
+    if (role === "citizen") {
+      const grids = PIXEL_ART.citizen;
+      return pixelArtToSvg(grids[variant % grids.length]);
+    }
+    if (role === "mafia") {
+      const grids = PIXEL_ART.mafia;
+      return pixelArtToSvg(grids[variant % grids.length]);
+    }
+    if (PIXEL_ART[role]) {
+      return pixelArtToSvg(PIXEL_ART[role]);
+    }
+    return "";
+  }
+
   const ROLE_DESCRIPTIONS = {
     citizen: "You are a Citizen. Find and eliminate the Mafia to win.",
     mafia: "You are the Mafia. Eliminate citizens until you outnumber them.",
@@ -478,6 +725,13 @@
     card.className = `role-card ${ROLE_COLORS[myRole] || ""}`;
     $("role-name").textContent = myRole ? myRole.toUpperCase() : "";
     $("role-description").textContent = ROLE_DESCRIPTIONS[myRole] || "";
+    // Pixel art role image
+    const imgEl = $("role-image");
+    if (myRole) {
+      imgEl.innerHTML = getRoleImage(myRole, myVariant);
+    } else {
+      imgEl.innerHTML = "";
+    }
     if (isLover) {
       $("lover-badge").classList.remove("hidden");
     } else {
@@ -537,6 +791,7 @@
       hasVoted = false;
       dayVoteCount = 0;
       $("event-history").classList.add("hidden");
+      clearDetectiveResult();
     }
 
     // Show event history during day/voting
@@ -586,6 +841,21 @@
       }
       suspenseQueue = [];
     }, 4300);
+  }
+
+  function showDetectiveResult(msg) {
+    const el = $("detective-result");
+    const text = msg.isMafia
+      ? `\u{1F50D} Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
+      : `\u{1F50D} Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
+    el.textContent = text;
+    el.classList.remove("hidden");
+  }
+
+  function clearDetectiveResult() {
+    const el = $("detective-result");
+    el.textContent = "";
+    el.classList.add("hidden");
   }
 
   function showNarratorMessage(text) {
@@ -672,13 +942,13 @@
 
   function updateMafiaVoteStatus(msg) {
     const details = $("mafia-vote-details");
-    const entries = Object.entries(msg.votes);
+    const entries = Object.entries(msg.voterTargets);
     if (entries.length === 0) {
       details.textContent = "No votes yet...";
       return;
     }
     details.innerHTML = entries
-      .map(([name, count]) => `<div>${name}: ${count} vote${count > 1 ? "s" : ""}</div>`)
+      .map(([voter, target]) => `<div>${escapeHtml(voter)} \u2192 ${escapeHtml(target)}</div>`)
       .join("");
   }
 
@@ -854,6 +1124,7 @@
 
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
+    localStorage.removeItem("mafia_game_code");
     showScreen("gameover");
 
     const titles = {
@@ -934,6 +1205,7 @@
     narratorTranscript = [];
     gameCode = null;
     isAdmin = false;
+    localStorage.removeItem("mafia_game_code");
     showScreen("menu");
   });
 
