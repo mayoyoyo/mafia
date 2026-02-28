@@ -182,7 +182,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
       if (client.userId === game.adminId) {
         // Admin leaves = game ends
-        broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The admin has ended the game." });
+        broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The admin has ended the game.", players: getPlayerInfo(game, true) });
         removeGame(game.code);
       } else {
         removePlayer(game, client.userId);
@@ -369,13 +369,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
-      if (callVote(game, client.userId, msg.targetId)) {
+      if (callVote(game, client.userId, msg.targetId, msg.anonymous)) {
         const target = game.players.get(msg.targetId)!;
         broadcastToGame(game.code, {
           type: "vote_called",
           targetName: target.username,
           targetId: msg.targetId,
-          anonymous: game.settings.anonymousVoting,
+          anonymous: game.voteAnonymous,
         });
       }
       break;
@@ -418,7 +418,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         votesFor,
         votesAgainst,
         total: getAlivePlayers(game).length,
-        ...(game.settings.anonymousVoting ? {} : { voterNames }),
+        ...(game.voteAnonymous ? {} : { voterNames }),
       });
 
       if (result.allVoted) {
@@ -430,7 +430,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             executed: voteResult.executed,
             votesFor: voteResult.votesFor,
             votesAgainst: voteResult.votesAgainst,
-            ...(game.settings.anonymousVoting ? {} : { voterNames: voteResult.voterNames }),
+            ...(game.voteAnonymous ? {} : { voterNames: voteResult.voterNames }),
           });
 
           for (const k of voteResult.killed) {
@@ -449,6 +449,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               phase: game.phase,
               round: game.round,
               messages: voteResult.messages,
+              events: game.eventHistory,
             });
           }
 
@@ -457,6 +458,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               type: "game_over",
               winner: game.winner!,
               message: voteResult.messages[voteResult.messages.length - 1],
+              players: getPlayerInfo(game, true),
             });
           }
         }
@@ -490,6 +492,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         type: "game_over",
         winner: "town",
         message: "The game has been ended by the admin.",
+        players: getPlayerInfo(game, true),
       });
       endGameEngine(game);
       // Reset all clients in this game
@@ -506,6 +509,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
       game.settings.anonymousVoting = !game.settings.anonymousVoting;
+      game.voteAnonymous = game.settings.anonymousVoting;
       broadcastToGame(game.code, { type: "settings_updated", settings: game.settings });
       break;
     }
@@ -553,6 +557,7 @@ function resolveNightAndTransition(game: Game): void {
     phase: game.phase,
     round: game.round,
     messages: nightResult.messages,
+    events: game.eventHistory,
   });
 
   if (game.phase === "game_over") {
@@ -560,6 +565,7 @@ function resolveNightAndTransition(game: Game): void {
       type: "game_over",
       winner: game.winner!,
       message: nightResult.messages[nightResult.messages.length - 1],
+      players: getPlayerInfo(game, true),
     });
   }
 }
@@ -656,6 +662,7 @@ const server = Bun.serve({
                 type: "game_over",
                 winner: "town",
                 message: "The host has disconnected. Game closed.",
+                players: getPlayerInfo(game, true),
               });
               removeGame(game.code);
             }

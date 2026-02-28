@@ -13,9 +13,15 @@
   let isLover = false;
   let isDead = false;
   let currentPhase = null;
+  let previousPhase = null;
   let soundEnabled = true;
   let hasVoted = false;
   let audioCtx = null;
+  let knownPlayers = [];
+  let dayVoteCount = 0;
+  let suspenseActive = false;
+  let suspenseQueue = [];
+  let anonVoteChecked = true;
 
   // ============================================================
   // DOM REFS
@@ -41,12 +47,11 @@
   // ============================================================
   // WEBSOCKET
   // ============================================================
-  function connect() {
+  function connectPatched() {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${proto}//${location.host}/ws`);
 
     ws.onopen = () => {
-      // Auto-login if saved
       const saved = localStorage.getItem("mafia_user");
       if (saved) {
         const data = JSON.parse(saved);
@@ -56,11 +61,12 @@
 
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
+      trackPlayers(msg);
       handleServerMessage(msg);
     };
 
     ws.onclose = () => {
-      setTimeout(connect, 2000);
+      setTimeout(connectPatched, 2000);
     };
   }
 
@@ -71,9 +77,31 @@
   }
 
   // ============================================================
+  // PLAYER TRACKING (for admin target list)
+  // ============================================================
+  function trackPlayers(msg) {
+    if (msg.type === "lobby_update") {
+      knownPlayers = msg.players;
+    }
+    if (msg.type === "player_died") {
+      const p = knownPlayers.find((pl) => pl.id === msg.playerId);
+      if (p) p.isAlive = false;
+    }
+    if (msg.type === "game_started") {
+      knownPlayers = knownPlayers.map((p) => ({ ...p, isAlive: true }));
+    }
+  }
+
+  // ============================================================
   // SERVER MESSAGE HANDLER
   // ============================================================
   function handleServerMessage(msg) {
+    // During suspense, queue certain messages
+    if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died")) {
+      suspenseQueue.push(msg);
+      return;
+    }
+
     switch (msg.type) {
       case "error":
         showError(msg.message);
@@ -124,8 +152,11 @@
         isLover = msg.isLover;
         isDead = false;
         hasVoted = false;
+        dayVoteCount = 0;
         showScreen("game");
         updateRoleCard();
+        $("event-history").classList.add("hidden");
+        $("event-history-list").innerHTML = "";
         if (isAdmin) $("admin-end-game").classList.remove("hidden");
         break;
 
@@ -166,6 +197,7 @@
         break;
 
       case "vote_called":
+        dayVoteCount++;
         handleVoteCalled(msg);
         break;
 
@@ -178,7 +210,6 @@
         break;
 
       case "player_died":
-        // Another player died
         showNarratorMessage(msg.message);
         break;
 
@@ -223,7 +254,6 @@
     const p = $("auth-passcode").value.trim();
     if (!u || !p) return showAuthError("Enter username and PIN");
     wsSend({ type: "login", username: u, passcode: p });
-    // Save for auto-login
     localStorage.setItem("mafia_user", JSON.stringify({ username: u, passcode: p }));
   });
 
@@ -313,7 +343,6 @@
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
 
-    // Update admin lobby
     $("player-count-admin").textContent = players.length;
     $("players-list-admin").innerHTML = players
       .map(
@@ -322,7 +351,6 @@
       )
       .join("");
 
-    // Update player lobby
     $("player-count-player").textContent = players.length;
     $("admin-name-display").textContent = adminName;
     $("players-list-player").innerHTML = players
@@ -342,6 +370,8 @@
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-lovers").checked = settings.enableLovers;
     $("toggle-anon").checked = settings.anonymousVoting;
+    anonVoteChecked = settings.anonymousVoting;
+    if ($("toggle-anon-vote")) $("toggle-anon-vote").checked = anonVoteChecked;
   }
 
   // ============================================================
@@ -399,7 +429,6 @@
       )
       .join("");
 
-    // Click to load
     list.querySelectorAll("li").forEach((li) => {
       li.addEventListener("click", (e) => {
         if (e.target.classList.contains("config-delete")) return;
@@ -408,7 +437,6 @@
       });
     });
 
-    // Click to delete
     list.querySelectorAll(".config-delete").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -448,16 +476,34 @@
     }
   }
 
+  // ============================================================
+  // PHASE CHANGE (with suspense for night->day)
+  // ============================================================
   function handlePhaseChange(msg) {
+    // Update event history if events are provided
+    if (msg.events && msg.events.length > 0) {
+      renderEventHistory(msg.events);
+    }
+
+    // Night-to-day suspense transition (Phase 5)
+    if (previousPhase === "night" && msg.phase === "day") {
+      showSuspenseTransition(() => {
+        applyPhaseChange(msg);
+      });
+    } else {
+      applyPhaseChange(msg);
+    }
+  }
+
+  function applyPhaseChange(msg) {
+    previousPhase = msg.phase;
     currentPhase = msg.phase;
     $("round-number").textContent = msg.round;
 
-    // Update phase indicator
     const indicator = $("phase-indicator");
     indicator.className = `phase-indicator ${msg.phase}`;
     indicator.textContent = msg.phase === "game_over" ? "GAME OVER" : msg.phase.toUpperCase();
 
-    // Show narrator messages
     if (msg.messages && msg.messages.length > 0) {
       for (const m of msg.messages) {
         showNarratorMessage(m);
@@ -472,12 +518,62 @@
 
     if (msg.phase === "day" && isAdmin && !isDead) {
       showAdminDayControls();
+      setTimeout(() => populateAdminTargets(knownPlayers), 100);
     }
 
     if (msg.phase === "night") {
-      // Night actions will be sent via separate messages (mafia_targets, etc.)
       hasVoted = false;
+      dayVoteCount = 0;
+      $("event-history").classList.add("hidden");
     }
+
+    // Show event history during day/voting
+    if ((msg.phase === "day" || msg.phase === "voting") && $("event-history-list").innerHTML) {
+      $("event-history").classList.remove("hidden");
+    }
+  }
+
+  // ============================================================
+  // SUSPENSE TRANSITION (Phase 5)
+  // ============================================================
+  function showSuspenseTransition(callback) {
+    suspenseActive = true;
+    suspenseQueue = [];
+    const overlay = $("suspense-overlay");
+    const text = $("suspense-text");
+
+    overlay.classList.remove("hidden", "fade-out");
+    text.textContent = "The sun rises...";
+    text.style.animation = "none";
+    // Force reflow
+    void text.offsetWidth;
+    text.style.animation = "suspenseFadeIn 0.8s ease";
+
+    setTimeout(() => {
+      text.textContent = "What happened last night?";
+      text.style.animation = "none";
+      void text.offsetWidth;
+      text.style.animation = "suspenseFadeIn 0.8s ease";
+    }, 2000);
+
+    setTimeout(() => {
+      overlay.classList.add("fade-out");
+    }, 3500);
+
+    setTimeout(() => {
+      overlay.classList.add("hidden");
+      overlay.classList.remove("fade-out");
+      suspenseActive = false;
+
+      // Apply the phase change
+      callback();
+
+      // Process queued messages
+      for (const qMsg of suspenseQueue) {
+        handleServerMessage(qMsg);
+      }
+      suspenseQueue = [];
+    }, 4300);
   }
 
   function showNarratorMessage(text) {
@@ -487,6 +583,47 @@
     div.textContent = text;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+  }
+
+  // ============================================================
+  // EVENT HISTORY (Phase 2)
+  // ============================================================
+  function renderEventHistory(events) {
+    if (!events || events.length === 0) return;
+
+    const container = $("event-history-list");
+    container.innerHTML = "";
+
+    const EVENT_LABELS = {
+      kill: "Killed by Mafia",
+      save: "Saved by Doctor",
+      execution: "Executed",
+      lover_death: "Died of heartbreak",
+      spared: "Spared by vote",
+    };
+
+    // Group by round
+    const grouped = {};
+    for (const ev of events) {
+      if (!grouped[ev.round]) grouped[ev.round] = [];
+      grouped[ev.round].push(ev);
+    }
+
+    for (const round of Object.keys(grouped).sort((a, b) => a - b)) {
+      const header = document.createElement("div");
+      header.className = "event-history-round";
+      header.textContent = `Round ${round}`;
+      container.appendChild(header);
+
+      for (const ev of grouped[round]) {
+        const item = document.createElement("div");
+        item.className = `event-item ${ev.type}`;
+        item.textContent = `${ev.playerName} — ${EVENT_LABELS[ev.type] || ev.type}`;
+        container.appendChild(item);
+      }
+    }
+
+    $("event-history").classList.remove("hidden");
   }
 
   // ============================================================
@@ -507,7 +644,6 @@
 
     list.querySelectorAll("li").forEach((li) => {
       li.addEventListener("click", () => {
-        // Deselect others
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
 
@@ -534,20 +670,29 @@
   }
 
   // ============================================================
-  // DAY VOTING
+  // DAY VOTING (Phase 3: per-vote anon, Phase 4: multi-vote)
   // ============================================================
   function showAdminDayControls() {
     if (!isAdmin || isDead) return;
     const panel = $("admin-day-controls");
     panel.classList.remove("hidden");
 
-    // We need to request the alive players list
-    // For now, build from what we know — server will send player_list if needed
-    // The admin nominates from the target list
-    // We'll populate this when phase changes to day
+    // Update vote count label (Phase 4)
+    const label = $("vote-count-label");
+    if (dayVoteCount > 0) {
+      label.textContent = `(Vote #${dayVoteCount} done)`;
+      $("admin-status-msg").textContent = "Vote failed. Nominate another player or end the day.";
+    } else {
+      label.textContent = "";
+      $("admin-status-msg").textContent = "";
+    }
+
+    // Sync anon toggle
+    if ($("toggle-anon-vote")) {
+      $("toggle-anon-vote").checked = anonVoteChecked;
+    }
   }
 
-  // Populate admin target list on phase change
   function populateAdminTargets(players) {
     const list = $("admin-target-list");
     list.innerHTML = players
@@ -559,8 +704,16 @@
       li.addEventListener("click", () => {
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
-        wsSend({ type: "call_vote", targetId: parseInt(li.dataset.id) });
+        const anon = $("toggle-anon-vote") ? $("toggle-anon-vote").checked : true;
+        wsSend({ type: "call_vote", targetId: parseInt(li.dataset.id), anonymous: anon });
       });
+    });
+  }
+
+  // Per-vote anon toggle (Phase 3)
+  if ($("toggle-anon-vote")) {
+    $("toggle-anon-vote").addEventListener("change", (e) => {
+      anonVoteChecked = e.target.checked;
     });
   }
 
@@ -570,10 +723,6 @@
 
   $("btn-end-day").addEventListener("click", () => {
     wsSend({ type: "end_day" });
-  });
-
-  $("btn-toggle-anon-game") && $("btn-toggle-anon-game").addEventListener("click", () => {
-    wsSend({ type: "toggle_anonymous_voting" });
   });
 
   function handleVoteCalled(msg) {
@@ -587,7 +736,6 @@
     $("vote-progress").textContent = "Waiting for votes...";
     $("vote-names").innerHTML = "";
 
-    // Reset button states
     $("btn-vote-yes").classList.remove("selected");
     $("btn-vote-no").classList.remove("selected");
     $("btn-vote-yes").disabled = false;
@@ -620,7 +768,7 @@
       names.innerHTML = Object.entries(msg.voterNames)
         .map(
           ([name, approved]) =>
-            `<div class="${approved ? "vote-for" : "vote-against"}">${escapeHtml(name)}: ${approved ? "👍" : "👎"}</div>`
+            `<div class="${approved ? "vote-for" : "vote-against"}">${escapeHtml(name)}: ${approved ? "\u{1F44D}" : "\u{1F44E}"}</div>`
         )
         .join("");
     }
@@ -636,19 +784,20 @@
 
     if (msg.voterNames) {
       const breakdown = Object.entries(msg.voterNames)
-        .map(([name, v]) => `${name}: ${v ? "👍" : "👎"}`)
+        .map(([name, v]) => `${name}: ${v ? "\u{1F44D}" : "\u{1F44E}"}`)
         .join(", ");
       showNarratorMessage(`Votes: ${breakdown}`);
     }
 
-    // Re-show admin controls if still day
+    // Re-show admin controls if still day (Phase 4: multi-vote)
     if (isAdmin && !isDead && currentPhase === "day") {
       showAdminDayControls();
+      setTimeout(() => populateAdminTargets(knownPlayers), 100);
     }
   }
 
   // ============================================================
-  // GAME OVER
+  // GAME OVER (Phase 1: show all roles)
   // ============================================================
   $("btn-end-game").addEventListener("click", () => {
     if (confirm("Are you sure you want to end the game?")) {
@@ -673,6 +822,9 @@
       msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
     $("gameover-message").textContent = msg.message;
 
+    // Render role reveal (Phase 1)
+    renderRoleReveal(msg.players);
+
     // Reset state
     gameCode = null;
     isAdmin = false;
@@ -680,10 +832,46 @@
     isLover = false;
     isDead = false;
     currentPhase = null;
+    previousPhase = null;
+    dayVoteCount = 0;
+  }
+
+  function renderRoleReveal(players) {
+    const container = $("role-reveal");
+    if (!players || players.length === 0) {
+      container.innerHTML = "";
+      return;
+    }
+
+    // Build lover pairs lookup
+    const loverPairs = {};
+    for (const p of players) {
+      if (p.isLover && p.loverId) {
+        const partner = players.find((o) => o.id === p.loverId);
+        if (partner) loverPairs[p.id] = partner.username;
+      }
+    }
+
+    container.innerHTML = players
+      .map((p) => {
+        const dead = !p.isAlive;
+        const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">\u2764 ${escapeHtml(loverPairs[p.id])}</span>` : "";
+        const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
+        return `<div class="role-reveal-item${dead ? " dead" : ""}">
+          <span class="role-reveal-name">${escapeHtml(p.username)}</span>
+          <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
+          ${loverText}
+          ${deadText}
+        </div>`;
+      })
+      .join("");
   }
 
   $("btn-back-menu").addEventListener("click", () => {
     $("narrator-messages").innerHTML = "";
+    $("role-reveal").innerHTML = "";
+    $("event-history-list").innerHTML = "";
+    $("event-history").classList.add("hidden");
     showScreen("menu");
   });
 
@@ -712,7 +900,6 @@
       gain.connect(ctx.destination);
 
       if (type === "night") {
-        // Low, eerie tone
         oscillator.type = "sine";
         oscillator.frequency.setValueAtTime(180, ctx.currentTime);
         oscillator.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 1.5);
@@ -721,7 +908,6 @@
         oscillator.start(ctx.currentTime);
         oscillator.stop(ctx.currentTime + 2);
       } else if (type === "day") {
-        // Bright, ascending tone
         oscillator.type = "sine";
         oscillator.frequency.setValueAtTime(330, ctx.currentTime);
         oscillator.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.3);
@@ -730,7 +916,6 @@
         oscillator.start(ctx.currentTime);
         oscillator.stop(ctx.currentTime + 1);
 
-        // Second chime
         const osc2 = ctx.createOscillator();
         const gain2 = ctx.createGain();
         osc2.connect(gain2);
@@ -768,88 +953,8 @@
   }
 
   // ============================================================
-  // KEEP ALIVE PLAYER LIST FOR ADMIN TARGETS
-  // ============================================================
-  // We listen for lobby_update and phase_change to keep track of alive players
-  let knownPlayers = [];
-
-  const origHandler = handleServerMessage;
-  const patchedHandler = function (msg) {
-    if (msg.type === "lobby_update") {
-      knownPlayers = msg.players;
-    }
-    if (msg.type === "phase_change" && msg.phase === "day" && isAdmin && !isDead) {
-      // Use last known players, filter alive
-      setTimeout(() => populateAdminTargets(knownPlayers), 100);
-    }
-    if (msg.type === "player_died") {
-      const p = knownPlayers.find((pl) => pl.id === msg.playerId);
-      if (p) p.isAlive = false;
-    }
-    if (msg.type === "game_started") {
-      // Players are alive at start
-      knownPlayers = knownPlayers.map((p) => ({ ...p, isAlive: true }));
-    }
-  };
-
-  // Wrap the handler
-  const originalOnMessage = handleServerMessage;
-
-  // ============================================================
   // INIT
   // ============================================================
-  function init() {
-    // Register service worker
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
-
-    connect();
-
-    // Patch message handler to also track players
-    const origOnMessage = ws ? ws.onmessage : null;
-    // We handle this in-line instead
-  }
-
-  // Override handleServerMessage to add tracking
-  const _origHandle = handleServerMessage;
-  window._handleMsg = function (msg) {
-    patchedHandler(msg);
-    _origHandle(msg);
-  };
-
-  // Reconnect ws.onmessage after connect
-  const _origConnect = connect;
-
-  // Simpler approach: just patch once
-  // We'll redefine the connect function's onmessage
-  function connectPatched() {
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${proto}//${location.host}/ws`);
-
-    ws.onopen = () => {
-      const saved = localStorage.getItem("mafia_user");
-      if (saved) {
-        const data = JSON.parse(saved);
-        wsSend({ type: "login", username: data.username, passcode: data.passcode });
-      }
-    };
-
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      patchedHandler(msg);
-      handleServerMessage(msg);
-    };
-
-    ws.onclose = () => {
-      setTimeout(connectPatched, 2000);
-    };
-  }
-
-  // Override connect
-  connect = connectPatched;
-
-  // Start
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }

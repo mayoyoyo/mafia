@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, DEFAULT_SETTINGS } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
 
 const games = new Map<string, Game>();
@@ -58,11 +58,13 @@ export function createGame(adminId: number, adminUsername: string): Game {
     detectiveTarget: null,
     voteTarget: null,
     votes: new Map(),
+    voteAnonymous: true,
     nightKill: null,
     doctorSaved: false,
     detectiveResult: null,
     winner: null,
     pendingMessages: [],
+    eventHistory: [],
   };
 
   games.set(code, game);
@@ -114,7 +116,7 @@ export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
     username: p.username,
     isAlive: p.isAlive,
     isAdmin: p.id === game.adminId,
-    ...(includeRoles ? { role: p.role ?? undefined, isLover: p.isLover } : {}),
+    ...(includeRoles ? { role: p.role ?? undefined, isLover: p.isLover, loverId: p.loverId ?? undefined } : {}),
   }));
 }
 
@@ -328,6 +330,19 @@ export function resolveNight(game: Game): NightResult {
 export function transitionToDay(game: Game): NightResult {
   const nightResult = resolveNight(game);
 
+  // Track events
+  if (nightResult.saved && nightResult.savedName) {
+    game.eventHistory.push({ round: game.round, type: "save", playerName: nightResult.savedName });
+  }
+  for (const k of nightResult.killed) {
+    const isLoverDeath = k.player.isLover && nightResult.killed.length > 1 && k !== nightResult.killed[0];
+    game.eventHistory.push({
+      round: game.round,
+      type: isLoverDeath ? "lover_death" : "kill",
+      playerName: k.player.username,
+    });
+  }
+
   // Reset night state
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
@@ -351,7 +366,7 @@ export function transitionToDay(game: Game): NightResult {
   return nightResult;
 }
 
-export function callVote(game: Game, adminId: number, targetId: number): boolean {
+export function callVote(game: Game, adminId: number, targetId: number, anonymous?: boolean): boolean {
   if (game.phase !== "day") return false;
   if (adminId !== game.adminId) return false;
   const target = game.players.get(targetId);
@@ -360,6 +375,9 @@ export function callVote(game: Game, adminId: number, targetId: number): boolean
   game.voteTarget = targetId;
   game.votes.clear();
   game.phase = "voting";
+  if (anonymous !== undefined) {
+    game.voteAnonymous = anonymous;
+  }
   return true;
 }
 
@@ -423,6 +441,7 @@ export function resolveVote(game: Game): VoteResult | null {
       result.messages.push(Narrator.jokerWin(target.username));
       game.winner = "joker";
       game.phase = "game_over";
+      game.eventHistory.push({ round: game.round, type: "execution", playerName: target.username });
       return result;
     }
 
@@ -431,15 +450,18 @@ export function resolveVote(game: Game): VoteResult | null {
       const execMsg = Narrator.execution(killResult.killed.username);
       result.messages.push(execMsg);
       result.killed.push({ player: killResult.killed, message: execMsg });
+      game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
 
       if (killResult.loverKilled) {
         const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
         result.messages.push(loverMsg);
         result.killed.push({ player: killResult.loverKilled, message: loverMsg });
+        game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
       }
     }
   } else {
     result.messages.push(Narrator.executionSpared(target.username));
+    game.eventHistory.push({ round: game.round, type: "spared", playerName: target.username });
   }
 
   // Reset vote state

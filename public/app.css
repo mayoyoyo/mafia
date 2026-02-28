@@ -398,6 +398,123 @@ input::placeholder { color: var(--text-secondary); }
 #config-save-section { display: flex; gap: 8px; margin-bottom: 12px; }
 #config-save-section input { flex: 1; }
 
+/* ROLE REVEAL (Game Over) */
+.role-reveal {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+.role-reveal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 6px;
+}
+.role-reveal-item.dead { opacity: 0.5; }
+.role-reveal-name { font-weight: 600; flex: 1; }
+.role-reveal-role {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 2px 10px;
+  border-radius: 8px;
+}
+.role-reveal-role.mafia { background: var(--role-mafia); color: #fff; }
+.role-reveal-role.citizen { background: var(--role-citizen); color: #fff; }
+.role-reveal-role.doctor { background: var(--role-doctor); color: #fff; }
+.role-reveal-role.detective { background: var(--role-detective); color: #fff; }
+.role-reveal-role.joker { background: var(--role-joker); color: #fff; }
+.role-reveal-lover { font-size: 12px; color: var(--role-lover); margin-left: 8px; }
+.role-reveal-dead { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
+
+/* EVENT HISTORY */
+.event-history {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 16px;
+}
+.event-history-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.event-history-list { font-size: 13px; line-height: 1.6; }
+.event-history-round {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+.event-history-round:first-child { margin-top: 0; }
+.event-item { padding: 2px 0; }
+.event-item.kill { color: var(--danger); }
+.event-item.lover_death { color: var(--role-lover); }
+.event-item.save { color: var(--success); }
+.event-item.execution { color: #ff9800; }
+.event-item.spared { color: var(--text-secondary); }
+
+/* SUSPENSE OVERLAY */
+.suspense-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+  transition: opacity 0.8s ease;
+}
+.suspense-overlay.fade-out { opacity: 0; }
+.suspense-text {
+  font-size: 28px;
+  font-weight: 800;
+  color: #f5f5f5;
+  text-align: center;
+  padding: 0 32px;
+  animation: suspenseFadeIn 0.8s ease;
+}
+@keyframes suspenseFadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ADMIN ANON TOGGLE */
+.admin-anon-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* VOTE COUNT LABEL */
+.vote-count-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* ADMIN STATUS MSG */
+.admin-status-msg {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  min-height: 0;
+}
+.admin-status-msg:empty { display: none; }
+
 /* Responsive fixes */
 @media (max-height: 700px) {
   .logo { padding: 30px 0 20px; }

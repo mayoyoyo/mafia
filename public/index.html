@@ -140,6 +140,12 @@
         <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
       </div>
 
+      <!-- Event History -->
+      <div id="event-history" class="event-history hidden">
+        <h4 class="event-history-title">Event History</h4>
+        <div id="event-history-list" class="event-history-list"></div>
+      </div>
+
       <!-- Narrator Messages -->
       <div id="narrator-area" class="narrator-area">
         <div id="narrator-messages" class="narrator-messages"></div>
@@ -171,15 +177,19 @@
 
       <!-- Admin Day Controls -->
       <div id="admin-day-controls" class="admin-controls hidden">
-        <h3>Admin Controls</h3>
+        <h3>Admin Controls <span id="vote-count-label" class="vote-count-label"></span></h3>
+        <div id="admin-status-msg" class="admin-status-msg"></div>
         <div class="admin-target-section">
           <p>Nominate a player for execution:</p>
           <ul id="admin-target-list" class="target-list"></ul>
         </div>
+        <div class="admin-anon-toggle">
+          <span>Anonymous Vote</span>
+          <label class="toggle"><input type="checkbox" id="toggle-anon-vote" checked><span class="slider"></span></label>
+        </div>
         <div class="admin-buttons">
           <button id="btn-abstain" class="btn btn-secondary">Abstain</button>
           <button id="btn-end-day" class="btn btn-primary">End Day</button>
-          <button id="btn-toggle-anon-game" class="btn btn-ghost btn-small">Toggle Anon Vote</button>
         </div>
       </div>
 
@@ -201,8 +211,14 @@
       <div class="gameover-content">
         <h1 id="gameover-title"></h1>
         <p id="gameover-message"></p>
+        <div id="role-reveal" class="role-reveal"></div>
         <button id="btn-back-menu" class="btn btn-primary btn-large">Back to Menu</button>
       </div>
+    </div>
+
+    <!-- SUSPENSE OVERLAY -->
+    <div id="suspense-overlay" class="suspense-overlay hidden">
+      <div id="suspense-text" class="suspense-text"></div>
     </div>
 
     <!-- CONFIG MODAL -->

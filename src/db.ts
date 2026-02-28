@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import path from "path";
 
-const DB_PATH = path.join(import.meta.dir, "..", "mafia.db");
+const DB_PATH = process.env.DATABASE_PATH || path.join(import.meta.dir, "..", "mafia.db");
 
 let db: Database;
 

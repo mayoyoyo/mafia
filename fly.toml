@@ -1,0 +1,23 @@
+app = "mafia-party-game"
+primary_region = "sjc"
+
+[build]
+
+[env]
+  PORT = "3000"
+  DATABASE_PATH = "/data/mafia.db"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[mounts]
+  source = "mafia_data"
+  destination = "/data"

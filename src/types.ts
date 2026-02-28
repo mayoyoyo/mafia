@@ -47,6 +47,7 @@ export interface Game {
   // Day voting
   voteTarget: number | null; // who is being voted on
   votes: Map<number, boolean>; // playerId -> thumbsUp(true)/thumbsDown(false)
+  voteAnonymous: boolean; // per-vote anonymous toggle
   // Results
   nightKill: number | null; // who was killed at night (after doctor check)
   doctorSaved: boolean;
@@ -54,6 +55,8 @@ export interface Game {
   winner: "town" | "mafia" | "joker" | null;
   // Narrator
   pendingMessages: string[];
+  // Event history
+  eventHistory: GameEvent[];
 }
 
 export interface SavedConfig {
@@ -79,7 +82,7 @@ export type ClientMessage =
   | { type: "mafia_vote"; targetId: number }
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
-  | { type: "call_vote"; targetId: number }
+  | { type: "call_vote"; targetId: number; anonymous?: boolean }
   | { type: "abstain_vote" }
   | { type: "cast_vote"; approve: boolean }
   | { type: "end_day" }
@@ -96,7 +99,7 @@ export type ServerMessage =
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean }
-  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[] }
+  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[] }
   | { type: "mafia_vote_update"; votes: Record<string, number>; voters: string[] }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[] }
@@ -107,7 +110,7 @@ export type ServerMessage =
   | { type: "vote_result"; targetName: string; executed: boolean; votesFor: number; votesAgainst: number; voterNames?: Record<string, boolean> }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string }
-  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string }
+  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; players?: PlayerInfo[] }
   | { type: "configs_list"; configs: SavedConfig[] }
   | { type: "config_saved"; config: SavedConfig }
   | { type: "config_deleted"; configId: number }
@@ -122,6 +125,14 @@ export interface PlayerInfo {
   isAdmin: boolean;
   role?: Role;
   isLover?: boolean;
+  loverId?: number;
+}
+
+export interface GameEvent {
+  round: number;
+  type: "kill" | "save" | "execution" | "lover_death" | "spared";
+  playerName: string;
+  detail?: string;
 }
 
 export interface WSClient {
