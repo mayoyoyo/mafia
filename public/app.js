@@ -31,6 +31,15 @@
   let lastGameEvents = [];
 
   // ============================================================
+  // DAY/NIGHT THEME
+  // ============================================================
+  function setDayTheme(enabled) {
+    document.documentElement.classList.toggle("day-theme", enabled);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", enabled ? "#f5f0e8" : "#0a0a0a");
+  }
+
+  // ============================================================
   // DOM REFS
   // ============================================================
   const $ = (id) => document.getElementById(id);
@@ -197,6 +206,7 @@
         mafiaConfirmTarget = null;
         lastGameEvents = [];
         stopDayTimer();
+        setDayTheme(false);
         showScreen("game");
         updateRoleCard();
         // Card starts face-down
@@ -246,7 +256,7 @@
         // If mafia and another mafia confirmed, collapse our target list too
         if (myRole === "mafia" && !nightActionLocked && mafiaConfirmTarget) {
           nightActionLocked = true;
-          $("btn-confirm-action").classList.add("hidden");
+          hideSlideConfirm();
           $("action-targets").innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
         }
         break;
@@ -298,6 +308,7 @@
         narratorTranscript = [];
         resetEventHistoryTabs();
         closeSettingsModal();
+        setDayTheme(false);
         showScreen("menu");
         break;
 
@@ -332,6 +343,9 @@
     // 4. Set phase
     currentPhase = msg.phase;
     previousPhase = msg.phase;
+
+    // 4b. Theme based on phase
+    setDayTheme(msg.phase === "day" || msg.phase === "voting");
 
     // 5. Restore accumulated state
     dayVoteCount = msg.dayVoteCount;
@@ -423,7 +437,7 @@
           const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : "Investigating";
           $("action-title").textContent = roleLabel;
           $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
-          $("btn-confirm-action").classList.add("hidden");
+          hideSlideConfirm();
           $("action-status").textContent = "Action confirmed.";
           nightActionLocked = true;
           if (myRole === "mafia") {
@@ -506,6 +520,7 @@
     username = null;
     gameCode = null;
     isAdmin = false;
+    setDayTheme(false);
     showScreen("auth");
   });
 
@@ -543,6 +558,7 @@
     gameCode = null;
     isAdmin = false;
     localStorage.removeItem("mafia_game_code");
+    setDayTheme(false);
     showScreen("menu");
   });
 
@@ -550,6 +566,7 @@
     wsSend({ type: "leave_game" });
     gameCode = null;
     localStorage.removeItem("mafia_game_code");
+    setDayTheme(false);
     showScreen("menu");
   });
 
@@ -941,6 +958,72 @@
     [_,_,_,_,"#aaa","#aaa","#aaa",_,_,_],
   ];
 
+  const THUMB_UP_ART = [
+    [_,_,_,_,_,"#fdd",_,_,_,_],
+    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
+    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
+    [_,"#fdd",_,_,"#fdd","#fdd",_,_,_,_],
+    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+    [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
+    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
+    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
+    [_,_,_,_,"#fdd","#fdd","#fdd","#fdd",_,_],
+  ];
+
+  const THUMB_DOWN_ART = [
+    [_,_,_,_,"#fdd","#fdd","#fdd","#fdd",_,_],
+    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
+    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
+    [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
+    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+    [_,"#fdd",_,_,"#fdd","#fdd",_,_,_,_],
+    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
+    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
+    [_,_,_,_,_,"#fdd",_,_,_,_],
+  ];
+
+  // Slide-to-confirm pixel art icons
+  const KNIFE_ART = [
+    [_,_,_,_,_,_,_,"#ccc","#ccc",_],
+    [_,_,_,_,_,_,"#ccc","#eee","#ccc",_],
+    [_,_,_,_,_,"#ccc","#eee","#ccc",_,_],
+    [_,_,_,_,"#ccc","#eee","#ccc",_,_,_],
+    [_,_,_,"#ccc","#eee","#ccc",_,_,_,_],
+    [_,_,"#ccc","#eee","#ccc",_,_,_,_,_],
+    [_,"#ccc","#eee","#ccc",_,_,_,_,_,_],
+    [_,"#a62","#ccc",_,_,_,_,_,_,_],
+    [_,"#a62","#a62",_,_,_,_,_,_,_],
+    [_,_,"#a62",_,_,_,_,_,_,_],
+  ];
+
+  const SYRINGE_ART = [
+    [_,_,_,_,_,_,_,_,"#29f",_],
+    [_,_,_,_,_,_,_,"#29f","#29f",_],
+    [_,_,_,_,_,_,"#29f","#fff","#29f",_],
+    [_,_,_,_,_,"#29f","#fff","#29f",_,_],
+    [_,_,_,_,"#29f","#fff","#29f",_,_,_],
+    [_,_,_,"#ccc","#fff","#29f",_,_,_,_],
+    [_,_,"#ccc","#fff","#ccc",_,_,_,_,_],
+    [_,"#ccc","#fff","#ccc",_,_,_,_,_,_],
+    [_,"#ccc","#ccc",_,_,_,_,_,_,_],
+    [_,"#888",_,_,_,_,_,_,_,_],
+  ];
+
+  const MAGNIFIER_ART = [
+    [_,_,_,"#9c27b0","#9c27b0","#9c27b0",_,_,_,_],
+    [_,_,"#9c27b0",_,_,_,"#9c27b0",_,_,_],
+    [_,"#9c27b0",_,_,_,_,_,"#9c27b0",_,_],
+    [_,"#9c27b0",_,_,_,_,_,"#9c27b0",_,_],
+    [_,_,"#9c27b0",_,_,_,"#9c27b0",_,_,_],
+    [_,_,_,"#9c27b0","#9c27b0","#9c27b0",_,_,_,_],
+    [_,_,_,_,_,_,"#a62",_,_,_],
+    [_,_,_,_,_,_,_,"#a62",_,_],
+    [_,_,_,_,_,_,_,_,"#a62",_],
+    [_,_,_,_,_,_,_,_,_,_],
+  ];
+
   function getRoleImage(role, variant) {
     if (role === "citizen") {
       const grids = PIXEL_ART.citizen;
@@ -995,6 +1078,12 @@
       miniEl.innerHTML = getRoleImage(myRole, myVariant);
     } else {
       miniEl.innerHTML = "";
+    }
+    // Heart balloon for lovers
+    if (isLover) {
+      $("role-mini-balloon").classList.remove("hidden");
+    } else {
+      $("role-mini-balloon").classList.add("hidden");
     }
   }
 
@@ -1089,6 +1178,124 @@
   })();
 
   // ============================================================
+  // SLIDE-TO-CONFIRM
+  // ============================================================
+  let slideCallback = null;
+
+  function setupSlideConfirm(role, callback) {
+    const container = $("slide-confirm");
+    const icon = $("slide-icon");
+    const label = $("slide-label");
+    const fill = $("slide-fill");
+
+    // Reset state
+    container.className = "slide-confirm";
+    container.classList.add(`role-${role}`);
+    container.classList.remove("confirmed", "dragging");
+    icon.style.left = "4px";
+    fill.style.width = "0";
+    fill.classList.remove("dripping");
+
+    // Set role-specific icon and label
+    const iconArt = role === "mafia" ? KNIFE_ART
+      : role === "doctor" ? SYRINGE_ART : MAGNIFIER_ART;
+    icon.innerHTML = pixelArtToSvg(iconArt);
+
+    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate" };
+    label.textContent = labels[role] || "slide to confirm";
+
+    slideCallback = callback;
+  }
+
+  function hideSlideConfirm() {
+    const container = $("slide-confirm");
+    container.classList.add("hidden");
+    container.classList.remove("confirmed", "dragging");
+    slideCallback = null;
+  }
+
+  // Slide drag handlers
+  (function () {
+    const container = $("slide-confirm");
+    const icon = $("slide-icon");
+    const fill = $("slide-fill");
+    const THRESHOLD = 0.85;
+    let dragging = false;
+    let startX = 0;
+    let trackWidth = 0;
+    let iconWidth = 48;
+    let padding = 4;
+
+    function onStart(e) {
+      if (!slideCallback) return;
+      if (container.classList.contains("confirmed")) return;
+      const touch = e.touches ? e.touches[0] : e;
+      // Only start if touching the icon
+      const iconRect = icon.getBoundingClientRect();
+      const dx = touch.clientX - iconRect.left;
+      const dy = touch.clientY - iconRect.top;
+      if (dx < 0 || dx > iconRect.width || dy < 0 || dy > iconRect.height) return;
+      e.preventDefault();
+      dragging = true;
+      startX = touch.clientX - icon.offsetLeft;
+      const trackEl = container.querySelector(".slide-track");
+      trackWidth = trackEl.offsetWidth;
+      container.classList.add("dragging");
+    }
+
+    function onMove(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      const touch = e.touches ? e.touches[0] : e;
+      const maxLeft = trackWidth - iconWidth - padding;
+      let newLeft = Math.max(padding, Math.min(maxLeft, touch.clientX - startX));
+      icon.style.left = newLeft + "px";
+      fill.style.width = (newLeft + iconWidth / 2) + "px";
+
+      const pct = (newLeft - padding) / (maxLeft - padding);
+      if (pct > 0.3 && container.classList.contains("role-mafia")) {
+        fill.classList.add("dripping");
+      } else {
+        fill.classList.remove("dripping");
+      }
+    }
+
+    function onEnd(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      dragging = false;
+      container.classList.remove("dragging");
+
+      const maxLeft = trackWidth - iconWidth - padding;
+      const currentLeft = icon.offsetLeft;
+      const pct = (currentLeft - padding) / (maxLeft - padding);
+
+      if (pct >= THRESHOLD && slideCallback) {
+        // Confirmed
+        container.classList.add("confirmed");
+        $("slide-label").textContent = "confirmed";
+        fill.classList.remove("dripping");
+        const cb = slideCallback;
+        slideCallback = null;
+        cb();
+        setTimeout(() => hideSlideConfirm(), 400);
+      } else {
+        // Snap back
+        icon.style.left = "4px";
+        fill.style.width = "0";
+        fill.classList.remove("dripping");
+      }
+    }
+
+    container.addEventListener("touchstart", onStart, { passive: false });
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd, { passive: false });
+    container.addEventListener("mousedown", onStart);
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onEnd);
+  })();
+
+  // ============================================================
   // DAY TIMER
   // ============================================================
   function startDayTimer(fromTimestamp) {
@@ -1135,6 +1342,7 @@
   function applyPhaseChange(msg) {
     previousPhase = msg.phase;
     currentPhase = msg.phase;
+    setDayTheme(msg.phase === "day" || msg.phase === "voting");
     $("round-number").textContent = msg.round;
 
     const indicator = $("phase-indicator");
@@ -1399,9 +1607,7 @@
     $("action-status").textContent = "";
     nightActionLocked = false;
 
-    const confirmBtn = $("btn-confirm-action");
-    confirmBtn.classList.add("hidden");
-    confirmBtn.replaceWith(confirmBtn.cloneNode(true)); // remove old listeners
+    hideSlideConfirm();
 
     const list = $("action-targets");
     list.innerHTML = players
@@ -1427,7 +1633,7 @@
       });
       $("mafia-vote-status").classList.remove("hidden");
     } else {
-      // Doctor/Detective: clicking selects visually, Confirm sends to server
+      // Doctor/Detective: clicking selects visually, slide-to-confirm sends to server
       let selectedName = null;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
@@ -1436,17 +1642,14 @@
           li.classList.add("selected");
           selectedTargetId = parseInt(li.dataset.id);
           selectedName = li.textContent;
-          $("btn-confirm-action").classList.remove("hidden");
+          setupSlideConfirm(myRole, () => {
+            if (nightActionLocked || selectedTargetId === null) return;
+            nightActionLocked = true;
+            wsSend({ type: actionType, targetId: selectedTargetId });
+            // Collapse to show only chosen target
+            list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
+          });
         });
-      });
-
-      $("btn-confirm-action").addEventListener("click", () => {
-        if (nightActionLocked || selectedTargetId === null) return;
-        nightActionLocked = true;
-        wsSend({ type: actionType, targetId: selectedTargetId });
-        $("btn-confirm-action").classList.add("hidden");
-        // Collapse to show only chosen target
-        list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
       });
     }
   }
@@ -1462,9 +1665,9 @@
       .map(([voter, target]) => `<div><span style="color:#d32f2f;font-weight:bold">${escapeHtml(voter)}</span> votes ${escapeHtml(target)}</div>`)
       .join("");
 
-    // Hide confirm button on any vote change (will be re-shown by mafia_confirm_ready if unanimous)
+    // Hide slide on any vote change (will be re-shown by mafia_confirm_ready if unanimous)
     if (!nightActionLocked) {
-      $("btn-confirm-action").classList.add("hidden");
+      hideSlideConfirm();
       $("action-status").textContent = "";
       mafiaConfirmTarget = null;
     }
@@ -1474,19 +1677,10 @@
     if (nightActionLocked) return;
     mafiaConfirmTarget = msg.targetName;
     $("action-status").textContent = `Unanimous! Target: ${msg.targetName}. Confirm to lock in.`;
-    const confirmBtn = $("btn-confirm-action");
-    confirmBtn.classList.remove("hidden");
-    confirmBtn.textContent = "Confirm Kill";
-
-    // Remove old listeners
-    const newBtn = confirmBtn.cloneNode(true);
-    confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
-
-    newBtn.addEventListener("click", () => {
+    setupSlideConfirm("mafia", () => {
       if (nightActionLocked) return;
       nightActionLocked = true;
       wsSend({ type: "confirm_mafia_kill" });
-      newBtn.classList.add("hidden");
       // Collapse to show only chosen target
       const list = $("action-targets");
       list.innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
@@ -1717,6 +1911,7 @@
       localStorage.removeItem("mafia_game_code");
       gameCode = null;
       isAdmin = false;
+      setDayTheme(false);
       closeSettingsModal();
       showScreen("menu");
     }
@@ -1729,6 +1924,7 @@
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
     closeSettingsModal();
+    setDayTheme(false);
 
     // Reset gameplay state but keep gameCode/isAdmin for Play Again
     const savedIsAdmin = isAdmin;
@@ -1976,6 +2172,7 @@
     closeSettingsModal();
     gameCode = null;
     isAdmin = false;
+    setDayTheme(false);
     showScreen("menu");
   });
 
@@ -2060,8 +2257,10 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.29_202602281529";
+  const APP_VERSION = "v1.30_202602281555";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
+  $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
+  $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

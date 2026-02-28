@@ -26,6 +26,16 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+:root.day-theme {
+  --bg: #f5f0e8;
+  --bg-card: #ede8df;
+  --bg-elevated: #e8e3da;
+  --bg-input: #e8e3da;
+  --text: #2c2c2e;
+  --text-secondary: #6e6e73;
+  --border: #d1ccc3;
+}
+
 html, body {
   height: 100%;
   background: var(--bg);
@@ -38,6 +48,25 @@ html, body {
   overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
+  transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+.settings-panel,
+.action-panel,
+.narrator-area,
+.vote-status,
+.voting-panel,
+.admin-controls,
+.event-history,
+.players-list li,
+.modal-content,
+.detective-result,
+.target-list li,
+.config-list li,
+.role-reveal-item,
+input[type="text"],
+input[type="tel"] {
+  transition: background-color 0.5s ease, color 0.5s ease, border-color 0.5s ease;
 }
 
 #app {
@@ -78,6 +107,7 @@ html, body {
 
 /* VOTE BUTTONS */
 .btn-vote { width: 80px; height: 80px; border-radius: 50%; font-size: 40px; display: flex; align-items: center; justify-content: center; }
+.btn-vote svg { width: 40px; height: 40px; image-rendering: pixelated; }
 .btn-vote-yes { background: var(--success); }
 .btn-vote-no { background: var(--danger); }
 .btn-vote.selected { box-shadow: 0 0 0 4px #fff; }
@@ -351,6 +381,21 @@ input::placeholder { color: var(--text-secondary); }
   opacity: 0.85;
 }
 .role-icon-mini svg { width: 32px; height: 32px; display: block; }
+.role-mini-balloon {
+  position: absolute;
+  bottom: 36px;
+  right: 21px;
+  width: 14px;
+  height: 20px;
+  image-rendering: pixelated;
+  pointer-events: none;
+  animation: balloon-float 3s ease-in-out infinite;
+}
+.role-mini-balloon svg { width: 14px; height: 20px; display: block; }
+@keyframes balloon-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
 
 /* NARRATOR */
 .narrator-area {
@@ -410,7 +455,96 @@ input::placeholder { color: var(--text-secondary); }
 .target-list li:active { background: var(--primary); }
 .target-list li.selected { background: var(--primary); border-color: var(--primary); }
 .target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
-.btn-confirm-action { width: 100%; margin-top: 12px; }
+/* SLIDE-TO-CONFIRM */
+.slide-confirm { width: 100%; margin-top: 12px; }
+.slide-track {
+  position: relative;
+  height: 56px;
+  border-radius: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.slide-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  pointer-events: none;
+  z-index: 1;
+}
+.slide-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-radius: 28px 0 0 28px;
+  z-index: 0;
+  transition: width 0.15s ease;
+}
+.slide-confirm.dragging .slide-fill { transition: none; }
+.slide-confirm.role-mafia .slide-fill {
+  background: linear-gradient(90deg, rgba(211,47,47,0.3), rgba(211,47,47,0.6));
+}
+.slide-confirm.role-doctor .slide-fill {
+  background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
+}
+.slide-confirm.role-detective .slide-fill {
+  background: linear-gradient(90deg, rgba(156,39,176,0.3), rgba(156,39,176,0.6));
+}
+.slide-confirm.role-mafia .slide-fill.dripping::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  background: #d32f2f;
+  border-radius: 0 0 2px 2px;
+  animation: blood-drip 0.8s ease-in infinite;
+}
+@keyframes blood-drip {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(16px); opacity: 0; }
+}
+.slide-icon {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  cursor: grab;
+  transition: left 0.15s ease;
+}
+.slide-confirm.dragging .slide-icon { transition: none; cursor: grabbing; }
+.slide-icon svg { width: 28px; height: 28px; image-rendering: pixelated; }
+.slide-confirm.confirmed .slide-track {
+  background: var(--success);
+  border-color: var(--success);
+}
+.slide-confirm.confirmed .slide-label {
+  color: #fff;
+  font-weight: 700;
+}
+.slide-confirm.confirmed .slide-fill { width: 100% !important; opacity: 0; }
+.slide-confirm.confirmed .slide-icon { opacity: 0; }
 .action-status { font-size: 14px; color: var(--text-secondary); margin-top: 8px; text-align: center; }
 
 /* VOTE STATUS */

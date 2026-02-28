@@ -229,6 +229,21 @@
             <div id="role-description" class="role-description"></div>
             <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
             <div id="role-icon-mini" class="role-icon-mini"></div>
+            <div id="role-mini-balloon" class="role-mini-balloon hidden">
+              <svg viewBox="0 0 7 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+                <rect x="1" y="0" width="2" height="1" fill="#e91e63"/>
+                <rect x="4" y="0" width="2" height="1" fill="#e91e63"/>
+                <rect x="0" y="1" width="7" height="1" fill="#e91e63"/>
+                <rect x="0" y="2" width="7" height="1" fill="#e91e63"/>
+                <rect x="1" y="3" width="5" height="1" fill="#e91e63"/>
+                <rect x="2" y="4" width="3" height="1" fill="#e91e63"/>
+                <rect x="3" y="5" width="1" height="1" fill="#e91e63"/>
+                <rect x="3" y="6" width="1" height="1" fill="#5a5a8a"/>
+                <rect x="3" y="7" width="1" height="1" fill="#5a5a8a"/>
+                <rect x="3" y="8" width="1" height="1" fill="#5a5a8a"/>
+                <rect x="3" y="9" width="1" height="1" fill="#5a5a8a"/>
+              </svg>
+            </div>
           </div>
           <div class="card-back">
             <div id="card-back-art" class="card-back-art"></div>
@@ -269,7 +284,13 @@
       <div id="night-actions" class="action-panel hidden">
         <h3 id="action-title"></h3>
         <ul id="action-targets" class="target-list"></ul>
-        <button id="btn-confirm-action" class="btn btn-primary btn-confirm-action hidden">Confirm</button>
+        <div id="slide-confirm" class="slide-confirm hidden">
+          <div class="slide-track">
+            <div class="slide-label" id="slide-label">slide to confirm</div>
+            <div class="slide-fill" id="slide-fill"></div>
+            <div class="slide-icon" id="slide-icon"></div>
+          </div>
+        </div>
         <div id="action-status" class="action-status"></div>
       </div>
 
@@ -288,8 +309,8 @@
       <div id="voting-panel" class="voting-panel hidden">
         <h3>Vote: Execute <span id="vote-target-name"></span>?</h3>
         <div id="vote-buttons-wrapper" class="vote-buttons">
-          <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes">&#128077;</button>
-          <button id="btn-vote-no" class="btn btn-vote btn-vote-no">&#128078;</button>
+          <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes"></button>
+          <button id="btn-vote-no" class="btn btn-vote btn-vote-no"></button>
         </div>
         <div id="vote-progress" class="vote-progress"></div>
         <div id="vote-names" class="vote-names"></div>
