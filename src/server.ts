@@ -1,0 +1,670 @@
+import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig } from "./db";
+import {
+  createGame, getGame, removeGame, addPlayer, removePlayer, updateSettings,
+  getPlayerInfo, startGame, submitMafiaVote, submitDoctorSave,
+  submitDetectiveInvestigation, checkNightReady, transitionToDay,
+  callVote, castVote, resolveVote, endDay, endGame as endGameEngine,
+  getAlivePlayers, getAliveByRole, getMafiaVoteStatus,
+} from "./game-engine";
+import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
+import path from "path";
+import fs from "fs";
+
+// Initialize database
+getDb();
+
+const PORT = parseInt(process.env.PORT || "3000");
+const PUBLIC_DIR = path.join(import.meta.dir, "..", "public");
+
+// Track connected clients
+const clients = new Map<any, WSClient>();
+
+function send(ws: any, msg: ServerMessage): void {
+  try {
+    ws.send(JSON.stringify(msg));
+  } catch { /* client disconnected */ }
+}
+
+function broadcastToGame(gameCode: string, msg: ServerMessage, excludeUserId?: number): void {
+  for (const [ws, client] of clients) {
+    if (client.gameCode === gameCode && client.userId !== excludeUserId) {
+      send(ws, msg);
+    }
+  }
+}
+
+function sendToUser(userId: number, msg: ServerMessage): void {
+  for (const [ws, client] of clients) {
+    if (client.userId === userId) {
+      send(ws, msg);
+    }
+  }
+}
+
+function broadcastLobbyUpdate(game: Game): void {
+  const players = getPlayerInfo(game);
+  const admin = game.players.get(game.adminId);
+  broadcastToGame(game.code, {
+    type: "lobby_update",
+    players,
+    settings: game.settings,
+    adminName: admin?.username ?? "Unknown",
+  });
+}
+
+function sendNightActionPrompts(game: Game): void {
+  // Send mafia their targets
+  const aliveMafia = getAliveByRole(game, "mafia");
+  const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
+  const mafiaTargets = aliveNonMafia.map((p) => ({
+    id: p.id,
+    username: p.username,
+    isAlive: true,
+    isAdmin: p.id === game.adminId,
+  }));
+
+  for (const m of aliveMafia) {
+    sendToUser(m.id, { type: "mafia_targets", players: mafiaTargets });
+  }
+
+  // Send doctor their targets
+  const aliveDoctor = getAliveByRole(game, "doctor");
+  if (aliveDoctor.length > 0) {
+    const allAlive = getAlivePlayers(game).map((p) => ({
+      id: p.id,
+      username: p.username,
+      isAlive: true,
+      isAdmin: p.id === game.adminId,
+    }));
+    for (const d of aliveDoctor) {
+      sendToUser(d.id, { type: "doctor_targets", players: allAlive });
+    }
+  }
+
+  // Send detective their targets
+  const aliveDetective = getAliveByRole(game, "detective");
+  if (aliveDetective.length > 0) {
+    const allAliveExceptSelf = getAlivePlayers(game)
+      .filter((p) => p.role !== "detective")
+      .map((p) => ({
+        id: p.id,
+        username: p.username,
+        isAlive: true,
+        isAdmin: p.id === game.adminId,
+      }));
+    for (const d of aliveDetective) {
+      sendToUser(d.id, { type: "detective_targets", players: allAliveExceptSelf });
+    }
+  }
+}
+
+function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
+  switch (msg.type) {
+    case "register": {
+      if (!msg.username || msg.username.trim().length === 0) {
+        send(ws, { type: "error", message: "Username is required" });
+        return;
+      }
+      if (!msg.passcode || !/^\d{4}$/.test(msg.passcode)) {
+        send(ws, { type: "error", message: "Passcode must be exactly 4 digits" });
+        return;
+      }
+      const userId = createUser(msg.username.trim(), msg.passcode);
+      if (userId === null) {
+        send(ws, { type: "error", message: "Username already taken" });
+        return;
+      }
+      client.userId = userId;
+      send(ws, { type: "registered", userId, username: msg.username.trim() });
+      break;
+    }
+
+    case "login": {
+      const user = loginUser(msg.username, msg.passcode);
+      if (!user) {
+        send(ws, { type: "error", message: "Invalid username or passcode" });
+        return;
+      }
+      client.userId = user.id;
+      send(ws, { type: "logged_in", userId: user.id, username: user.username });
+      break;
+    }
+
+    case "create_game": {
+      if (!client.userId) {
+        send(ws, { type: "error", message: "Not logged in" });
+        return;
+      }
+      if (client.gameCode) {
+        send(ws, { type: "error", message: "Already in a game" });
+        return;
+      }
+      const game = createGame(client.userId, getUsernameFromClients(client.userId));
+      client.gameCode = game.code;
+      send(ws, { type: "game_created", code: game.code });
+      broadcastLobbyUpdate(game);
+      break;
+    }
+
+    case "join_game": {
+      if (!client.userId) {
+        send(ws, { type: "error", message: "Not logged in" });
+        return;
+      }
+      if (client.gameCode) {
+        send(ws, { type: "error", message: "Already in a game" });
+        return;
+      }
+      const code = msg.code.toUpperCase();
+      const game = getGame(code);
+      if (!game) {
+        send(ws, { type: "error", message: "Game not found" });
+        return;
+      }
+      const username = getUsernameFromClients(client.userId);
+      const player = addPlayer(game, client.userId, username);
+      if (!player) {
+        send(ws, { type: "error", message: "Cannot join: game full or already started" });
+        return;
+      }
+      client.gameCode = code;
+      send(ws, { type: "game_joined", code, isAdmin: client.userId === game.adminId });
+      broadcastLobbyUpdate(game);
+      break;
+    }
+
+    case "leave_game": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) {
+        client.gameCode = null;
+        return;
+      }
+      if (client.userId === game.adminId) {
+        // Admin leaves = game ends
+        broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The admin has ended the game." });
+        removeGame(game.code);
+      } else {
+        removePlayer(game, client.userId);
+        broadcastLobbyUpdate(game);
+      }
+      client.gameCode = null;
+      break;
+    }
+
+    case "update_settings": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+      if (game.phase !== "lobby") return;
+      updateSettings(game, msg.settings);
+      send(ws, { type: "settings_updated", settings: game.settings });
+      broadcastLobbyUpdate(game);
+      break;
+    }
+
+    case "save_config": {
+      if (!client.userId) return;
+      const game = client.gameCode ? getGame(client.gameCode) : null;
+      const settings = game ? game.settings : null;
+      if (!settings) {
+        send(ws, { type: "error", message: "No game settings to save" });
+        return;
+      }
+      const configId = saveConfig(client.userId, msg.name, JSON.stringify(settings));
+      send(ws, {
+        type: "config_saved",
+        config: { id: configId, adminId: client.userId, name: msg.name, settings },
+      });
+      break;
+    }
+
+    case "load_config": {
+      if (!client.userId || !client.gameCode) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId || game.phase !== "lobby") return;
+      const config = getConfig(msg.configId);
+      if (!config || config.admin_id !== client.userId) {
+        send(ws, { type: "error", message: "Config not found" });
+        return;
+      }
+      const loadedSettings = JSON.parse(config.settings_json) as GameSettings;
+      updateSettings(game, loadedSettings);
+      send(ws, { type: "settings_updated", settings: game.settings });
+      broadcastLobbyUpdate(game);
+      break;
+    }
+
+    case "list_configs": {
+      if (!client.userId) return;
+      const configs = getConfigs(client.userId);
+      send(ws, {
+        type: "configs_list",
+        configs: configs.map((c) => ({
+          id: c.id,
+          adminId: c.admin_id,
+          name: c.name,
+          settings: JSON.parse(c.settings_json),
+        })),
+      });
+      break;
+    }
+
+    case "delete_config": {
+      if (!client.userId) return;
+      const deleted = deleteConfig(msg.configId, client.userId);
+      if (deleted) {
+        send(ws, { type: "config_deleted", configId: msg.configId });
+      }
+      break;
+    }
+
+    case "start_game": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) {
+        send(ws, { type: "error", message: "Only the admin can start the game" });
+        return;
+      }
+      const messages = startGame(game);
+      if (!messages) {
+        send(ws, { type: "error", message: "Need at least 3 players to start" });
+        return;
+      }
+
+      // Send each player their role
+      for (const [playerId, player] of game.players) {
+        sendToUser(playerId, {
+          type: "game_started",
+          role: player.role!,
+          isLover: player.isLover,
+        });
+      }
+
+      // Send night phase
+      broadcastToGame(game.code, {
+        type: "phase_change",
+        phase: "night",
+        round: game.round,
+        messages,
+      });
+
+      // Sound cue
+      broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
+
+      // Send night action prompts
+      sendNightActionPrompts(game);
+      break;
+    }
+
+    case "mafia_vote": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) return;
+
+      const result = submitMafiaVote(game, client.userId, msg.targetId);
+
+      // Broadcast vote status to all mafia
+      const status = getMafiaVoteStatus(game);
+      const aliveMafia = getAliveByRole(game, "mafia");
+      for (const m of aliveMafia) {
+        sendToUser(m.id, { type: "mafia_vote_update", votes: status.votes, voters: status.voters });
+      }
+
+      if (result.allVoted && result.target !== null) {
+        // Mafia agreed - notify them
+        for (const m of aliveMafia) {
+          sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
+        }
+        // Check if night is ready to resolve
+        if (checkNightReady(game)) {
+          resolveNightAndTransition(game);
+        }
+      } else if (result.allVoted && result.target === null) {
+        // All voted but not unanimous - reset
+        game.mafiaVotes.clear();
+        for (const m of aliveMafia) {
+          sendToUser(m.id, { type: "night_action_done", message: "The Mafia could not agree. Vote again." });
+        }
+        sendNightActionPrompts(game);
+      }
+      break;
+    }
+
+    case "doctor_save": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) return;
+
+      const saved = submitDoctorSave(game, client.userId, msg.targetId);
+      if (saved) {
+        sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
+        if (checkNightReady(game)) {
+          resolveNightAndTransition(game);
+        }
+      }
+      break;
+    }
+
+    case "detective_investigate": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) return;
+
+      const result = submitDetectiveInvestigation(game, client.userId, msg.targetId);
+      if (result) {
+        sendToUser(client.userId, {
+          type: "night_action_done",
+          message: "You have chosen to investigate someone tonight. Results will be revealed at dawn.",
+        });
+        if (checkNightReady(game)) {
+          resolveNightAndTransition(game);
+        }
+      }
+      break;
+    }
+
+    case "call_vote": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+
+      if (callVote(game, client.userId, msg.targetId)) {
+        const target = game.players.get(msg.targetId)!;
+        broadcastToGame(game.code, {
+          type: "vote_called",
+          targetName: target.username,
+          targetId: msg.targetId,
+          anonymous: game.settings.anonymousVoting,
+        });
+      }
+      break;
+    }
+
+    case "abstain_vote": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+      // Admin abstains - just stay in day phase, no vote happens
+      broadcastToGame(game.code, {
+        type: "phase_change",
+        phase: "day",
+        round: game.round,
+        messages: ["The admin has chosen to abstain from calling a vote today."],
+      });
+      break;
+    }
+
+    case "cast_vote": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) return;
+
+      const result = castVote(game, client.userId, msg.approve);
+
+      // Broadcast vote progress
+      let votesFor = 0;
+      let votesAgainst = 0;
+      const voterNames: Record<string, boolean> = {};
+      for (const [voterId, approve] of game.votes) {
+        const voter = game.players.get(voterId)!;
+        voterNames[voter.username] = approve;
+        if (approve) votesFor++;
+        else votesAgainst++;
+      }
+
+      broadcastToGame(game.code, {
+        type: "vote_update",
+        votesFor,
+        votesAgainst,
+        total: getAlivePlayers(game).length,
+        ...(game.settings.anonymousVoting ? {} : { voterNames }),
+      });
+
+      if (result.allVoted) {
+        const voteResult = resolveVote(game);
+        if (voteResult) {
+          broadcastToGame(game.code, {
+            type: "vote_result",
+            targetName: voteResult.targetName,
+            executed: voteResult.executed,
+            votesFor: voteResult.votesFor,
+            votesAgainst: voteResult.votesAgainst,
+            ...(game.settings.anonymousVoting ? {} : { voterNames: voteResult.voterNames }),
+          });
+
+          for (const k of voteResult.killed) {
+            sendToUser(k.player.id, { type: "you_died", message: k.message });
+            broadcastToGame(game.code, {
+              type: "player_died",
+              playerId: k.player.id,
+              playerName: k.player.username,
+              message: k.message,
+            });
+          }
+
+          if (voteResult.messages.length > 0) {
+            broadcastToGame(game.code, {
+              type: "phase_change",
+              phase: game.phase,
+              round: game.round,
+              messages: voteResult.messages,
+            });
+          }
+
+          if (game.phase === "game_over") {
+            broadcastToGame(game.code, {
+              type: "game_over",
+              winner: game.winner!,
+              message: voteResult.messages[voteResult.messages.length - 1],
+            });
+          }
+        }
+      }
+      break;
+    }
+
+    case "end_day": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+
+      const messages = endDay(game);
+      broadcastToGame(game.code, {
+        type: "phase_change",
+        phase: "night",
+        round: game.round,
+        messages,
+      });
+      broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
+      sendNightActionPrompts(game);
+      break;
+    }
+
+    case "end_game": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+
+      broadcastToGame(game.code, {
+        type: "game_over",
+        winner: "town",
+        message: "The game has been ended by the admin.",
+      });
+      endGameEngine(game);
+      // Reset all clients in this game
+      for (const [, c] of clients) {
+        if (c.gameCode === client.gameCode) {
+          c.gameCode = null;
+        }
+      }
+      break;
+    }
+
+    case "toggle_anonymous_voting": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+      game.settings.anonymousVoting = !game.settings.anonymousVoting;
+      broadcastToGame(game.code, { type: "settings_updated", settings: game.settings });
+      break;
+    }
+
+    case "toggle_sound": {
+      // Sound toggle is client-side only, but we acknowledge it
+      break;
+    }
+  }
+}
+
+function resolveNightAndTransition(game: Game): void {
+  const nightResult = transitionToDay(game);
+
+  // Send detective result privately
+  if (game.detectiveResult) {
+    const aliveDetective = getAliveByRole(game, "detective");
+    for (const d of aliveDetective) {
+      sendToUser(d.id, {
+        type: "detective_result",
+        targetName: game.players.get(game.detectiveResult.targetId)?.username ?? "Unknown",
+        isMafia: game.detectiveResult.isMafia,
+      });
+    }
+    game.detectiveResult = null;
+  }
+
+  // Notify killed players
+  for (const k of nightResult.killed) {
+    sendToUser(k.player.id, { type: "you_died", message: k.message });
+    broadcastToGame(game.code, {
+      type: "player_died",
+      playerId: k.player.id,
+      playerName: k.player.username,
+      message: k.message,
+    });
+  }
+
+  // Sound cue for day
+  broadcastToGame(game.code, { type: "sound_cue", sound: "day" });
+
+  // Phase change
+  broadcastToGame(game.code, {
+    type: "phase_change",
+    phase: game.phase,
+    round: game.round,
+    messages: nightResult.messages,
+  });
+
+  if (game.phase === "game_over") {
+    broadcastToGame(game.code, {
+      type: "game_over",
+      winner: game.winner!,
+      message: nightResult.messages[nightResult.messages.length - 1],
+    });
+  }
+}
+
+function getUsernameFromClients(userId: number): string {
+  const user = getUserById(userId);
+  return user?.username ?? `Player${userId}`;
+}
+
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const types: Record<string, string> = {
+    ".html": "text/html",
+    ".css": "text/css",
+    ".js": "application/javascript",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json",
+  };
+  return types[ext] || "application/octet-stream";
+}
+
+const server = Bun.serve({
+  port: PORT,
+  async fetch(req, server) {
+    const url = new URL(req.url);
+
+    // WebSocket upgrade
+    if (url.pathname === "/ws") {
+      const upgraded = server.upgrade(req);
+      if (!upgraded) {
+        return new Response("WebSocket upgrade failed", { status: 400 });
+      }
+      return undefined;
+    }
+
+    // Serve static files
+    let filePath = url.pathname === "/" ? "/index.html" : url.pathname;
+    const fullPath = path.join(PUBLIC_DIR, filePath);
+
+    // Security: prevent directory traversal
+    if (!fullPath.startsWith(PUBLIC_DIR)) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    try {
+      const file = Bun.file(fullPath);
+      if (await file.exists()) {
+        return new Response(file, {
+          headers: { "Content-Type": getMimeType(fullPath) },
+        });
+      }
+    } catch { /* fall through */ }
+
+    // SPA fallback
+    const indexFile = Bun.file(path.join(PUBLIC_DIR, "index.html"));
+    return new Response(indexFile, {
+      headers: { "Content-Type": "text/html" },
+    });
+  },
+
+  websocket: {
+    open(ws) {
+      clients.set(ws, { ws, userId: null, gameCode: null });
+    },
+
+    message(ws, message) {
+      const client = clients.get(ws);
+      if (!client) return;
+
+      try {
+        const msg = JSON.parse(String(message)) as ClientMessage;
+        handleMessage(ws, client, msg);
+      } catch (e) {
+        send(ws, { type: "error", message: "Invalid message format" });
+      }
+    },
+
+    close(ws) {
+      const client = clients.get(ws);
+      if (client) {
+        if (client.gameCode && client.userId) {
+          const game = getGame(client.gameCode);
+          if (game) {
+            const player = game.players.get(client.userId);
+            if (player) {
+              player.connected = false;
+            }
+            if (client.userId === game.adminId && game.phase === "lobby") {
+              // If admin disconnects in lobby, clean up
+              broadcastToGame(game.code, {
+                type: "game_over",
+                winner: "town",
+                message: "The host has disconnected. Game closed.",
+              });
+              removeGame(game.code);
+            }
+          }
+        }
+        clients.delete(ws);
+      }
+    },
+  },
+});
+
+console.log(`Mafia server running on http://localhost:${PORT}`);

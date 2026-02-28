@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mafia">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg">
+  <link rel="stylesheet" href="/app.css">
+  <title>Mafia</title>
+</head>
+<body>
+  <div id="app">
+
+    <!-- AUTH SCREEN -->
+    <div id="screen-auth" class="screen active">
+      <div class="logo">
+        <div class="logo-icon">M</div>
+        <h1>MAFIA</h1>
+        <p class="subtitle">The Party Game</p>
+      </div>
+      <div class="auth-form">
+        <input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off">
+        <div class="passcode-row">
+          <input type="tel" id="auth-passcode" placeholder="4-digit PIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric">
+        </div>
+        <button id="btn-login" class="btn btn-primary">Log In</button>
+        <button id="btn-register" class="btn btn-secondary">Create Account</button>
+      </div>
+      <div id="auth-error" class="error-msg"></div>
+    </div>
+
+    <!-- MAIN MENU -->
+    <div id="screen-menu" class="screen">
+      <div class="header">
+        <h2>Welcome, <span id="menu-username"></span></h2>
+        <button id="btn-logout" class="btn btn-small btn-ghost">Log Out</button>
+      </div>
+      <div class="menu-buttons">
+        <button id="btn-host" class="btn btn-primary btn-large">Host Game</button>
+        <button id="btn-join-show" class="btn btn-secondary btn-large">Join Game</button>
+      </div>
+      <div id="join-section" class="join-section hidden">
+        <input type="text" id="join-code" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters">
+        <button id="btn-join" class="btn btn-primary">Join</button>
+      </div>
+      <div id="menu-error" class="error-msg"></div>
+    </div>
+
+    <!-- LOBBY (ADMIN VIEW) -->
+    <div id="screen-lobby-admin" class="screen">
+      <div class="header">
+        <button id="btn-leave-admin" class="btn btn-small btn-ghost">Leave</button>
+        <h2>Lobby</h2>
+        <div class="room-code">Code: <span id="lobby-code"></span></div>
+      </div>
+
+      <div class="settings-panel">
+        <h3>Game Settings</h3>
+
+        <div class="setting-row">
+          <span>Mafia Members</span>
+          <div class="counter">
+            <button id="mafia-minus" class="btn btn-counter">-</button>
+            <span id="mafia-count">1</span>
+            <button id="mafia-plus" class="btn btn-counter">+</button>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span>Doctor</span>
+          <label class="toggle"><input type="checkbox" id="toggle-doctor"><span class="slider"></span></label>
+        </div>
+
+        <div class="setting-row">
+          <span>Detective</span>
+          <label class="toggle"><input type="checkbox" id="toggle-detective"><span class="slider"></span></label>
+        </div>
+
+        <div class="setting-row">
+          <span>Joker</span>
+          <label class="toggle"><input type="checkbox" id="toggle-joker"><span class="slider"></span></label>
+        </div>
+
+        <div class="setting-row">
+          <span>Lovers</span>
+          <label class="toggle"><input type="checkbox" id="toggle-lovers"><span class="slider"></span></label>
+        </div>
+
+        <div class="setting-row">
+          <span>Anonymous Voting</span>
+          <label class="toggle"><input type="checkbox" id="toggle-anon" checked><span class="slider"></span></label>
+        </div>
+
+        <div class="config-buttons">
+          <button id="btn-save-config" class="btn btn-small btn-ghost">Save Preset</button>
+          <button id="btn-load-config" class="btn btn-small btn-ghost">Load Preset</button>
+        </div>
+      </div>
+
+      <div class="players-section">
+        <h3>Players (<span id="player-count-admin">0</span>/20)</h3>
+        <ul id="players-list-admin" class="players-list"></ul>
+      </div>
+
+      <button id="btn-start" class="btn btn-primary btn-large">Start Game</button>
+      <div id="lobby-error" class="error-msg"></div>
+    </div>
+
+    <!-- LOBBY (PLAYER VIEW) -->
+    <div id="screen-lobby-player" class="screen">
+      <div class="header">
+        <button id="btn-leave-player" class="btn btn-small btn-ghost">Leave</button>
+        <h2>Lobby</h2>
+        <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+      </div>
+      <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
+      <div class="players-section">
+        <h3>Players (<span id="player-count-player">0</span>/20)</h3>
+        <ul id="players-list-player" class="players-list"></ul>
+      </div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="screen-game" class="screen">
+      <div class="game-header">
+        <div class="phase-indicator" id="phase-indicator">Night</div>
+        <div class="round-indicator">Round <span id="round-number">1</span></div>
+        <button id="btn-sound-toggle" class="btn btn-icon" title="Toggle Sound">&#128264;</button>
+      </div>
+
+      <!-- Role Card -->
+      <div id="role-card" class="role-card">
+        <div id="role-name" class="role-name"></div>
+        <div id="role-description" class="role-description"></div>
+        <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
+      </div>
+
+      <!-- Narrator Messages -->
+      <div id="narrator-area" class="narrator-area">
+        <div id="narrator-messages" class="narrator-messages"></div>
+      </div>
+
+      <!-- Night Actions -->
+      <div id="night-actions" class="action-panel hidden">
+        <h3 id="action-title"></h3>
+        <ul id="action-targets" class="target-list"></ul>
+        <div id="action-status" class="action-status"></div>
+      </div>
+
+      <!-- Mafia Vote Status (for mafia members) -->
+      <div id="mafia-vote-status" class="vote-status hidden">
+        <h4>Mafia Votes</h4>
+        <div id="mafia-vote-details"></div>
+      </div>
+
+      <!-- Day Voting -->
+      <div id="voting-panel" class="voting-panel hidden">
+        <h3>Vote: Execute <span id="vote-target-name"></span>?</h3>
+        <div class="vote-buttons">
+          <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes">&#128077;</button>
+          <button id="btn-vote-no" class="btn btn-vote btn-vote-no">&#128078;</button>
+        </div>
+        <div id="vote-progress" class="vote-progress"></div>
+        <div id="vote-names" class="vote-names"></div>
+      </div>
+
+      <!-- Admin Day Controls -->
+      <div id="admin-day-controls" class="admin-controls hidden">
+        <h3>Admin Controls</h3>
+        <div class="admin-target-section">
+          <p>Nominate a player for execution:</p>
+          <ul id="admin-target-list" class="target-list"></ul>
+        </div>
+        <div class="admin-buttons">
+          <button id="btn-abstain" class="btn btn-secondary">Abstain</button>
+          <button id="btn-end-day" class="btn btn-primary">End Day</button>
+          <button id="btn-toggle-anon-game" class="btn btn-ghost btn-small">Toggle Anon Vote</button>
+        </div>
+      </div>
+
+      <!-- Dead Overlay -->
+      <div id="dead-overlay" class="dead-overlay hidden">
+        <div class="skull">&#128128;</div>
+        <p class="dead-text">You are dead</p>
+        <p id="death-message" class="death-message"></p>
+      </div>
+
+      <!-- Admin End Game -->
+      <div id="admin-end-game" class="admin-end-game hidden">
+        <button id="btn-end-game" class="btn btn-danger btn-small">End Game</button>
+      </div>
+    </div>
+
+    <!-- GAME OVER SCREEN -->
+    <div id="screen-gameover" class="screen">
+      <div class="gameover-content">
+        <h1 id="gameover-title"></h1>
+        <p id="gameover-message"></p>
+        <button id="btn-back-menu" class="btn btn-primary btn-large">Back to Menu</button>
+      </div>
+    </div>
+
+    <!-- CONFIG MODAL -->
+    <div id="modal-config" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modal-config-title">Presets</h3>
+          <button id="btn-close-config-modal" class="btn btn-icon">&times;</button>
+        </div>
+        <div id="config-save-section" class="hidden">
+          <input type="text" id="config-name-input" placeholder="Preset name" maxlength="30">
+          <button id="btn-confirm-save-config" class="btn btn-primary">Save</button>
+        </div>
+        <ul id="config-list" class="config-list"></ul>
+        <p id="config-empty" class="empty-text hidden">No saved presets</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
