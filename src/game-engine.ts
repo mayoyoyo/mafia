@@ -149,7 +149,7 @@ export function getAliveByRole(game: Game, role: Role): Player[] {
   return getAlivePlayers(game).filter((p) => p.role === role);
 }
 
-function assignRoles(game: Game): void {
+function assignRoles(game: Game): number {
   const playerIds = shuffle(Array.from(game.players.keys()));
   const { settings } = game;
   const totalPlayers = playerIds.length;
@@ -212,13 +212,15 @@ function assignRoles(game: Game): void {
     p2.isLover = true;
     p2.loverId = lover1;
   }
+
+  return mafiaCount;
 }
 
 export function startGame(game: Game): string[] | null {
   if (game.phase !== "lobby") return null;
   if (game.players.size < 3) return null;
 
-  assignRoles(game);
+  const actualMafiaCount = assignRoles(game);
   game.phase = "night";
   game.round = 1;
   game.dayStartedAt = null;
@@ -226,7 +228,11 @@ export function startGame(game: Game): string[] | null {
   game.narratorHistory = [];
   game.detectiveHistory = [];
 
-  const messages = [Narrator.nightFalls()];
+  const messages: string[] = [];
+  if (actualMafiaCount < game.settings.mafiaCount) {
+    messages.push(`Mafia count reduced from ${game.settings.mafiaCount} to ${actualMafiaCount} for balance (max 1/3 of players).`);
+  }
+  messages.push(Narrator.nightFalls());
   game.pendingMessages = messages;
   return messages;
 }
@@ -628,6 +634,45 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
 export function forceEndGame(game: Game): void {
   game.phase = "game_over";
   game.forceEnded = true;
+}
+
+export function returnToLobby(game: Game): boolean {
+  if (game.phase !== "game_over") return false;
+
+  // Reset all players to lobby state
+  for (const [, player] of game.players) {
+    player.role = null;
+    player.isAlive = true;
+    player.isLover = false;
+    player.loverId = null;
+    player.variant = 0;
+  }
+
+  // Reset game state but keep settings
+  game.phase = "lobby";
+  game.round = 0;
+  game.mafiaVotes.clear();
+  game.mafiaTarget = null;
+  game.mafiaConfirmed = false;
+  game.doctorTarget = null;
+  game.detectiveTarget = null;
+  game.voteTarget = null;
+  game.votes.clear();
+  game.voteAnonymous = true;
+  game.lastDoctorTarget = null;
+  game.nightKill = null;
+  game.doctorSaved = false;
+  game.detectiveResult = null;
+  game.winner = null;
+  game.forceEnded = false;
+  game.pendingMessages = [];
+  game.eventHistory = [];
+  game.dayStartedAt = null;
+  game.dayVoteCount = 0;
+  game.narratorHistory = [];
+  game.detectiveHistory = [];
+
+  return true;
 }
 
 export function restartGame(game: Game): string[] | null {

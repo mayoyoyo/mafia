@@ -4,7 +4,7 @@ import {
   getPlayerInfo, startGame, submitMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
-  getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, getAllGames,
+  getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
 } from "./game-engine";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
 import path from "path";
@@ -834,6 +834,21 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         players: getPlayerInfo(game, true),
       });
       // Room persists — do NOT removeGame or clear gameCode refs
+      break;
+    }
+
+    case "return_to_lobby": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) {
+        send(ws, { type: "error", message: "Only the admin can return to lobby" });
+        return;
+      }
+      if (!returnToLobby(game)) {
+        send(ws, { type: "error", message: "Cannot return to lobby" });
+        return;
+      }
+      broadcastLobbyUpdate(game);
       break;
     }
 

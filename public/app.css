@@ -486,6 +486,18 @@ input::placeholder { color: var(--text-secondary); }
 #config-save-section { display: flex; gap: 8px; margin-bottom: 12px; }
 #config-save-section input { flex: 1; }
 
+/* GAME HISTORY (Game Over) */
+.game-history { width: 100%; margin-bottom: 16px; text-align: left; }
+.game-history-round { font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-top: 12px; margin-bottom: 4px; }
+.game-history-round:first-child { margin-top: 0; }
+.game-history-item { font-size: 14px; padding: 4px 0; color: var(--text); }
+.game-history-item.kill { color: var(--role-mafia); }
+.game-history-item.execution { color: #ff9800; }
+.game-history-item.save { color: var(--role-doctor); }
+.game-history-item.lover_death { color: var(--role-lover); }
+.game-history-item.abstain { color: var(--text-secondary); font-style: italic; }
+.gameover-buttons { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+
 /* ROLE REVEAL (Game Over) */
 .role-reveal {
   width: 100%;

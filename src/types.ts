@@ -101,6 +101,7 @@ export type ClientMessage =
   | { type: "end_game" }
   | { type: "toggle_sound" }
   | { type: "restart_game" }
+  | { type: "return_to_lobby" }
   | { type: "close_room" };
 
 export type ServerMessage =

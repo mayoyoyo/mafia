@@ -30,6 +30,7 @@
   let rejoinDayStartedAt = null;
   let rejoinNightTargetName = null;
   let mafiaConfirmTarget = null;
+  let lastGameEvents = [];
   let isRejoining = false;
 
   // ============================================================
@@ -209,6 +210,7 @@
           nightActionLocked = false;
           mafiaConfirmTarget = null;
           rejoinNightTargetName = null;
+          lastGameEvents = [];
         }
         stopDayTimer();
         showScreen("game");
@@ -447,6 +449,14 @@
       .join("");
 
     updateSettingsUI(settings);
+
+    // If we're on the game or gameover screen, navigate to lobby
+    const currentScreen = document.querySelector(".screen.active");
+    if (currentScreen && (currentScreen.id === "screen-game" || currentScreen.id === "screen-gameover")) {
+      showScreen(isAdmin ? "lobbyAdmin" : "lobbyPlayer");
+      $("lobby-code").textContent = gameCode;
+      $("lobby-code-player").textContent = gameCode;
+    }
   }
 
   function updateSettingsUI(settings) {
@@ -1083,6 +1093,7 @@
   // ============================================================
   function renderEventHistory(events) {
     if (!events || events.length === 0) return;
+    lastGameEvents = events;
 
     const container = $("event-history-list");
     container.innerHTML = "";
@@ -1527,14 +1538,74 @@
         msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
     }
     $("gameover-message").textContent = msg.message;
-    $("btn-play-again").classList.add("hidden");
-    $("btn-close-room").classList.add("hidden");
+    $("gameover-buttons").classList.add("hidden");
+    renderGameHistory();
+  }
+
+  function renderGameHistory() {
+    const container = $("game-history");
+    container.innerHTML = "";
+    // Filter to kills, saves, executions, lover deaths (skip spared)
+    const events = lastGameEvents.filter((e) => e.type !== "spared");
+    if (events.length === 0) return;
+
+    const LABELS = {
+      kill: "Killed by the Mafia",
+      save: "Saved by the Doctor",
+      execution: "Executed by vote",
+      lover_death: "Died of heartbreak",
+    };
+
+    // Group by round, split night vs day
+    // Night events: kill, save, lover_death following a kill
+    // Day events: execution, lover_death following an execution
+    const grouped = {};
+    let lastPhase = "night";
+    for (const ev of events) {
+      if (!grouped[ev.round]) grouped[ev.round] = { night: [], day: [] };
+      if (ev.type === "kill" || ev.type === "save") {
+        grouped[ev.round].night.push(ev);
+        lastPhase = "night";
+      } else if (ev.type === "execution") {
+        grouped[ev.round].day.push(ev);
+        lastPhase = "day";
+      } else if (ev.type === "lover_death") {
+        grouped[ev.round][lastPhase].push(ev);
+      }
+    }
+
+    for (const round of Object.keys(grouped).sort((a, b) => a - b)) {
+      const { night, day } = grouped[round];
+      if (night.length > 0) {
+        const header = document.createElement("div");
+        header.className = "game-history-round";
+        header.textContent = `Night ${round}`;
+        container.appendChild(header);
+        for (const ev of night) {
+          const item = document.createElement("div");
+          item.className = `game-history-item ${ev.type}`;
+          item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
+          container.appendChild(item);
+        }
+      }
+      if (day.length > 0) {
+        const header = document.createElement("div");
+        header.className = "game-history-round";
+        header.textContent = `Day ${round}`;
+        container.appendChild(header);
+        for (const ev of day) {
+          const item = document.createElement("div");
+          item.className = `game-history-item ${ev.type}`;
+          item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
+          container.appendChild(item);
+        }
+      }
+    }
   }
 
   function showGameOverButtons(admin) {
     if (admin) {
-      $("btn-play-again").classList.remove("hidden");
-      $("btn-close-room").classList.remove("hidden");
+      $("gameover-buttons").classList.remove("hidden");
     }
   }
 
@@ -1654,8 +1725,13 @@
     setTimeout(() => showGameOverButtons(admin), totalTime);
   }
 
-  $("btn-play-again").addEventListener("click", () => {
+  $("btn-play-again-same").addEventListener("click", () => {
     wsSend({ type: "restart_game" });
+  });
+
+  $("btn-play-again-new").addEventListener("click", () => {
+    // Go back to lobby with current players to reconfigure settings
+    wsSend({ type: "return_to_lobby" });
   });
 
   $("btn-leave-room").addEventListener("click", () => {
@@ -1754,7 +1830,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.21_202602281337";
+  const APP_VERSION = "v1.22_202602281345";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
