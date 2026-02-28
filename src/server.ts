@@ -52,6 +52,10 @@ function broadcastLobbyUpdate(game: Game): void {
   });
 }
 
+function recordNarrator(game: Game, messages: string[]): void {
+  for (const m of messages) game.narratorHistory.push(m);
+}
+
 function sendNightActionPrompts(game: Game): void {
   // Send mafia their targets
   const aliveMafia = getAliveByRole(game, "mafia");
@@ -213,6 +217,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           // Send player list so client can populate knownPlayers
           send(ws, { type: "player_list", players: getPlayerInfo(game) });
 
+          // Send rejoin state (before game_started so client has data before resets)
+          send(ws, {
+            type: "rejoin_state",
+            dayStartedAt: game.dayStartedAt,
+            dayVoteCount: game.dayVoteCount,
+            narratorHistory: game.narratorHistory,
+            detectiveHistory: game.detectiveHistory,
+            hasVoted: game.votes.has(client.userId),
+            anonVoteChecked: game.voteAnonymous,
+          });
+
           // Send role info
           send(ws, {
             type: "game_started",
@@ -243,6 +258,24 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               targetName: target.username,
               targetId: game.voteTarget,
               anonymous: game.voteAnonymous,
+            });
+
+            // Send current vote progress
+            let votesFor = 0;
+            let votesAgainst = 0;
+            const voterNames: Record<string, boolean> = {};
+            for (const [voterId, approve] of game.votes) {
+              const voter = game.players.get(voterId)!;
+              voterNames[voter.username] = approve;
+              if (approve) votesFor++;
+              else votesAgainst++;
+            }
+            send(ws, {
+              type: "vote_update",
+              votesFor,
+              votesAgainst,
+              total: getAlivePlayers(game).length,
+              ...(game.voteAnonymous ? {} : { voterNames }),
             });
           }
 
@@ -435,6 +468,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Need at least 3 players to start" });
         return;
       }
+      recordNarrator(game, messages);
 
       // Send each player their role
       for (const [playerId, player] of game.players) {
@@ -537,6 +571,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       if (callVote(game, client.userId, msg.targetId, msg.anonymous)) {
+        game.dayVoteCount++;
         const target = game.players.get(msg.targetId)!;
         broadcastToGame(game.code, {
           type: "vote_called",
@@ -553,6 +588,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
       // Admin abstains - just stay in day phase, no vote happens
+      recordNarrator(game, ["The admin has chosen to abstain from calling a vote today."]);
       broadcastToGame(game.code, {
         type: "phase_change",
         phase: "day",
@@ -568,6 +604,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       if (cancelVote(game, client.userId)) {
+        game.dayStartedAt = Date.now();
+        recordNarrator(game, ["The vote has been cancelled by the admin."]);
         broadcastToGame(game.code, {
           type: "phase_change",
           phase: "day",
@@ -609,6 +647,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         const isAnon = game.voteAnonymous;
         const voteResult = resolveVote(game);
         if (voteResult) {
+          recordNarrator(game, voteResult.messages);
+
           broadcastToGame(game.code, {
             type: "vote_result",
             targetName: voteResult.targetName,
@@ -629,6 +669,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           }
 
           if (game.phase === "game_over") {
+            game.dayStartedAt = null;
             broadcastToGame(game.code, {
               type: "phase_change",
               phase: game.phase,
@@ -644,6 +685,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
           } else if (game.phase === "night") {
             // Auto-transition to night after execution
+            game.dayStartedAt = null;
+            game.dayVoteCount = 0;
             broadcastToGame(game.code, {
               type: "phase_change",
               phase: "night",
@@ -655,6 +698,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             sendNightActionPrompts(game);
           } else {
             // Spared — stay in day
+            game.dayStartedAt = Date.now();
             broadcastToGame(game.code, {
               type: "phase_change",
               phase: game.phase,
@@ -674,6 +718,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       const messages = endDay(game);
+      game.dayStartedAt = null;
+      game.dayVoteCount = 0;
+      recordNarrator(game, messages);
       broadcastToGame(game.code, {
         type: "phase_change",
         phase: "night",
@@ -691,6 +738,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       forceEndGame(game);
+      recordNarrator(game, ["Host has ended the game."]);
       broadcastToGame(game.code, {
         type: "phase_change",
         phase: "game_over",
@@ -738,6 +786,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Cannot restart game" });
         return;
       }
+      recordNarrator(game, messages);
 
       // Send each player their new role
       for (const [playerId, player] of game.players) {
@@ -784,6 +833,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
 function resolveNightAndTransition(game: Game): void {
   const nightResult = transitionToDay(game);
+  recordNarrator(game, nightResult.messages);
+
+  // Track dayStartedAt
+  if (game.phase === "day") {
+    game.dayStartedAt = Date.now();
+  }
 
   // Send detective result privately
   if (game.detectiveResult) {

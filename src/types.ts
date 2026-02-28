@@ -62,6 +62,11 @@ export interface Game {
   pendingMessages: string[];
   // Event history
   eventHistory: GameEvent[];
+  // Rejoin state tracking
+  dayStartedAt: number | null;
+  dayVoteCount: number;
+  narratorHistory: string[];
+  detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
 }
 
 export interface SavedConfig {
@@ -125,7 +130,11 @@ export type ServerMessage =
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
   | { type: "sound_cue"; sound: "night" | "day" }
   | { type: "night_action_done"; message: string }
-  | { type: "room_closed"; message: string };
+  | { type: "room_closed"; message: string }
+  | { type: "rejoin_state"; dayStartedAt: number | null; dayVoteCount: number;
+      narratorHistory: string[];
+      detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
+      hasVoted: boolean; anonVoteChecked: boolean };
 
 export interface PlayerInfo {
   id: number;

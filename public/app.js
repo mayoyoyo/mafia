@@ -27,6 +27,8 @@
   let dayTimerInterval = null;
   let dayTimerStart = null;
   let detectiveHistory = [];
+  let rejoinDayStartedAt = null;
+  let isRejoining = false;
 
   // ============================================================
   // DOM REFS
@@ -177,15 +179,28 @@
         updateSettingsUI(msg.settings);
         break;
 
+      case "rejoin_state":
+        isRejoining = true;
+        dayVoteCount = msg.dayVoteCount;
+        narratorTranscript = msg.narratorHistory;
+        anonVoteChecked = msg.anonVoteChecked;
+        if (msg.hasVoted) hasVoted = true;
+        if (msg.detectiveHistory) detectiveHistory = msg.detectiveHistory;
+        rejoinDayStartedAt = msg.dayStartedAt;
+        break;
+
       case "game_started":
         myRole = msg.role;
         isLover = msg.isLover;
         myVariant = msg.variant || 0;
         isDead = false;
-        hasVoted = false;
-        dayVoteCount = 0;
-        narratorTranscript = [];
-        detectiveHistory = [];
+        if (!gotPlayerList) {
+          // Fresh game start — reset all state
+          hasVoted = false;
+          dayVoteCount = 0;
+          narratorTranscript = [];
+          detectiveHistory = [];
+        }
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -235,7 +250,7 @@
         break;
 
       case "vote_called":
-        dayVoteCount++;
+        if (!isRejoining) dayVoteCount++;
         handleVoteCalled(msg);
         break;
 
@@ -819,9 +834,9 @@
   // ============================================================
   // DAY TIMER
   // ============================================================
-  function startDayTimer() {
+  function startDayTimer(fromTimestamp) {
     if (dayTimerInterval) return;
-    dayTimerStart = Date.now();
+    dayTimerStart = fromTimestamp || Date.now();
     $("day-timer").classList.remove("hidden");
     $("day-timer").textContent = "00:00";
     dayTimerInterval = setInterval(() => {
@@ -872,6 +887,17 @@
     // Clear visible narrator for new phase (transcript preserves history)
     $("narrator-messages").innerHTML = "";
 
+    // Render recent narrator messages from transcript on rejoin
+    if (narratorTranscript.length > 0 && (!msg.messages || msg.messages.length === 0)) {
+      const recent = narratorTranscript.slice(-5);
+      for (const m of recent) {
+        const div = document.createElement("div");
+        div.className = "narrator-line";
+        div.textContent = m;
+        $("narrator-messages").appendChild(div);
+      }
+    }
+
     if (msg.messages && msg.messages.length > 0) {
       for (const m of msg.messages) {
         showNarratorMessage(m);
@@ -885,7 +911,12 @@
     $("admin-day-controls").classList.add("hidden");
 
     if (msg.phase === "day") {
-      startDayTimer();
+      if (rejoinDayStartedAt) {
+        startDayTimer(rejoinDayStartedAt);
+        rejoinDayStartedAt = null;
+      } else {
+        startDayTimer();
+      }
       if (isAdmin) {
         showAdminDayControls();
         setTimeout(() => populateAdminTargets(knownPlayers), 100);
@@ -908,6 +939,9 @@
     if ((msg.phase === "day" || msg.phase === "voting") && $("event-history-list").innerHTML) {
       $("event-history").classList.remove("hidden");
     }
+
+    // Clear rejoin flag after phase is fully applied
+    isRejoining = false;
   }
 
   // ============================================================
@@ -1196,7 +1230,7 @@
   });
 
   function handleVoteCalled(msg) {
-    hasVoted = false;
+    // Don't reset hasVoted — may be pre-set by rejoin_state
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
@@ -1205,8 +1239,8 @@
     $("vote-progress").textContent = "Waiting for votes...";
     $("vote-names").innerHTML = "";
 
-    // Hide vote buttons if dead, show otherwise
-    if (isDead) {
+    // Hide vote buttons if dead or already voted (rejoin), show otherwise
+    if (isDead || hasVoted) {
       $("vote-buttons-wrapper").classList.add("hidden");
     } else {
       $("vote-buttons-wrapper").classList.remove("hidden");
@@ -1618,7 +1652,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.14_202602281226";
+  const APP_VERSION = "v1.15_202602280447";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {

@@ -70,6 +70,10 @@ export function createGame(adminId: number, adminUsername: string): Game {
     forceEnded: false,
     pendingMessages: [],
     eventHistory: [],
+    dayStartedAt: null,
+    dayVoteCount: 0,
+    narratorHistory: [],
+    detectiveHistory: [],
   };
 
   games.set(code, game);
@@ -217,6 +221,10 @@ export function startGame(game: Game): string[] | null {
   assignRoles(game);
   game.phase = "night";
   game.round = 1;
+  game.dayStartedAt = null;
+  game.dayVoteCount = 0;
+  game.narratorHistory = [];
+  game.detectiveHistory = [];
 
   const messages = [Narrator.nightFalls()];
   game.pendingMessages = messages;
@@ -273,6 +281,7 @@ export function submitDetectiveInvestigation(game: Game, detectiveId: number, ta
   game.detectiveTarget = targetId;
   const isMafia = target.role === "mafia";
   game.detectiveResult = { targetId, isMafia };
+  game.detectiveHistory.push({ round: game.round, targetName: target.username, isMafia });
   return { isMafia, targetName: target.username };
 }
 
@@ -623,6 +632,10 @@ export function restartGame(game: Game): string[] | null {
   game.forceEnded = false;
   game.pendingMessages = [];
   game.eventHistory = [];
+  game.dayStartedAt = null;
+  game.dayVoteCount = 0;
+  game.narratorHistory = [];
+  game.detectiveHistory = [];
 
   // Start fresh game with same settings
   return startGame(game);
