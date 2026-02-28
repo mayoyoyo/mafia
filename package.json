@@ -1,0 +1,14 @@
+{
+  "name": "mafia-game",
+  "version": "1.0.0",
+  "description": "Multiplayer Mafia party game PWA for mobile",
+  "scripts": {
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun run src/server.ts",
+    "test": "bun test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
