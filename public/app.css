@@ -245,6 +245,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 .card-front {
   /* sits below .card-back in the stack; visible when card-back clips away */
+  position: relative;
 }
 .card-back {
   position: absolute;
@@ -284,6 +285,8 @@ input::placeholder { color: var(--text-secondary); }
   /* folded corner triangle via linear gradient */
   background: linear-gradient(225deg, var(--bg-card) 50%, transparent 50%);
   border-radius: 0 0 20px 0;
+  border-left: 2px solid var(--border);
+  border-top: 2px solid var(--border);
   opacity: 0.8;
   transition: opacity 0.3s;
 }
@@ -292,7 +295,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 @keyframes peel-hint {
   0%, 100% { clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%); }
-  50% { clip-path: polygon(0% 0%, 100% 0%, 100% 85%, 0% 100%); }
+  50% { clip-path: polygon(0% 0%, 100% 0%, 100% 85%, 85% 85%, 85% 100%, 0% 100%); }
 }
 .card-back.peel-hint {
   animation: peel-hint 1.5s ease-in-out 1;
@@ -321,6 +324,16 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 14px;
   font-weight: 600;
 }
+.role-icon-mini {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  opacity: 0.85;
+}
+.role-icon-mini svg { width: 32px; height: 32px; display: block; }
 
 /* NARRATOR */
 .narrator-area {

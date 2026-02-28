@@ -992,6 +992,13 @@
     } else {
       $("lover-badge").classList.add("hidden");
     }
+    // Mini role icon in bottom-right of card-front for quick-peek
+    const miniEl = $("role-icon-mini");
+    if (myRole) {
+      miniEl.innerHTML = getRoleImage(myRole, myVariant);
+    } else {
+      miniEl.innerHTML = "";
+    }
   }
 
   function resetCardPeel() {
@@ -1023,7 +1030,7 @@
       const py = Math.max(0, Math.min(1, (cardRect.bottom - clientY) / cardRect.height));
       const cx = (1 - px) * 100;
       const cy = (1 - py) * 100;
-      back.style.clipPath = `polygon(0% 0%, 100% 0%, 100% ${cy}%, ${cx}% 100%, 0% 100%)`;
+      back.style.clipPath = `polygon(0% 0%, 100% 0%, 100% ${cy}%, ${cx}% ${cy}%, ${cx}% 100%, 0% 100%)`;
     }
 
     function resetPeel() {
@@ -2036,7 +2043,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.26_202602281457";
+  const APP_VERSION = "v1.27_202602281506";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
