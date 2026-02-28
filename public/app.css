@@ -105,6 +105,10 @@ input::placeholder { color: var(--text-secondary); }
 }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
 .logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 800; }
+.logo-small { padding: 24px 0 8px; }
+.logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
+.logo-small .logo-icon svg { width: 48px; height: 48px; }
+.logo-small h1 { font-size: 22px; letter-spacing: 6px; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
 .passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; }
@@ -644,5 +648,9 @@ input::placeholder { color: var(--text-secondary); }
   .logo-icon { width: 60px; height: 60px; }
   .logo-icon svg { width: 60px; height: 60px; }
   .logo h1 { font-size: 26px; }
+  .logo-small { padding: 16px 0 4px; }
+  .logo-small .logo-icon { width: 40px; height: 40px; }
+  .logo-small .logo-icon svg { width: 40px; height: 40px; }
+  .logo-small h1 { font-size: 20px; }
   .menu-buttons { margin-top: 20px; }
 }
