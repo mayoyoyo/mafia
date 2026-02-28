@@ -520,12 +520,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           sendToUser(m.id, { type: "mafia_confirm_ready", targetName: targetPlayer.username });
         }
       } else if (result.allVoted && result.target === null) {
-        // All voted but not unanimous - reset
-        game.mafiaVotes.clear();
+        // All voted but not unanimous - notify, let them change votes
         for (const m of aliveMafia) {
-          sendToUser(m.id, { type: "night_action_done", message: "The Mafia could not agree. Vote again." });
+          sendToUser(m.id, { type: "night_action_done", message: "The Mafia could not agree. Change your vote." });
         }
-        sendNightActionPrompts(game);
       }
       break;
     }

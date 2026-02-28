@@ -233,6 +233,7 @@ export function startGame(game: Game): string[] | null {
 
 export function submitMafiaVote(game: Game, mafiaId: number, targetId: number): { allVoted: boolean; target: number | null } {
   if (game.phase !== "night") return { allVoted: false, target: null };
+  if (game.mafiaConfirmed) return { allVoted: false, target: null }; // locked in
 
   const mafiaPlayer = game.players.get(mafiaId);
   if (!mafiaPlayer || mafiaPlayer.role !== "mafia" || !mafiaPlayer.isAlive) return { allVoted: false, target: null };
@@ -241,6 +242,7 @@ export function submitMafiaVote(game: Game, mafiaId: number, targetId: number): 
   if (!target || !target.isAlive || target.role === "mafia") return { allVoted: false, target: null };
 
   game.mafiaVotes.set(mafiaId, targetId);
+  game.mafiaTarget = null; // reset until re-confirmed
 
   const aliveMafia = getAliveByRole(game, "mafia");
   const allVoted = aliveMafia.every((m) => game.mafiaVotes.has(m.id));

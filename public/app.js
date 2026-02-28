@@ -247,6 +247,12 @@
 
       case "night_action_done":
         $("action-status").textContent = msg.message;
+        // If mafia and another mafia confirmed, collapse our target list too
+        if (myRole === "mafia" && !nightActionLocked && mafiaConfirmTarget) {
+          nightActionLocked = true;
+          $("btn-confirm-action").classList.add("hidden");
+          $("action-targets").innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
+        }
         break;
 
       case "detective_result":
@@ -1181,12 +1187,14 @@
       $("mafia-vote-status").classList.remove("hidden");
     } else {
       // Doctor/Detective: clicking selects visually, Confirm sends to server
+      let selectedName = null;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
           if (nightActionLocked) return;
           list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
           li.classList.add("selected");
           selectedTargetId = parseInt(li.dataset.id);
+          selectedName = li.textContent;
           $("btn-confirm-action").classList.remove("hidden");
         });
       });
@@ -1196,10 +1204,13 @@
         nightActionLocked = true;
         wsSend({ type: actionType, targetId: selectedTargetId });
         $("btn-confirm-action").classList.add("hidden");
-        list.querySelectorAll("li").forEach((l) => l.style.pointerEvents = "none");
+        // Collapse to show only chosen target
+        list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
       });
     }
   }
+
+  let mafiaConfirmTarget = null; // track confirmed target name for collapse
 
   function updateMafiaVoteStatus(msg) {
     const details = $("mafia-vote-details");
@@ -1211,10 +1222,17 @@
     details.innerHTML = entries
       .map(([voter, target]) => `<div><span style="color:#d32f2f;font-weight:bold">${escapeHtml(voter)}</span> votes ${escapeHtml(target)}</div>`)
       .join("");
+
+    // Hide confirm button on any vote change (will be re-shown by mafia_confirm_ready if unanimous)
+    if (!nightActionLocked) {
+      $("btn-confirm-action").classList.add("hidden");
+      $("action-status").textContent = "";
+    }
   }
 
   function handleMafiaConfirmReady(msg) {
     if (nightActionLocked) return;
+    mafiaConfirmTarget = msg.targetName;
     $("action-status").textContent = `Unanimous! Target: ${msg.targetName}. Confirm to lock in.`;
     const confirmBtn = $("btn-confirm-action");
     confirmBtn.classList.remove("hidden");
@@ -1229,7 +1247,9 @@
       nightActionLocked = true;
       wsSend({ type: "confirm_mafia_kill" });
       newBtn.classList.add("hidden");
-      $("action-targets").querySelectorAll("li").forEach((l) => l.style.pointerEvents = "none");
+      // Collapse to show only chosen target
+      const list = $("action-targets");
+      list.innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
     });
   }
 
@@ -1712,7 +1732,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.19_202602281232";
+  const APP_VERSION = "v1.20_202602281321";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
