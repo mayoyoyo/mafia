@@ -293,6 +293,22 @@ input::placeholder { color: var(--text-secondary); }
 .peel-flap.hidden-flap {
   opacity: 0;
 }
+.peel-hint {
+  position: absolute;
+  bottom: 52px;
+  right: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5a5a8a;
+  letter-spacing: 1px;
+  z-index: 4;
+  pointer-events: none;
+  animation: peel-hint-pulse 2s ease-in-out infinite;
+}
+@keyframes peel-hint-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
 .peel-flap.dragging {
   background: #1a1a2e;
   clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
@@ -300,13 +316,6 @@ input::placeholder { color: var(--text-secondary); }
   border-radius: 0;
   opacity: 1;
   filter: drop-shadow(-2px -2px 3px rgba(0,0,0,0.3));
-}
-@keyframes peel-hint {
-  0%, 100% { clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%); }
-  50% { clip-path: polygon(0% 0%, 100% 0%, 100% 85%, 85% 85%, 85% 100%, 0% 100%); }
-}
-.card-back.peel-hint {
-  animation: peel-hint 1.5s ease-in-out 1;
 }
 .role-card.mafia .card-front { border-color: var(--role-mafia); }
 .role-card.citizen .card-front { border-color: var(--role-citizen); }

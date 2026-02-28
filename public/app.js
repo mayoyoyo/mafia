@@ -202,10 +202,7 @@
         // Card starts face-down
         resetCardPeel();
         $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_ART);
-        // Hint animation on first game
-        const backEl = $("role-card").querySelector(".card-back");
-        backEl.classList.add("peel-hint");
-        backEl.addEventListener("animationend", () => backEl.classList.remove("peel-hint"), { once: true });
+        $("peel-hint").classList.remove("hidden");
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
         $("event-history").classList.add("hidden");
@@ -1066,6 +1063,7 @@
       e.preventDefault();
       dragging = true;
       back.classList.add("dragging");
+      $("peel-hint").classList.add("hidden");
       setPeel(touch.clientX, touch.clientY);
     }
 
@@ -2062,7 +2060,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.28_202602281520";
+  const APP_VERSION = "v1.29_202602281529";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
