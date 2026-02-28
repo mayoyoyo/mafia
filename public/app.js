@@ -206,7 +206,7 @@
         updateRoleCard();
         // Card starts face-down
         $("role-card").classList.remove("flipped");
-        $("card-back-art").innerHTML = pixelArtToSvg(DRAGON_ART);
+        $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_ART);
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
         $("event-history").classList.add("hidden");
@@ -271,7 +271,7 @@
         $("dead-overlay").classList.remove("hidden");
         $("death-message").textContent = msg.message;
         $("dead-dismiss-hint").classList.remove("hidden");
-        $("card-back-art").innerHTML = pixelArtToSvg(SKULL_ART);
+        $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
         break;
 
       case "game_over":
@@ -732,22 +732,22 @@
     return `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${rects}</svg>`;
   }
 
-  // Dragon pixel art for card back (clearer head, wings, tail, fire breath)
-  const DRAGON_ART = [
-    [_,_,"#4a4","#6c6",_,_,_,_,"#f80","#fa0"],
-    [_,"#4a4","#6c6","#fff","#4a4",_,_,"#f80","#fa0",_],
-    [_,"#4a4","#6c6","#6c6","#6c6","#4a4","#f80",_,_,_],
-    ["#4a4",_,"#4a4","#6c6","#6c6","#6c6","#4a4",_,_,_],
-    ["#4a4","#4a4",_,"#4a4","#6c6","#6c6","#4a4",_,_,_],
-    [_,_,_,"#4a4","#6c6","#6c6","#4a4","#4a4",_,_],
-    [_,_,_,_,"#4a4","#6c6","#4a4",_,"#4a4",_],
-    [_,_,_,_,_,"#4a4","#6c6","#4a4",_,_],
-    [_,_,_,_,_,_,"#4a4","#6c6","#4a4",_],
-    [_,_,_,_,_,_,_,"#4a4","#4a4",_],
+  // Card back: mafioso + civilian side by side
+  const CARD_BACK_ART = [
+    [_,"#222","#222","#222",_,     _,    _,    _,    _,    _   ],
+    ["#333","#c22","#c22","#c22","#333", _,"#654","#654","#654", _  ],
+    [_,"#fdd","#fdd","#fdd",_,     _,"#fdd","#fdd","#fdd", _  ],
+    [_,"#222","#fdd","#222",_,     _,"#222","#fdd","#222", _  ],
+    [_,"#fdd","#dbb","#fdd",_,     _,"#fdd","#fdd","#fdd", _  ],
+    [_,"#fdd","#fdd","#fdd",_,     _,"#fdd","#b77","#fdd", _  ],
+    [_,"#111","#c22","#111",_,     _,"#27a","#27a","#27a", _  ],
+    [_,"#111","#c22","#111",_,     _,"#27a","#27a","#27a", _  ],
+    [_,"#111", _ ,"#111",_,        _,"#27a", _ ,"#27a", _  ],
+    [_,"#111", _ ,"#111",_,        _,"#333", _ ,"#333", _  ],
   ];
 
   // Skull pixel art for dead player card back
-  const SKULL_ART = [
+  const CARD_BACK_DEAD_ART = [
     [_,_,_,"#aaa","#aaa","#aaa","#aaa",_,_,_],
     [_,_,"#aaa","#ddd","#ddd","#ddd","#ddd","#aaa",_,_],
     [_,"#aaa","#ddd","#ddd","#ddd","#ddd","#ddd","#ddd","#aaa",_],
@@ -1652,7 +1652,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.15_202602280447";
+  const APP_VERSION = "v1.16_202602281254";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
