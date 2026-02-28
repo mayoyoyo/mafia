@@ -418,8 +418,9 @@ input::placeholder { color: var(--text-secondary); }
 .death-message { color: var(--text-secondary); font-size: 14px; margin-top: 12px; padding: 0 32px; text-align: center; max-width: 350px; }
 .dead-dismiss-hint { color: var(--text-secondary); font-size: 13px; margin-top: 20px; opacity: 0.7; animation: pulse 2s ease-in-out infinite; }
 
-/* ADMIN END GAME */
-.admin-end-game { position: fixed; bottom: calc(20px + var(--safe-bottom)); right: 20px; z-index: 150; }
+/* SETTINGS MODAL */
+.settings-modal-body { display: flex; flex-direction: column; gap: 12px; }
+.settings-end-game { margin-top: 8px; }
 
 /* GAME OVER */
 .gameover-header {
@@ -496,6 +497,15 @@ input::placeholder { color: var(--text-secondary); }
   margin-bottom: 6px;
 }
 .role-reveal-item.dead { opacity: 0.5; }
+.role-reveal-item.reveal-hidden { opacity: 0; transform: translateY(10px); }
+.role-reveal-item.reveal-show {
+  animation: revealSlideIn 0.4s ease forwards;
+}
+.role-reveal-item.reveal-show.dead {
+  animation: revealSlideInDead 0.4s ease forwards;
+}
+@keyframes revealSlideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes revealSlideInDead { from { opacity: 0; transform: translateY(10px); } to { opacity: 0.5; transform: translateY(0); } }
 .role-reveal-name { font-weight: 600; flex: 1; }
 .role-reveal-role {
   font-size: 12px;
@@ -519,37 +529,27 @@ input::placeholder { color: var(--text-secondary); }
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 12px 16px;
-  perspective: 600px;
 }
-.event-history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.btn-flip-events { font-size: 20px; padding: 2px 6px; }
-.eh-inner {
-  position: relative;
-  transform-style: preserve-3d;
-  transition: transform 0.4s;
-}
-.eh-front, .eh-back {
-  backface-visibility: hidden;
-}
-.eh-back {
-  position: absolute;
-  inset: 0;
-  transform: rotateY(180deg);
-}
-.event-history.flipped .eh-inner {
-  transform: rotateY(180deg);
-}
-.event-history-title {
-  font-size: 13px;
+.eh-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.eh-tab {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1px;
-  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
 }
+.eh-tab.active {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.eh-panel { /* default visible */ }
 .player-status-list { font-size: 13px; line-height: 1.8; }
 .player-status-item { display: flex; align-items: center; gap: 8px; }
 .player-status-dot {

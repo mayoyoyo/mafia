@@ -88,6 +88,9 @@
     if (msg.type === "lobby_update") {
       knownPlayers = msg.players;
     }
+    if (msg.type === "player_list") {
+      knownPlayers = msg.players;
+    }
     if (msg.type === "player_died") {
       const p = knownPlayers.find((pl) => pl.id === msg.playerId);
       if (p) p.isAlive = false;
@@ -187,7 +190,7 @@
         $("dead-overlay").classList.add("hidden");
         $("dead-dismiss-hint").classList.add("hidden");
         $("btn-play-again").classList.add("hidden");
-        if (isAdmin) $("admin-end-game").classList.remove("hidden");
+        resetEventHistoryTabs();
         break;
 
       case "phase_change":
@@ -244,6 +247,7 @@
         $("dead-overlay").classList.remove("hidden");
         $("death-message").textContent = msg.message;
         $("dead-dismiss-hint").classList.remove("hidden");
+        $("card-back-art").innerHTML = pixelArtToSvg(SKULL_ART);
         break;
 
       case "game_over":
@@ -262,6 +266,8 @@
         $("role-reveal").innerHTML = "";
         $("event-history-list").innerHTML = "";
         narratorTranscript = [];
+        resetEventHistoryTabs();
+        closeSettingsModal();
         showScreen("menu");
         break;
 
@@ -702,18 +708,32 @@
     return `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${rects}</svg>`;
   }
 
-  // Dragon pixel art for card back
+  // Dragon pixel art for card back (clearer head, wings, tail, fire breath)
   const DRAGON_ART = [
-    [_,_,_,"#4a4","#4a4",_,_,_,_,_],
-    [_,_,"#4a4","#6c6","#6c6","#4a4",_,_,_,_],
-    [_,"#4a4","#6c6","#fff","#6c6","#6c6","#4a4",_,_,_],
-    [_,"#4a4","#6c6","#6c6","#6c6","#6c6","#4a4",_,_,_],
-    [_,_,"#4a4","#6c6","#6c6","#4a4",_,_,_,"#4a4"],
-    [_,_,_,"#4a4","#4a4","#6c6","#4a4","#4a4","#4a4",_],
-    [_,_,_,_,"#4a4","#6c6","#6c6","#6c6",_,_],
-    [_,_,_,"#4a4","#6c6","#6c6","#4a4",_,_,_],
-    [_,_,"#4a4","#6c6","#4a4","#4a4",_,_,_,_],
-    [_,"#4a4","#4a4",_,_,"#4a4","#4a4",_,_,_],
+    [_,_,"#4a4","#6c6",_,_,_,_,"#f80","#fa0"],
+    [_,"#4a4","#6c6","#fff","#4a4",_,_,"#f80","#fa0",_],
+    [_,"#4a4","#6c6","#6c6","#6c6","#4a4","#f80",_,_,_],
+    ["#4a4",_,"#4a4","#6c6","#6c6","#6c6","#4a4",_,_,_],
+    ["#4a4","#4a4",_,"#4a4","#6c6","#6c6","#4a4",_,_,_],
+    [_,_,_,"#4a4","#6c6","#6c6","#4a4","#4a4",_,_],
+    [_,_,_,_,"#4a4","#6c6","#4a4",_,"#4a4",_],
+    [_,_,_,_,_,"#4a4","#6c6","#4a4",_,_],
+    [_,_,_,_,_,_,"#4a4","#6c6","#4a4",_],
+    [_,_,_,_,_,_,_,"#4a4","#4a4",_],
+  ];
+
+  // Skull pixel art for dead player card back
+  const SKULL_ART = [
+    [_,_,_,"#aaa","#aaa","#aaa","#aaa",_,_,_],
+    [_,_,"#aaa","#ddd","#ddd","#ddd","#ddd","#aaa",_,_],
+    [_,"#aaa","#ddd","#ddd","#ddd","#ddd","#ddd","#ddd","#aaa",_],
+    [_,"#aaa","#ddd","#222","#222","#ddd","#222","#222","#aaa",_],
+    [_,"#aaa","#ddd","#222","#222","#ddd","#222","#222","#aaa",_],
+    [_,_,"#aaa","#ddd","#ddd","#333","#ddd","#ddd",_,_],
+    [_,_,"#aaa","#ddd","#333","#ddd","#333","#aaa",_,_],
+    [_,_,_,"#aaa","#ddd","#ddd","#ddd","#aaa",_,_],
+    [_,_,_,"#aaa","#333","#ddd","#333","#aaa",_,_],
+    [_,_,_,_,"#aaa","#aaa","#aaa",_,_,_],
   ];
 
   function getRoleImage(role, variant) {
@@ -823,7 +843,7 @@
 
     // Night-to-day suspense transition (Phase 5)
     if (previousPhase === "night" && msg.phase === "day") {
-      showSuspenseTransition(() => {
+      showSuspenseTransition(msg, () => {
         applyPhaseChange(msg);
       });
     } else {
@@ -884,7 +904,19 @@
   // ============================================================
   // SUSPENSE TRANSITION (Phase 5)
   // ============================================================
-  function showSuspenseTransition(callback) {
+  function getNightVerdict(msg) {
+    // Check events for the current round to determine good/bad news
+    const round = msg.round;
+    const roundEvents = (msg.events || []).filter((e) => e.round === round);
+    const hasSave = roundEvents.some((e) => e.type === "save");
+    const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
+    if (hasSave && hasKill) return { text: "\u{1F6E1}\uFE0F A life was saved... but not everyone.", color: "#2196f3" };
+    if (hasSave) return { text: "\u{1F6E1}\uFE0F The Doctor saved a life!", color: "#2196f3" };
+    if (hasKill) return { text: "\u{1F480} Someone didn't survive the night.", color: "#d32f2f" };
+    return { text: "\u{1F319} A peaceful night... somehow.", color: "#8e8e93" };
+  }
+
+  function showSuspenseTransition(msg, callback) {
     suspenseActive = true;
     suspenseQueue = [];
     const overlay = $("suspense-overlay");
@@ -892,25 +924,36 @@
 
     overlay.classList.remove("hidden", "fade-out");
     text.textContent = "The sun rises...";
+    text.style.color = "";
     text.style.animation = "none";
-    // Force reflow
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
 
     setTimeout(() => {
       text.textContent = "What happened last night?";
+      text.style.color = "";
       text.style.animation = "none";
       void text.offsetWidth;
       text.style.animation = "suspenseFadeIn 0.8s ease";
     }, 2000);
 
     setTimeout(() => {
-      overlay.classList.add("fade-out");
+      const verdict = getNightVerdict(msg);
+      text.textContent = verdict.text;
+      text.style.color = verdict.color;
+      text.style.animation = "none";
+      void text.offsetWidth;
+      text.style.animation = "suspenseFadeIn 0.8s ease";
     }, 3500);
+
+    setTimeout(() => {
+      overlay.classList.add("fade-out");
+    }, 5000);
 
     setTimeout(() => {
       overlay.classList.add("hidden");
       overlay.classList.remove("fade-out");
+      text.style.color = "";
       suspenseActive = false;
 
       // Apply the phase change
@@ -921,7 +964,7 @@
         handleServerMessage(qMsg);
       }
       suspenseQueue = [];
-    }, 4300);
+    }, 5800);
   }
 
   function showDetectiveResult(msg) {
@@ -1025,9 +1068,24 @@
       .join("");
   }
 
-  $("btn-flip-events").addEventListener("click", () => {
-    $("event-history").classList.toggle("flipped");
+  // Tab toggle for event history
+  document.querySelectorAll(".eh-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".eh-tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      const target = tab.dataset.tab;
+      $("eh-panel-events").classList.toggle("hidden", target !== "events");
+      $("eh-panel-players").classList.toggle("hidden", target !== "players");
+    });
   });
+
+  function resetEventHistoryTabs() {
+    document.querySelectorAll(".eh-tab").forEach((t) => t.classList.remove("active"));
+    const firstTab = document.querySelector('.eh-tab[data-tab="events"]');
+    if (firstTab) firstTab.classList.add("active");
+    $("eh-panel-events").classList.remove("hidden");
+    $("eh-panel-players").classList.add("hidden");
+  }
 
   // ============================================================
   // NIGHT ACTIONS
@@ -1244,42 +1302,50 @@
   });
 
   // ============================================================
-  // GAME OVER (Phase 1: show all roles)
+  // SETTINGS MODAL
   // ============================================================
+  $("btn-settings").addEventListener("click", () => {
+    $("toggle-sound").checked = soundEnabled;
+    // Show end-game button only for admin during active game
+    if (isAdmin && currentPhase && currentPhase !== "game_over") {
+      $("settings-end-game").classList.remove("hidden");
+    } else {
+      $("settings-end-game").classList.add("hidden");
+    }
+    $("modal-settings").classList.remove("hidden");
+  });
+
+  $("btn-close-settings").addEventListener("click", closeSettingsModal);
+
+  $("modal-settings").addEventListener("click", (e) => {
+    if (e.target === $("modal-settings")) closeSettingsModal();
+  });
+
+  function closeSettingsModal() {
+    $("modal-settings").classList.add("hidden");
+  }
+
+  $("toggle-sound").addEventListener("change", (e) => {
+    soundEnabled = e.target.checked;
+  });
+
   $("btn-end-game").addEventListener("click", () => {
     if (confirm("Are you sure you want to end the game?")) {
       wsSend({ type: "end_game" });
+      closeSettingsModal();
     }
   });
 
+  // ============================================================
+  // GAME OVER (Phase 1: show all roles)
+  // ============================================================
+
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
-    // Do NOT clear localStorage — room persists, player stays
-    showScreen("gameover");
-
-    if (msg.forceEnded) {
-      // Force-ended by host
-      $("gameover-title").textContent = "Game Over";
-      $("gameover-title").style.color = "var(--text)";
-    } else {
-      // Natural game end
-      const titles = {
-        town: "Citizens Win!",
-        mafia: "Mafia Wins!",
-        joker: "Joker Wins!",
-      };
-      $("gameover-title").textContent = titles[msg.winner] || "Game Over";
-      $("gameover-title").style.color =
-        msg.winner === "town" ? "var(--role-citizen)" :
-        msg.winner === "mafia" ? "var(--role-mafia)" :
-        msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
-    }
-    $("gameover-message").textContent = msg.message;
-
-    // Render role reveal (Phase 1)
-    renderRoleReveal(msg.players);
+    closeSettingsModal();
 
     // Reset gameplay state but keep gameCode/isAdmin for Play Again
+    const savedIsAdmin = isAdmin;
     myRole = null;
     isLover = false;
     isDead = false;
@@ -1287,18 +1353,93 @@
     previousPhase = null;
     dayVoteCount = 0;
 
-    // Admin: show Play Again + Close Room
-    // Non-admin: hide both (they wait for host, or leave via Leave Room)
-    if (isAdmin) {
-      $("btn-play-again").classList.remove("hidden");
-      $("btn-close-room").classList.remove("hidden");
+    if (msg.forceEnded) {
+      // Force-ended: no suspense, show immediately
+      showGameOverScreen(msg, savedIsAdmin);
+      renderRoleReveal(msg.players, false);
+      showGameOverButtons(savedIsAdmin);
     } else {
-      $("btn-play-again").classList.add("hidden");
-      $("btn-close-room").classList.add("hidden");
+      // Natural end: suspense reveal
+      showGameOverSuspense(msg, savedIsAdmin);
     }
   }
 
-  function renderRoleReveal(players) {
+  function showGameOverScreen(msg, admin) {
+    showScreen("gameover");
+    const titles = {
+      town: "Citizens Win!",
+      mafia: "Mafia Wins!",
+      joker: "Joker Wins!",
+    };
+    if (msg.forceEnded) {
+      $("gameover-title").textContent = "Game Over";
+      $("gameover-title").style.color = "var(--text)";
+    } else {
+      $("gameover-title").textContent = titles[msg.winner] || "Game Over";
+      $("gameover-title").style.color =
+        msg.winner === "town" ? "var(--role-citizen)" :
+        msg.winner === "mafia" ? "var(--role-mafia)" :
+        msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
+    }
+    $("gameover-message").textContent = msg.message;
+    $("btn-play-again").classList.add("hidden");
+    $("btn-close-room").classList.add("hidden");
+  }
+
+  function showGameOverButtons(admin) {
+    if (admin) {
+      $("btn-play-again").classList.remove("hidden");
+      $("btn-close-room").classList.remove("hidden");
+    }
+  }
+
+  function showGameOverSuspense(msg, admin) {
+    const overlay = $("suspense-overlay");
+    const text = $("suspense-text");
+
+    overlay.classList.remove("hidden", "fade-out");
+    text.textContent = "The game is over...";
+    text.style.color = "";
+    text.style.animation = "none";
+    void text.offsetWidth;
+    text.style.animation = "suspenseFadeIn 0.8s ease";
+
+    const winColor =
+      msg.winner === "town" ? "var(--role-citizen)" :
+      msg.winner === "mafia" ? "var(--role-mafia)" :
+      msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
+    const winText =
+      msg.winner === "town" ? "Citizens Win!" :
+      msg.winner === "mafia" ? "Mafia Wins!" :
+      msg.winner === "joker" ? "Joker Wins!" : "Game Over";
+
+    // Beat 2: winner reveal
+    setTimeout(() => {
+      text.textContent = winText;
+      text.style.color = winColor;
+      text.style.animation = "none";
+      void text.offsetWidth;
+      text.style.animation = "suspenseFadeIn 0.8s ease";
+    }, 2200);
+
+    // Fade out overlay, show gameover screen behind it
+    setTimeout(() => {
+      // Prepare gameover screen (title/message visible, roles hidden)
+      showGameOverScreen(msg, admin);
+      renderRoleReveal(msg.players, true); // hidden=true
+      overlay.classList.add("fade-out");
+    }, 4000);
+
+    // Remove overlay, start staggered role reveal
+    setTimeout(() => {
+      overlay.classList.add("hidden");
+      overlay.classList.remove("fade-out");
+      text.style.color = "";
+      revealRolesStaggered(msg.players, admin);
+    }, 4800);
+  }
+
+  function renderRoleReveal(players, hidden) {
     const container = $("role-reveal");
     if (!players || players.length === 0) {
       container.innerHTML = "";
@@ -1314,12 +1455,20 @@
       }
     }
 
-    container.innerHTML = players
+    // Sort: non-mafia first, then mafia
+    const sorted = [...players].sort((a, b) => {
+      const aIsMafia = a.role === "mafia" ? 1 : 0;
+      const bIsMafia = b.role === "mafia" ? 1 : 0;
+      return aIsMafia - bIsMafia;
+    });
+
+    const hiddenClass = hidden ? " reveal-hidden" : "";
+    container.innerHTML = sorted
       .map((p) => {
         const dead = !p.isAlive;
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">\u2764 ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
-        return `<div class="role-reveal-item${dead ? " dead" : ""}">
+        return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
           <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
           ${loverText}
@@ -1327,6 +1476,37 @@
         </div>`;
       })
       .join("");
+  }
+
+  function revealRolesStaggered(players, admin) {
+    const items = Array.from($("role-reveal").querySelectorAll(".role-reveal-item"));
+    if (items.length === 0) {
+      showGameOverButtons(admin);
+      return;
+    }
+
+    // Find the boundary between non-mafia and mafia
+    const firstMafiaIdx = items.findIndex((el) => el.dataset.role === "mafia");
+    const DELAY_PER_CARD = 300;
+    const PAUSE_BEFORE_MAFIA = 800;
+
+    items.forEach((el, i) => {
+      let delay = i * DELAY_PER_CARD;
+      // Add extra pause before mafia reveals
+      if (firstMafiaIdx > 0 && i >= firstMafiaIdx) {
+        delay += PAUSE_BEFORE_MAFIA;
+      }
+      setTimeout(() => {
+        el.classList.remove("reveal-hidden");
+        el.classList.add("reveal-show");
+      }, delay);
+    });
+
+    // Show buttons after all reveals complete
+    const lastIdx = items.length - 1;
+    let totalTime = lastIdx * DELAY_PER_CARD + 400;
+    if (firstMafiaIdx > 0) totalTime += PAUSE_BEFORE_MAFIA;
+    setTimeout(() => showGameOverButtons(admin), totalTime);
   }
 
   $("btn-play-again").addEventListener("click", () => {
@@ -1340,8 +1520,9 @@
     $("role-reveal").innerHTML = "";
     $("event-history-list").innerHTML = "";
     $("event-history").classList.add("hidden");
-    $("admin-end-game").classList.add("hidden");
     narratorTranscript = [];
+    resetEventHistoryTabs();
+    closeSettingsModal();
     gameCode = null;
     isAdmin = false;
     showScreen("menu");
@@ -1356,11 +1537,6 @@
   // ============================================================
   // SOUND
   // ============================================================
-  $("btn-sound-toggle").addEventListener("click", () => {
-    soundEnabled = !soundEnabled;
-    $("btn-sound-toggle").innerHTML = soundEnabled ? "&#128264;" : "&#128263;";
-  });
-
   function getAudioContext() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();

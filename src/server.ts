@@ -210,6 +210,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
         // If game is active (not lobby), send full state to bring player up to speed
         if (game.phase !== "lobby") {
+          // Send player list so client can populate knownPlayers
+          send(ws, { type: "player_list", players: getPlayerInfo(game) });
+
           // Send role info
           send(ws, {
             type: "game_started",
