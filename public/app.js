@@ -194,7 +194,7 @@
         isLover = msg.isLover;
         myVariant = msg.variant || 0;
         isDead = false;
-        if (!gotPlayerList) {
+        if (!isRejoining) {
           // Fresh game start — reset all state
           hasVoted = false;
           dayVoteCount = 0;
@@ -1652,7 +1652,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.16_202602281254";
+  const APP_VERSION = "v1.17_202602281304";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
