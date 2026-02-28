@@ -2,9 +2,9 @@
 
 ## Version Updates (MANDATORY)
 **Before every push to main**, update the `APP_VERSION` constant in `public/app.js`:
-- Format: `v1.{PR_NUMBER}_{YYYYMMDDHHmm}` (UTC timestamp)
+- Format: `v1.{PR_NUMBER}_{YYYYMMDDHHmm}` (PST timestamp)
 - Increment the PR number by 1 from the current value
-- Use `date -u +"%Y%m%d%H%M"` to get the UTC timestamp
+- Use `TZ="America/Los_Angeles" date +"%Y%m%d%H%M"` to get the PST timestamp
 - Example: `const APP_VERSION = "v1.17_202602281300";`
 
 ## Tech Stack
