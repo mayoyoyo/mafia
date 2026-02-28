@@ -106,6 +106,7 @@ function sendNightActionPromptsForPlayer(game: Game, player: import("./types").P
   if (!player.isAlive || !player.role) return;
 
   if (player.role === "mafia") {
+    if (game.mafiaConfirmed) return; // already confirmed — rejoin_state handles display
     const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
     const targets = aliveNonMafia.map((p) => ({
       id: p.id,
@@ -117,6 +118,11 @@ function sendNightActionPromptsForPlayer(game: Game, player: import("./types").P
     // Also send current vote status
     const status = getMafiaVoteStatus(game);
     sendToUser(player.id, { type: "mafia_vote_update", voterTargets: status.voterTargets });
+    // If unanimous but not confirmed, re-send confirm prompt
+    if (game.mafiaTarget !== null) {
+      const targetPlayer = game.players.get(game.mafiaTarget)!;
+      sendToUser(player.id, { type: "mafia_confirm_ready", targetName: targetPlayer.username });
+    }
   }
 
   if (player.role === "doctor" && game.doctorTarget === null) {
@@ -217,6 +223,22 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           // Send player list so client can populate knownPlayers
           send(ws, { type: "player_list", players: getPlayerInfo(game) });
 
+          // Compute night action state for this player
+          let nightActionLocked = false;
+          let nightActionTargetName: string | null = null;
+          if (game.phase === "night" && rejoined.isAlive) {
+            if (rejoined.role === "mafia" && game.mafiaConfirmed && game.mafiaTarget !== null) {
+              nightActionLocked = true;
+              nightActionTargetName = game.players.get(game.mafiaTarget)?.username ?? null;
+            } else if (rejoined.role === "doctor" && game.doctorTarget !== null) {
+              nightActionLocked = true;
+              nightActionTargetName = game.players.get(game.doctorTarget)?.username ?? null;
+            } else if (rejoined.role === "detective" && game.detectiveTarget !== null) {
+              nightActionLocked = true;
+              nightActionTargetName = game.players.get(game.detectiveTarget)?.username ?? null;
+            }
+          }
+
           // Send rejoin state (before game_started so client has data before resets)
           send(ws, {
             type: "rejoin_state",
@@ -226,6 +248,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             detectiveHistory: game.detectiveHistory,
             hasVoted: game.votes.has(client.userId),
             anonVoteChecked: game.voteAnonymous,
+            nightActionLocked,
+            nightActionTargetName,
           });
 
           // Send role info

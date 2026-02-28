@@ -135,7 +135,8 @@ export type ServerMessage =
   | { type: "rejoin_state"; dayStartedAt: number | null; dayVoteCount: number;
       narratorHistory: string[];
       detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
-      hasVoted: boolean; anonVoteChecked: boolean };
+      hasVoted: boolean; anonVoteChecked: boolean;
+      nightActionLocked: boolean; nightActionTargetName: string | null };
 
 export interface PlayerInfo {
   id: number;

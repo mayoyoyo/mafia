@@ -28,6 +28,8 @@
   let dayTimerStart = null;
   let detectiveHistory = [];
   let rejoinDayStartedAt = null;
+  let rejoinNightTargetName = null;
+  let mafiaConfirmTarget = null;
   let isRejoining = false;
 
   // ============================================================
@@ -187,6 +189,10 @@
         if (msg.hasVoted) hasVoted = true;
         if (msg.detectiveHistory) detectiveHistory = msg.detectiveHistory;
         rejoinDayStartedAt = msg.dayStartedAt;
+        if (msg.nightActionLocked) {
+          nightActionLocked = true;
+          rejoinNightTargetName = msg.nightActionTargetName;
+        }
         break;
 
       case "game_started":
@@ -200,6 +206,9 @@
           dayVoteCount = 0;
           narratorTranscript = [];
           detectiveHistory = [];
+          nightActionLocked = false;
+          mafiaConfirmTarget = null;
+          rejoinNightTargetName = null;
         }
         stopDayTimer();
         showScreen("game");
@@ -940,12 +949,26 @@
     if (msg.phase === "night") {
       hasVoted = false;
       dayVoteCount = 0;
-      nightActionLocked = false;
+      if (!isRejoining) nightActionLocked = false;
       $("event-history").classList.add("hidden");
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
       if (isAdmin) {
         $("admin-night-controls").classList.remove("hidden");
+      }
+      // On rejoin with confirmed night action, show collapsed panel
+      if (isRejoining && nightActionLocked && rejoinNightTargetName) {
+        const panel = $("night-actions");
+        panel.classList.remove("hidden");
+        const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : "Investigating";
+        $("action-title").textContent = roleLabel;
+        $("action-targets").innerHTML = `<li class="selected">${escapeHtml(rejoinNightTargetName)} \u2714</li>`;
+        $("btn-confirm-action").classList.add("hidden");
+        $("action-status").textContent = "Action confirmed.";
+        if (myRole === "mafia") {
+          $("mafia-vote-status").classList.remove("hidden");
+        }
+        rejoinNightTargetName = null;
       }
     }
 
@@ -1210,8 +1233,6 @@
     }
   }
 
-  let mafiaConfirmTarget = null; // track confirmed target name for collapse
-
   function updateMafiaVoteStatus(msg) {
     const details = $("mafia-vote-details");
     const entries = Object.entries(msg.voterTargets);
@@ -1227,6 +1248,7 @@
     if (!nightActionLocked) {
       $("btn-confirm-action").classList.add("hidden");
       $("action-status").textContent = "";
+      mafiaConfirmTarget = null;
     }
   }
 
@@ -1732,7 +1754,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.20_202602281321";
+  const APP_VERSION = "v1.21_202602281337";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
