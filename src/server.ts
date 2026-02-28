@@ -102,50 +102,115 @@ function sendNightActionPrompts(game: Game): void {
   }
 }
 
-function sendNightActionPromptsForPlayer(game: Game, player: import("./types").Player): void {
-  if (!player.isAlive || !player.role) return;
+function buildGameSync(game: Game, client: WSClient, rejoined: import("./types").Player): ServerMessage {
+  const userId = client.userId!;
 
-  if (player.role === "mafia") {
-    if (game.mafiaConfirmed) return; // already confirmed — rejoin_state handles display
-    const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
-    const targets = aliveNonMafia.map((p) => ({
-      id: p.id,
-      username: p.username,
-      isAlive: true,
-      isAdmin: p.id === game.adminId,
-    }));
-    sendToUser(player.id, { type: "mafia_targets", players: targets });
-    // Also send current vote status
-    const status = getMafiaVoteStatus(game);
-    sendToUser(player.id, { type: "mafia_vote_update", voterTargets: status.voterTargets });
-    // If unanimous but not confirmed, re-send confirm prompt
-    if (game.mafiaTarget !== null) {
-      const targetPlayer = game.players.get(game.mafiaTarget)!;
-      sendToUser(player.id, { type: "mafia_confirm_ready", targetName: targetPlayer.username });
+  // Night action state (only if night + alive + has role with action)
+  let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
+  if (game.phase === "night" && rejoined.isAlive) {
+    if (rejoined.role === "mafia") {
+      const locked = game.mafiaConfirmed && game.mafiaTarget !== null;
+      const targetName = locked ? (game.players.get(game.mafiaTarget!)?.username ?? null) : null;
+
+      // Build targets list (non-mafia alive players)
+      const targets = locked ? [] : getAlivePlayers(game)
+        .filter(p => p.role !== "mafia")
+        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+
+      const status = getMafiaVoteStatus(game);
+      const confirmTargetName = (!locked && game.mafiaTarget !== null)
+        ? (game.players.get(game.mafiaTarget)?.username ?? null)
+        : null;
+
+      nightAction = {
+        locked,
+        targetName,
+        targets,
+        voterTargets: status.voterTargets,
+        confirmTargetName,
+        lastDoctorTarget: null,
+      };
+    } else if (rejoined.role === "doctor") {
+      const locked = game.doctorTarget !== null;
+      const targetName = locked ? (game.players.get(game.doctorTarget!)?.username ?? null) : null;
+      const targets = locked ? [] : getAlivePlayers(game)
+        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+
+      nightAction = {
+        locked, targetName, targets,
+        voterTargets: {}, confirmTargetName: null,
+        lastDoctorTarget: game.lastDoctorTarget,
+      };
+    } else if (rejoined.role === "detective") {
+      const locked = game.detectiveTarget !== null;
+      const targetName = locked ? (game.players.get(game.detectiveTarget!)?.username ?? null) : null;
+      const targets = locked ? [] : getAlivePlayers(game)
+        .filter(p => p.role !== "detective")
+        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+
+      nightAction = {
+        locked, targetName, targets,
+        voterTargets: {}, confirmTargetName: null,
+        lastDoctorTarget: null,
+      };
     }
   }
 
-  if (player.role === "doctor" && game.doctorTarget === null) {
-    const allAlive = getAlivePlayers(game).map((p) => ({
-      id: p.id,
-      username: p.username,
-      isAlive: true,
-      isAdmin: p.id === game.adminId,
-    }));
-    sendToUser(player.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
+  // Vote state (only if voting)
+  let voteState: Extract<ServerMessage, { type: "game_sync" }>["voteState"] = null;
+  if (game.phase === "voting" && game.voteTarget !== null) {
+    const target = game.players.get(game.voteTarget)!;
+    let votesFor = 0, votesAgainst = 0;
+    const voterNames: Record<string, boolean> = {};
+    for (const [voterId, approve] of game.votes) {
+      const voter = game.players.get(voterId)!;
+      voterNames[voter.username] = approve;
+      if (approve) votesFor++; else votesAgainst++;
+    }
+    voteState = {
+      targetName: target.username,
+      targetId: game.voteTarget,
+      anonymous: game.voteAnonymous,
+      hasVoted: game.votes.has(userId),
+      votesFor, votesAgainst,
+      total: getAlivePlayers(game).length,
+      voterNames: game.voteAnonymous ? null : voterNames,
+    };
   }
 
-  if (player.role === "detective" && game.detectiveTarget === null) {
-    const targets = getAlivePlayers(game)
-      .filter((p) => p.role !== "detective")
-      .map((p) => ({
-        id: p.id,
-        username: p.username,
-        isAlive: true,
-        isAdmin: p.id === game.adminId,
-      }));
-    sendToUser(player.id, { type: "detective_targets", players: targets });
+  // Game over state
+  let gameOver: Extract<ServerMessage, { type: "game_sync" }>["gameOver"] = null;
+  if (game.phase === "game_over") {
+    const winMessages: Record<string, string> = { town: "Citizens win!", mafia: "Mafia wins!", joker: "Joker wins!" };
+    gameOver = {
+      winner: game.winner!,
+      message: game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
+      forceEnded: game.forceEnded,
+      revealPlayers: getPlayerInfo(game, true),
+    };
   }
+
+  return {
+    type: "game_sync",
+    code: game.code,
+    isAdmin: userId === game.adminId,
+    players: getPlayerInfo(game),
+    role: rejoined.role!,
+    isLover: rejoined.isLover,
+    variant: rejoined.variant,
+    phase: game.phase,
+    round: game.round,
+    isDead: !rejoined.isAlive,
+    dayStartedAt: game.dayStartedAt,
+    dayVoteCount: game.dayVoteCount,
+    narratorHistory: game.narratorHistory,
+    detectiveHistory: game.detectiveHistory,
+    eventHistory: game.eventHistory,
+    anonVoteChecked: game.voteAnonymous,
+    nightAction,
+    voteState,
+    gameOver,
+  };
 }
 
 function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
@@ -218,106 +283,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         client.gameCode = code;
         send(ws, { type: "game_joined", code, isAdmin: client.userId === game.adminId });
 
-        // If game is active (not lobby), send full state to bring player up to speed
+        // If game is active (not lobby), send single atomic game_sync
         if (game.phase !== "lobby") {
-          // Send player list so client can populate knownPlayers
-          send(ws, { type: "player_list", players: getPlayerInfo(game) });
-
-          // Compute night action state for this player
-          let nightActionLocked = false;
-          let nightActionTargetName: string | null = null;
-          if (game.phase === "night" && rejoined.isAlive) {
-            if (rejoined.role === "mafia" && game.mafiaConfirmed && game.mafiaTarget !== null) {
-              nightActionLocked = true;
-              nightActionTargetName = game.players.get(game.mafiaTarget)?.username ?? null;
-            } else if (rejoined.role === "doctor" && game.doctorTarget !== null) {
-              nightActionLocked = true;
-              nightActionTargetName = game.players.get(game.doctorTarget)?.username ?? null;
-            } else if (rejoined.role === "detective" && game.detectiveTarget !== null) {
-              nightActionLocked = true;
-              nightActionTargetName = game.players.get(game.detectiveTarget)?.username ?? null;
-            }
-          }
-
-          // Send rejoin state (before game_started so client has data before resets)
-          send(ws, {
-            type: "rejoin_state",
-            dayStartedAt: game.dayStartedAt,
-            dayVoteCount: game.dayVoteCount,
-            narratorHistory: game.narratorHistory,
-            detectiveHistory: game.detectiveHistory,
-            hasVoted: game.votes.has(client.userId),
-            anonVoteChecked: game.voteAnonymous,
-            nightActionLocked,
-            nightActionTargetName,
-          });
-
-          // Send role info
-          send(ws, {
-            type: "game_started",
-            role: rejoined.role!,
-            isLover: rejoined.isLover,
-            variant: rejoined.variant,
-          });
-
-          // Send current phase
-          send(ws, {
-            type: "phase_change",
-            phase: game.phase,
-            round: game.round,
-            messages: [],
-            events: game.eventHistory,
-          });
-
-          // If night phase and player is alive, re-send action prompts
-          if (game.phase === "night" && rejoined.isAlive) {
-            sendNightActionPromptsForPlayer(game, rejoined);
-          }
-
-          // If voting in progress, re-send vote state
-          if (game.phase === "voting" && game.voteTarget !== null) {
-            const target = game.players.get(game.voteTarget)!;
-            send(ws, {
-              type: "vote_called",
-              targetName: target.username,
-              targetId: game.voteTarget,
-              anonymous: game.voteAnonymous,
-            });
-
-            // Send current vote progress
-            let votesFor = 0;
-            let votesAgainst = 0;
-            const voterNames: Record<string, boolean> = {};
-            for (const [voterId, approve] of game.votes) {
-              const voter = game.players.get(voterId)!;
-              voterNames[voter.username] = approve;
-              if (approve) votesFor++;
-              else votesAgainst++;
-            }
-            send(ws, {
-              type: "vote_update",
-              votesFor,
-              votesAgainst,
-              total: getAlivePlayers(game).length,
-              ...(game.voteAnonymous ? {} : { voterNames }),
-            });
-          }
-
-          // If game is over, send game_over so client shows the right screen
-          if (game.phase === "game_over") {
-            send(ws, {
-              type: "game_over",
-              winner: game.winner!,
-              message: game.forceEnded ? "Host has ended the game." : (game.winner === "town" ? "Citizens win!" : game.winner === "mafia" ? "Mafia wins!" : "Joker wins!"),
-              forceEnded: game.forceEnded,
-              players: getPlayerInfo(game, true),
-            });
-          }
-
-          // If player is dead, notify
-          if (!rejoined.isAlive) {
-            send(ws, { type: "you_died", message: "You were killed." });
-          }
+          send(ws, buildGameSync(game, client, rejoined));
         } else {
           broadcastLobbyUpdate(game);
         }

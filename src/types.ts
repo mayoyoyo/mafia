@@ -133,11 +133,60 @@ export type ServerMessage =
   | { type: "sound_cue"; sound: "night" | "day" }
   | { type: "night_action_done"; message: string }
   | { type: "room_closed"; message: string }
-  | { type: "rejoin_state"; dayStartedAt: number | null; dayVoteCount: number;
+  | { type: "game_sync";
+      // Identity
+      code: string;
+      isAdmin: boolean;
+      // Players
+      players: PlayerInfo[];
+      // Role
+      role: Role;
+      isLover: boolean;
+      variant: number;
+      // Phase
+      phase: GamePhase;
+      round: number;
+      // Alive
+      isDead: boolean;
+      // Day timer
+      dayStartedAt: number | null;
+      dayVoteCount: number;
+      // Narrator
       narratorHistory: string[];
+      // Detective
       detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
-      hasVoted: boolean; anonVoteChecked: boolean;
-      nightActionLocked: boolean; nightActionTargetName: string | null };
+      // Events
+      eventHistory: GameEvent[];
+      // Anonymous vote default
+      anonVoteChecked: boolean;
+      // Night action (null if not in night or dead or no action needed)
+      nightAction: {
+        locked: boolean;
+        targetName: string | null;
+        targets: PlayerInfo[];
+        voterTargets: Record<string, string>;
+        confirmTargetName: string | null;
+        lastDoctorTarget: number | null;
+      } | null;
+      // Vote state (null if not in voting)
+      voteState: {
+        targetName: string;
+        targetId: number;
+        anonymous: boolean;
+        hasVoted: boolean;
+        votesFor: number;
+        votesAgainst: number;
+        total: number;
+        voterNames: Record<string, boolean> | null;
+      } | null;
+      // Game over (null if game not over)
+      gameOver: {
+        winner: "town" | "mafia" | "joker";
+        message: string;
+        forceEnded: boolean;
+        revealPlayers: PlayerInfo[];
+      } | null;
+    };
 
 export interface PlayerInfo {
   id: number;

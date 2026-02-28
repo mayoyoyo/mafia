@@ -27,11 +27,8 @@
   let dayTimerInterval = null;
   let dayTimerStart = null;
   let detectiveHistory = [];
-  let rejoinDayStartedAt = null;
-  let rejoinNightTargetName = null;
   let mafiaConfirmTarget = null;
   let lastGameEvents = [];
-  let isRejoining = false;
 
   // ============================================================
   // DOM REFS
@@ -182,18 +179,8 @@
         updateSettingsUI(msg.settings);
         break;
 
-      case "rejoin_state":
-        isRejoining = true;
-        dayVoteCount = msg.dayVoteCount;
-        narratorTranscript = msg.narratorHistory;
-        anonVoteChecked = msg.anonVoteChecked;
-        if (msg.hasVoted) hasVoted = true;
-        if (msg.detectiveHistory) detectiveHistory = msg.detectiveHistory;
-        rejoinDayStartedAt = msg.dayStartedAt;
-        if (msg.nightActionLocked) {
-          nightActionLocked = true;
-          rejoinNightTargetName = msg.nightActionTargetName;
-        }
+      case "game_sync":
+        handleGameSync(msg);
         break;
 
       case "game_started":
@@ -201,17 +188,14 @@
         isLover = msg.isLover;
         myVariant = msg.variant || 0;
         isDead = false;
-        if (!isRejoining) {
-          // Fresh game start — reset all state
-          hasVoted = false;
-          dayVoteCount = 0;
-          narratorTranscript = [];
-          detectiveHistory = [];
-          nightActionLocked = false;
-          mafiaConfirmTarget = null;
-          rejoinNightTargetName = null;
-          lastGameEvents = [];
-        }
+        // Fresh game start — reset all state
+        hasVoted = false;
+        dayVoteCount = 0;
+        narratorTranscript = [];
+        detectiveHistory = [];
+        nightActionLocked = false;
+        mafiaConfirmTarget = null;
+        lastGameEvents = [];
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -271,7 +255,7 @@
         break;
 
       case "vote_called":
-        if (!isRejoining) dayVoteCount++;
+        dayVoteCount++;
         handleVoteCalled(msg);
         break;
 
@@ -324,6 +308,172 @@
       case "config_deleted":
         wsSend({ type: "list_configs" });
         break;
+    }
+  }
+
+  // ============================================================
+  // GAME SYNC (atomic rejoin handler)
+  // ============================================================
+  function handleGameSync(msg) {
+    // 1. Set identity state
+    gameCode = msg.code;
+    // isAdmin already set by game_joined
+
+    // 2. Set player list
+    knownPlayers = msg.players;
+
+    // 3. Set role
+    myRole = msg.role;
+    isLover = msg.isLover;
+    myVariant = msg.variant;
+    isDead = msg.isDead;
+
+    // 4. Set phase
+    currentPhase = msg.phase;
+    previousPhase = msg.phase;
+
+    // 5. Restore accumulated state
+    dayVoteCount = msg.dayVoteCount;
+    narratorTranscript = msg.narratorHistory;
+    detectiveHistory = msg.detectiveHistory;
+    anonVoteChecked = msg.anonVoteChecked;
+    hasVoted = false;
+    nightActionLocked = false;
+    mafiaConfirmTarget = null;
+    lastGameEvents = msg.eventHistory || [];
+
+    // 6. Render event history
+    if (msg.eventHistory && msg.eventHistory.length > 0) {
+      renderEventHistory(msg.eventHistory);
+    }
+
+    // 7. Handle game over
+    if (msg.gameOver) {
+      handleGameOver({
+        type: "game_over",
+        winner: msg.gameOver.winner,
+        message: msg.gameOver.message,
+        forceEnded: msg.gameOver.forceEnded,
+        players: msg.gameOver.revealPlayers,
+      });
+      return;
+    }
+
+    // 8. Show game screen with role card
+    showScreen("game");
+    updateRoleCard();
+    $("role-card").classList.add("flipped");
+    $("round-number").textContent = msg.round;
+
+    // Phase indicator
+    const indicator = $("phase-indicator");
+    indicator.className = `phase-indicator ${msg.phase}`;
+    indicator.textContent = msg.phase.toUpperCase();
+
+    // 9. Hide all action panels
+    $("night-actions").classList.add("hidden");
+    $("mafia-vote-status").classList.add("hidden");
+    $("voting-panel").classList.add("hidden");
+    $("admin-day-controls").classList.add("hidden");
+    $("admin-night-controls").classList.add("hidden");
+
+    // 10. Show recent narrator messages
+    $("narrator-messages").innerHTML = "";
+    if (narratorTranscript.length > 0) {
+      const recent = narratorTranscript.slice(-5);
+      for (const m of recent) {
+        const div = document.createElement("div");
+        div.className = "narrator-line";
+        div.textContent = m;
+        $("narrator-messages").appendChild(div);
+      }
+    }
+
+    // 11. Phase-specific setup
+    if (msg.phase === "day") {
+      if (msg.dayStartedAt) {
+        startDayTimer(msg.dayStartedAt);
+      } else {
+        startDayTimer();
+      }
+      if (isAdmin) {
+        showAdminDayControls();
+        setTimeout(() => populateAdminTargets(knownPlayers), 100);
+      }
+    }
+
+    if (msg.phase === "night" || msg.phase === "game_over") {
+      stopDayTimer();
+    }
+
+    if (msg.phase === "night") {
+      if (isAdmin) {
+        $("admin-night-controls").classList.remove("hidden");
+      }
+      // Night action
+      if (msg.nightAction) {
+        const na = msg.nightAction;
+        if (na.locked && na.targetName) {
+          // Show locked-in action
+          const panel = $("night-actions");
+          panel.classList.remove("hidden");
+          const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : "Investigating";
+          $("action-title").textContent = roleLabel;
+          $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
+          $("btn-confirm-action").classList.add("hidden");
+          $("action-status").textContent = "Action confirmed.";
+          nightActionLocked = true;
+          if (myRole === "mafia") {
+            $("mafia-vote-status").classList.remove("hidden");
+            mafiaConfirmTarget = na.targetName;
+          }
+        } else if (na.targets.length > 0) {
+          // Show target selection
+          const actionType = myRole === "mafia" ? "mafia_vote"
+            : myRole === "doctor" ? "doctor_save" : "detective_investigate";
+          const title = myRole === "mafia" ? "Choose a victim"
+            : myRole === "doctor" ? "Choose someone to protect" : "Choose someone to investigate";
+          showNightAction(title, na.targets, actionType, myRole === "doctor" ? na.lastDoctorTarget : undefined);
+
+          // Restore mafia vote status
+          if (myRole === "mafia" && Object.keys(na.voterTargets).length > 0) {
+            updateMafiaVoteStatus({ voterTargets: na.voterTargets });
+          }
+          // Restore confirm prompt
+          if (myRole === "mafia" && na.confirmTargetName) {
+            handleMafiaConfirmReady({ targetName: na.confirmTargetName });
+          }
+        }
+      }
+    }
+
+    if (msg.phase === "voting" && msg.voteState) {
+      const vs = msg.voteState;
+      hasVoted = vs.hasVoted;
+      handleVoteCalled({
+        targetName: vs.targetName,
+        targetId: vs.targetId,
+        anonymous: vs.anonymous,
+      });
+      updateVoteProgress({
+        votesFor: vs.votesFor,
+        votesAgainst: vs.votesAgainst,
+        total: vs.total,
+        voterNames: vs.voterNames || undefined,
+      });
+    }
+
+    // Show event history during day/voting
+    if ((msg.phase === "day" || msg.phase === "voting") && $("event-history-list").innerHTML) {
+      $("event-history").classList.remove("hidden");
+    }
+
+    // 12. Show death overlay if dead
+    if (isDead) {
+      $("dead-overlay").classList.remove("hidden");
+      $("death-message").textContent = "You were killed.";
+      $("dead-dismiss-hint").classList.remove("hidden");
+      $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
     }
   }
 
@@ -940,12 +1090,7 @@
     $("admin-night-controls").classList.add("hidden");
 
     if (msg.phase === "day") {
-      if (rejoinDayStartedAt) {
-        startDayTimer(rejoinDayStartedAt);
-        rejoinDayStartedAt = null;
-      } else {
-        startDayTimer();
-      }
+      startDayTimer();
       if (isAdmin) {
         showAdminDayControls();
         setTimeout(() => populateAdminTargets(knownPlayers), 100);
@@ -959,26 +1104,12 @@
     if (msg.phase === "night") {
       hasVoted = false;
       dayVoteCount = 0;
-      if (!isRejoining) nightActionLocked = false;
+      nightActionLocked = false;
       $("event-history").classList.add("hidden");
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
       if (isAdmin) {
         $("admin-night-controls").classList.remove("hidden");
-      }
-      // On rejoin with confirmed night action, show collapsed panel
-      if (isRejoining && nightActionLocked && rejoinNightTargetName) {
-        const panel = $("night-actions");
-        panel.classList.remove("hidden");
-        const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : "Investigating";
-        $("action-title").textContent = roleLabel;
-        $("action-targets").innerHTML = `<li class="selected">${escapeHtml(rejoinNightTargetName)} \u2714</li>`;
-        $("btn-confirm-action").classList.add("hidden");
-        $("action-status").textContent = "Action confirmed.";
-        if (myRole === "mafia") {
-          $("mafia-vote-status").classList.remove("hidden");
-        }
-        rejoinNightTargetName = null;
       }
     }
 
@@ -986,9 +1117,6 @@
     if ((msg.phase === "day" || msg.phase === "voting") && $("event-history-list").innerHTML) {
       $("event-history").classList.remove("hidden");
     }
-
-    // Clear rejoin flag after phase is fully applied
-    isRejoining = false;
   }
 
   // ============================================================
@@ -1347,8 +1475,7 @@
   });
 
   function handleVoteCalled(msg) {
-    // Reset hasVoted for new votes, but preserve it on rejoin
-    if (!isRejoining) hasVoted = false;
+    hasVoted = false;
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
@@ -1830,7 +1957,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.23_202602281348";
+  const APP_VERSION = "v1.24_202602281427";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
 
   if ("serviceWorker" in navigator) {
