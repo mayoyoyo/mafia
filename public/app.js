@@ -2980,6 +2980,7 @@
   function playOscillatorTone(type) {
     try {
       const ctx = getAudioContext();
+      if (ctx.state !== "running") ctx.resume();
       const oscillator = ctx.createOscillator();
       const gain = ctx.createGain();
       oscillator.connect(gain);
@@ -3023,12 +3024,25 @@
   function playAudioBuffer(buffer, onDone) {
     try {
       const ctx = getAudioContext();
+      // Resume context if it auto-suspended during a long day phase
+      if (ctx.state !== "running") ctx.resume();
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(ctx.destination);
-      source.onended = () => { currentAudio = null; onDone(); };
+      var done = false;
+      var safetyTimer = null;
+      function finish() {
+        if (done) return;
+        done = true;
+        if (safetyTimer) clearTimeout(safetyTimer);
+        currentAudio = null;
+        onDone();
+      }
+      source.onended = finish;
       currentAudio = source;
       source.start(0);
+      // Safety timeout: if onended never fires (iOS suspend), advance the queue anyway
+      safetyTimer = setTimeout(finish, (buffer.duration || 5) * 1000 + 500);
     } catch {
       currentAudio = null;
       onDone();
@@ -3112,7 +3126,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.62_202603010627";
+  const APP_VERSION = "v1.63_202603010639";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
