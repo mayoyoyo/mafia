@@ -385,16 +385,13 @@
     $("admin-day-controls").classList.add("hidden");
     $("admin-night-controls").classList.add("hidden");
 
-    // 10. Show recent narrator messages
+    // 10. Show most recent narrator message
     $("narrator-messages").innerHTML = "";
     if (narratorTranscript.length > 0) {
-      const recent = narratorTranscript.slice(-5);
-      for (const m of recent) {
-        const div = document.createElement("div");
-        div.className = "narrator-line";
-        div.textContent = m;
-        $("narrator-messages").appendChild(div);
-      }
+      const div = document.createElement("div");
+      div.className = "narrator-line";
+      div.textContent = narratorTranscript[narratorTranscript.length - 1];
+      $("narrator-messages").appendChild(div);
     }
 
     // 11. Phase-specific setup
@@ -471,6 +468,8 @@
       });
     }
 
+    // Show event history (always visible during game)
+    $("event-history").classList.remove("hidden");
     updatePlayerStatus();
 
     // 12. Show death overlay if dead
@@ -1417,15 +1416,12 @@
     // Clear visible narrator for new phase (transcript preserves history)
     $("narrator-messages").innerHTML = "";
 
-    // Render recent narrator messages from transcript on rejoin
+    // Show most recent narrator message from transcript if no new messages
     if (narratorTranscript.length > 0 && (!msg.messages || msg.messages.length === 0)) {
-      const recent = narratorTranscript.slice(-5);
-      for (const m of recent) {
-        const div = document.createElement("div");
-        div.className = "narrator-line";
-        div.textContent = m;
-        $("narrator-messages").appendChild(div);
-      }
+      const div = document.createElement("div");
+      div.className = "narrator-line";
+      div.textContent = narratorTranscript[narratorTranscript.length - 1];
+      $("narrator-messages").appendChild(div);
     }
 
     if (msg.messages && msg.messages.length > 0) {
@@ -1609,11 +1605,11 @@
   function showNarratorMessage(text) {
     narratorTranscript.push(text);
     const container = $("narrator-messages");
+    container.innerHTML = "";
     const div = document.createElement("div");
-    div.className = "narrator-line";
+    div.className = "narrator-line animate-in";
     div.textContent = text;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
   }
 
   // ============================================================
@@ -2458,7 +2454,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.35_202602281727";
+  const APP_VERSION = "v1.36_202602281741";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
