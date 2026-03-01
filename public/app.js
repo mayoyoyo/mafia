@@ -2868,30 +2868,44 @@
   function getAudioContext() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // Route Web Audio through media channel so iOS mute switch doesn't silence it
+      if ("audioSession" in navigator) {
+        navigator.audioSession.type = "playback";
+      }
     }
     return audioCtx;
   }
 
   // iOS Safari blocks all audio until a user gesture triggers playback.
   // Since game sounds come from WebSocket messages (not taps), they silently fail.
-  // On first tap/click, resume AudioContext + play a silent buffer to unlock the audio pipeline.
+  // On first tap/touchend, resume AudioContext + play a silent buffer to unlock the audio pipeline.
+  // iOS 17+ requires touchend (not touchstart) as a completed user gesture.
   function unlockAudio() {
     if (audioUnlocked) return;
-    audioUnlocked = true;
     const ctx = getAudioContext();
-    if (ctx.state === "suspended") ctx.resume();
+    // Play silent buffer (old iOS compat) + call resume() (modern method)
     const buffer = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
-    // Re-preload after AudioContext unlock so decodeAudioData works on iOS
-    preloadNarrationAudio(currentAccent);
-    document.removeEventListener("touchstart", unlockAudio);
-    document.removeEventListener("click", unlockAudio);
+    ctx.resume().then(function () {
+      audioUnlocked = true;
+      // Re-preload after AudioContext unlock so decodeAudioData works on iOS
+      preloadNarrationAudio(currentAccent);
+    });
+    document.removeEventListener("touchend", unlockAudio, true);
+    document.removeEventListener("click", unlockAudio, true);
   }
-  document.addEventListener("touchstart", unlockAudio);
-  document.addEventListener("click", unlockAudio);
+  document.addEventListener("touchend", unlockAudio, true);
+  document.addEventListener("click", unlockAudio, true);
+
+  // Recover from iOS "interrupted" state when returning from background/lock screen
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && audioCtx) {
+      audioCtx.resume();
+    }
+  });
 
   const NARRATION_CUES = [
     "everyone_close",
@@ -3098,7 +3112,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.61_202603010606";
+  const APP_VERSION = "v1.62_202603010627";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

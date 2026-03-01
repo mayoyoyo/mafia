@@ -162,8 +162,11 @@ function handleSubPhaseAdvance(game: Game): void {
       if (!getGame(game.code)) return;
       broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
 
-      // Random 3-9s fake acting delay
-      const fakeDelay = 3000 + Math.floor(Math.random() * 6001);
+      // Normal-distribution fake delay centered at 10s, range ~5-15s
+      const u1 = Math.random() || 0.0001;
+      const u2 = Math.random();
+      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      const fakeDelay = Math.max(5000, Math.min(15000, Math.round(10000 + z * 2000)));
       const fakeTimer = setTimeout(() => {
         nightTimers.delete(game.code);
         if (!getGame(game.code)) return;
