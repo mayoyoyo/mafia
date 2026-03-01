@@ -166,6 +166,18 @@ input::placeholder { color: var(--text-secondary); }
   border-bottom: 1px solid var(--border);
 }
 .setting-row:last-of-type { border-bottom: none; }
+.accent-select {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.accent-select:focus { border-color: var(--primary); }
 .counter { display: flex; align-items: center; gap: 12px; }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
 .config-buttons { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }

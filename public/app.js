@@ -17,6 +17,12 @@
   let soundEnabled = false;
   let hasVoted = false;
   let audioCtx = null;
+  let soundQueue = [];
+  let soundPlaying = false;
+  let narrationData = null;
+  let currentAccent = localStorage.getItem("mafia_accent") || "classic";
+  let narrationAudioCache = {};
+  let currentAudio = null;
   let knownPlayers = [];
   let deathOrderCounter = 0;
   let mafiaTeam = [];
@@ -253,7 +259,7 @@
         break;
 
       case "sound_cue":
-        playSound(msg.sound);
+        queueSound(msg.sound);
         break;
 
       case "mafia_targets":
@@ -2401,6 +2407,7 @@
   // ============================================================
   $("btn-settings").addEventListener("click", () => {
     $("toggle-sound").checked = soundEnabled;
+    $("setting-accent").classList.toggle("hidden", !soundEnabled);
     $("toggle-dark-mode").checked = document.documentElement.getAttribute("data-theme") !== "light";
     // Show room code for admin
     if (isAdmin && gameCode) {
@@ -2436,6 +2443,17 @@
 
   $("toggle-sound").addEventListener("change", (e) => {
     soundEnabled = e.target.checked;
+    const accentRow = $("setting-accent");
+    if (accentRow) {
+      accentRow.classList.toggle("hidden", !soundEnabled);
+    }
+    if (!soundEnabled) flushSoundQueue();
+  });
+
+  $("select-accent").addEventListener("change", (e) => {
+    currentAccent = e.target.value;
+    localStorage.setItem("mafia_accent", currentAccent);
+    preloadNarrationAudio(currentAccent);
   });
 
   // Dark mode toggle
@@ -2742,7 +2760,7 @@
   });
 
   // ============================================================
-  // SOUND
+  // SOUND — queued playback + accent narration system
   // ============================================================
   function getAudioContext() {
     if (!audioCtx) {
@@ -2751,36 +2769,58 @@
     return audioCtx;
   }
 
-  // Narration text for sequential night sub-phase cues
-  const NARRATION_LINES = {
-    mafia_open: "Mafia, open your eyes.",
-    mafia_close: "Mafia, close your eyes.",
-    doctor_open: "Doctor, open your eyes.",
-    doctor_close: "Doctor, close your eyes.",
-    detective_open: "Detective, open your eyes.",
-    detective_close: "Detective, close your eyes.",
-  };
+  const NARRATION_CUES = [
+    "mafia_open", "mafia_close",
+    "doctor_open", "doctor_close",
+    "detective_open", "detective_close",
+  ];
 
-  function speakNarration(text) {
-    if (!window.speechSynthesis) return;
-    // Cancel any ongoing speech first
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9;
-    utterance.pitch = 0.8;
-    utterance.volume = 1.0;
-    window.speechSynthesis.speak(utterance);
+  function queueSound(type) {
+    if (!soundEnabled) return;
+    soundQueue.push(type);
+    if (!soundPlaying) processNextSound();
   }
 
-  function playSound(type) {
-    if (!soundEnabled) return;
+  function processNextSound() {
+    if (soundQueue.length === 0) {
+      soundPlaying = false;
+      return;
+    }
+    soundPlaying = true;
+    const type = soundQueue.shift();
 
-    // Check if this is a narration cue
-    if (NARRATION_LINES[type]) {
-      speakNarration(NARRATION_LINES[type]);
+    if (type === "night" || type === "day") {
+      playOscillatorTone(type);
+      const duration = type === "night" ? 2000 : 1200;
+      setTimeout(() => processNextSound(), duration);
       return;
     }
 
+    if (NARRATION_CUES.includes(type)) {
+      const cached = narrationAudioCache[type];
+      if (cached) {
+        // Clone the audio element so we can replay it
+        const audio = cached.cloneNode();
+        playAudioElement(audio, () => processNextSound());
+      } else {
+        // Fallback to SpeechSynthesis
+        const text = narrationData && narrationData.cues[currentAccent]
+          ? narrationData.cues[currentAccent][type]
+          : null;
+        if (text) {
+          speakNarrationQueued(text, () => processNextSound());
+        } else {
+          processNextSound();
+        }
+      }
+      return;
+    }
+
+    // Unknown cue type, skip
+    processNextSound();
+  }
+
+  function playOscillatorTone(type) {
     try {
       const ctx = getAudioContext();
       const oscillator = ctx.createOscillator();
@@ -2822,6 +2862,76 @@
     }
   }
 
+  function playAudioElement(audio, onDone) {
+    currentAudio = audio;
+    audio.addEventListener("ended", () => { currentAudio = null; onDone(); }, { once: true });
+    audio.addEventListener("error", () => { currentAudio = null; onDone(); }, { once: true });
+    audio.play().catch(() => { currentAudio = null; onDone(); });
+  }
+
+  function speakNarrationQueued(text, onDone) {
+    if (!window.speechSynthesis) { onDone(); return; }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 0.8;
+    utterance.volume = 1.0;
+    utterance.onend = () => onDone();
+    utterance.onerror = () => onDone();
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function preloadNarrationAudio(accent) {
+    narrationAudioCache = {};
+    NARRATION_CUES.forEach((cue) => {
+      const audio = new Audio("/audio/" + accent + "/" + cue + ".mp3");
+      audio.preload = "auto";
+      // Only cache if load succeeds
+      audio.addEventListener("canplaythrough", () => {
+        narrationAudioCache[cue] = audio;
+      }, { once: true });
+      // Silently ignore load errors — fallback to SpeechSynthesis
+      audio.addEventListener("error", () => {}, { once: true });
+    });
+  }
+
+  function flushSoundQueue() {
+    soundQueue = [];
+    soundPlaying = false;
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      currentAudio = null;
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  function populateAccentSelector() {
+    const sel = $("select-accent");
+    if (!sel || !narrationData) return;
+    sel.innerHTML = "";
+    for (const [key, info] of Object.entries(narrationData.accents)) {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = info.label + " — " + info.description;
+      sel.appendChild(opt);
+    }
+    sel.value = currentAccent;
+  }
+
+  // Init: load narration data
+  fetch("/narration.json")
+    .then((r) => r.ok ? r.json() : null)
+    .then((data) => {
+      if (!data) return;
+      narrationData = data;
+      populateAccentSelector();
+      preloadNarrationAudio(currentAccent);
+    })
+    .catch(() => {});
+
   // ============================================================
   // HELPERS
   // ============================================================
@@ -2844,7 +2954,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.55_202603010500";
+  const APP_VERSION = "v1.56_202603010516";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

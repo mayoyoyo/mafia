@@ -1,0 +1,78 @@
+{
+  "accents": {
+    "classic":       { "label": "Classic",       "description": "Standard narrator" },
+    "british":       { "label": "British",       "description": "Posh and proper" },
+    "australian":    { "label": "Australian",    "description": "Casual Aussie" },
+    "southern":      { "label": "Southern",      "description": "Southern charm" },
+    "italian":       { "label": "Italian",       "description": "Dramatic flair" },
+    "pirate":        { "label": "Pirate",        "description": "Arrr!" },
+    "transylvanian": { "label": "Transylvanian", "description": "Spooky vampire vibes" },
+    "noir":          { "label": "Film Noir",     "description": "Dark detective drama" }
+  },
+  "cues": {
+    "classic": {
+      "mafia_open":     "Mafia, open your eyes.",
+      "mafia_close":    "Mafia, close your eyes.",
+      "doctor_open":    "Doctor, open your eyes.",
+      "doctor_close":   "Doctor, close your eyes.",
+      "detective_open":  "Detective, open your eyes.",
+      "detective_close": "Detective, close your eyes."
+    },
+    "british": {
+      "mafia_open":     "Right then, Mafia. Open your eyes, yeah?",
+      "mafia_close":    "Mafia, close your eyes. Off you pop.",
+      "doctor_open":    "Doctor, open your eyes, if you please.",
+      "doctor_close":   "Doctor, close your eyes. Cheers.",
+      "detective_open":  "Detective, open your eyes. Have a look, then.",
+      "detective_close": "Detective, close your eyes. Sorted."
+    },
+    "australian": {
+      "mafia_open":     "Oi, Mafia! Open your eyes, mate.",
+      "mafia_close":    "Mafia, shut your eyes. Good on ya.",
+      "doctor_open":    "Doctor, open your eyes, legend.",
+      "doctor_close":   "Doctor, close your eyes. No worries.",
+      "detective_open":  "Detective, open your eyes. Have a squiz.",
+      "detective_close": "Detective, close your eyes. She'll be right."
+    },
+    "southern": {
+      "mafia_open":     "Alright Mafia, y'all go on and open your eyes.",
+      "mafia_close":    "Mafia, close your eyes now, darlin'.",
+      "doctor_open":    "Doctor, open them eyes up, sugar.",
+      "doctor_close":   "Doctor, close your eyes now, hear?",
+      "detective_open":  "Detective, go ahead and open your eyes.",
+      "detective_close": "Detective, close your eyes, bless your heart."
+    },
+    "italian": {
+      "mafia_open":     "Mafia... aprite gli occhi. Open your eyes.",
+      "mafia_close":    "Mafia, chiudete gli occhi. Close your eyes.",
+      "doctor_open":    "Dottore! Open your eyes.",
+      "doctor_close":   "Dottore, close your eyes. Bene.",
+      "detective_open":  "Investigatore! Open your eyes.",
+      "detective_close": "Investigatore, close your eyes. Basta."
+    },
+    "pirate": {
+      "mafia_open":     "Arrr! Mafia, open yer eyes, ye scallywags!",
+      "mafia_close":    "Mafia, shut yer eyes! Back to the depths!",
+      "doctor_open":    "Ship's surgeon! Open yer eyes!",
+      "doctor_close":   "Surgeon, shut yer eyes! Rest now!",
+      "detective_open":  "Lookout! Open yer eyes, spy!",
+      "detective_close": "Lookout, shut yer eyes! Back to yer post!"
+    },
+    "transylvanian": {
+      "mafia_open":     "Mafia... open your eyes. The night... is yours.",
+      "mafia_close":    "Mafia... close your eyes. Sleep now.",
+      "doctor_open":    "Doctor... open your eyes. Who vill you save tonight?",
+      "doctor_close":   "Doctor... close your eyes. Your vork is done.",
+      "detective_open":  "Detective... open your eyes. Vhat do you see?",
+      "detective_close": "Detective... close your eyes. The truth... can vait."
+    },
+    "noir": {
+      "mafia_open":     "The shadows stir. Mafia... open your eyes.",
+      "mafia_close":    "Back into the darkness, Mafia. Close your eyes.",
+      "doctor_open":    "The healer awakens. Doctor, open your eyes.",
+      "doctor_close":   "Rest now, Doctor. Close your eyes.",
+      "detective_open":  "The gumshoe stirs. Detective, open your eyes.",
+      "detective_close": "Enough snooping. Detective, close your eyes."
+    }
+  }
+}

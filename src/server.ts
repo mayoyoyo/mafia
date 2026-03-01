@@ -1096,6 +1096,7 @@ function getMimeType(filePath: string): string {
     ".png": "image/png",
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
+    ".mp3": "audio/mpeg",
     ".webmanifest": "application/manifest+json",
   };
   return types[ext] || "application/octet-stream";
