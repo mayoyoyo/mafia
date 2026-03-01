@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, DEFAULT_SETTINGS } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, DEFAULT_SETTINGS, MafiaVoteType, MafiaVoteEntry } from "./types";
 import { Narrator } from "./narrator";
 
 const games = new Map<string, Game>();
@@ -237,7 +237,7 @@ export function startGame(game: Game): string[] | null {
   return messages;
 }
 
-export function submitMafiaVote(game: Game, mafiaId: number, targetId: number): { allVoted: boolean; target: number | null } {
+export function submitMafiaVote(game: Game, mafiaId: number, targetId: number, voteType: "lock" | "maybe" = "lock"): { allVoted: boolean; target: number | null } {
   if (game.phase !== "night") return { allVoted: false, target: null };
   if (game.mafiaConfirmed) return { allVoted: false, target: null }; // locked in
 
@@ -247,16 +247,70 @@ export function submitMafiaVote(game: Game, mafiaId: number, targetId: number): 
   const target = game.players.get(targetId);
   if (!target || !target.isAlive || target.role === "mafia") return { allVoted: false, target: null };
 
-  game.mafiaVotes.set(mafiaId, targetId);
+  game.mafiaVotes.set(mafiaId, { targetId, voteType });
   game.mafiaTarget = null; // reset until re-confirmed
 
+  return checkMafiaConsensus(game);
+}
+
+export function submitMafiaObject(game: Game, mafiaId: number): boolean {
+  if (game.phase !== "night") return false;
+  if (game.mafiaConfirmed) return false;
+
+  const mafiaPlayer = game.players.get(mafiaId);
+  if (!mafiaPlayer || mafiaPlayer.role !== "mafia" || !mafiaPlayer.isAlive) return false;
+
+  // Find the most recent nomination target
+  const nominationTarget = getMostRecentNomination(game);
+  if (nominationTarget === null) return false;
+
+  game.mafiaVotes.set(mafiaId, { targetId: nominationTarget, voteType: "object" });
+  game.mafiaTarget = null;
+  return true;
+}
+
+export function removeMafiaVote(game: Game, mafiaId: number): boolean {
+  if (game.phase !== "night") return false;
+  if (game.mafiaConfirmed) return false;
+
+  const mafiaPlayer = game.players.get(mafiaId);
+  if (!mafiaPlayer || mafiaPlayer.role !== "mafia" || !mafiaPlayer.isAlive) return false;
+
+  if (!game.mafiaVotes.has(mafiaId)) return false;
+
+  game.mafiaVotes.delete(mafiaId);
+  game.mafiaTarget = null;
+  return true;
+}
+
+function getMostRecentNomination(game: Game): number | null {
+  // Return the targetId of the last nomination (lock or maybe) in insertion order
+  let lastTarget: number | null = null;
+  for (const [, entry] of game.mafiaVotes) {
+    if (entry.voteType === "lock" || entry.voteType === "maybe") {
+      lastTarget = entry.targetId;
+    }
+  }
+  return lastTarget;
+}
+
+function checkMafiaConsensus(game: Game): { allVoted: boolean; target: number | null } {
   const aliveMafia = getAliveByRole(game, "mafia");
-  const allVoted = aliveMafia.every((m) => game.mafiaVotes.has(m.id));
 
-  if (!allVoted) return { allVoted: false, target: null };
+  // Only count lock/maybe nominations for consensus
+  const nominations = Array.from(game.mafiaVotes.entries())
+    .filter(([, entry]) => entry.voteType === "lock" || entry.voteType === "maybe");
 
-  // Check if unanimous
-  const targets = Array.from(game.mafiaVotes.values());
+  // All alive mafia must have a nomination (not object, not absent)
+  const allNominated = aliveMafia.every((m) => {
+    const vote = game.mafiaVotes.get(m.id);
+    return vote && (vote.voteType === "lock" || vote.voteType === "maybe");
+  });
+
+  if (!allNominated) return { allVoted: false, target: null };
+
+  // Check if all nominations are for the same target
+  const targets = nominations.map(([, entry]) => entry.targetId);
   const unanimous = targets.every((t) => t === targets[0]);
 
   if (unanimous) {
@@ -264,7 +318,7 @@ export function submitMafiaVote(game: Game, mafiaId: number, targetId: number): 
     return { allVoted: true, target: targets[0] };
   }
 
-  return { allVoted: true, target: null }; // All voted but not unanimous
+  return { allVoted: true, target: null };
 }
 
 export function submitDoctorSave(game: Game, doctorId: number, targetId: number): boolean {
@@ -714,13 +768,13 @@ export function restartGame(game: Game): string[] | null {
   return startGame(game);
 }
 
-export function getMafiaVoteStatus(game: Game): { voterTargets: Record<string, string> } {
-  const voterTargets: Record<string, string> = {};
+export function getMafiaVoteStatus(game: Game): { voterTargets: Record<string, { target: string; voteType: MafiaVoteType }> } {
+  const voterTargets: Record<string, { target: string; voteType: MafiaVoteType }> = {};
 
-  for (const [mafiaId, targetId] of game.mafiaVotes) {
+  for (const [mafiaId, entry] of game.mafiaVotes) {
     const mafiaPlayer = game.players.get(mafiaId)!;
-    const target = game.players.get(targetId)!;
-    voterTargets[mafiaPlayer.username] = target.username;
+    const target = game.players.get(entry.targetId)!;
+    voterTargets[mafiaPlayer.username] = { target: target.username, voteType: entry.voteType };
   }
 
   return { voterTargets };

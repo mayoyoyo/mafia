@@ -26,24 +26,6 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-:root.day-theme {
-  --bg: #f5f0e8;
-  --bg-card: #ede8df;
-  --bg-elevated: #e8e3da;
-  --bg-input: #e8e3da;
-  --text: #2c2c2e;
-  --text-secondary: #6e6e73;
-  --border: #d1ccc3;
-}
-
-/* Keep role card dark regardless of theme */
-.day-theme .card-front {
-  background: #151515;
-  border-color: #2c2c2e;
-}
-.day-theme .role-name { color: inherit; }
-.day-theme .role-description { color: #8e8e93; }
-
 html, body {
   height: 100%;
   background: var(--bg);
@@ -56,25 +38,6 @@ html, body {
   overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
-  transition: background-color 0.5s ease, color 0.5s ease;
-}
-
-.settings-panel,
-.action-panel,
-.narrator-area,
-.vote-status,
-.voting-panel,
-.admin-controls,
-.event-history,
-.players-list li,
-.modal-content,
-.detective-result,
-.target-list li,
-.config-list li,
-.role-reveal-item,
-input[type="text"],
-input[type="tel"] {
-  transition: background-color 0.5s ease, color 0.5s ease, border-color 0.5s ease;
 }
 
 #app {
@@ -449,6 +412,21 @@ input::placeholder { color: var(--text-secondary); }
   padding: 16px;
 }
 .action-panel h3 { font-size: 16px; margin-bottom: 12px; }
+.mafia-action-buttons { display: flex; gap: 8px; margin-top: 10px; }
+.mafia-obj-btn { flex: 1; }
+.mafia-remove-btn { flex: 0; white-space: nowrap; }
+/* Lock/Maybe inline choice */
+.mafia-vote-choice { display: flex; gap: 6px; margin-top: 6px; }
+.mafia-vote-choice .btn { flex: 1; padding: 8px 0; font-size: 13px; }
+.target-list li.choosing { background: var(--border); border-color: var(--primary); }
+/* Animated narrator line */
+.narrator-line.animate-in {
+  animation: narratorSlideIn 0.4s ease;
+}
+@keyframes narratorSlideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
 .target-list { list-style: none; }
 .target-list li {
   padding: 14px 16px;

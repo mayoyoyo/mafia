@@ -31,15 +31,6 @@
   let lastGameEvents = [];
 
   // ============================================================
-  // DAY/NIGHT THEME
-  // ============================================================
-  function setDayTheme(enabled) {
-    document.documentElement.classList.toggle("day-theme", enabled);
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", enabled ? "#f5f0e8" : "#0a0a0a");
-  }
-
-  // ============================================================
   // DOM REFS
   // ============================================================
   const $ = (id) => document.getElementById(id);
@@ -206,7 +197,6 @@
         mafiaConfirmTarget = null;
         lastGameEvents = [];
         stopDayTimer();
-        setDayTheme(false);
         showScreen("game");
         updateRoleCard();
         // Card starts face-down
@@ -308,7 +298,6 @@
         narratorTranscript = [];
         resetEventHistoryTabs();
         closeSettingsModal();
-        setDayTheme(false);
         showScreen("menu");
         break;
 
@@ -343,9 +332,6 @@
     // 4. Set phase
     currentPhase = msg.phase;
     previousPhase = msg.phase;
-
-    // 4b. Theme based on phase
-    setDayTheme(msg.phase === "day" || msg.phase === "voting");
 
     // 5. Restore accumulated state
     dayVoteCount = msg.dayVoteCount;
@@ -520,7 +506,6 @@
     username = null;
     gameCode = null;
     isAdmin = false;
-    setDayTheme(false);
     showScreen("auth");
   });
 
@@ -558,7 +543,6 @@
     gameCode = null;
     isAdmin = false;
     localStorage.removeItem("mafia_game_code");
-    setDayTheme(false);
     showScreen("menu");
   });
 
@@ -566,7 +550,6 @@
     wsSend({ type: "leave_game" });
     gameCode = null;
     localStorage.removeItem("mafia_game_code");
-    setDayTheme(false);
     showScreen("menu");
   });
 
@@ -998,16 +981,17 @@
     [_,"#a62",_,_,_,"#a62",_,_,_,_],
   ];
 
+  // Capsule pill tilted ~30 degrees — top-left blue, bottom-right white
   const PILL_ART = [
-    [_,_,_,_,_,_,_,_,_,_],
-    [_,_,_,"#29f","#29f","#29f","#29f",_,_,_],
-    [_,_,"#29f","#29f","#29f","#29f","#29f","#29f",_,_],
-    [_,"#29f","#29f","#49f","#29f","#29f","#29f","#29f","#29f",_],
-    [_,"#29f","#49f","#49f","#29f","#29f","#29f","#29f","#29f",_],
-    [_,"#fff","#fff","#fff","#fff","#fff","#eee","#eee","#fff",_],
-    [_,"#fff","#fff","#fff","#fff","#eee","#eee","#fff","#fff",_],
-    [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-    [_,_,_,"#fff","#fff","#fff","#fff",_,_,_],
+    [_,_,_,_,_,_,"#29f","#29f",_,_],
+    [_,_,_,_,_,"#29f","#49f","#29f",_,_],
+    [_,_,_,_,"#29f","#49f","#29f",_,_,_],
+    [_,_,_,"#29f","#29f","#29f",_,_,_,_],
+    [_,_,"#29f","#29f","#29f",_,_,_,_,_],
+    [_,_,"#fff","#fff","#fff",_,_,_,_,_],
+    [_,"#fff","#fff","#eee",_,_,_,_,_,_],
+    [_,"#fff","#eee","#fff",_,_,_,_,_,_],
+    [_,"#fff","#fff",_,_,_,_,_,_,_],
     [_,_,_,_,_,_,_,_,_,_],
   ];
 
@@ -1342,7 +1326,6 @@
   function applyPhaseChange(msg) {
     previousPhase = msg.phase;
     currentPhase = msg.phase;
-    setDayTheme(msg.phase === "day" || msg.phase === "voting");
     $("round-number").textContent = msg.round;
 
     const indicator = $("phase-indicator");
@@ -1598,6 +1581,8 @@
   // ============================================================
   let nightActionLocked = false; // true after doctor/detective confirm
 
+  let mafiaChoiceTarget = null; // tracks which target row has Lock/Maybe expanded
+
   function showNightAction(title, players, actionType, disabledId) {
     if (isDead) return;
 
@@ -1606,8 +1591,12 @@
     $("action-title").textContent = title;
     $("action-status").textContent = "";
     nightActionLocked = false;
+    mafiaChoiceTarget = null;
 
     hideSlideConfirm();
+    $("mafia-action-buttons").classList.add("hidden");
+    $("btn-mafia-object").classList.add("hidden");
+    $("btn-mafia-remove").classList.add("hidden");
 
     const list = $("action-targets");
     list.innerHTML = players
@@ -1621,17 +1610,45 @@
     let selectedTargetId = null;
 
     if (actionType === "mafia_vote") {
-      // Mafia: clicking sends vote to server immediately (for tracking)
+      // Mafia: clicking a target shows Lock/Maybe inline choice
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
           if (nightActionLocked) return;
-          list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
-          li.classList.add("selected");
           const targetId = parseInt(li.dataset.id);
-          wsSend({ type: actionType, targetId });
+
+          // If already showing choice for this target, collapse
+          if (mafiaChoiceTarget === targetId) {
+            collapseVoteChoice(list);
+            return;
+          }
+
+          // Collapse any existing choice
+          collapseVoteChoice(list);
+
+          // Highlight and show Lock/Maybe buttons inline
+          li.classList.add("choosing");
+          mafiaChoiceTarget = targetId;
+          const choiceDiv = document.createElement("div");
+          choiceDiv.className = "mafia-vote-choice";
+          choiceDiv.innerHTML = `<button class="btn btn-small btn-primary" data-vote="lock">\u{1F512} Lock</button><button class="btn btn-small btn-secondary" data-vote="maybe">\u{1F914} Maybe</button>`;
+          li.appendChild(choiceDiv);
+
+          choiceDiv.querySelectorAll("button").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              if (nightActionLocked) return;
+              const voteType = btn.dataset.vote;
+              wsSend({ type: "mafia_vote", targetId, voteType });
+              list.querySelectorAll("li").forEach((l) => l.classList.remove("selected", "choosing"));
+              li.classList.add("selected");
+              collapseVoteChoice(list);
+              mafiaChoiceTarget = null;
+            });
+          });
         });
       });
       $("mafia-vote-status").classList.remove("hidden");
+      $("mafia-action-buttons").classList.remove("hidden");
     } else {
       // Doctor/Detective: clicking selects visually, slide-to-confirm sends to server
       let selectedName = null;
@@ -1654,19 +1671,67 @@
     }
   }
 
+  function collapseVoteChoice(list) {
+    list.querySelectorAll(".mafia-vote-choice").forEach((c) => c.remove());
+    list.querySelectorAll("li.choosing").forEach((l) => l.classList.remove("choosing"));
+    mafiaChoiceTarget = null;
+  }
+
+  // Object button handler
+  $("btn-mafia-object").addEventListener("click", () => {
+    if (nightActionLocked) return;
+    wsSend({ type: "mafia_object" });
+  });
+
+  // Remove vote button handler
+  $("btn-mafia-remove").addEventListener("click", () => {
+    if (nightActionLocked) return;
+    wsSend({ type: "mafia_remove_vote" });
+    $("action-targets").querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
+  });
+
   function updateMafiaVoteStatus(msg) {
     const details = $("mafia-vote-details");
     const entries = Object.entries(msg.voterTargets);
     if (entries.length === 0) {
       details.textContent = "No votes yet...";
+      $("btn-mafia-object").classList.add("hidden");
+      $("btn-mafia-remove").classList.add("hidden");
       return;
     }
+
+    const VOTE_LABELS = {
+      lock: { verb: "locks in", color: "#d32f2f" },
+      maybe: { verb: "suggests", color: "#ff9800" },
+      object: { verb: "objects to killing", color: "#8e8e93" },
+    };
+
     details.innerHTML = entries
-      .map(([voter, target]) => `<div><span style="color:#d32f2f;font-weight:bold">${escapeHtml(voter)}</span> votes ${escapeHtml(target)}</div>`)
+      .map(([voter, info]) => {
+        const label = VOTE_LABELS[info.voteType] || VOTE_LABELS.lock;
+        return `<div class="narrator-line animate-in"><span style="color:${label.color};font-weight:bold">${escapeHtml(voter)}</span> ${label.verb} ${escapeHtml(info.target)}.</div>`;
+      })
       .join("");
 
-    // Hide slide on any vote change (will be re-shown by mafia_confirm_ready if unanimous)
+    // Check if there is any nomination (for Object button)
+    const hasNomination = entries.some(([, info]) => info.voteType === "lock" || info.voteType === "maybe");
+    // Check if current player has a vote (for Remove button)
+    const myVote = entries.find(([voter]) => voter === username);
+
     if (!nightActionLocked) {
+      // Show Object button if there's a nomination and we haven't locked
+      if (hasNomination && (!myVote || myVote[1].voteType !== "object")) {
+        $("btn-mafia-object").classList.remove("hidden");
+      } else {
+        $("btn-mafia-object").classList.add("hidden");
+      }
+      // Show Remove Vote if we have any vote
+      if (myVote) {
+        $("btn-mafia-remove").classList.remove("hidden");
+      } else {
+        $("btn-mafia-remove").classList.add("hidden");
+      }
+
       hideSlideConfirm();
       $("action-status").textContent = "";
       mafiaConfirmTarget = null;
@@ -1677,6 +1742,8 @@
     if (nightActionLocked) return;
     mafiaConfirmTarget = msg.targetName;
     $("action-status").textContent = `Unanimous! Target: ${msg.targetName}. Confirm to lock in.`;
+    $("btn-mafia-object").classList.add("hidden");
+    $("btn-mafia-remove").classList.add("hidden");
     setupSlideConfirm("mafia", () => {
       if (nightActionLocked) return;
       nightActionLocked = true;
@@ -1911,7 +1978,6 @@
       localStorage.removeItem("mafia_game_code");
       gameCode = null;
       isAdmin = false;
-      setDayTheme(false);
       closeSettingsModal();
       showScreen("menu");
     }
@@ -1924,7 +1990,6 @@
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
     closeSettingsModal();
-    setDayTheme(false);
 
     // Reset gameplay state but keep gameCode/isAdmin for Play Again
     const savedIsAdmin = isAdmin;
@@ -2172,7 +2237,6 @@
     closeSettingsModal();
     gameCode = null;
     isAdmin = false;
-    setDayTheme(false);
     showScreen("menu");
   });
 
@@ -2257,7 +2321,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.32_202602281603";
+  const APP_VERSION = "v1.33_202602281620";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

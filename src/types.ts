@@ -31,6 +31,13 @@ export const DEFAULT_SETTINGS: GameSettings = {
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 
+export type MafiaVoteType = "lock" | "maybe" | "object";
+
+export interface MafiaVoteEntry {
+  targetId: number;
+  voteType: MafiaVoteType;
+}
+
 export interface Game {
   code: string;
   adminId: number;
@@ -41,7 +48,7 @@ export interface Game {
   players: Map<number, Player>;
   mafiaVariant: number; // shared pixel art variant for all mafia
   // Night actions
-  mafiaVotes: Map<number, number>; // mafiaPlayerId -> targetId
+  mafiaVotes: Map<number, MafiaVoteEntry>; // mafiaPlayerId -> vote entry
   mafiaTarget: number | null;
   mafiaConfirmed: boolean;
   doctorTarget: number | null;
@@ -88,7 +95,9 @@ export type ClientMessage =
   | { type: "list_configs" }
   | { type: "delete_config"; configId: number }
   | { type: "start_game" }
-  | { type: "mafia_vote"; targetId: number }
+  | { type: "mafia_vote"; targetId: number; voteType: "lock" | "maybe" }
+  | { type: "mafia_object" }
+  | { type: "mafia_remove_vote" }
   | { type: "confirm_mafia_kill" }
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
@@ -114,7 +123,7 @@ export type ServerMessage =
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[] }
-  | { type: "mafia_vote_update"; voterTargets: Record<string, string> }
+  | { type: "mafia_vote_update"; voterTargets: Record<string, { target: string; voteType: MafiaVoteType }> }
   | { type: "mafia_confirm_ready"; targetName: string }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
@@ -164,7 +173,7 @@ export type ServerMessage =
         locked: boolean;
         targetName: string | null;
         targets: PlayerInfo[];
-        voterTargets: Record<string, string>;
+        voterTargets: Record<string, { target: string; voteType: MafiaVoteType }>;
         confirmTargetName: string | null;
         lastDoctorTarget: number | null;
       } | null;

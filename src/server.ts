@@ -1,7 +1,7 @@
 import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig } from "./db";
 import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
-  getPlayerInfo, startGame, submitMafiaVote, submitDoctorSave,
+  getPlayerInfo, startGame, submitMafiaVote, submitMafiaObject, removeMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
@@ -493,30 +493,35 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night") return;
 
-      const result = submitMafiaVote(game, client.userId, msg.targetId);
+      const voteType = msg.voteType || "lock";
+      const result = submitMafiaVote(game, client.userId, msg.targetId, voteType);
 
       // Only broadcast if vote was actually recorded
       if (!game.mafiaVotes.has(client.userId)) break;
 
-      // Broadcast vote status to all mafia
-      const status = getMafiaVoteStatus(game);
-      const aliveMafia = getAliveByRole(game, "mafia");
-      for (const m of aliveMafia) {
-        sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets });
-      }
+      broadcastMafiaStatus(game, result);
+      break;
+    }
 
-      if (result.allVoted && result.target !== null) {
-        // Mafia agreed - send confirm prompt (any mafia can confirm)
-        const targetPlayer = game.players.get(result.target)!;
-        for (const m of aliveMafia) {
-          sendToUser(m.id, { type: "mafia_confirm_ready", targetName: targetPlayer.username });
-        }
-      } else if (result.allVoted && result.target === null) {
-        // All voted but not unanimous - notify, let them change votes
-        for (const m of aliveMafia) {
-          sendToUser(m.id, { type: "night_action_done", message: "The Mafia could not agree. Change your vote." });
-        }
-      }
+    case "mafia_object": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.phase !== "night") return;
+
+      if (!submitMafiaObject(game, client.userId)) break;
+
+      broadcastMafiaStatus(game, { allVoted: false, target: null });
+      break;
+    }
+
+    case "mafia_remove_vote": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.phase !== "night") return;
+
+      if (!removeMafiaVote(game, client.userId)) break;
+
+      broadcastMafiaStatus(game, { allVoted: false, target: null });
       break;
     }
 
@@ -880,6 +885,25 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     case "toggle_sound": {
       // Sound toggle is client-side only, but we acknowledge it
       break;
+    }
+  }
+}
+
+function broadcastMafiaStatus(game: Game, result: { allVoted: boolean; target: number | null }): void {
+  const status = getMafiaVoteStatus(game);
+  const aliveMafia = getAliveByRole(game, "mafia");
+  for (const m of aliveMafia) {
+    sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets });
+  }
+
+  if (result.allVoted && result.target !== null) {
+    const targetPlayer = game.players.get(result.target)!;
+    for (const m of aliveMafia) {
+      sendToUser(m.id, { type: "mafia_confirm_ready", targetName: targetPlayer.username });
+    }
+  } else if (result.allVoted && result.target === null) {
+    for (const m of aliveMafia) {
+      sendToUser(m.id, { type: "night_action_done", message: "The Mafia could not agree. Change your vote." });
     }
   }
 }

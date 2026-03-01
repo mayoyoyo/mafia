@@ -712,7 +712,8 @@ describe("Rejoin with mafia vote status", () => {
     expect(sync.nightAction).not.toBeNull();
     expect(sync.nightAction.locked).toBe(false);
     expect(Object.keys(sync.nightAction.voterTargets).length).toBeGreaterThanOrEqual(1);
-    expect(sync.nightAction.voterTargets[mafias[0].username]).toBe(citizens[0].username);
+    expect(sync.nightAction.voterTargets[mafias[0].username].target).toBe(citizens[0].username);
+    expect(sync.nightAction.voterTargets[mafias[0].username].voteType).toBe("lock");
 
     for (const p of players) p.ws.close();
   }, 15000);
