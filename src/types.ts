@@ -100,6 +100,7 @@ export type ClientMessage =
   | { type: "start_game" }
   | { type: "mafia_vote"; targetId: number; voteType: "lock" | "maybe" | "letsnot" }
   | { type: "mafia_remove_vote"; targetId?: number }
+  | { type: "confirm_mafia_kill" }
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
   | { type: "call_vote"; targetId: number; anonymous?: boolean }
@@ -124,7 +125,8 @@ export type ServerMessage =
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string }
-  | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null }
+  | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
+  | { type: "mafia_confirm_ready"; targetName: string }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }
@@ -178,6 +180,8 @@ export type ServerMessage =
         targets: PlayerInfo[];
         voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>;
         lockedTarget: string | null;
+        objectedTargets: Record<number, string[]>;
+        aliveMafiaCount: number;
         lastDoctorTarget: number | null;
       } | null;
       // Vote state (null if not in voting)

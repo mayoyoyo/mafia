@@ -33,6 +33,8 @@
   let dayTimerStart = null;
   let detectiveHistory = [];
   let myMafiaVotes = []; // array of { targetId, voteType }
+  let mafiaObjectedTargets = {}; // { targetId: ["username", ...] }
+  let aliveMafiaCount = 0;
   let lastGameEvents = [];
   let lastVoteResult = null;
 
@@ -219,6 +221,9 @@
         detectiveHistory = [];
         nightActionLocked = false;
         myMafiaVotes = [];
+        mafiaObjectedTargets = {};
+        aliveMafiaCount = 0;
+        lastVoterTargets = {};
         mafiaTargetPlayers = [];
         lastGameEvents = [];
         lastVoteResult = null;
@@ -376,6 +381,9 @@
     hasVoted = false;
     nightActionLocked = false;
     myMafiaVotes = [];
+    mafiaObjectedTargets = {};
+    aliveMafiaCount = 0;
+    lastVoterTargets = {};
     mafiaTargetPlayers = [];
     lastVoteResult = null;
     lastGameEvents = msg.eventHistory || [];
@@ -473,7 +481,7 @@
 
           // Restore mafia vote status
           if (myRole === "mafia" && Object.keys(na.voterTargets).length > 0) {
-            updateMafiaVoteStatus({ voterTargets: na.voterTargets, lockedTarget: na.lockedTarget });
+            updateMafiaVoteStatus({ voterTargets: na.voterTargets, lockedTarget: na.lockedTarget, objectedTargets: na.objectedTargets || {}, aliveMafiaCount: na.aliveMafiaCount || 0 });
           }
         }
       }
@@ -1879,22 +1887,29 @@
     $("mafia-action-buttons").classList.add("hidden");
 
     const list = $("action-targets");
-    list.innerHTML = players
-      .map((p) => {
-        const isDisabled = disabledId != null && p.id === disabledId;
-        const suffix = isDisabled ? " (protected last night)" : "";
-        return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}">${escapeHtml(p.username)}${suffix}</li>`;
-      })
-      .join("");
-
-    let selectedTargetId = null;
 
     if (actionType === "mafia_vote") {
       mafiaTargetPlayers = players;
-      renderMafiaTargetIcons(list, {});
-      $("mafia-vote-status").classList.remove("hidden");
+      // Branch on single vs multi mafia
+      if (mafiaTeam.length <= 1) {
+        renderSingleMafiaTargets(list, players);
+        $("mafia-vote-status").classList.add("hidden");
+      } else {
+        list.innerHTML = "";
+        renderMafiaTargetCards(list, players, {});
+        $("mafia-vote-status").classList.remove("hidden");
+      }
     } else {
+      list.innerHTML = players
+        .map((p) => {
+          const isDisabled = disabledId != null && p.id === disabledId;
+          const suffix = isDisabled ? " (protected last night)" : "";
+          return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}">${escapeHtml(p.username)}${suffix}</li>`;
+        })
+        .join("");
+
       // Doctor/Detective: clicking selects visually, slide-to-confirm sends to server
+      let selectedTargetId = null;
       let selectedName = null;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
@@ -1915,61 +1930,191 @@
     }
   }
 
-  function renderMafiaTargetIcons(list, voteCounts) {
-    // voteCounts: { [targetId]: { maybe: count, lock: count, letsnot: count } }
-    list.querySelectorAll("li:not(.disabled)").forEach((li) => {
-      const targetId = parseInt(li.dataset.id);
+  function renderSingleMafiaTargets(list, players) {
+    list.innerHTML = players
+      .map((p) => `<li data-id="${p.id}" class="single-mafia-target">${escapeHtml(p.username)}</li>`)
+      .join("");
+
+    list.querySelectorAll("li").forEach((li) => {
+      li.addEventListener("click", () => {
+        if (nightActionLocked) return;
+        const targetId = parseInt(li.dataset.id);
+        list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
+        li.classList.add("selected");
+        // Send maybe then lock with small delay
+        wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+        setTimeout(() => {
+          wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+        }, 50);
+      });
+    });
+  }
+
+  let lastVoterTargets = {}; // track for chip rendering
+
+  function renderMafiaTargetCards(list, players, voteCounts) {
+    list.innerHTML = "";
+    for (const p of players) {
+      const targetId = p.id;
       const counts = voteCounts[targetId] || { maybe: 0, lock: 0, letsnot: 0 };
       const myVote = myMafiaVotes.find(v => v.targetId === targetId);
       const myVoteType = myVote ? myVote.voteType : null;
       const hasMyMaybe = myMafiaVotes.some(v => v.targetId === targetId && v.voteType === "maybe");
+      const isObjected = mafiaObjectedTargets[targetId] && mafiaObjectedTargets[targetId].length > 0;
+      const iMyObjection = myVoteType === "letsnot";
 
-      // Remove existing icon container if present
-      const existing = li.querySelector(".mafia-icons");
-      if (existing) existing.remove();
+      // Determine card state
+      let cardState = "idle";
+      if (isObjected) {
+        cardState = "objected";
+      } else if (aliveMafiaCount > 0 && counts.lock === aliveMafiaCount) {
+        cardState = "unanimous";
+      } else if (counts.lock > 0) {
+        cardState = "partial-lock";
+      } else if (counts.maybe > 0) {
+        cardState = "suggested";
+      }
 
-      const iconsDiv = document.createElement("div");
-      iconsDiv.className = "mafia-icons";
+      const card = document.createElement("li");
+      card.className = "mafia-target-card " + cardState;
+      card.dataset.id = String(targetId);
+      if (isObjected && iMyObjection) card.classList.add("my-objection");
 
-      // Maybe icon
-      const maybeBtn = document.createElement("button");
-      maybeBtn.className = "mafia-icon-btn" + (myVoteType === "maybe" ? " active" : "");
-      maybeBtn.innerHTML = "\u{1F914}" + (counts.maybe > 0 ? `<span class="vote-count">${counts.maybe}</span>` : "");
-      maybeBtn.title = "Maybe";
-      maybeBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (nightActionLocked) return;
-        wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-      });
+      // Header
+      const header = document.createElement("div");
+      header.className = "mtc-header";
+      const nameEl = document.createElement("span");
+      nameEl.className = "mtc-name";
+      nameEl.textContent = p.username;
+      header.appendChild(nameEl);
 
-      // Lock icon (only clickable if current user has "maybe" on this target)
-      const lockBtn = document.createElement("button");
-      lockBtn.className = "mafia-icon-btn" + (myVoteType === "lock" ? " active" : "") + (!hasMyMaybe && myVoteType !== "lock" ? " disabled-icon" : "");
-      lockBtn.innerHTML = "\u{1F512}" + (counts.lock > 0 ? `<span class="vote-count">${counts.lock}</span>` : "");
-      lockBtn.title = hasMyMaybe || myVoteType === "lock" ? "Lock" : "Must select Maybe first";
-      lockBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (nightActionLocked) return;
-        if (!hasMyMaybe && myVoteType !== "lock") return;
-        wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-      });
+      if (isObjected) {
+        const badge = document.createElement("span");
+        badge.className = "mtc-blocked-label";
+        badge.textContent = "Blocked";
+        header.appendChild(badge);
+      } else if (cardState === "unanimous") {
+        const badge = document.createElement("span");
+        badge.className = "mtc-lock-progress";
+        badge.textContent = "Unanimous";
+        header.appendChild(badge);
+      } else if (counts.lock > 0) {
+        const badge = document.createElement("span");
+        badge.className = "mtc-lock-progress";
+        badge.textContent = counts.lock + "/" + aliveMafiaCount + " locked";
+        header.appendChild(badge);
+      }
+      card.appendChild(header);
 
-      // Letsnot icon
-      const letsnotBtn = document.createElement("button");
-      letsnotBtn.className = "mafia-icon-btn" + (myVoteType === "letsnot" ? " active" : "");
-      letsnotBtn.innerHTML = "\u{274C}" + (counts.letsnot > 0 ? `<span class="vote-count">${counts.letsnot}</span>` : "");
-      letsnotBtn.title = "Let's Not";
-      letsnotBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (nightActionLocked) return;
-        wsSend({ type: "mafia_vote", targetId, voteType: "letsnot" });
-      });
+      // Voter chips (only if there are votes)
+      if (counts.maybe > 0 || counts.lock > 0 || counts.letsnot > 0) {
+        const chipsDiv = document.createElement("div");
+        chipsDiv.className = "mtc-chips";
+        for (const [voterName, votes] of Object.entries(lastVoterTargets)) {
+          for (const v of votes) {
+            if (v.targetId === targetId) {
+              const chip = document.createElement("span");
+              const initial = voterName.charAt(0).toUpperCase();
+              chip.textContent = initial;
+              if (v.voteType === "lock") chip.className = "mtc-chip chip-lock";
+              else if (v.voteType === "maybe") chip.className = "mtc-chip chip-suggest";
+              else chip.className = "mtc-chip chip-object";
+              chip.title = voterName + ": " + v.voteType;
+              chipsDiv.appendChild(chip);
+            }
+          }
+        }
+        card.appendChild(chipsDiv);
+      }
 
-      iconsDiv.appendChild(maybeBtn);
-      iconsDiv.appendChild(lockBtn);
-      iconsDiv.appendChild(letsnotBtn);
-      li.appendChild(iconsDiv);
-    });
+      // Objection message
+      if (isObjected) {
+        const objMsg = document.createElement("div");
+        objMsg.className = "mtc-objection-msg";
+        objMsg.textContent = "Objected by " + mafiaObjectedTargets[targetId].join(", ");
+        card.appendChild(objMsg);
+      }
+
+      // Action buttons
+      const actions = document.createElement("div");
+      actions.className = "mtc-actions";
+
+      if (cardState === "objected") {
+        if (iMyObjection) {
+          const btn = document.createElement("button");
+          btn.className = "mtc-btn mtc-btn-remove-objection";
+          btn.textContent = "Remove Objection";
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (nightActionLocked) return;
+            wsSend({ type: "mafia_vote", targetId, voteType: "letsnot" });
+          });
+          actions.appendChild(btn);
+        }
+      } else if (cardState === "unanimous") {
+        // No buttons — slide-to-kill takes over
+      } else if (cardState === "idle") {
+        const btn = document.createElement("button");
+        btn.className = "mtc-btn mtc-btn-suggest";
+        btn.textContent = "\u{1F914} Suggest";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (nightActionLocked) return;
+          wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+        });
+        actions.appendChild(btn);
+      } else {
+        // Suggested or partial-lock
+        if (myVoteType === "lock") {
+          const unlockBtn = document.createElement("button");
+          unlockBtn.className = "mtc-btn mtc-btn-unlock";
+          unlockBtn.textContent = "Unlock";
+          unlockBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (nightActionLocked) return;
+            wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+          });
+          actions.appendChild(unlockBtn);
+        } else if (hasMyMaybe) {
+          const lockBtn = document.createElement("button");
+          lockBtn.className = "mtc-btn mtc-btn-lock";
+          lockBtn.textContent = "\u{1F512} Lock In";
+          lockBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (nightActionLocked) return;
+            wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+          });
+          actions.appendChild(lockBtn);
+        } else {
+          const suggestBtn = document.createElement("button");
+          suggestBtn.className = "mtc-btn mtc-btn-suggest";
+          suggestBtn.textContent = "\u{1F914} Suggest";
+          suggestBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (nightActionLocked) return;
+            wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+          });
+          actions.appendChild(suggestBtn);
+        }
+
+        if (myVoteType !== "letsnot") {
+          const objBtn = document.createElement("button");
+          objBtn.className = "mtc-btn mtc-btn-object";
+          objBtn.textContent = "\u{274C}";
+          objBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (nightActionLocked) return;
+            wsSend({ type: "mafia_vote", targetId, voteType: "letsnot" });
+          });
+          actions.appendChild(objBtn);
+        }
+      }
+
+      if (actions.children.length > 0) {
+        card.appendChild(actions);
+      }
+      list.appendChild(card);
+    }
   }
 
   function computeVoteCounts(voterTargets) {
@@ -1993,34 +2138,64 @@
       myMafiaVotes = [];
     }
 
-    // Re-render icons on the target list
+    // Update objected targets and alive mafia count
+    mafiaObjectedTargets = msg.objectedTargets || {};
+    aliveMafiaCount = msg.aliveMafiaCount || 0;
+    lastVoterTargets = msg.voterTargets;
+
+    // For single mafia, don't re-render cards (consensus will trigger confirm)
+    if (mafiaTeam.length <= 1) return;
+
+    // Re-render cards on the target list
     const list = $("action-targets");
     const voteCounts = computeVoteCounts(msg.voterTargets);
-    renderMafiaTargetIcons(list, voteCounts);
+    renderMafiaTargetCards(list, mafiaTargetPlayers, voteCounts);
 
-    // Update mafia vote status text area
+    // Update mafia vote status text area with activity feed
     const details = $("mafia-vote-details");
     if (msg.lockedTarget) {
       details.innerHTML = `<div class="narrator-line animate-in"><span style="color:#d32f2f;font-weight:bold">Target locked:</span> ${escapeHtml(msg.lockedTarget)}</div>`;
       $("mafia-vote-status").classList.remove("hidden");
     } else {
-      details.textContent = "";
-      $("mafia-vote-status").classList.add("hidden");
+      // Build activity summary
+      const lines = [];
+      for (const [voterName, votes] of Object.entries(msg.voterTargets)) {
+        for (const v of votes) {
+          if (v.voteType === "maybe") lines.push(`${escapeHtml(voterName)} suggests ${escapeHtml(v.target)}`);
+          else if (v.voteType === "lock") lines.push(`${escapeHtml(voterName)} locks in ${escapeHtml(v.target)}`);
+          else if (v.voteType === "letsnot") lines.push(`${escapeHtml(voterName)} objects to killing ${escapeHtml(v.target)}`);
+        }
+      }
+      if (lines.length > 0) {
+        details.innerHTML = lines.map(l => `<div class="narrator-line animate-in" style="font-size:13px;color:var(--text-secondary)">${l}</div>`).join("");
+        $("mafia-vote-status").classList.remove("hidden");
+      } else {
+        details.textContent = "";
+        $("mafia-vote-status").classList.add("hidden");
+      }
     }
   }
 
   function handleMafiaConfirmReady(msg) {
     if (nightActionLocked) return;
     mafiaConfirmTarget = msg.targetName;
-    $("action-status").textContent = `Target locked: ${msg.targetName}. Slide to confirm the kill.`;
+
+    // Collapse target list to only show the locked target (vote icons removed)
+    const list = $("action-targets");
+    list.innerHTML = `<li class="selected">${escapeHtml(msg.targetName)}</li>`;
+
+    // Hide vote status and buttons (redundant now)
+    $("mafia-vote-status").classList.add("hidden");
     $("btn-mafia-object").classList.add("hidden");
     $("btn-mafia-remove").classList.add("hidden");
+
+    $("action-status").textContent = "";
+
     setupSlideConfirm("mafia", () => {
       if (nightActionLocked) return;
       nightActionLocked = true;
       wsSend({ type: "confirm_mafia_kill" });
-      // Collapse to show only chosen target
-      const list = $("action-targets");
+      // Show confirmed state
       list.innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
     });
   }
@@ -2644,7 +2819,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.46_202603010350";
+  const APP_VERSION = "v1.47_202603010407";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
