@@ -121,7 +121,7 @@ export type ServerMessage =
   | { type: "game_joined"; code: string; isAdmin: boolean }
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
-  | { type: "game_started"; role: Role; isLover: boolean; variant: number }
+  | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[] }
   | { type: "mafia_vote_update"; voterTargets: Record<string, { target: string; voteType: MafiaVoteType }> }
   | { type: "mafia_confirm_ready"; targetName: string }
@@ -166,6 +166,8 @@ export type ServerMessage =
       detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
       // Events
       eventHistory: GameEvent[];
+      // Mafia team (only for mafia players)
+      mafiaTeam?: string[];
       // Anonymous vote default
       anonVoteChecked: boolean;
       // Night action (null if not in night or dead or no action needed)

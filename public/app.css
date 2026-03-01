@@ -739,6 +739,11 @@ input::placeholder { color: var(--text-secondary); }
 .player-status-dot.alive { background: var(--success); }
 .player-status-dot.dead { background: var(--danger); }
 .player-status-name.dead { text-decoration: line-through; color: var(--text-secondary); }
+.mafia-tag {
+  font-size: 10px; font-weight: 700; color: var(--role-mafia);
+  border: 1px solid var(--role-mafia); border-radius: 4px;
+  padding: 1px 5px; margin-left: auto; letter-spacing: 0.5px;
+}
 .event-history-list { font-size: 13px; line-height: 1.6; }
 .event-history-round {
   font-size: 11px;

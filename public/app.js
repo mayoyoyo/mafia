@@ -18,6 +18,7 @@
   let hasVoted = false;
   let audioCtx = null;
   let knownPlayers = [];
+  let mafiaTeam = [];
   let dayVoteCount = 0;
   let suspenseActive = false;
   let suspenseQueue = [];
@@ -187,6 +188,7 @@
         myRole = msg.role;
         isLover = msg.isLover;
         myVariant = msg.variant || 0;
+        mafiaTeam = msg.mafiaTeam || [];
         isDead = false;
         // Fresh game start — reset all state
         hasVoted = false;
@@ -205,12 +207,14 @@
         $("peel-hint").classList.remove("hidden");
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
-        $("event-history").classList.add("hidden");
         $("event-history-list").innerHTML = "";
         $("dead-overlay").classList.add("hidden");
         $("dead-dismiss-hint").classList.add("hidden");
         $("btn-play-again").classList.add("hidden");
-        resetEventHistoryTabs();
+        // Show players tab from game start
+        resetEventHistoryTabs("players");
+        $("event-history").classList.remove("hidden");
+        updatePlayerStatus();
         break;
 
       case "phase_change":
@@ -327,6 +331,7 @@
     myRole = msg.role;
     isLover = msg.isLover;
     myVariant = msg.variant;
+    mafiaTeam = msg.mafiaTeam || [];
     isDead = msg.isDead;
 
     // 4. Set phase
@@ -982,16 +987,16 @@
   ];
 
   // Capsule pill tilted ~30 degrees — top-left blue, bottom-right white
-  const PILL_ART = [
-    [_,_,_,_,_,_,"#29f","#29f",_,_],
-    [_,_,_,_,_,"#29f","#49f","#29f",_,_],
-    [_,_,_,_,"#29f","#49f","#29f",_,_,_],
-    [_,_,_,"#29f","#29f","#29f",_,_,_,_],
-    [_,_,"#29f","#29f","#29f",_,_,_,_,_],
-    [_,_,"#fff","#fff","#fff",_,_,_,_,_],
-    [_,"#fff","#fff","#eee",_,_,_,_,_,_],
-    [_,"#fff","#eee","#fff",_,_,_,_,_,_],
-    [_,"#fff","#fff",_,_,_,_,_,_,_],
+  const CROSS_ART = [
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,"#e53","#e53","#e53","#e53",_,_,_],
+    [_,_,_,"#f44","#f66","#f66","#e53",_,_,_],
+    [_,"#e53","#f44","#f44","#f66","#f66","#e53","#e53",_,_],
+    [_,"#e53","#f66","#f66","#f88","#f88","#f66","#e53",_,_],
+    [_,"#e53","#f44","#f66","#f88","#f66","#f44","#e53",_,_],
+    [_,"#e53","#e53","#f44","#f66","#f66","#e53","#e53",_,_],
+    [_,_,_,"#e53","#f44","#f44","#e53",_,_,_],
+    [_,_,_,"#c32","#e53","#e53","#c32",_,_,_],
     [_,_,_,_,_,_,_,_,_,_],
   ];
 
@@ -1182,7 +1187,7 @@
 
     // Set role-specific icon and label
     const iconArt = role === "mafia" ? KNIFE_ART
-      : role === "doctor" ? PILL_ART : MAGNIFIER_ART;
+      : role === "doctor" ? CROSS_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
     const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate" };
@@ -1313,8 +1318,13 @@
       renderEventHistory(msg.events);
     }
 
+    // Day/voting → night transition
+    if ((previousPhase === "day" || previousPhase === "voting") && msg.phase === "night") {
+      showNightTransition(() => {
+        applyPhaseChange(msg);
+      });
     // Night-to-day suspense transition (Phase 5)
-    if (previousPhase === "night" && msg.phase === "day") {
+    } else if (previousPhase === "night" && msg.phase === "day") {
       showSuspenseTransition(msg, () => {
         applyPhaseChange(msg);
       });
@@ -1387,6 +1397,58 @@
     if ((msg.phase === "day" || msg.phase === "voting") && $("event-history-list").innerHTML) {
       $("event-history").classList.remove("hidden");
     }
+  }
+
+  // ============================================================
+  // NIGHT TRANSITION (day/voting → night)
+  // ============================================================
+  const NIGHT_MESSAGES = [
+    ["The village grows quiet...", "Lock your doors."],
+    ["Darkness falls over the town...", "No one is safe tonight."],
+    ["The last candle flickers out...", "Sleep tight."],
+    ["Shadows creep through the streets...", "The wolves are hungry."],
+    ["The moon rises, cold and silent...", "Someone won't see morning."],
+    ["Night blankets the town...", "Close your eyes... if you dare."],
+    ["The stars watch from above...", "But they won't protect you."],
+    ["One by one, the lights go out...", "The game begins in the dark."],
+    ["A chill wind sweeps the village...", "Trust no one tonight."],
+    ["The town drifts into uneasy sleep...", "Not everyone will wake up."],
+    ["Crickets fall silent...", "Something stirs in the dark."],
+    ["The clock strikes midnight...", "Evil walks among you."],
+  ];
+  let nightMsgIndex = 0;
+
+  function showNightTransition(callback) {
+    const pair = NIGHT_MESSAGES[nightMsgIndex % NIGHT_MESSAGES.length];
+    nightMsgIndex++;
+
+    const overlay = $("suspense-overlay");
+    const text = $("suspense-text");
+
+    overlay.classList.remove("hidden", "fade-out");
+    text.textContent = pair[0];
+    text.style.color = "";
+    text.style.animation = "none";
+    void text.offsetWidth;
+    text.style.animation = "suspenseFadeIn 0.8s ease";
+
+    setTimeout(() => {
+      text.textContent = pair[1];
+      text.style.color = "#8e8e93";
+      text.style.animation = "none";
+      void text.offsetWidth;
+      text.style.animation = "suspenseFadeIn 0.8s ease";
+    }, 1800);
+
+    setTimeout(() => {
+      overlay.classList.add("fade-out");
+      setTimeout(() => {
+        overlay.classList.add("hidden");
+        overlay.classList.remove("fade-out");
+        text.style.color = "";
+        callback();
+      }, 600);
+    }, 3400);
   }
 
   // ============================================================
@@ -1549,9 +1611,11 @@
     container.innerHTML = knownPlayers
       .map((p) => {
         const status = p.isAlive ? "alive" : "dead";
+        const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
         return `<div class="player-status-item">
           <span class="player-status-dot ${status}"></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
+          ${isMafiaTeammate ? '<span class="mafia-tag">MAFIA</span>' : ''}
         </div>`;
       })
       .join("");
@@ -1568,12 +1632,12 @@
     });
   });
 
-  function resetEventHistoryTabs() {
+  function resetEventHistoryTabs(defaultTab = "events") {
     document.querySelectorAll(".eh-tab").forEach((t) => t.classList.remove("active"));
-    const firstTab = document.querySelector('.eh-tab[data-tab="events"]');
-    if (firstTab) firstTab.classList.add("active");
-    $("eh-panel-events").classList.remove("hidden");
-    $("eh-panel-players").classList.add("hidden");
+    const activeTab = document.querySelector(`.eh-tab[data-tab="${defaultTab}"]`);
+    if (activeTab) activeTab.classList.add("active");
+    $("eh-panel-events").classList.toggle("hidden", defaultTab !== "events");
+    $("eh-panel-players").classList.toggle("hidden", defaultTab !== "players");
   }
 
   // ============================================================
@@ -1704,7 +1768,7 @@
     const VOTE_LABELS = {
       lock: { verb: "locks in", color: "#d32f2f" },
       maybe: { verb: "suggests", color: "#ff9800" },
-      object: { verb: "objects to killing", color: "#8e8e93" },
+      object: { verb: "objects to killing", color: "#d32f2f" },
     };
 
     details.innerHTML = entries
@@ -1727,8 +1791,9 @@
       } else {
         $("btn-mafia-object").classList.add("hidden");
       }
-      // Show Remove Vote if we have any vote
+      // Show Remove button if we have any vote (label changes for objections)
       if (myVote) {
+        $("btn-mafia-remove").textContent = myVote[1].voteType === "object" ? "Remove Objection" : "Remove Vote";
         $("btn-mafia-remove").classList.remove("hidden");
       } else {
         $("btn-mafia-remove").classList.add("hidden");
@@ -1997,6 +2062,7 @@
     const savedIsAdmin = isAdmin;
     myRole = null;
     isLover = false;
+    mafiaTeam = [];
     isDead = false;
     currentPhase = null;
     previousPhase = null;
@@ -2235,6 +2301,7 @@
     $("event-history-list").innerHTML = "";
     $("event-history").classList.add("hidden");
     narratorTranscript = [];
+    mafiaTeam = [];
     resetEventHistoryTabs();
     closeSettingsModal();
     gameCode = null;
@@ -2323,7 +2390,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.33_202602281620";
+  const APP_VERSION = "v1.34_202602281646";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

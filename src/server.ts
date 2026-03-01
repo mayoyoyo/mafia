@@ -207,6 +207,11 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     detectiveHistory: game.detectiveHistory,
     eventHistory: game.eventHistory,
     anonVoteChecked: game.voteAnonymous,
+    ...(rejoined.role === "mafia" ? {
+      mafiaTeam: Array.from(game.players.values())
+        .filter(p => p.role === "mafia")
+        .map(p => p.username),
+    } : {}),
     nightAction,
     voteState,
     gameOver,
@@ -462,6 +467,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
       recordNarrator(game, messages);
 
+      // Build mafia team names
+      const mafiaNames = Array.from(game.players.values())
+        .filter(p => p.role === "mafia")
+        .map(p => p.username);
+
       // Send each player their role
       for (const [playerId, player] of game.players) {
         sendToUser(playerId, {
@@ -469,6 +479,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           role: player.role!,
           isLover: player.isLover,
           variant: player.variant,
+          ...(player.role === "mafia" ? { mafiaTeam: mafiaNames } : {}),
         });
       }
 
@@ -856,6 +867,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
       recordNarrator(game, messages);
 
+      // Build mafia team names
+      const mafiaNames2 = Array.from(game.players.values())
+        .filter(p => p.role === "mafia")
+        .map(p => p.username);
+
       // Send each player their new role
       for (const [playerId, player] of game.players) {
         sendToUser(playerId, {
@@ -863,6 +879,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           role: player.role!,
           isLover: player.isLover,
           variant: player.variant,
+          ...(player.role === "mafia" ? { mafiaTeam: mafiaNames2 } : {}),
         });
       }
 
