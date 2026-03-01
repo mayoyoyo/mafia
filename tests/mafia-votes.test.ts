@@ -302,24 +302,21 @@ describe("Mafia Votes - Consensus", () => {
     removeGame(game.code);
   });
 
-  test("3 mafia: 2 lock same, 1 different → no consensus", () => {
+  test("3 mafia: 2 lock same, 1 different → consensus (2-lock threshold)", () => {
     const game = setupGame(12, { mafiaCount: 3 });
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
 
-    // Mafia 0 and 1 lock citizen 0
+    // Mafia 0 and 1 lock citizen 0 — hits 2-lock threshold
     submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     submitMafiaVote(game, mafia[0].id, citizens[0].id, "lock");
     submitMafiaVote(game, mafia[1].id, citizens[0].id, "maybe");
-    submitMafiaVote(game, mafia[1].id, citizens[0].id, "lock");
+    const result = submitMafiaVote(game, mafia[1].id, citizens[0].id, "lock");
 
-    // Mafia 2 locks citizen 1
-    submitMafiaVote(game, mafia[2].id, citizens[1].id, "maybe");
-    const result = submitMafiaVote(game, mafia[2].id, citizens[1].id, "lock");
-
-    expect(result.consensus).toBe(false);
-    expect(game.mafiaTarget).toBeNull();
+    expect(result.consensus).toBe(true);
+    expect(result.target).toBe(citizens[0].id);
+    expect(game.mafiaTarget).toBe(citizens[0].id);
     removeGame(game.code);
   });
 
