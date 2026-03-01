@@ -879,3 +879,179 @@ describe("advanceNightSubPhase", () => {
     removeGame(game.code);
   });
 });
+
+describe("Lover Death Broadcast", () => {
+  // Helper: set up a game with deterministic lover pairing
+  function setupLoversGame(playerCount = 6) {
+    const game = setupGame(playerCount, { enableLovers: true });
+    startGame(game);
+
+    // Override random assignment for deterministic tests
+    const players = Array.from(game.players.values());
+    for (const p of players) { p.isLover = false; p.loverId = null; }
+
+    // Make the first two non-mafia players lovers
+    const nonMafia = players.filter(p => p.role !== "mafia");
+    nonMafia[0].isLover = true;
+    nonMafia[0].loverId = nonMafia[1].id;
+    nonMafia[1].isLover = true;
+    nonMafia[1].loverId = nonMafia[0].id;
+
+    return { game, loverA: nonMafia[0], loverB: nonMafia[1], mafia: players.filter(p => p.role === "mafia") };
+  }
+
+  test("night kill of a lover produces two killed entries in correct order", () => {
+    const { game, loverA, loverB, mafia } = setupLoversGame();
+
+    lockTarget(game, mafia[0].id, loverA.id);
+    const nightResult = transitionToDay(game);
+
+    expect(nightResult.killed.length).toBe(2);
+    // First entry: the mafia target (direct kill)
+    expect(nightResult.killed[0].player.id).toBe(loverA.id);
+    // Second entry: the lover who died of heartbreak
+    expect(nightResult.killed[1].player.id).toBe(loverB.id);
+    expect(nightResult.killed[1].player.isLover).toBe(true);
+    removeGame(game.code);
+  });
+
+  test("heartbreak death is second in killed array (isLoverDeath flag relies on index > 0)", () => {
+    const { game, loverA, loverB, mafia } = setupLoversGame();
+
+    // Kill loverB (the other lover) to verify order is always target-first
+    lockTarget(game, mafia[0].id, loverB.id);
+    const nightResult = transitionToDay(game);
+
+    expect(nightResult.killed.length).toBe(2);
+    expect(nightResult.killed[0].player.id).toBe(loverB.id); // mafia target
+    expect(nightResult.killed[1].player.id).toBe(loverA.id); // heartbreak
+    removeGame(game.code);
+  });
+
+  test("night lover death records lover_death event type", () => {
+    const { game, loverA, loverB, mafia } = setupLoversGame();
+
+    lockTarget(game, mafia[0].id, loverA.id);
+    transitionToDay(game);
+
+    const loverDeathEvent = game.eventHistory.find(e => e.type === "lover_death");
+    expect(loverDeathEvent).toBeDefined();
+    expect(loverDeathEvent!.playerName).toBe(loverB.username);
+    removeGame(game.code);
+  });
+
+  test("killing a non-lover produces only one killed entry", () => {
+    const { game, mafia } = setupLoversGame();
+
+    // Find a non-lover citizen
+    const nonLover = Array.from(game.players.values()).find(
+      p => p.role !== "mafia" && !p.isLover
+    )!;
+
+    lockTarget(game, mafia[0].id, nonLover.id);
+    const nightResult = transitionToDay(game);
+
+    expect(nightResult.killed.length).toBe(1);
+    expect(nightResult.killed[0].player.id).toBe(nonLover.id);
+    // No lover_death event
+    const loverDeathEvent = game.eventHistory.find(e => e.type === "lover_death");
+    expect(loverDeathEvent).toBeUndefined();
+    removeGame(game.code);
+  });
+
+  test("doctor saving a lover prevents both deaths (no heartbreak)", () => {
+    const game = setupGame(6, { enableLovers: true, enableDoctor: true });
+    startGame(game);
+
+    const players = Array.from(game.players.values());
+    for (const p of players) { p.isLover = false; p.loverId = null; }
+
+    const nonMafia = players.filter(p => p.role !== "mafia" && p.role !== "doctor");
+    nonMafia[0].isLover = true;
+    nonMafia[0].loverId = nonMafia[1].id;
+    nonMafia[1].isLover = true;
+    nonMafia[1].loverId = nonMafia[0].id;
+
+    const mafia = players.filter(p => p.role === "mafia");
+    const doctor = players.find(p => p.role === "doctor")!;
+
+    // Mafia targets lover, doctor saves them
+    lockTarget(game, mafia[0].id, nonMafia[0].id);
+    submitDoctorSave(game, doctor.id, nonMafia[0].id);
+    const nightResult = transitionToDay(game);
+
+    expect(nightResult.saved).toBe(true);
+    expect(nightResult.killed.length).toBe(0);
+    expect(nonMafia[0].isAlive).toBe(true);
+    expect(nonMafia[1].isAlive).toBe(true);
+    removeGame(game.code);
+  });
+
+  test("execution of a lover produces heartbreak as second killed entry", () => {
+    const game = setupGame(6, { enableLovers: true });
+    startGame(game);
+
+    const players = Array.from(game.players.values());
+    for (const p of players) { p.isLover = false; p.loverId = null; }
+
+    const mafia = players.filter(p => p.role === "mafia");
+    const nonMafia = players.filter(p => p.role !== "mafia");
+    nonMafia[0].isLover = true;
+    nonMafia[0].loverId = nonMafia[1].id;
+    nonMafia[1].isLover = true;
+    nonMafia[1].loverId = nonMafia[0].id;
+
+    // Complete night to get to day
+    const nonLover = nonMafia.find(p => !p.isLover)!;
+    lockTarget(game, mafia[0].id, nonLover.id);
+    transitionToDay(game);
+
+    // Execute loverA
+    callVote(game, game.adminId, nonMafia[0].id);
+    for (const p of getAlivePlayers(game)) castVote(game, p.id, true);
+    const result = resolveVote(game);
+
+    expect(result).not.toBeNull();
+    expect(result!.executed).toBe(true);
+    expect(result!.killed.length).toBe(2);
+    // First: executed player
+    expect(result!.killed[0].player.id).toBe(nonMafia[0].id);
+    // Second: lover heartbreak
+    expect(result!.killed[1].player.id).toBe(nonMafia[1].id);
+    expect(result!.killed[1].player.isLover).toBe(true);
+
+    // Event history records both
+    const execEvent = game.eventHistory.find(e => e.type === "execution" && e.playerName === nonMafia[0].username);
+    const loverEvent = game.eventHistory.find(e => e.type === "lover_death" && e.playerName === nonMafia[1].username);
+    expect(execEvent).toBeDefined();
+    expect(loverEvent).toBeDefined();
+    removeGame(game.code);
+  });
+
+  test("lover death message includes both lover names", () => {
+    const { game, loverA, loverB, mafia } = setupLoversGame();
+
+    lockTarget(game, mafia[0].id, loverA.id);
+    const nightResult = transitionToDay(game);
+
+    // The heartbreak death message should include the heartbreak lover's name
+    const heartbreakMsg = nightResult.killed[1].message;
+    expect(heartbreakMsg).toContain(loverB.username);
+    removeGame(game.code);
+  });
+
+  test("already-dead lover does not die again", () => {
+    const { game, loverA, loverB, mafia } = setupLoversGame();
+
+    // Kill loverB manually first
+    loverB.isAlive = false;
+
+    lockTarget(game, mafia[0].id, loverA.id);
+    const nightResult = transitionToDay(game);
+
+    // Only the mafia target dies, no heartbreak (lover already dead)
+    expect(nightResult.killed.length).toBe(1);
+    expect(nightResult.killed[0].player.id).toBe(loverA.id);
+    removeGame(game.code);
+  });
+});

@@ -308,6 +308,7 @@
       case "you_died":
         isDead = true;
         $("dead-overlay").classList.remove("hidden");
+        $("dead-emoji").textContent = msg.isLoverDeath ? "\u{1F494}" : "\u{1F480}";
         $("death-message").textContent = msg.message;
         $("dead-dismiss-hint").classList.remove("hidden");
         $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
@@ -1434,9 +1435,17 @@
       lastVoteResult = null;
       if (voteResult) {
         showExecutionTransition(voteResult, () => {
-          showNightTransition(() => {
-            applyPhaseChange(msg);
-          });
+          if (msg.loverDeathName) {
+            showHeartbreakTransition(msg.loverDeathName, () => {
+              showNightTransition(() => {
+                applyPhaseChange(msg);
+              });
+            });
+          } else {
+            showNightTransition(() => {
+              applyPhaseChange(msg);
+            });
+          }
         });
       } else {
         showNightTransition(() => {
@@ -1448,6 +1457,21 @@
       showSuspenseTransition(msg, () => {
         applyPhaseChange(msg);
       });
+    // Execution → game_over with lover death
+    } else if (msg.loverDeathName && msg.phase === "game_over") {
+      const voteResult = lastVoteResult;
+      lastVoteResult = null;
+      if (voteResult) {
+        showExecutionTransition(voteResult, () => {
+          showHeartbreakTransition(msg.loverDeathName, () => {
+            applyPhaseChange(msg);
+          });
+        });
+      } else {
+        showHeartbreakTransition(msg.loverDeathName, () => {
+          applyPhaseChange(msg);
+        });
+      }
     } else {
       applyPhaseChange(msg);
     }
@@ -1545,6 +1569,28 @@
     }, 2000);
   }
 
+  function showHeartbreakTransition(loverName, callback) {
+    const overlay = $("suspense-overlay");
+    const text = $("suspense-text");
+
+    overlay.classList.remove("hidden", "fade-out");
+    text.textContent = `\u{1F494} ${loverName} died of heartbreak.`;
+    text.style.color = "#9c27b0";
+    text.style.animation = "none";
+    void text.offsetWidth;
+    text.style.animation = "suspenseFadeIn 0.8s ease";
+
+    setTimeout(() => {
+      overlay.classList.add("fade-out");
+      setTimeout(() => {
+        overlay.classList.add("hidden");
+        overlay.classList.remove("fade-out");
+        text.style.color = "";
+        callback();
+      }, 600);
+    }, 2000);
+  }
+
   // ============================================================
   // NIGHT TRANSITION (day/voting → night)
   // ============================================================
@@ -1627,6 +1673,8 @@
     suspenseQueue = [];
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
+    const hasLoverDeath = !!msg.loverDeathName;
+    const extraDelay = hasLoverDeath ? 1800 : 0;
 
     overlay.classList.remove("hidden", "fade-out");
     text.textContent = "The sun rises...";
@@ -1652,9 +1700,19 @@
       text.style.animation = "suspenseFadeIn 0.8s ease";
     }, 3500);
 
+    if (hasLoverDeath) {
+      setTimeout(() => {
+        text.textContent = `\u{1F494} ${msg.loverDeathName} died of heartbreak.`;
+        text.style.color = "#9c27b0";
+        text.style.animation = "none";
+        void text.offsetWidth;
+        text.style.animation = "suspenseFadeIn 0.8s ease";
+      }, 5200);
+    }
+
     setTimeout(() => {
       overlay.classList.add("fade-out");
-    }, 5000);
+    }, 5000 + extraDelay);
 
     setTimeout(() => {
       overlay.classList.add("hidden");
@@ -1670,7 +1728,7 @@
         handleServerMessage(qMsg);
       }
       suspenseQueue = [];
-    }, 5800);
+    }, 5800 + extraDelay);
   }
 
   function showDetectiveResult(msg) {
@@ -2586,7 +2644,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.45_202603010344";
+  const APP_VERSION = "v1.46_202603010350";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

@@ -123,7 +123,7 @@ export type ServerMessage =
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
-  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[] }
+  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
@@ -133,7 +133,7 @@ export type ServerMessage =
   | { type: "vote_update"; votesFor: number; votesAgainst: number; total: number; voterNames?: Record<string, boolean> }
   | { type: "vote_result"; targetName: string; executed: boolean; votesFor: number; votesAgainst: number; voterNames?: Record<string, boolean> }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
-  | { type: "you_died"; message: string }
+  | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[] }
   | { type: "configs_list"; configs: SavedConfig[] }
   | { type: "config_saved"; config: SavedConfig }

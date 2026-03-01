@@ -772,8 +772,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             ...(isAnon ? {} : { voterNames: voteResult.voterNames }),
           });
 
-          for (const k of voteResult.killed) {
-            sendToUser(k.player.id, { type: "you_died", message: k.message });
+          let voteLoverDeathName: string | undefined;
+          for (let i = 0; i < voteResult.killed.length; i++) {
+            const k = voteResult.killed[i];
+            const isLoverDeath = i > 0 && k.player.isLover;
+            if (isLoverDeath) voteLoverDeathName = k.player.username;
+            sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
             broadcastToGame(game.code, {
               type: "player_died",
               playerId: k.player.id,
@@ -790,6 +794,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               round: game.round,
               messages: voteResult.messages,
               events: game.eventHistory,
+              ...(voteLoverDeathName ? { loverDeathName: voteLoverDeathName } : {}),
             });
             broadcastToGame(game.code, {
               type: "game_over",
@@ -807,6 +812,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               round: game.round,
               messages: voteResult.messages,
               events: game.eventHistory,
+              ...(voteLoverDeathName ? { loverDeathName: voteLoverDeathName } : {}),
             });
             startNightSequence(game);
           } else {
@@ -1029,8 +1035,12 @@ function resolveNightAndTransition(game: Game): void {
   }
 
   // Notify killed players
-  for (const k of nightResult.killed) {
-    sendToUser(k.player.id, { type: "you_died", message: k.message });
+  let nightLoverDeathName: string | undefined;
+  for (let i = 0; i < nightResult.killed.length; i++) {
+    const k = nightResult.killed[i];
+    const isLoverDeath = i > 0 && k.player.isLover;
+    if (isLoverDeath) nightLoverDeathName = k.player.username;
+    sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
       type: "player_died",
       playerId: k.player.id,
@@ -1049,6 +1059,7 @@ function resolveNightAndTransition(game: Game): void {
     round: game.round,
     messages: nightResult.messages,
     events: game.eventHistory,
+    ...(nightLoverDeathName ? { loverDeathName: nightLoverDeathName } : {}),
   });
 
   if (game.phase === "game_over") {
