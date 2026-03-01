@@ -324,23 +324,20 @@ export function removeMafiaVote(game: Game, mafiaId: number, targetId?: number):
 function checkMafiaConsensus(game: Game): { consensus: boolean; target: number | null } {
   const aliveMafia = getAliveByRole(game, "mafia");
 
-  // Count locks per target across all mafia members' vote arrays
-  const lockCounts = new Map<number, number>();
-  for (const [, entries] of game.mafiaVotes) {
-    for (const entry of entries) {
-      if (entry.voteType === "lock") {
-        lockCounts.set(entry.targetId, (lockCounts.get(entry.targetId) ?? 0) + 1);
-      }
-    }
+  // All alive mafia must have exactly one "lock" vote
+  const lockTargets: number[] = [];
+  for (const m of aliveMafia) {
+    const votes = game.mafiaVotes.get(m.id) || [];
+    const lockVote = votes.find(v => v.voteType === "lock");
+    if (!lockVote) return { consensus: false, target: null };
+    lockTargets.push(lockVote.targetId);
   }
 
-  // 2 locks on same target triggers confirmation (1 for solo mafia)
-  const lockThreshold = aliveMafia.length === 1 ? 1 : 2;
-  for (const [targetId, count] of lockCounts) {
-    if (count >= lockThreshold) {
-      game.mafiaTarget = targetId;
-      return { consensus: true, target: targetId };
-    }
+  // All locks must be on the same target
+  const unanimous = lockTargets.every(t => t === lockTargets[0]);
+  if (unanimous) {
+    game.mafiaTarget = lockTargets[0];
+    return { consensus: true, target: lockTargets[0] };
   }
 
   return { consensus: false, target: null };

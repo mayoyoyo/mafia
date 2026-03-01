@@ -632,6 +632,20 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
+    case "confirm_mafia_kill": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.mafiaTarget === null) return;
+
+      const aliveMafia = getAliveByRole(game, "mafia");
+      for (const m of aliveMafia) {
+        sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
+      }
+      handleSubPhaseAdvance(game);
+      break;
+    }
+
     case "doctor_save": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
@@ -981,14 +995,13 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets, lockedTarget: status.lockedTarget });
   }
 
-  // Auto-confirm on consensus: all mafia locked same target → auto-kill
+  // On consensus: send confirm-ready so mafia can slide to confirm the kill
   if (result.consensus && result.target !== null) {
+    const target = game.players.get(result.target);
+    const targetName = target ? target.username : "target";
     for (const m of aliveMafia) {
-      sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
+      sendToUser(m.id, { type: "mafia_confirm_ready", targetName });
     }
-
-    // Advance to next sub-phase (doctor/detective/resolving)
-    handleSubPhaseAdvance(game);
   }
 }
 

@@ -217,10 +217,12 @@ describe("Rejoin during night phase", () => {
 
     if (citizens.length === 0) { for (const p of players) p.ws.close(); return; }
 
-    // Mafia votes and confirms (doctor hasn't acted, so night stays open)
+    // Mafia votes and slide-confirms (doctor hasn't acted, so night stays open)
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(mafia.ws, "night_action_done");
     await Bun.sleep(100);
 
@@ -250,6 +252,8 @@ describe("Rejoin during night phase", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(mafia.ws, "night_action_done");
 
     // Wait for doctor sub-phase to start (1.5s delay after mafia_close)
@@ -285,6 +289,8 @@ describe("Rejoin during night phase", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(mafia.ws, "night_action_done");
 
     // Wait for doctor sub-phase, then complete it
@@ -337,6 +343,8 @@ describe("Rejoin during day phase", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
 
     // Wait for day phase
     await waitFor(mafia.ws, "phase_change");
@@ -369,6 +377,8 @@ describe("Rejoin during day phase", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: victim.userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: victim.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(mafia.ws, "phase_change");
     await Bun.sleep(100);
 
@@ -395,6 +405,8 @@ describe("Rejoin during voting phase", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(200);
 
@@ -446,6 +458,8 @@ describe("Rejoin during voting phase", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(200);
 
@@ -511,6 +525,8 @@ describe("Rejoin during game_over", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(mafia.ws, "phase_change");
     await Bun.sleep(100);
 
@@ -621,7 +637,8 @@ describe("Rejoin state accumulation", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
-    // Wait for day phase on multiple players
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(200);
 
@@ -639,6 +656,8 @@ describe("Rejoin state accumulation", () => {
       send(mafia.ws, { type: "mafia_vote", targetId: citizens[1].userId, voteType: "maybe" });
       await waitFor(mafia.ws, "mafia_vote_update");
       send(mafia.ws, { type: "mafia_vote", targetId: citizens[1].userId, voteType: "lock" });
+      await waitFor(mafia.ws, "mafia_confirm_ready");
+      send(mafia.ws, { type: "confirm_mafia_kill" });
       await waitFor(admin.ws, "phase_change");
       await Bun.sleep(100);
     }
@@ -665,6 +684,8 @@ describe("Rejoin state accumulation", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(100);
 
@@ -944,6 +965,8 @@ describe("Rejoin during sequential night sub-phases", () => {
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafia.ws, "mafia_vote_update");
     send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
     await waitFor(mafia.ws, "night_action_done");
 
     // Wait for doctor sub-phase to start

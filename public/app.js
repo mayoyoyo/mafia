@@ -265,6 +265,10 @@
         updateMafiaVoteStatus(msg);
         break;
 
+      case "mafia_confirm_ready":
+        handleMafiaConfirmReady(msg);
+        break;
+
       case "night_action_done":
         $("action-status").textContent = msg.message;
         // If mafia and consensus was reached, collapse target list
@@ -2582,7 +2586,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.44_202603010331";
+  const APP_VERSION = "v1.45_202603010344";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

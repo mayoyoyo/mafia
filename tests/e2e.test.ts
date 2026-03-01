@@ -240,11 +240,13 @@ test("night action prompts arrive after phase_change on vote execution", async (
   // Stop old collectors, start fresh for the rest of the test
   collectors.forEach((c) => c.stop());
 
-  // Set up day phase listeners BEFORE voting (consensus auto-confirms)
+  // Mafia votes: maybe → lock → slide confirm → day
   send(mafiaWs, { type: "mafia_vote", targetId: nightKillTargetId, voteType: "maybe" });
   await waitFor(mafiaWs, "mafia_vote_update");
-  const dayPhasePromises = allWs.map((w) => waitFor(w, "phase_change"));
   send(mafiaWs, { type: "mafia_vote", targetId: nightKillTargetId, voteType: "lock" });
+  await waitFor(mafiaWs, "mafia_confirm_ready");
+  const dayPhasePromises = allWs.map((w) => waitFor(w, "phase_change"));
+  send(mafiaWs, { type: "confirm_mafia_kill" });
   const dayPhases = await Promise.all(dayPhasePromises);
   expect(dayPhases[0].phase).toBe("day");
 
@@ -345,11 +347,13 @@ test("night action prompts arrive after phase_change on end_day", async () => {
   expect(mafiaTargets).toBeDefined();
   collectors.forEach((c) => c.stop());
 
-  // Consensus auto-confirms: maybe then lock
+  // Mafia votes: maybe → lock → slide confirm → day
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
   await waitFor(mafiaWs, "mafia_vote_update");
-  const dayPromises = allWs.map((w) => waitFor(w, "phase_change"));
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+  await waitFor(mafiaWs, "mafia_confirm_ready");
+  const dayPromises = allWs.map((w) => waitFor(w, "phase_change"));
+  send(mafiaWs, { type: "confirm_mafia_kill" });
   await Promise.all(dayPromises);
 
   // Collect messages BEFORE sending end_day
@@ -431,10 +435,12 @@ test("sequential night: mafia → doctor → detective → day (all alive + enab
   expect(mafiaTargets).toBeDefined();
   collectors.forEach((c) => c.stop());
 
-  // 1. Mafia sub-phase: vote and confirm
+  // 1. Mafia sub-phase: vote and slide-confirm
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
   await waitFor(mafiaWs, "mafia_vote_update");
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+  await waitFor(mafiaWs, "mafia_confirm_ready");
+  send(mafiaWs, { type: "confirm_mafia_kill" });
   await waitFor(mafiaWs, "night_action_done");
 
   // 2. Doctor sub-phase: wait for targets, then save
@@ -490,10 +496,12 @@ test("sequential night: mafia-only (no special roles) → immediate resolution a
   const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
   collectors.forEach((c) => c.stop());
 
-  // Mafia votes and confirms
+  // Mafia votes and slide-confirms
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
   await waitFor(mafiaWs, "mafia_vote_update");
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+  await waitFor(mafiaWs, "mafia_confirm_ready");
+  send(mafiaWs, { type: "confirm_mafia_kill" });
 
   // Should resolve to day (no doctor/detective to wait for)
   const dayPhase = await waitFor(adminWs, "phase_change");
@@ -589,10 +597,12 @@ test("sequential night: force dawn during doctor sub-phase transition", async ()
   const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
   collectors.forEach((c) => c.stop());
 
-  // Complete mafia sub-phase
+  // Complete mafia sub-phase via slide-confirm
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
   await waitFor(mafiaWs, "mafia_vote_update");
   send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+  await waitFor(mafiaWs, "mafia_confirm_ready");
+  send(mafiaWs, { type: "confirm_mafia_kill" });
   await waitFor(mafiaWs, "night_action_done");
 
   // Force dawn during the doctor sub-phase transition
