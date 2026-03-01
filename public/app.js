@@ -2795,7 +2795,7 @@
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
-    // Re-preload narration audio from user-gesture context (required for iOS Safari)
+    // Re-preload after AudioContext unlock so decodeAudioData works on iOS
     preloadNarrationAudio(currentAccent);
     document.removeEventListener("touchstart", unlockAudio);
     document.removeEventListener("click", unlockAudio);
@@ -2834,10 +2834,9 @@
   function playNarrationCue(type, onDone) {
     const cached = narrationAudioCache[type];
     if (cached) {
-      const audio = cached.cloneNode();
-      playAudioElement(audio, onDone);
+      playAudioBuffer(cached, onDone);
     } else {
-      // No mp3 cached — skip (no SpeechSynthesis fallback)
+      // No mp3 cached — skip
       onDone();
     }
   }
@@ -2916,25 +2915,32 @@
     }
   }
 
-  function playAudioElement(audio, onDone) {
-    currentAudio = audio;
-    audio.addEventListener("ended", () => { currentAudio = null; onDone(); }, { once: true });
-    audio.addEventListener("error", () => { currentAudio = null; onDone(); }, { once: true });
-    audio.play().catch(() => { currentAudio = null; onDone(); });
+  // Play an AudioBuffer through Web Audio API (works on iOS after AudioContext unlock)
+  function playAudioBuffer(buffer, onDone) {
+    try {
+      const ctx = getAudioContext();
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.onended = () => { currentAudio = null; onDone(); };
+      currentAudio = source;
+      source.start(0);
+    } catch {
+      currentAudio = null;
+      onDone();
+    }
   }
 
+  // Fetch mp3 files and decode into AudioBuffers (bypasses HTML5 Audio entirely)
   function preloadNarrationAudio(accent) {
     narrationAudioCache = {};
+    const ctx = getAudioContext();
     NARRATION_CUES.forEach((cue) => {
-      const audio = new Audio("/audio/" + accent + "/" + cue + ".mp3");
-      audio.preload = "auto";
-      // Only cache if load succeeds
-      audio.addEventListener("canplaythrough", () => {
-        narrationAudioCache[cue] = audio;
-      }, { once: true });
-      audio.addEventListener("error", () => {}, { once: true });
-      // Force iOS to start downloading (requires prior user-gesture unlock)
-      audio.load();
+      fetch("/audio/" + accent + "/" + cue + ".mp3")
+        .then((res) => res.ok ? res.arrayBuffer() : Promise.reject())
+        .then((buf) => ctx.decodeAudioData(buf))
+        .then((decoded) => { narrationAudioCache[cue] = decoded; })
+        .catch(() => {}); // silently skip missing files
     });
   }
 
@@ -2942,8 +2948,7 @@
     soundQueue = [];
     soundPlaying = false;
     if (currentAudio) {
-      currentAudio.pause();
-      currentAudio.currentTime = 0;
+      try { currentAudio.stop(); } catch {}
       currentAudio = null;
     }
     // Clear narration hold and replay any held prompts immediately
@@ -3003,7 +3008,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.59_202603010551";
+  const APP_VERSION = "v1.60_202603010558";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
