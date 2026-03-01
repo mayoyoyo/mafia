@@ -250,6 +250,19 @@ export function submitMafiaVote(
   const target = game.players.get(targetId);
   if (!target || !target.isAlive || target.role === "mafia") return { consensus: false, target: null };
 
+  // Object-blocking: if another alive mafia has "letsnot" on this target,
+  // reject "maybe" and "lock" votes (self-objection is handled by mutual exclusion below)
+  if (voteType === "maybe" || voteType === "lock") {
+    const aliveMafia = getAliveByRole(game, "mafia");
+    for (const m of aliveMafia) {
+      if (m.id === mafiaId) continue; // skip self
+      const theirVotes = game.mafiaVotes.get(m.id) || [];
+      if (theirVotes.some(v => v.targetId === targetId && v.voteType === "letsnot")) {
+        return { consensus: false, target: null };
+      }
+    }
+  }
+
   let votes = game.mafiaVotes.get(mafiaId) || [];
 
   // Check if same voteType already exists for this target → toggle off
@@ -845,8 +858,11 @@ export function restartGame(game: Game): string[] | null {
 export function getMafiaVoteStatus(game: Game): {
   voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>;
   lockedTarget: string | null;
+  objectedTargets: Record<number, string[]>;
+  aliveMafiaCount: number;
 } {
   const voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>> = {};
+  const objectedTargets: Record<number, string[]> = {};
 
   for (const [mafiaId, entries] of game.mafiaVotes) {
     const mafiaPlayer = game.players.get(mafiaId)!;
@@ -854,6 +870,14 @@ export function getMafiaVoteStatus(game: Game): {
       const target = game.players.get(entry.targetId)!;
       return { target: target.username, targetId: entry.targetId, voteType: entry.voteType };
     });
+
+    // Collect objected targets
+    for (const entry of entries) {
+      if (entry.voteType === "letsnot") {
+        if (!objectedTargets[entry.targetId]) objectedTargets[entry.targetId] = [];
+        objectedTargets[entry.targetId].push(mafiaPlayer.username);
+      }
+    }
   }
 
   // Determine if consensus was reached (all alive mafia locked same target)
@@ -863,5 +887,7 @@ export function getMafiaVoteStatus(game: Game): {
     if (targetPlayer) lockedTarget = targetPlayer.username;
   }
 
-  return { voterTargets, lockedTarget };
+  const aliveMafiaCount = getAliveByRole(game, "mafia").length;
+
+  return { voterTargets, lockedTarget, objectedTargets, aliveMafiaCount };
 }

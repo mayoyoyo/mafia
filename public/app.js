@@ -1884,7 +1884,6 @@
     nightActionLocked = false;
 
     hideSlideConfirm();
-    $("mafia-action-buttons").classList.add("hidden");
 
     const list = $("action-targets");
 
@@ -2184,10 +2183,8 @@
     const list = $("action-targets");
     list.innerHTML = `<li class="selected">${escapeHtml(msg.targetName)}</li>`;
 
-    // Hide vote status and buttons (redundant now)
+    // Hide vote status
     $("mafia-vote-status").classList.add("hidden");
-    $("btn-mafia-object").classList.add("hidden");
-    $("btn-mafia-remove").classList.add("hidden");
 
     $("action-status").textContent = "";
 
@@ -2819,7 +2816,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.47_202603010407";
+  const APP_VERSION = "v1.48_202603010417";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

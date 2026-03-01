@@ -302,21 +302,24 @@ describe("Mafia Votes - Consensus", () => {
     removeGame(game.code);
   });
 
-  test("3 mafia: 2 lock same, 1 different → consensus (2-lock threshold)", () => {
+  test("3 mafia: 2 lock same, 1 different → no consensus", () => {
     const game = setupGame(12, { mafiaCount: 3 });
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
 
-    // Mafia 0 and 1 lock citizen 0 — hits 2-lock threshold
+    // Mafia 0 and 1 lock citizen 0
     submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     submitMafiaVote(game, mafia[0].id, citizens[0].id, "lock");
     submitMafiaVote(game, mafia[1].id, citizens[0].id, "maybe");
-    const result = submitMafiaVote(game, mafia[1].id, citizens[0].id, "lock");
+    submitMafiaVote(game, mafia[1].id, citizens[0].id, "lock");
 
-    expect(result.consensus).toBe(true);
-    expect(result.target).toBe(citizens[0].id);
-    expect(game.mafiaTarget).toBe(citizens[0].id);
+    // Mafia 2 locks citizen 1
+    submitMafiaVote(game, mafia[2].id, citizens[1].id, "maybe");
+    const result = submitMafiaVote(game, mafia[2].id, citizens[1].id, "lock");
+
+    expect(result.consensus).toBe(false);
+    expect(game.mafiaTarget).toBeNull();
     removeGame(game.code);
   });
 
@@ -424,6 +427,131 @@ describe("Mafia Votes - Edge Cases", () => {
     expect(status.voterTargets[m0Name]).toBeDefined();
     expect(status.voterTargets[m0Name].length).toBe(2);
     expect(status.lockedTarget).toBeNull();
+    // New fields
+    expect(status.aliveMafiaCount).toBe(2);
+    expect(status.objectedTargets[citizens[1].id]).toContain(m0Name);
+    removeGame(game.code);
+  });
+});
+
+describe("Mafia Votes - Object Blocking", () => {
+  test("maybe is rejected if another mafia has letsnot on target", () => {
+    const game = setupGame(7, { mafiaCount: 2 });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+
+    // Mafia 1 objects to citizen 0
+    submitMafiaVote(game, mafia[1].id, citizens[0].id, "letsnot");
+
+    // Mafia 0 tries to suggest citizen 0 — should be rejected
+    const result = submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
+    expect(result.consensus).toBe(false);
+    const votes = game.mafiaVotes.get(mafia[0].id) || [];
+    expect(votes.length).toBe(0);
+    removeGame(game.code);
+  });
+
+  test("lock is rejected if another mafia has letsnot on target", () => {
+    const game = setupGame(7, { mafiaCount: 2 });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+
+    // Mafia 0 suggests citizen 0
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
+
+    // Mafia 1 objects to citizen 0
+    submitMafiaVote(game, mafia[1].id, citizens[0].id, "letsnot");
+
+    // Mafia 0 tries to lock citizen 0 — should be rejected
+    const result = submitMafiaVote(game, mafia[0].id, citizens[0].id, "lock");
+    expect(result.consensus).toBe(false);
+    const votes = game.mafiaVotes.get(mafia[0].id)!;
+    // Should still have the maybe
+    expect(votes.length).toBe(1);
+    expect(votes[0].voteType).toBe("maybe");
+    removeGame(game.code);
+  });
+
+  test("removing objection allows others to vote again", () => {
+    const game = setupGame(7, { mafiaCount: 2 });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+
+    // Mafia 1 objects
+    submitMafiaVote(game, mafia[1].id, citizens[0].id, "letsnot");
+
+    // Mafia 0 can't suggest
+    let result = submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
+    expect(game.mafiaVotes.get(mafia[0].id) || []).toHaveLength(0);
+
+    // Mafia 1 removes objection (toggle off)
+    submitMafiaVote(game, mafia[1].id, citizens[0].id, "letsnot");
+
+    // Now mafia 0 can suggest
+    result = submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
+    const votes = game.mafiaVotes.get(mafia[0].id)!;
+    expect(votes.length).toBe(1);
+    expect(votes[0].voteType).toBe("maybe");
+    removeGame(game.code);
+  });
+
+  test("self-objection does not block own maybe (mutual exclusion handles it)", () => {
+    const game = setupGame(7, { mafiaCount: 2 });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+
+    // Mafia 0 objects to citizen 0
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "letsnot");
+
+    // Mafia 0 changes mind and does maybe — mutual exclusion replaces letsnot with maybe
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
+    const votes = game.mafiaVotes.get(mafia[0].id)!;
+    expect(votes.length).toBe(1);
+    expect(votes[0].voteType).toBe("maybe");
+    removeGame(game.code);
+  });
+
+  test("3 mafia: one objects, other two can't interact with that target", () => {
+    const game = setupGame(12, { mafiaCount: 3 });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+
+    // Mafia 2 objects to citizen 0
+    submitMafiaVote(game, mafia[2].id, citizens[0].id, "letsnot");
+
+    // Mafia 0 tries maybe — blocked
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
+    expect(game.mafiaVotes.get(mafia[0].id) || []).toHaveLength(0);
+
+    // Mafia 1 tries maybe — blocked
+    submitMafiaVote(game, mafia[1].id, citizens[0].id, "maybe");
+    expect(game.mafiaVotes.get(mafia[1].id) || []).toHaveLength(0);
+
+    // But they can still vote on other targets
+    submitMafiaVote(game, mafia[0].id, citizens[1].id, "maybe");
+    expect(game.mafiaVotes.get(mafia[0].id)!.length).toBe(1);
+    removeGame(game.code);
+  });
+
+  test("getMafiaVoteStatus returns objectedTargets and aliveMafiaCount", () => {
+    const game = setupGame(7, { mafiaCount: 2 });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "letsnot");
+    submitMafiaVote(game, mafia[1].id, citizens[0].id, "maybe");
+    submitMafiaVote(game, mafia[1].id, citizens[1].id, "letsnot");
+
+    const status = getMafiaVoteStatus(game);
+    expect(status.aliveMafiaCount).toBe(2);
+    expect(status.objectedTargets[citizens[0].id]).toContain(game.players.get(mafia[0].id)!.username);
+    expect(status.objectedTargets[citizens[1].id]).toContain(game.players.get(mafia[1].id)!.username);
     removeGame(game.code);
   });
 });

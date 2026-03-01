@@ -204,16 +204,21 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         targets,
         voterTargets: status.voterTargets,
         lockedTarget: status.lockedTarget,
+        objectedTargets: status.objectedTargets,
+        aliveMafiaCount: status.aliveMafiaCount,
         lastDoctorTarget: null,
       };
     } else if (rejoined.role === "mafia" && game.nightSubPhase !== "mafia") {
       // Mafia sub-phase is done — show locked state
+      const doneStatus = getMafiaVoteStatus(game);
       nightAction = {
         locked: true,
         targetName: game.mafiaTarget !== null ? (game.players.get(game.mafiaTarget)?.username ?? null) : null,
         targets: [],
-        voterTargets: getMafiaVoteStatus(game).voterTargets,
+        voterTargets: doneStatus.voterTargets,
         lockedTarget: null,
+        objectedTargets: doneStatus.objectedTargets,
+        aliveMafiaCount: doneStatus.aliveMafiaCount,
         lastDoctorTarget: null,
       };
     } else if (rejoined.role === "doctor" && game.nightSubPhase === "doctor") {
@@ -225,6 +230,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       nightAction = {
         locked, targetName, targets,
         voterTargets: {}, lockedTarget: null,
+        objectedTargets: {}, aliveMafiaCount: 0,
         lastDoctorTarget: game.lastDoctorTarget,
       };
     } else if (rejoined.role === "doctor" && game.nightSubPhase !== "doctor") {
@@ -235,6 +241,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
           targetName: game.players.get(game.doctorTarget!)?.username ?? null,
           targets: [],
           voterTargets: {}, lockedTarget: null,
+          objectedTargets: {}, aliveMafiaCount: 0,
           lastDoctorTarget: game.lastDoctorTarget,
         };
       }
@@ -249,6 +256,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       nightAction = {
         locked, targetName, targets,
         voterTargets: {}, lockedTarget: null,
+        objectedTargets: {}, aliveMafiaCount: 0,
         lastDoctorTarget: null,
       };
     } else if (rejoined.role === "detective" && game.nightSubPhase !== "detective") {
@@ -259,6 +267,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
           targetName: game.players.get(game.detectiveTarget!)?.username ?? null,
           targets: [],
           voterTargets: {}, lockedTarget: null,
+          objectedTargets: {}, aliveMafiaCount: 0,
           lastDoctorTarget: null,
         };
       }
@@ -998,7 +1007,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
   const status = getMafiaVoteStatus(game);
   const aliveMafia = getAliveByRole(game, "mafia");
   for (const m of aliveMafia) {
-    sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets, lockedTarget: status.lockedTarget });
+    sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets, lockedTarget: status.lockedTarget, objectedTargets: status.objectedTargets, aliveMafiaCount: status.aliveMafiaCount });
   }
 
   // On consensus: send confirm-ready so mafia can slide to confirm the kill
