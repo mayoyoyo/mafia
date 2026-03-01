@@ -2949,6 +2949,10 @@
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible" && audioCtx) {
       audioCtx.resume();
+      // Restart silent loop if it died during background/lock
+      if (silentAudioLoop) {
+        silentAudioLoop.play().catch(function () {});
+      }
     }
   });
 
@@ -3171,7 +3175,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.65_202603010704";
+  const APP_VERSION = "v1.66_202603010705";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
