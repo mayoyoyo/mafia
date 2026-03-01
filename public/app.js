@@ -1947,6 +1947,22 @@
     }
   }
 
+  function handleMafiaConfirmReady(msg) {
+    if (nightActionLocked) return;
+    mafiaConfirmTarget = msg.targetName;
+    $("action-status").textContent = `Target locked: ${msg.targetName}. Slide to confirm the kill.`;
+    $("btn-mafia-object").classList.add("hidden");
+    $("btn-mafia-remove").classList.add("hidden");
+    setupSlideConfirm("mafia", () => {
+      if (nightActionLocked) return;
+      nightActionLocked = true;
+      wsSend({ type: "confirm_mafia_kill" });
+      // Collapse to show only chosen target
+      const list = $("action-targets");
+      list.innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
+    });
+  }
+
   // ============================================================
   // DAY VOTING (Phase 3: per-vote anon, Phase 4: multi-vote)
   // ============================================================
@@ -2566,7 +2582,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.42_202603010307";
+  const APP_VERSION = "v1.43_202603010325";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
