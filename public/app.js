@@ -32,6 +32,7 @@
   let dayTimerInterval = null;
   let dayTimerStart = null;
   let detectiveHistory = [];
+  let mafiaConfirmTarget = null;
   let myMafiaVotes = []; // array of { targetId, voteType }
   let mafiaObjectedTargets = {}; // { targetId: ["username", ...] }
   let aliveMafiaCount = 0;
@@ -220,6 +221,7 @@
         narratorTranscript = [];
         detectiveHistory = [];
         nightActionLocked = false;
+        mafiaConfirmTarget = null;
         myMafiaVotes = [];
         mafiaObjectedTargets = {};
         aliveMafiaCount = 0;
@@ -380,6 +382,7 @@
     anonVoteChecked = msg.anonVoteChecked;
     hasVoted = false;
     nightActionLocked = false;
+    mafiaConfirmTarget = null;
     myMafiaVotes = [];
     mafiaObjectedTargets = {};
     aliveMafiaCount = 0;
@@ -2831,7 +2834,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.49_202603010426";
+  const APP_VERSION = "v1.50_202603010437";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

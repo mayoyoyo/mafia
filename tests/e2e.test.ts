@@ -614,3 +614,306 @@ test("sequential night: force dawn during doctor sub-phase transition", async ()
 
   for (const w of allWs) w.close();
 }, 20000);
+
+// ── Mafia Slide-to-Kill / Consensus Tests ──────────────────────────────
+
+test("multi-mafia: both must lock same target before mafia_confirm_ready is sent", async () => {
+  const ts = Date.now();
+
+  // 7 players, 2 mafia
+  const { ws: adminWs, userId: uid1 } = await reg(`stk_admin_${ts}`, "1111");
+  const { ws: p2ws, userId: uid2 } = await reg(`stk_p2_${ts}`, "2222");
+  const { ws: p3ws, userId: uid3 } = await reg(`stk_p3_${ts}`, "3333");
+  const { ws: p4ws, userId: uid4 } = await reg(`stk_p4_${ts}`, "4444");
+  const { ws: p5ws, userId: uid5 } = await reg(`stk_p5_${ts}`, "5555");
+  const { ws: p6ws, userId: uid6 } = await reg(`stk_p6_${ts}`, "6666");
+  const { ws: p7ws, userId: uid7 } = await reg(`stk_p7_${ts}`, "7777");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws, p6ws, p7ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+
+  send(adminWs, { type: "update_settings", settings: { mafiaCount: 2 } });
+  await waitFor(adminWs, "settings_updated");
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  // Find both mafia players
+  const mafiaIndices: number[] = [];
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia") mafiaIndices.push(i);
+  }
+  expect(mafiaIndices.length).toBe(2);
+
+  const m1Ws = allWs[mafiaIndices[0]];
+  const m2Ws = allWs[mafiaIndices[1]];
+
+  // Get mafia targets
+  const mafiaTargets = collectors[mafiaIndices[0]].messages.find((m) => m.type === "mafia_targets");
+  expect(mafiaTargets).toBeDefined();
+  const targetId = mafiaTargets.players[0].id;
+  const targetName = mafiaTargets.players[0].username;
+  collectors.forEach((c) => c.stop());
+
+  // Mafia 1 suggests and locks — should NOT trigger mafia_confirm_ready (only 1/2)
+  send(m1Ws, { type: "mafia_vote", targetId, voteType: "maybe" });
+  await waitFor(m1Ws, "mafia_vote_update");
+  send(m1Ws, { type: "mafia_vote", targetId, voteType: "lock" });
+  const m1Update = await waitFor(m1Ws, "mafia_vote_update");
+
+  // Collect briefly to check NO mafia_confirm_ready arrived
+  const noConfirmCollector = collectMessages(m1Ws);
+  await Bun.sleep(300);
+  noConfirmCollector.stop();
+  const prematureConfirm = noConfirmCollector.messages.find((m) => m.type === "mafia_confirm_ready");
+  expect(prematureConfirm).toBeUndefined();
+
+  // Mafia 2 suggests and locks same target — NOW mafia_confirm_ready should fire
+  send(m2Ws, { type: "mafia_vote", targetId, voteType: "maybe" });
+  await waitFor(m2Ws, "mafia_vote_update");
+  send(m2Ws, { type: "mafia_vote", targetId, voteType: "lock" });
+
+  // Both mafia should receive mafia_confirm_ready
+  const [confirm1, confirm2] = await Promise.all([
+    waitFor(m1Ws, "mafia_confirm_ready"),
+    waitFor(m2Ws, "mafia_confirm_ready"),
+  ]);
+
+  expect(confirm1.targetName).toBe(targetName);
+  expect(confirm2.targetName).toBe(targetName);
+
+  // Either mafia can confirm the kill to advance
+  send(m2Ws, { type: "confirm_mafia_kill" });
+
+  // Both get night_action_done
+  const [done1, done2] = await Promise.all([
+    waitFor(m1Ws, "night_action_done"),
+    waitFor(m2Ws, "night_action_done"),
+  ]);
+  expect(done1.message).toContain("chosen");
+  expect(done2.message).toContain("chosen");
+
+  for (const w of allWs) w.close();
+}, 30000);
+
+test("confirm_mafia_kill before consensus does nothing", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`nokill_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`nokill_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`nokill_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`nokill_p4_${ts}`, "4444");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  let mafiaIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia") { mafiaIdx = i; break; }
+  }
+  expect(mafiaIdx).toBeGreaterThanOrEqual(0);
+  const mafiaWs = allWs[mafiaIdx];
+  collectors.forEach((c) => c.stop());
+
+  // Send confirm_mafia_kill BEFORE any votes (no consensus yet)
+  const collector = collectMessages(mafiaWs);
+  send(mafiaWs, { type: "confirm_mafia_kill" });
+  await Bun.sleep(500);
+  collector.stop();
+
+  // Should NOT receive night_action_done — kill was rejected
+  const actionDone = collector.messages.find((m) => m.type === "night_action_done");
+  expect(actionDone).toBeUndefined();
+
+  for (const w of allWs) w.close();
+}, 15000);
+
+test("mafia_confirm_ready contains correct targetName", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`tname_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`tname_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`tname_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`tname_p4_${ts}`, "4444");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  let mafiaIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia") { mafiaIdx = i; break; }
+  }
+  expect(mafiaIdx).toBeGreaterThanOrEqual(0);
+  const mafiaWs = allWs[mafiaIdx];
+  const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
+  expect(mafiaTargets).toBeDefined();
+  collectors.forEach((c) => c.stop());
+
+  // Pick second target to verify name isn't hardcoded
+  const chosenTarget = mafiaTargets.players[1] || mafiaTargets.players[0];
+  const expectedName = chosenTarget.username;
+
+  send(mafiaWs, { type: "mafia_vote", targetId: chosenTarget.id, voteType: "maybe" });
+  await waitFor(mafiaWs, "mafia_vote_update");
+  send(mafiaWs, { type: "mafia_vote", targetId: chosenTarget.id, voteType: "lock" });
+  const confirmMsg = await waitFor(mafiaWs, "mafia_confirm_ready");
+
+  // Verify targetName matches the actual player name
+  expect(confirmMsg.targetName).toBe(expectedName);
+  expect(typeof confirmMsg.targetName).toBe("string");
+  expect(confirmMsg.targetName.length).toBeGreaterThan(0);
+
+  for (const w of allWs) w.close();
+}, 15000);
+
+test("mafia_vote_update includes objectedTargets and aliveMafiaCount", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`vupd_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`vupd_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`vupd_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`vupd_p4_${ts}`, "4444");
+  const { ws: p5ws } = await reg(`vupd_p5_${ts}`, "5555");
+  const { ws: p6ws } = await reg(`vupd_p6_${ts}`, "6666");
+  const { ws: p7ws } = await reg(`vupd_p7_${ts}`, "7777");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws, p6ws, p7ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+
+  send(adminWs, { type: "update_settings", settings: { mafiaCount: 2 } });
+  await waitFor(adminWs, "settings_updated");
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  const mafiaIndices: number[] = [];
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia") mafiaIndices.push(i);
+  }
+  expect(mafiaIndices.length).toBe(2);
+
+  const m1Ws = allWs[mafiaIndices[0]];
+  const m2Ws = allWs[mafiaIndices[1]];
+  const mafiaTargets = collectors[mafiaIndices[0]].messages.find((m) => m.type === "mafia_targets");
+  const targetId = mafiaTargets.players[0].id;
+  collectors.forEach((c) => c.stop());
+
+  // Mafia 1 objects to the target
+  send(m1Ws, { type: "mafia_vote", targetId, voteType: "letsnot" });
+  const update = await waitFor(m1Ws, "mafia_vote_update");
+
+  // Verify new fields exist on mafia_vote_update
+  expect(update.aliveMafiaCount).toBe(2);
+  expect(update.objectedTargets).toBeDefined();
+  expect(typeof update.objectedTargets).toBe("object");
+  // The objected target should appear in objectedTargets
+  expect(update.objectedTargets[targetId]).toBeDefined();
+  expect(update.objectedTargets[targetId].length).toBe(1);
+
+  for (const w of allWs) w.close();
+}, 30000);
+
+test("multi-mafia: one mafia lock does not advance, other mafia must also lock", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`noadvance_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`noadvance_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`noadvance_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`noadvance_p4_${ts}`, "4444");
+  const { ws: p5ws } = await reg(`noadvance_p5_${ts}`, "5555");
+  const { ws: p6ws } = await reg(`noadvance_p6_${ts}`, "6666");
+  const { ws: p7ws } = await reg(`noadvance_p7_${ts}`, "7777");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws, p6ws, p7ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+
+  send(adminWs, { type: "update_settings", settings: { mafiaCount: 2 } });
+  await waitFor(adminWs, "settings_updated");
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  const mafiaIndices: number[] = [];
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia") mafiaIndices.push(i);
+  }
+  expect(mafiaIndices.length).toBe(2);
+
+  const m1Ws = allWs[mafiaIndices[0]];
+  const mafiaTargets = collectors[mafiaIndices[0]].messages.find((m) => m.type === "mafia_targets");
+  const targetId = mafiaTargets.players[0].id;
+  collectors.forEach((c) => c.stop());
+
+  // Mafia 1 votes maybe+lock
+  send(m1Ws, { type: "mafia_vote", targetId, voteType: "maybe" });
+  await waitFor(m1Ws, "mafia_vote_update");
+  send(m1Ws, { type: "mafia_vote", targetId, voteType: "lock" });
+  await waitFor(m1Ws, "mafia_vote_update");
+
+  // Try to confirm kill with only 1/2 locked — should be rejected (mafiaTarget is still null)
+  const collector = collectMessages(m1Ws);
+  send(m1Ws, { type: "confirm_mafia_kill" });
+  await Bun.sleep(500);
+  collector.stop();
+
+  const actionDone = collector.messages.find((m) => m.type === "night_action_done");
+  expect(actionDone).toBeUndefined();
+
+  for (const w of allWs) w.close();
+}, 30000);
