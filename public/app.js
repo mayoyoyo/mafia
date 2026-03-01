@@ -2084,6 +2084,20 @@
             wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
           });
           actions.appendChild(lockBtn);
+        } else if (cardState === "partial-lock") {
+          // Someone else already locked — show Lock In (auto-sends maybe+lock)
+          const lockBtn = document.createElement("button");
+          lockBtn.className = "mtc-btn mtc-btn-lock";
+          lockBtn.textContent = "\u{1F512} Lock In";
+          lockBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (nightActionLocked) return;
+            wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+            setTimeout(() => {
+              wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+            }, 50);
+          });
+          actions.appendChild(lockBtn);
         } else {
           const suggestBtn = document.createElement("button");
           suggestBtn.className = "mtc-btn mtc-btn-suggest";
@@ -2142,6 +2156,10 @@
     aliveMafiaCount = msg.aliveMafiaCount || 0;
     lastVoterTargets = msg.voterTargets;
 
+    // If consensus reached (lockedTarget set), don't re-render cards —
+    // handleMafiaConfirmReady will collapse the list and show slide-to-kill
+    if (msg.lockedTarget) return;
+
     // For single mafia, don't re-render cards (consensus will trigger confirm)
     if (mafiaTeam.length <= 1) return;
 
@@ -2152,10 +2170,7 @@
 
     // Update mafia vote status text area with activity feed
     const details = $("mafia-vote-details");
-    if (msg.lockedTarget) {
-      details.innerHTML = `<div class="narrator-line animate-in"><span style="color:#d32f2f;font-weight:bold">Target locked:</span> ${escapeHtml(msg.lockedTarget)}</div>`;
-      $("mafia-vote-status").classList.remove("hidden");
-    } else {
+    {
       // Build activity summary
       const lines = [];
       for (const [voterName, votes] of Object.entries(msg.voterTargets)) {
@@ -2816,7 +2831,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.48_202603010417";
+  const APP_VERSION = "v1.49_202603010426";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
