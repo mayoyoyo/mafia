@@ -1685,7 +1685,7 @@
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
     const hasLoverDeath = !!msg.loverDeathName;
-    const extraDelay = hasLoverDeath ? 1800 : 0;
+    const extraDelay = hasLoverDeath ? 2800 : 0;
 
     overlay.classList.remove("hidden", "fade-out");
     text.textContent = "The sun rises...";
@@ -1718,12 +1718,12 @@
         text.style.animation = "none";
         void text.offsetWidth;
         text.style.animation = "suspenseFadeIn 0.8s ease";
-      }, 5200);
+      }, 5700);
     }
 
     setTimeout(() => {
       overlay.classList.add("fade-out");
-    }, 5000 + extraDelay);
+    }, 5500 + extraDelay);
 
     setTimeout(() => {
       overlay.classList.add("hidden");
@@ -1739,7 +1739,7 @@
         handleServerMessage(qMsg);
       }
       suspenseQueue = [];
-    }, 5800 + extraDelay);
+    }, 6300 + extraDelay);
   }
 
   function showDetectiveResult(msg) {
@@ -2844,7 +2844,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.54_202603010456";
+  const APP_VERSION = "v1.55_202603010500";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
