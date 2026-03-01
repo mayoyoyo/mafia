@@ -218,9 +218,9 @@ describe("Rejoin during night phase", () => {
     if (citizens.length === 0) { for (const p of players) p.ws.close(); return; }
 
     // Mafia votes and confirms (doctor hasn't acted, so night stays open)
-    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
     await waitFor(mafia.ws, "night_action_done");
     await Bun.sleep(100);
 
@@ -306,9 +306,9 @@ describe("Rejoin during day phase", () => {
     // Complete night: mafia kills a citizen
     const mafia = players.find(p => p.role === "mafia")!;
     const citizens = players.filter(p => p.role === "citizen");
-    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
 
     // Wait for day phase
     await waitFor(mafia.ws, "phase_change");
@@ -338,9 +338,9 @@ describe("Rejoin during day phase", () => {
     const victim = citizens[0];
 
     // Mafia kills victim
-    send(mafia.ws, { type: "mafia_vote", targetId: victim.userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: victim.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: victim.userId, voteType: "lock" });
     await waitFor(mafia.ws, "phase_change");
     await Bun.sleep(100);
 
@@ -364,9 +364,9 @@ describe("Rejoin during voting phase", () => {
     const admin = players[0];
     const citizens = players.filter(p => p.role === "citizen");
     const killTarget = citizens.find(p => p.userId !== admin.userId)!;
-    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "lock" });
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(200);
 
@@ -415,9 +415,9 @@ describe("Rejoin during voting phase", () => {
     const admin = players[0];
     const citizens = players.filter(p => p.role === "citizen");
     const killTarget = citizens.find(p => p.userId !== admin.userId)!;
-    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "lock" });
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(200);
 
@@ -480,9 +480,9 @@ describe("Rejoin during game_over", () => {
     if (!joker) { for (const p of players) p.ws.close(); return; }
 
     // Night: mafia kills citizen
-    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
     await waitFor(mafia.ws, "phase_change");
     await Bun.sleep(100);
 
@@ -590,9 +590,9 @@ describe("Rejoin state accumulation", () => {
     const admin = players[0];
 
     // Night 1: mafia kills citizen[0]
-    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
     // Wait for day phase on multiple players
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(200);
@@ -608,9 +608,9 @@ describe("Rejoin state accumulation", () => {
     const mafiaTargets = await mafiaTargetsPromise;
     const target2 = mafiaTargets.players.find((p: any) => p.id === citizens[1].userId);
     if (target2) {
-      send(mafia.ws, { type: "mafia_vote", targetId: citizens[1].userId });
-      await waitFor(mafia.ws, "mafia_confirm_ready");
-      send(mafia.ws, { type: "confirm_mafia_kill" });
+      send(mafia.ws, { type: "mafia_vote", targetId: citizens[1].userId, voteType: "maybe" });
+      await waitFor(mafia.ws, "mafia_vote_update");
+      send(mafia.ws, { type: "mafia_vote", targetId: citizens[1].userId, voteType: "lock" });
       await waitFor(admin.ws, "phase_change");
       await Bun.sleep(100);
     }
@@ -634,9 +634,9 @@ describe("Rejoin state accumulation", () => {
     const admin = players[0];
 
     // Complete night
-    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
-    await waitFor(mafia.ws, "mafia_confirm_ready");
-    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
     await waitFor(admin.ws, "phase_change");
     await Bun.sleep(100);
 
@@ -701,8 +701,8 @@ describe("Rejoin with mafia vote status", () => {
 
     if (mafias.length < 2) { for (const p of players) p.ws.close(); return; }
 
-    // First mafia votes
-    send(mafias[0].ws, { type: "mafia_vote", targetId: citizens[0].userId });
+    // First mafia votes (maybe)
+    send(mafias[0].ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
     await waitFor(mafias[0].ws, "mafia_vote_update");
     await Bun.sleep(100);
 
@@ -712,8 +712,11 @@ describe("Rejoin with mafia vote status", () => {
     expect(sync.nightAction).not.toBeNull();
     expect(sync.nightAction.locked).toBe(false);
     expect(Object.keys(sync.nightAction.voterTargets).length).toBeGreaterThanOrEqual(1);
-    expect(sync.nightAction.voterTargets[mafias[0].username].target).toBe(citizens[0].username);
-    expect(sync.nightAction.voterTargets[mafias[0].username].voteType).toBe("lock");
+    const m0Votes = sync.nightAction.voterTargets[mafias[0].username];
+    expect(Array.isArray(m0Votes)).toBe(true);
+    expect(m0Votes.length).toBeGreaterThanOrEqual(1);
+    expect(m0Votes[0].target).toBe(citizens[0].username);
+    expect(m0Votes[0].voteType).toBe("maybe");
 
     for (const p of players) p.ws.close();
   }, 15000);

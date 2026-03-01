@@ -240,12 +240,11 @@ test("night action prompts arrive after phase_change on vote execution", async (
   // Stop old collectors, start fresh for the rest of the test
   collectors.forEach((c) => c.stop());
 
-  send(mafiaWs, { type: "mafia_vote", targetId: nightKillTargetId, voteType: "lock" });
-  await waitFor(mafiaWs, "mafia_confirm_ready");
-
-  // Set up day phase listeners BEFORE confirming kill
+  // Set up day phase listeners BEFORE voting (consensus auto-confirms)
+  send(mafiaWs, { type: "mafia_vote", targetId: nightKillTargetId, voteType: "maybe" });
+  await waitFor(mafiaWs, "mafia_vote_update");
   const dayPhasePromises = allWs.map((w) => waitFor(w, "phase_change"));
-  send(mafiaWs, { type: "confirm_mafia_kill" });
+  send(mafiaWs, { type: "mafia_vote", targetId: nightKillTargetId, voteType: "lock" });
   const dayPhases = await Promise.all(dayPhasePromises);
   expect(dayPhases[0].phase).toBe("day");
 
@@ -346,12 +345,11 @@ test("night action prompts arrive after phase_change on end_day", async () => {
   expect(mafiaTargets).toBeDefined();
   collectors.forEach((c) => c.stop());
 
-  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
-  await waitFor(mafiaWs, "mafia_confirm_ready");
-
-  // Set up day phase listeners BEFORE confirming kill
+  // Consensus auto-confirms: maybe then lock
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
+  await waitFor(mafiaWs, "mafia_vote_update");
   const dayPromises = allWs.map((w) => waitFor(w, "phase_change"));
-  send(mafiaWs, { type: "confirm_mafia_kill" });
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
   await Promise.all(dayPromises);
 
   // Collect messages BEFORE sending end_day

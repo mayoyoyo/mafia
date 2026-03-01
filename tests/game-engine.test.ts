@@ -17,6 +17,12 @@ function setupGame(playerCount: number, settings?: Partial<import("../src/types"
   return game;
 }
 
+// Helper: shortcut to maybe+lock a target (replaces old submitMafiaVote default behavior)
+function lockTarget(game: Game, mafiaId: number, targetId: number) {
+  submitMafiaVote(game, mafiaId, targetId, "maybe");
+  return submitMafiaVote(game, mafiaId, targetId, "lock");
+}
+
 describe("Game Creation", () => {
   test("creates a game with a 4-character code", () => {
     const game = createGame(1, "TestAdmin");
@@ -127,10 +133,10 @@ describe("Night Phase", () => {
     const citizens = getAliveByRole(game, "citizen");
 
     const target = citizens[0].id;
-    submitMafiaVote(game, mafia[0].id, target);
-    const result = submitMafiaVote(game, mafia[1].id, target);
+    lockTarget(game, mafia[0].id, target);
+    const result = lockTarget(game, mafia[1].id, target);
 
-    expect(result.allVoted).toBe(true);
+    expect(result.consensus).toBe(true);
     expect(result.target).toBe(target);
     expect(game.mafiaTarget).toBe(target);
     removeGame(game.code);
@@ -142,10 +148,10 @@ describe("Night Phase", () => {
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
 
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
-    const result = submitMafiaVote(game, mafia[1].id, citizens[1].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
+    const result = lockTarget(game, mafia[1].id, citizens[1].id);
 
-    expect(result.allVoted).toBe(true);
+    expect(result.consensus).toBe(false);
     expect(result.target).toBeNull();
     removeGame(game.code);
   });
@@ -158,7 +164,7 @@ describe("Night Phase", () => {
     const citizens = getAliveByRole(game, "citizen");
 
     const target = citizens[0].id;
-    submitMafiaVote(game, mafia[0].id, target);
+    lockTarget(game, mafia[0].id, target);
     submitDoctorSave(game, doctor.id, target);
 
     const nightResult = transitionToDay(game);
@@ -200,7 +206,7 @@ describe("Night Phase", () => {
     const citizens = getAliveByRole(game, "citizen");
     const target = citizens[0].id;
 
-    submitMafiaVote(game, mafia[0].id, target);
+    lockTarget(game, mafia[0].id, target);
     const nightResult = transitionToDay(game);
 
     expect(nightResult.killed.length).toBe(1);
@@ -221,7 +227,7 @@ describe("Night Phase", () => {
       const target = lovers[0].id;
       const otherLover = game.players.get(lovers[0].loverId!)!;
 
-      submitMafiaVote(game, mafia[0].id, target);
+      lockTarget(game, mafia[0].id, target);
       const nightResult = transitionToDay(game);
 
       expect(game.players.get(target)!.isAlive).toBe(false);
@@ -242,7 +248,7 @@ describe("Day Voting", () => {
     const citizens = getAliveByRole(game, "citizen");
 
     // Complete night phase quickly
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
     return game;
   }
@@ -337,7 +343,7 @@ describe("Day Voting", () => {
     const citizens = getAliveByRole(game, "citizen");
 
     // Night: mafia kills a citizen
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
 
     // Day: vote to execute the joker
@@ -403,7 +409,7 @@ describe("Day/Night Transitions", () => {
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
 
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
 
     expect(game.phase).toBe("day");
@@ -468,7 +474,7 @@ describe("Doctor Consecutive Save Restriction", () => {
 
     // Night 1: doctor saves citizen[0]
     const target = citizens[0].id;
-    submitMafiaVote(game, mafia[0].id, citizens[1].id);
+    lockTarget(game, mafia[0].id, citizens[1].id);
     submitDoctorSave(game, doctor.id, target);
     transitionToDay(game);
 
@@ -503,7 +509,7 @@ describe("Game createdAt", () => {
     // Small delay to ensure new timestamp differs
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
 
     restartGame(game);
@@ -518,7 +524,7 @@ describe("Auto-night after execution", () => {
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
     return game;
   }
@@ -566,7 +572,7 @@ describe("Early Vote Resolution", () => {
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
     return game;
   }
@@ -640,7 +646,7 @@ describe("Cancel Vote", () => {
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
 
     const alive = getAlivePlayers(game);
@@ -664,7 +670,7 @@ describe("Joker Execution with Lovers", () => {
     const citizens = getAliveByRole(game, "citizen");
     const joker = getAliveByRole(game, "joker")[0];
 
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
 
     callVote(game, game.adminId, joker.id);
@@ -694,7 +700,7 @@ describe("Joker Execution with Lovers", () => {
 
     game.phase = "night";
     game.round = 1;
-    submitMafiaVote(game, players[0].id, players[3].id);
+    lockTarget(game, players[0].id, players[3].id);
     transitionToDay(game);
 
     callVote(game, game.adminId, players[1].id);

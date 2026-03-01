@@ -458,12 +458,44 @@ input::placeholder { color: var(--text-secondary); }
 }
 .action-panel h3 { font-size: 16px; margin-bottom: 12px; }
 .mafia-action-buttons { display: flex; gap: 8px; margin-top: 10px; }
-.mafia-obj-btn { flex: 1; }
-.mafia-remove-btn { flex: 0; white-space: nowrap; }
-/* Lock/Maybe inline choice */
-.mafia-vote-choice { display: flex; gap: 6px; margin-top: 6px; }
-.mafia-vote-choice .btn { flex: 1; padding: 8px 0; font-size: 13px; }
-.target-list li.choosing { background: var(--border); border-color: var(--primary); }
+/* Mafia icon-based voting */
+.mafia-icons {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.mafia-icon-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  min-width: 36px;
+  justify-content: center;
+}
+.mafia-icon-btn:active { transform: scale(0.95); }
+.mafia-icon-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 8px rgba(183, 28, 28, 0.3);
+}
+.mafia-icon-btn.disabled-icon {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.mafia-icon-btn .vote-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  min-width: 14px;
+  text-align: center;
+}
 /* Animated narrator line */
 .narrator-line.animate-in {
   animation: narratorSlideIn 0.4s ease;
@@ -483,7 +515,7 @@ input::placeholder { color: var(--text-secondary); }
   transition: all 0.15s;
   font-weight: 500;
 }
-.target-list li:active { background: var(--primary); }
+.target-list li:not(:has(.mafia-icons)):active { background: var(--primary); }
 .target-list li.selected { background: var(--primary); border-color: var(--primary); }
 .target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
 /* SLIDE-TO-CONFIRM */

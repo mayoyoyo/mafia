@@ -56,7 +56,6 @@ export function createGame(adminId: number, adminUsername: string): Game {
     players: new Map([[adminId, admin]]),
     mafiaVotes: new Map(),
     mafiaTarget: null,
-    mafiaConfirmed: false,
     doctorTarget: null,
     detectiveTarget: null,
     lastDoctorTarget: null,
@@ -237,88 +236,109 @@ export function startGame(game: Game): string[] | null {
   return messages;
 }
 
-export function submitMafiaVote(game: Game, mafiaId: number, targetId: number, voteType: "lock" | "maybe" = "lock"): { allVoted: boolean; target: number | null } {
-  if (game.phase !== "night") return { allVoted: false, target: null };
-  if (game.mafiaConfirmed) return { allVoted: false, target: null }; // locked in
+export function submitMafiaVote(
+  game: Game, mafiaId: number, targetId: number, voteType: "lock" | "maybe" | "letsnot"
+): { consensus: boolean; target: number | null } {
+  if (game.phase !== "night") return { consensus: false, target: null };
+  if (game.mafiaTarget !== null) return { consensus: false, target: null }; // already auto-killed
 
   const mafiaPlayer = game.players.get(mafiaId);
-  if (!mafiaPlayer || mafiaPlayer.role !== "mafia" || !mafiaPlayer.isAlive) return { allVoted: false, target: null };
+  if (!mafiaPlayer || mafiaPlayer.role !== "mafia" || !mafiaPlayer.isAlive) return { consensus: false, target: null };
 
   const target = game.players.get(targetId);
-  if (!target || !target.isAlive || target.role === "mafia") return { allVoted: false, target: null };
+  if (!target || !target.isAlive || target.role === "mafia") return { consensus: false, target: null };
 
-  game.mafiaVotes.set(mafiaId, { targetId, voteType });
-  game.mafiaTarget = null; // reset until re-confirmed
+  let votes = game.mafiaVotes.get(mafiaId) || [];
+
+  // Check if same voteType already exists for this target → toggle off
+  const existingIdx = votes.findIndex(v => v.targetId === targetId && v.voteType === voteType);
+  if (existingIdx !== -1) {
+    // Toggle off: if toggling lock off, revert to maybe
+    if (voteType === "lock") {
+      votes[existingIdx] = { targetId, voteType: "maybe" };
+    } else {
+      votes.splice(existingIdx, 1);
+    }
+    game.mafiaVotes.set(mafiaId, votes);
+    game.mafiaTarget = null;
+    return checkMafiaConsensus(game);
+  }
+
+  if (voteType === "lock") {
+    // Lock requires target to already be in "maybe" state for this mafia
+    const maybeIdx = votes.findIndex(v => v.targetId === targetId && v.voteType === "maybe");
+    if (maybeIdx === -1) return { consensus: false, target: null };
+    // Only 1 lock allowed total
+    const existingLock = votes.find(v => v.voteType === "lock");
+    if (existingLock) return { consensus: false, target: null };
+    // Upgrade maybe → lock
+    votes[maybeIdx] = { targetId, voteType: "lock" };
+  } else {
+    // For maybe/letsnot: remove any existing vote on this target first (mutual exclusion)
+    votes = votes.filter(v => v.targetId !== targetId);
+
+    if (voteType === "maybe") {
+      // Count maybe+lock slots (max 4)
+      const maybeLockCount = votes.filter(v => v.voteType === "maybe" || v.voteType === "lock").length;
+      if (maybeLockCount >= 4) return { consensus: false, target: null };
+      votes.push({ targetId, voteType: "maybe" });
+    } else if (voteType === "letsnot") {
+      // Count letsnot slots (max 4, separate pool)
+      const letsnotCount = votes.filter(v => v.voteType === "letsnot").length;
+      if (letsnotCount >= 4) return { consensus: false, target: null };
+      votes.push({ targetId, voteType: "letsnot" });
+    }
+  }
+
+  game.mafiaVotes.set(mafiaId, votes);
+  game.mafiaTarget = null;
 
   return checkMafiaConsensus(game);
 }
 
-export function submitMafiaObject(game: Game, mafiaId: number): boolean {
+export function removeMafiaVote(game: Game, mafiaId: number, targetId?: number): boolean {
   if (game.phase !== "night") return false;
-  if (game.mafiaConfirmed) return false;
+  if (game.mafiaTarget !== null) return false; // already auto-killed
 
   const mafiaPlayer = game.players.get(mafiaId);
   if (!mafiaPlayer || mafiaPlayer.role !== "mafia" || !mafiaPlayer.isAlive) return false;
 
-  // Find the most recent nomination target
-  const nominationTarget = getMostRecentNomination(game);
-  if (nominationTarget === null) return false;
+  const votes = game.mafiaVotes.get(mafiaId);
+  if (!votes || votes.length === 0) return false;
 
-  game.mafiaVotes.set(mafiaId, { targetId: nominationTarget, voteType: "object" });
-  game.mafiaTarget = null;
-  return true;
-}
-
-export function removeMafiaVote(game: Game, mafiaId: number): boolean {
-  if (game.phase !== "night") return false;
-  if (game.mafiaConfirmed) return false;
-
-  const mafiaPlayer = game.players.get(mafiaId);
-  if (!mafiaPlayer || mafiaPlayer.role !== "mafia" || !mafiaPlayer.isAlive) return false;
-
-  if (!game.mafiaVotes.has(mafiaId)) return false;
-
-  game.mafiaVotes.delete(mafiaId);
-  game.mafiaTarget = null;
-  return true;
-}
-
-function getMostRecentNomination(game: Game): number | null {
-  // Return the targetId of the last nomination (lock or maybe) in insertion order
-  let lastTarget: number | null = null;
-  for (const [, entry] of game.mafiaVotes) {
-    if (entry.voteType === "lock" || entry.voteType === "maybe") {
-      lastTarget = entry.targetId;
-    }
+  if (targetId !== undefined) {
+    // Remove specific target vote
+    const newVotes = votes.filter(v => v.targetId !== targetId);
+    if (newVotes.length === votes.length) return false; // nothing removed
+    game.mafiaVotes.set(mafiaId, newVotes);
+  } else {
+    // Remove all votes for this mafia member
+    game.mafiaVotes.delete(mafiaId);
   }
-  return lastTarget;
+  game.mafiaTarget = null;
+  return true;
 }
 
-function checkMafiaConsensus(game: Game): { allVoted: boolean; target: number | null } {
+function checkMafiaConsensus(game: Game): { consensus: boolean; target: number | null } {
   const aliveMafia = getAliveByRole(game, "mafia");
 
-  // Only count lock/maybe nominations for consensus
-  const nominations = Array.from(game.mafiaVotes.entries())
-    .filter(([, entry]) => entry.voteType === "lock" || entry.voteType === "maybe");
-
-  // All alive mafia must have a nomination (not object, not absent)
-  const allNominated = aliveMafia.every((m) => {
-    const vote = game.mafiaVotes.get(m.id);
-    return vote && (vote.voteType === "lock" || vote.voteType === "maybe");
-  });
-
-  if (!allNominated) return { allVoted: false, target: null };
-
-  // Check if all nominations are for the same target
-  const targets = nominations.map(([, entry]) => entry.targetId);
-  const unanimous = targets.every((t) => t === targets[0]);
-
-  if (unanimous) {
-    game.mafiaTarget = targets[0];
-    return { allVoted: true, target: targets[0] };
+  // All alive mafia must have exactly one "lock" vote
+  const lockTargets: number[] = [];
+  for (const m of aliveMafia) {
+    const votes = game.mafiaVotes.get(m.id) || [];
+    const lockVote = votes.find(v => v.voteType === "lock");
+    if (!lockVote) return { consensus: false, target: null };
+    lockTargets.push(lockVote.targetId);
   }
 
-  return { allVoted: true, target: null };
+  // All locks must be on the same target
+  const unanimous = lockTargets.every(t => t === lockTargets[0]);
+  if (unanimous) {
+    game.mafiaTarget = lockTargets[0];
+    return { consensus: true, target: lockTargets[0] };
+  }
+
+  return { consensus: false, target: null };
 }
 
 export function submitDoctorSave(game: Game, doctorId: number, targetId: number): boolean {
@@ -369,8 +389,8 @@ function killPlayer(game: Game, playerId: number): { killed: Player; loverKilled
 export function checkNightReady(game: Game): boolean {
   if (game.phase !== "night") return false;
 
-  // Mafia must have unanimous vote AND confirmed
-  if (game.mafiaTarget === null || !game.mafiaConfirmed) return false;
+  // Mafia must have unanimous lock (auto-confirmed via consensus)
+  if (game.mafiaTarget === null) return false;
 
   // Doctor must act (if alive and enabled)
   if (game.settings.enableDoctor) {
@@ -453,7 +473,6 @@ export function transitionToDay(game: Game): NightResult {
   game.lastDoctorTarget = game.doctorTarget;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
-  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.voteTarget = null;
@@ -645,7 +664,6 @@ export function forceDawn(game: Game): string[] {
   // Reset night state without resolving
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
-  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.voteTarget = null;
@@ -664,7 +682,6 @@ export function endDay(game: Game): string[] {
   game.round++;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
-  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
 
@@ -707,7 +724,6 @@ export function returnToLobby(game: Game): boolean {
   game.round = 0;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
-  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.voteTarget = null;
@@ -745,7 +761,6 @@ export function restartGame(game: Game): string[] | null {
   game.round = 0;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
-  game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.voteTarget = null;
@@ -768,14 +783,26 @@ export function restartGame(game: Game): string[] | null {
   return startGame(game);
 }
 
-export function getMafiaVoteStatus(game: Game): { voterTargets: Record<string, { target: string; voteType: MafiaVoteType }> } {
-  const voterTargets: Record<string, { target: string; voteType: MafiaVoteType }> = {};
+export function getMafiaVoteStatus(game: Game): {
+  voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>;
+  lockedTarget: string | null;
+} {
+  const voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>> = {};
 
-  for (const [mafiaId, entry] of game.mafiaVotes) {
+  for (const [mafiaId, entries] of game.mafiaVotes) {
     const mafiaPlayer = game.players.get(mafiaId)!;
-    const target = game.players.get(entry.targetId)!;
-    voterTargets[mafiaPlayer.username] = { target: target.username, voteType: entry.voteType };
+    voterTargets[mafiaPlayer.username] = entries.map(entry => {
+      const target = game.players.get(entry.targetId)!;
+      return { target: target.username, targetId: entry.targetId, voteType: entry.voteType };
+    });
   }
 
-  return { voterTargets };
+  // Determine if consensus was reached (all alive mafia locked same target)
+  let lockedTarget: string | null = null;
+  if (game.mafiaTarget !== null) {
+    const targetPlayer = game.players.get(game.mafiaTarget);
+    if (targetPlayer) lockedTarget = targetPlayer.username;
+  }
+
+  return { voterTargets, lockedTarget };
 }

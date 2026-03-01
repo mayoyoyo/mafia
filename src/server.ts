@@ -1,7 +1,7 @@
 import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig } from "./db";
 import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
-  getPlayerInfo, startGame, submitMafiaVote, submitMafiaObject, removeMafiaVote, submitDoctorSave,
+  getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
@@ -109,7 +109,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
   let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
   if (game.phase === "night" && rejoined.isAlive) {
     if (rejoined.role === "mafia") {
-      const locked = game.mafiaConfirmed && game.mafiaTarget !== null;
+      const locked = game.mafiaTarget !== null;
       const targetName = locked ? (game.players.get(game.mafiaTarget!)?.username ?? null) : null;
 
       // Build targets list (non-mafia alive players)
@@ -118,16 +118,13 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
 
       const status = getMafiaVoteStatus(game);
-      const confirmTargetName = (!locked && game.mafiaTarget !== null)
-        ? (game.players.get(game.mafiaTarget)?.username ?? null)
-        : null;
 
       nightAction = {
         locked,
         targetName,
         targets,
         voterTargets: status.voterTargets,
-        confirmTargetName,
+        lockedTarget: status.lockedTarget,
         lastDoctorTarget: null,
       };
     } else if (rejoined.role === "doctor") {
@@ -138,7 +135,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 
       nightAction = {
         locked, targetName, targets,
-        voterTargets: {}, confirmTargetName: null,
+        voterTargets: {}, lockedTarget: null,
         lastDoctorTarget: game.lastDoctorTarget,
       };
     } else if (rejoined.role === "detective") {
@@ -150,7 +147,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 
       nightAction = {
         locked, targetName, targets,
-        voterTargets: {}, confirmTargetName: null,
+        voterTargets: {}, lockedTarget: null,
         lastDoctorTarget: null,
       };
     }
@@ -507,21 +504,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const voteType = msg.voteType || "lock";
       const result = submitMafiaVote(game, client.userId, msg.targetId, voteType);
 
-      // Only broadcast if vote was actually recorded
-      if (!game.mafiaVotes.has(client.userId)) break;
-
       broadcastMafiaStatus(game, result);
-      break;
-    }
-
-    case "mafia_object": {
-      if (!client.gameCode || !client.userId) return;
-      const game = getGame(client.gameCode);
-      if (!game || game.phase !== "night") return;
-
-      if (!submitMafiaObject(game, client.userId)) break;
-
-      broadcastMafiaStatus(game, { allVoted: false, target: null });
       break;
     }
 
@@ -530,33 +513,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night") return;
 
-      if (!removeMafiaVote(game, client.userId)) break;
+      if (!removeMafiaVote(game, client.userId, msg.targetId)) break;
 
-      broadcastMafiaStatus(game, { allVoted: false, target: null });
-      break;
-    }
-
-    case "confirm_mafia_kill": {
-      if (!client.gameCode || !client.userId) return;
-      const game = getGame(client.gameCode);
-      if (!game || game.phase !== "night") return;
-
-      // Only mafia can confirm
-      const confirmer = game.players.get(client.userId);
-      if (!confirmer || confirmer.role !== "mafia" || !confirmer.isAlive) return;
-
-      // Must have unanimous target and not already confirmed
-      if (game.mafiaTarget === null || game.mafiaConfirmed) return;
-
-      game.mafiaConfirmed = true;
-      const aliveMafia = getAliveByRole(game, "mafia");
-      for (const m of aliveMafia) {
-        sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
-      }
-
-      if (checkNightReady(game)) {
-        resolveNightAndTransition(game);
-      }
+      broadcastMafiaStatus(game, { consensus: false, target: null });
       break;
     }
 
@@ -906,21 +865,21 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
   }
 }
 
-function broadcastMafiaStatus(game: Game, result: { allVoted: boolean; target: number | null }): void {
+function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: number | null }): void {
   const status = getMafiaVoteStatus(game);
   const aliveMafia = getAliveByRole(game, "mafia");
   for (const m of aliveMafia) {
-    sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets });
+    sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets, lockedTarget: status.lockedTarget });
   }
 
-  if (result.allVoted && result.target !== null) {
-    const targetPlayer = game.players.get(result.target)!;
+  // Auto-confirm on consensus: all mafia locked same target → auto-kill
+  if (result.consensus && result.target !== null) {
     for (const m of aliveMafia) {
-      sendToUser(m.id, { type: "mafia_confirm_ready", targetName: targetPlayer.username });
+      sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
     }
-  } else if (result.allVoted && result.target === null) {
-    for (const m of aliveMafia) {
-      sendToUser(m.id, { type: "night_action_done", message: "The Mafia could not agree. Change your vote." });
+
+    if (checkNightReady(game)) {
+      resolveNightAndTransition(game);
     }
   }
 }

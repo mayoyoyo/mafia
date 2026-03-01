@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 
-export type MafiaVoteType = "lock" | "maybe" | "object";
+export type MafiaVoteType = "lock" | "maybe" | "letsnot";
 
 export interface MafiaVoteEntry {
   targetId: number;
@@ -48,9 +48,8 @@ export interface Game {
   players: Map<number, Player>;
   mafiaVariant: number; // shared pixel art variant for all mafia
   // Night actions
-  mafiaVotes: Map<number, MafiaVoteEntry>; // mafiaPlayerId -> vote entry
+  mafiaVotes: Map<number, MafiaVoteEntry[]>; // mafiaPlayerId -> array of vote entries
   mafiaTarget: number | null;
-  mafiaConfirmed: boolean;
   doctorTarget: number | null;
   detectiveTarget: number | null;
   lastDoctorTarget: number | null;
@@ -95,10 +94,8 @@ export type ClientMessage =
   | { type: "list_configs" }
   | { type: "delete_config"; configId: number }
   | { type: "start_game" }
-  | { type: "mafia_vote"; targetId: number; voteType: "lock" | "maybe" }
-  | { type: "mafia_object" }
-  | { type: "mafia_remove_vote" }
-  | { type: "confirm_mafia_kill" }
+  | { type: "mafia_vote"; targetId: number; voteType: "lock" | "maybe" | "letsnot" }
+  | { type: "mafia_remove_vote"; targetId?: number }
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
   | { type: "call_vote"; targetId: number; anonymous?: boolean }
@@ -123,8 +120,7 @@ export type ServerMessage =
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[] }
-  | { type: "mafia_vote_update"; voterTargets: Record<string, { target: string; voteType: MafiaVoteType }> }
-  | { type: "mafia_confirm_ready"; targetName: string }
+  | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }
@@ -175,8 +171,8 @@ export type ServerMessage =
         locked: boolean;
         targetName: string | null;
         targets: PlayerInfo[];
-        voterTargets: Record<string, { target: string; voteType: MafiaVoteType }>;
-        confirmTargetName: string | null;
+        voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>;
+        lockedTarget: string | null;
         lastDoctorTarget: number | null;
       } | null;
       // Vote state (null if not in voting)
