@@ -21,6 +21,9 @@
 - `public/app.css` - All styles
 - `public/index.html` - HTML structure (screens, modals, overlays)
 
+## Game Rules
+- The admin retains full admin rights (call votes, force dawn, end day, etc.) regardless of whether they are alive or dead
+
 ## Pixel Art
 - Role art and card back art defined as 10x10 grid arrays in `public/app.js`
 - `pixelArtToSvg()` renders grids to inline SVGs with viewBox `0 0 10 10`

@@ -208,6 +208,7 @@
         mafiaConfirmTarget = null;
         lastGameEvents = [];
         lastVoteResult = null;
+        previousPhase = null;
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -1292,7 +1293,7 @@
   })();
 
   // ============================================================
-  // PULL-TO-REFRESH
+  // PULL-TO-REFRESH (works on game screen and menu screen)
   // ============================================================
   (function () {
     const THRESHOLD = 60;
@@ -1301,16 +1302,25 @@
     let startY = 0;
     let pullDist = 0;
     let refreshing = false;
+    let activeIndicator = null;
+    let activeSpinner = null;
 
-    const indicator = $("pull-refresh");
-    const spinner = $("pull-refresh-spinner");
-
-    function isGameScreen() {
-      return screens.game.classList.contains("active");
+    function getActiveElements() {
+      if (screens.game.classList.contains("active")) {
+        return { indicator: $("pull-refresh"), spinner: $("pull-refresh-spinner") };
+      }
+      if (screens.menu.classList.contains("active")) {
+        return { indicator: $("pull-refresh-menu"), spinner: $("pull-refresh-spinner-menu") };
+      }
+      return null;
     }
 
     function onStart(e) {
-      if (!isGameScreen() || refreshing || window.scrollY > 0) return;
+      if (refreshing || window.scrollY > 0) return;
+      const elements = getActiveElements();
+      if (!elements) return;
+      activeIndicator = elements.indicator;
+      activeSpinner = elements.spinner;
       const touch = e.touches ? e.touches[0] : e;
       startY = touch.clientY;
       pulling = true;
@@ -1318,47 +1328,51 @@
     }
 
     function onMove(e) {
-      if (!pulling) return;
+      if (!pulling || !activeIndicator) return;
       const touch = e.touches ? e.touches[0] : e;
       const dy = touch.clientY - startY;
       if (dy <= 0) {
         pullDist = 0;
-        indicator.style.height = "0px";
+        activeIndicator.style.height = "0px";
         return;
       }
       e.preventDefault();
       pullDist = Math.min(dy, MAX_PULL);
-      indicator.style.height = pullDist + "px";
-      spinner.style.transform = "rotate(" + (pullDist * 4) + "deg)";
+      activeIndicator.style.height = pullDist + "px";
+      activeSpinner.style.transform = "rotate(" + (pullDist * 4) + "deg)";
       if (pullDist >= THRESHOLD) {
-        indicator.classList.add("ready");
+        activeIndicator.classList.add("ready");
       } else {
-        indicator.classList.remove("ready");
+        activeIndicator.classList.remove("ready");
       }
     }
 
     function onEnd() {
-      if (!pulling) return;
+      if (!pulling || !activeIndicator) return;
       pulling = false;
+      const ind = activeIndicator;
+      const spn = activeSpinner;
 
       if (pullDist >= THRESHOLD) {
         refreshing = true;
-        indicator.classList.remove("ready");
-        indicator.classList.add("refreshing");
-        indicator.style.height = "40px";
-        spinner.style.transform = "";
+        ind.classList.remove("ready");
+        ind.classList.add("refreshing");
+        ind.style.height = "40px";
+        spn.style.transform = "";
         if (ws) ws.close();
         setTimeout(function () {
-          indicator.classList.remove("refreshing");
-          indicator.style.height = "0px";
+          ind.classList.remove("refreshing");
+          ind.style.height = "0px";
           refreshing = false;
         }, 1500);
       } else {
-        indicator.classList.remove("ready");
-        indicator.style.height = "0px";
-        spinner.style.transform = "";
+        ind.classList.remove("ready");
+        ind.style.height = "0px";
+        spn.style.transform = "";
       }
       pullDist = 0;
+      activeIndicator = null;
+      activeSpinner = null;
     }
 
     document.addEventListener("touchstart", onStart, { passive: true });
@@ -1538,7 +1552,8 @@
 
   function showNightTransition(callback) {
     nightTransitionActive = true;
-    nightTransitionQueue = [];
+    // Don't clear nightTransitionQueue here — messages may already be queued
+    // from the preceding execution transition. Queue is cleared after replay.
 
     const pair = NIGHT_MESSAGES[nightMsgIndex % NIGHT_MESSAGES.length];
     nightMsgIndex++;
@@ -2518,7 +2533,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.37_202602281755";
+  const APP_VERSION = "v1.38_202602281820";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

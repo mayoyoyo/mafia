@@ -38,6 +38,13 @@ function openWS(): Promise<WebSocket> {
   });
 }
 
+function collectMessages(ws: WebSocket): { messages: any[], stop: () => void } {
+  const messages: any[] = [];
+  const h = (e: MessageEvent) => { messages.push(JSON.parse(e.data)); };
+  ws.addEventListener("message", h);
+  return { messages, stop: () => ws.removeEventListener("message", h) };
+}
+
 function send(ws: WebSocket, msg: any) { ws.send(JSON.stringify(msg)); }
 
 async function reg(name: string, pin: string) {
@@ -181,5 +188,193 @@ test("full E2E flow", async () => {
   cfgWs.close();
 
   // Cleanup
+  for (const w of allWs) w.close();
+}, 30000);
+
+test("night action prompts arrive after phase_change on vote execution", async () => {
+  const ts = Date.now();
+
+  // Use 6 players (1 mafia, 5 citizens) so game doesn't end after 1 kill + 1 execution
+  const { ws: adminWs, userId: uid1 } = await reg(`na_admin_${ts}`, "1111");
+  const { ws: p2ws, userId: uid2 } = await reg(`na_p2_${ts}`, "2222");
+  const { ws: p3ws, userId: uid3 } = await reg(`na_p3_${ts}`, "3333");
+  const { ws: p4ws, userId: uid4 } = await reg(`na_p4_${ts}`, "4444");
+  const { ws: p5ws, userId: uid5 } = await reg(`na_p5_${ts}`, "5555");
+  const { ws: p6ws, userId: uid6 } = await reg(`na_p6_${ts}`, "6666");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws, p6ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws];
+  const allUids = [uid1, uid2, uid3, uid4, uid5, uid6];
+
+  // Collect on ALL ws from the start so we never miss messages
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+
+  // Wait for all messages to settle
+  await Bun.sleep(1000);
+
+  // Find the mafia player from collected messages
+  let mafiaIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started && started.role === "mafia") { mafiaIdx = i; break; }
+  }
+  expect(mafiaIdx).toBeGreaterThanOrEqual(0);
+  const mafiaWs = allWs[mafiaIdx];
+
+  // Get mafia_targets from collected messages
+  const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
+  expect(mafiaTargets).toBeDefined();
+  expect(mafiaTargets.players.length).toBeGreaterThan(0);
+  const nightKillTargetId = mafiaTargets.players[0].id;
+
+  // Stop old collectors, start fresh for the rest of the test
+  collectors.forEach((c) => c.stop());
+
+  send(mafiaWs, { type: "mafia_vote", targetId: nightKillTargetId, voteType: "lock" });
+  await waitFor(mafiaWs, "mafia_confirm_ready");
+
+  // Set up day phase listeners BEFORE confirming kill
+  const dayPhasePromises = allWs.map((w) => waitFor(w, "phase_change"));
+  send(mafiaWs, { type: "confirm_mafia_kill" });
+  const dayPhases = await Promise.all(dayPhasePromises);
+  expect(dayPhases[0].phase).toBe("day");
+
+  // Find an alive non-mafia citizen to nominate (skip mafia and the player killed at night)
+  let nomineeId = -1;
+  for (let i = 0; i < allUids.length; i++) {
+    if (i === mafiaIdx) continue;
+    if (allUids[i] === nightKillTargetId) continue;
+    nomineeId = allUids[i];
+    break;
+  }
+  expect(nomineeId).toBeGreaterThan(0);
+
+  // Set up listeners BEFORE sending call_vote
+  const voteCalledPromises = allWs.map((w) => waitFor(w, "vote_called"));
+  send(adminWs, { type: "call_vote", targetId: nomineeId, anonymous: false });
+  await Promise.all(voteCalledPromises);
+
+  // Start collecting on mafia ws BEFORE voting
+  const collector = collectMessages(mafiaWs);
+
+  // All alive players vote yes (skip the player killed at night)
+  for (let i = 0; i < allWs.length; i++) {
+    if (allUids[i] !== nightKillTargetId) {
+      send(allWs[i], { type: "cast_vote", approve: true });
+    }
+  }
+
+  // Wait for messages to arrive
+  await Bun.sleep(2000);
+  collector.stop();
+
+  const types = collector.messages.map((m) => m.type);
+  const voteResultIdx = types.indexOf("vote_result");
+  const nightPhaseIdx = types.findIndex((t, i) =>
+    t === "phase_change" && collector.messages[i].phase === "night"
+  );
+  const mafiaTargetsIdx = types.indexOf("mafia_targets");
+
+  // Diagnostic: if phase_change(night) is missing, the game probably ended
+  if (nightPhaseIdx === -1) {
+    const phaseChanges = collector.messages.filter((m) => m.type === "phase_change");
+    const gameOvers = collector.messages.filter((m) => m.type === "game_over");
+    throw new Error(
+      `No phase_change(night) found. Types: [${types.join(", ")}] ` +
+      `PhaseChanges: ${JSON.stringify(phaseChanges.map((m) => m.phase))} ` +
+      `GameOvers: ${gameOvers.length}`
+    );
+  }
+
+  expect(voteResultIdx).toBeGreaterThanOrEqual(0);
+  expect(nightPhaseIdx).toBeGreaterThanOrEqual(0);
+  expect(mafiaTargetsIdx).toBeGreaterThanOrEqual(0);
+
+  // Critical ordering: vote_result → phase_change(night) → mafia_targets
+  expect(voteResultIdx).toBeLessThan(nightPhaseIdx);
+  expect(nightPhaseIdx).toBeLessThan(mafiaTargetsIdx);
+
+  for (const w of allWs) w.close();
+}, 30000);
+
+test("night action prompts arrive after phase_change on end_day", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`ed_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`ed_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`ed_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`ed_p4_${ts}`, "4444");
+  const { ws: p5ws } = await reg(`ed_p5_${ts}`, "5555");
+  const { ws: p6ws } = await reg(`ed_p6_${ts}`, "6666");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws, p6ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws];
+
+  // Collect on ALL ws from the start
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  // Find mafia
+  let mafiaIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started && started.role === "mafia") { mafiaIdx = i; break; }
+  }
+  expect(mafiaIdx).toBeGreaterThanOrEqual(0);
+  const mafiaWs = allWs[mafiaIdx];
+  const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
+  expect(mafiaTargets).toBeDefined();
+  collectors.forEach((c) => c.stop());
+
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+  await waitFor(mafiaWs, "mafia_confirm_ready");
+
+  // Set up day phase listeners BEFORE confirming kill
+  const dayPromises = allWs.map((w) => waitFor(w, "phase_change"));
+  send(mafiaWs, { type: "confirm_mafia_kill" });
+  await Promise.all(dayPromises);
+
+  // Collect messages BEFORE sending end_day
+  const collector = collectMessages(mafiaWs);
+  send(adminWs, { type: "end_day" });
+
+  await Bun.sleep(2000);
+  collector.stop();
+
+  const types = collector.messages.map((m) => m.type);
+  const nightPhaseIdx = types.findIndex((t, i) =>
+    t === "phase_change" && collector.messages[i].phase === "night"
+  );
+  const mafiaTargetsIdx = types.indexOf("mafia_targets");
+
+  expect(nightPhaseIdx).toBeGreaterThanOrEqual(0);
+  expect(mafiaTargetsIdx).toBeGreaterThanOrEqual(0);
+
+  // phase_change(night) must arrive BEFORE mafia_targets
+  expect(nightPhaseIdx).toBeLessThan(mafiaTargetsIdx);
+
+  // No vote_result should exist (admin ended day without vote)
+  expect(types.indexOf("vote_result")).toBe(-1);
+
   for (const w of allWs) w.close();
 }, 30000);
