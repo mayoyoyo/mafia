@@ -1630,7 +1630,7 @@
           mafiaChoiceTarget = targetId;
           const choiceDiv = document.createElement("div");
           choiceDiv.className = "mafia-vote-choice";
-          choiceDiv.innerHTML = `<button class="btn btn-small btn-primary" data-vote="lock">\u{1F512} Lock</button><button class="btn btn-small btn-secondary" data-vote="maybe">\u{1F914} Maybe</button>`;
+          choiceDiv.innerHTML = `<button class="btn btn-small btn-secondary" data-vote="lock">\u{1F512} Lock</button><button class="btn btn-small btn-secondary" data-vote="maybe">\u{1F914} Maybe</button>`;
           li.appendChild(choiceDiv);
 
           choiceDiv.querySelectorAll("button").forEach((btn) => {
@@ -1681,6 +1681,7 @@
   $("btn-mafia-object").addEventListener("click", () => {
     if (nightActionLocked) return;
     wsSend({ type: "mafia_object" });
+    $("action-targets").querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
   });
 
   // Remove vote button handler
@@ -1713,14 +1714,15 @@
       })
       .join("");
 
-    // Check if there is any nomination (for Object button)
-    const hasNomination = entries.some(([, info]) => info.voteType === "lock" || info.voteType === "maybe");
+    // Check if someone ELSE has a nomination (for Object button)
+    const otherNomination = entries.some(([voter, info]) =>
+      voter !== username && (info.voteType === "lock" || info.voteType === "maybe"));
     // Check if current player has a vote (for Remove button)
     const myVote = entries.find(([voter]) => voter === username);
 
     if (!nightActionLocked) {
-      // Show Object button if there's a nomination and we haven't locked
-      if (hasNomination && (!myVote || myVote[1].voteType !== "object")) {
+      // Show Object button only if another player nominated, and we haven't already objected
+      if (otherNomination && (!myVote || myVote[1].voteType !== "object")) {
         $("btn-mafia-object").classList.remove("hidden");
       } else {
         $("btn-mafia-object").classList.add("hidden");
