@@ -163,6 +163,7 @@
       case "game_created":
         gameCode = msg.code;
         isAdmin = true;
+        soundEnabled = true; // Admin (moderator) gets sound on by default
         localStorage.setItem("mafia_game_code", gameCode);
         $("lobby-code").textContent = gameCode;
         showScreen("lobbyAdmin");
@@ -171,6 +172,7 @@
       case "game_joined":
         gameCode = msg.code;
         isAdmin = msg.isAdmin;
+        if (isAdmin) soundEnabled = true; // Admin (moderator) gets sound on by default
         localStorage.setItem("mafia_game_code", gameCode);
         if (isAdmin) {
           $("lobby-code").textContent = gameCode;
@@ -2487,8 +2489,36 @@
     return audioCtx;
   }
 
+  // Narration text for sequential night sub-phase cues
+  const NARRATION_LINES = {
+    mafia_open: "Mafia, open your eyes.",
+    mafia_close: "Mafia, close your eyes.",
+    doctor_open: "Doctor, open your eyes.",
+    doctor_close: "Doctor, close your eyes.",
+    detective_open: "Detective, open your eyes.",
+    detective_close: "Detective, close your eyes.",
+  };
+
+  function speakNarration(text) {
+    if (!window.speechSynthesis) return;
+    // Cancel any ongoing speech first
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 0.8;
+    utterance.volume = 1.0;
+    window.speechSynthesis.speak(utterance);
+  }
+
   function playSound(type) {
     if (!soundEnabled) return;
+
+    // Check if this is a narration cue
+    if (NARRATION_LINES[type]) {
+      speakNarration(NARRATION_LINES[type]);
+      return;
+    }
+
     try {
       const ctx = getAudioContext();
       const oscillator = ctx.createOscillator();
@@ -2552,7 +2582,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.40_202602281958";
+  const APP_VERSION = "v1.41_202603010221";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

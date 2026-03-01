@@ -242,12 +242,21 @@ describe("Rejoin during night phase", () => {
     const { code, players } = await setupAndStart(6, { enableDoctor: true, enableDetective: true });
 
     const doctor = players.find(p => p.role === "doctor");
+    const mafia = players.find(p => p.role === "mafia")!;
+    const citizens = players.filter(p => p.role === "citizen");
     if (!doctor) { for (const p of players) p.ws.close(); return; }
 
-    // Doctor should have received doctor_targets during setupAndStart's phase_change.
-    // Send doctor_save for the first alive player (themselves is fine).
-    const allAlive = players.filter(p => p.role !== undefined);
-    const saveTarget = allAlive.find(p => p.userId !== doctor.userId)!;
+    // Sequential night: must complete mafia sub-phase first
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitFor(mafia.ws, "night_action_done");
+
+    // Wait for doctor sub-phase to start (1.5s delay after mafia_close)
+    await waitFor(doctor.ws, "doctor_targets");
+
+    // Doctor saves someone
+    const saveTarget = players.find(p => p.userId !== doctor.userId && p.role !== "mafia")!;
     send(doctor.ws, { type: "doctor_save", targetId: saveTarget.userId });
     await waitFor(doctor.ws, "night_action_done");
     await Bun.sleep(100);
@@ -260,18 +269,37 @@ describe("Rejoin during night phase", () => {
     expect(sync.nightAction.targetName).toBeTruthy();
 
     for (const p of players) p.ws.close();
-  }, 15000);
+  }, 20000);
 
   test("game_sync shows locked action for detective after investigating", async () => {
     // Use doctor too so night doesn't auto-resolve after detective + mafia
     const { code, players } = await setupAndStart(6, { enableDetective: true, enableDoctor: true });
 
     const detective = players.find(p => p.role === "detective");
+    const mafia = players.find(p => p.role === "mafia")!;
+    const doctor = players.find(p => p.role === "doctor");
+    const citizens = players.filter(p => p.role === "citizen");
     if (!detective) { for (const p of players) p.ws.close(); return; }
 
-    // Detective targets are sent during game start — just send the action.
-    // Pick a valid target (any non-detective alive player)
-    const target = players.find(p => p.role !== "detective")!;
+    // Sequential night: complete mafia sub-phase first
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitFor(mafia.ws, "night_action_done");
+
+    // Wait for doctor sub-phase, then complete it
+    if (doctor) {
+      await waitFor(doctor.ws, "doctor_targets");
+      const saveTarget = players.find(p => p.userId !== doctor.userId && p.role !== "mafia")!;
+      send(doctor.ws, { type: "doctor_save", targetId: saveTarget.userId });
+      await waitFor(doctor.ws, "night_action_done");
+    }
+
+    // Wait for detective sub-phase to start
+    await waitFor(detective.ws, "detective_targets");
+
+    // Detective investigates
+    const target = players.find(p => p.role !== "detective" && p.role !== "mafia")!;
     send(detective.ws, { type: "detective_investigate", targetId: target.userId });
     await waitFor(detective.ws, "night_action_done");
     await Bun.sleep(100);
@@ -283,7 +311,7 @@ describe("Rejoin during night phase", () => {
     expect(sync.nightAction.locked).toBe(true);
 
     for (const p of players) p.ws.close();
-  }, 15000);
+  }, 25000);
 
   test("citizen gets null nightAction on rejoin during night", async () => {
     const { code, players } = await setupAndStart(4);
@@ -876,4 +904,54 @@ describe("Return to lobby", () => {
 
     for (const p of players) p.ws.close();
   }, 15000);
+});
+
+describe("Rejoin during sequential night sub-phases", () => {
+  test("rejoin during mafia sub-phase: mafia gets nightAction, others get null", async () => {
+    const { code, players } = await setupAndStart(4);
+
+    const mafia = players.find(p => p.role === "mafia")!;
+    const citizen = players.find(p => p.role === "citizen")!;
+
+    // During mafia sub-phase, rejoin mafia — should see targets
+    const mafiaSync = await rejoin(mafia, code);
+    expect(mafiaSync.phase).toBe("night");
+    expect(mafiaSync.nightSubPhase).toBe("mafia");
+    expect(mafiaSync.nightAction).not.toBeNull();
+    expect(mafiaSync.nightAction.targets.length).toBeGreaterThan(0);
+
+    // During mafia sub-phase, rejoin citizen — should see null nightAction
+    const citizenSync = await rejoin(citizen, code);
+    expect(citizenSync.phase).toBe("night");
+    expect(citizenSync.nightSubPhase).toBe("mafia");
+    expect(citizenSync.nightAction).toBeNull();
+
+    for (const p of players) p.ws.close();
+  }, 15000);
+
+  test("rejoin during doctor sub-phase: doctor gets nightAction, mafia gets locked", async () => {
+    const { code, players } = await setupAndStart(6, { enableDoctor: true, enableDetective: true });
+
+    const mafia = players.find(p => p.role === "mafia")!;
+    const doctor = players.find(p => p.role === "doctor");
+    const citizens = players.filter(p => p.role === "citizen");
+    if (!doctor) { for (const p of players) p.ws.close(); return; }
+
+    // Complete mafia sub-phase
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitFor(mafia.ws, "night_action_done");
+
+    // Wait for doctor sub-phase to start
+    await waitFor(doctor.ws, "doctor_targets");
+
+    // Rejoin mafia during doctor sub-phase — should show locked
+    const mafiaSync = await rejoin(mafia, code);
+    expect(mafiaSync.nightSubPhase).toBe("doctor");
+    expect(mafiaSync.nightAction).not.toBeNull();
+    expect(mafiaSync.nightAction.locked).toBe(true);
+
+    for (const p of players) p.ws.close();
+  }, 20000);
 });

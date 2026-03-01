@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, DEFAULT_SETTINGS, MafiaVoteType, MafiaVoteEntry } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, DEFAULT_SETTINGS, MafiaVoteType, MafiaVoteEntry, NightSubPhase } from "./types";
 import { Narrator } from "./narrator";
 
 const games = new Map<string, Game>();
@@ -74,6 +74,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
     dayVoteCount: 0,
     narratorHistory: [],
     detectiveHistory: [],
+    nightSubPhase: null,
   };
 
   games.set(code, game);
@@ -222,6 +223,7 @@ export function startGame(game: Game): string[] | null {
 
   const actualMafiaCount = assignRoles(game);
   game.phase = "night";
+  game.nightSubPhase = "mafia";
   game.round = 1;
   game.dayStartedAt = null;
   game.dayVoteCount = 0;
@@ -387,6 +389,57 @@ export function checkNightReady(game: Game): boolean {
   return true;
 }
 
+export interface SubPhaseAdvanceResult {
+  nextPhase: NightSubPhase;
+  isFake: boolean; // true = role is enabled but dead (needs fake delay with audio cues)
+}
+
+export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
+  const current = game.nightSubPhase;
+  const phases: NightSubPhase[] = ["mafia", "doctor", "detective", "resolving"];
+  const currentIdx = current ? phases.indexOf(current) : -1;
+
+  // Try each subsequent phase after current
+  for (let i = currentIdx + 1; i < phases.length; i++) {
+    const candidate = phases[i];
+
+    if (candidate === "resolving") {
+      game.nightSubPhase = "resolving";
+      return { nextPhase: "resolving", isFake: false };
+    }
+
+    if (candidate === "doctor") {
+      if (!game.settings.enableDoctor) continue; // disabled → skip entirely
+      const alive = getAliveByRole(game, "doctor");
+      if (alive.length === 0) {
+        // enabled but dead → fake sub-phase
+        game.nightSubPhase = "doctor";
+        return { nextPhase: "doctor", isFake: true };
+      }
+      // alive + enabled → real sub-phase
+      game.nightSubPhase = "doctor";
+      return { nextPhase: "doctor", isFake: false };
+    }
+
+    if (candidate === "detective") {
+      if (!game.settings.enableDetective) continue; // disabled → skip entirely
+      const alive = getAliveByRole(game, "detective");
+      if (alive.length === 0) {
+        // enabled but dead → fake sub-phase
+        game.nightSubPhase = "detective";
+        return { nextPhase: "detective", isFake: true };
+      }
+      // alive + enabled → real sub-phase
+      game.nightSubPhase = "detective";
+      return { nextPhase: "detective", isFake: false };
+    }
+  }
+
+  // Fallback (shouldn't happen, resolving always catches)
+  game.nightSubPhase = "resolving";
+  return { nextPhase: "resolving", isFake: false };
+}
+
 export interface NightResult {
   messages: string[];
   killed: Array<{ player: Player; message: string }>;
@@ -456,6 +509,7 @@ export function transitionToDay(game: Game): NightResult {
   game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
+  game.nightSubPhase = null;
   game.voteTarget = null;
   game.votes.clear();
 
@@ -617,6 +671,7 @@ export function resolveVote(game: Game): VoteResult | null {
     // Auto-transition to night after execution
     game.phase = "night";
     game.round++;
+    game.nightSubPhase = "mafia";
     game.mafiaVotes.clear();
     game.mafiaTarget = null;
     game.doctorTarget = null;
@@ -648,6 +703,7 @@ export function forceDawn(game: Game): string[] {
   game.mafiaConfirmed = false;
   game.doctorTarget = null;
   game.detectiveTarget = null;
+  game.nightSubPhase = null;
   game.voteTarget = null;
   game.votes.clear();
   game.phase = "day";
@@ -662,6 +718,7 @@ export function endDay(game: Game): string[] {
 
   game.phase = "night";
   game.round++;
+  game.nightSubPhase = "mafia";
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
   game.mafiaConfirmed = false;
@@ -705,6 +762,7 @@ export function returnToLobby(game: Game): boolean {
   // Reset game state but keep settings
   game.phase = "lobby";
   game.round = 0;
+  game.nightSubPhase = null;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
   game.mafiaConfirmed = false;
@@ -743,6 +801,7 @@ export function restartGame(game: Game): string[] | null {
   game.createdAt = Date.now();
   game.phase = "lobby";
   game.round = 0;
+  game.nightSubPhase = null;
   game.mafiaVotes.clear();
   game.mafiaTarget = null;
   game.mafiaConfirmed = false;

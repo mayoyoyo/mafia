@@ -31,6 +31,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 
+export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
+
 export type MafiaVoteType = "lock" | "maybe" | "object";
 
 export interface MafiaVoteEntry {
@@ -73,6 +75,8 @@ export interface Game {
   dayVoteCount: number;
   narratorHistory: string[];
   detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
+  // Sequential night sub-phase
+  nightSubPhase: NightSubPhase | null;
 }
 
 export interface SavedConfig {
@@ -139,7 +143,7 @@ export type ServerMessage =
   | { type: "config_saved"; config: SavedConfig }
   | { type: "config_deleted"; configId: number }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
-  | { type: "sound_cue"; sound: "night" | "day" }
+  | { type: "sound_cue"; sound: "night" | "day" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
   | { type: "night_action_done"; message: string }
   | { type: "room_closed"; message: string }
   | { type: "game_sync";
@@ -155,6 +159,7 @@ export type ServerMessage =
       // Phase
       phase: GamePhase;
       round: number;
+      nightSubPhase: NightSubPhase | null;
       // Alive
       isDead: boolean;
       // Day timer

@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "bun run --watch src/server.ts",
     "start": "bun run src/server.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "generate-voices": "bun run scripts/generate-voices.ts",
+    "generate-voices:dry": "bun run scripts/generate-voices.ts --dry-run"
   },
   "dependencies": {},
   "devDependencies": {
