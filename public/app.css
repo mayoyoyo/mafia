@@ -36,6 +36,14 @@
   --border: #d1ccc3;
 }
 
+/* Keep role card dark regardless of theme */
+.day-theme .card-front {
+  background: #151515;
+  border-color: #2c2c2e;
+}
+.day-theme .role-name { color: inherit; }
+.day-theme .role-description { color: #8e8e93; }
+
 html, body {
   height: 100%;
   background: var(--bg);
