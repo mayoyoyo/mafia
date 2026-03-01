@@ -11,6 +11,7 @@
   },
   "cues": {
     "classic": {
+      "everyone_close":  "It's night time. Everyone, close your eyes.",
       "mafia_open":     "Mafia, open your eyes.",
       "mafia_close":    "Mafia, close your eyes.",
       "doctor_open":    "Doctor, open your eyes.",
@@ -19,6 +20,7 @@
       "detective_close": "Detective, close your eyes."
     },
     "british": {
+      "everyone_close":  "Right, night time. Everyone, close your eyes, please.",
       "mafia_open":     "Right then, Mafia. Open your eyes, yeah?",
       "mafia_close":    "Mafia, close your eyes. Off you pop.",
       "doctor_open":    "Doctor, open your eyes, if you please.",
@@ -27,6 +29,7 @@
       "detective_close": "Detective, close your eyes. Sorted."
     },
     "australian": {
+      "everyone_close":  "Night time, legends. Everyone shut your eyes.",
       "mafia_open":     "Oi, Mafia! Open your eyes, mate.",
       "mafia_close":    "Mafia, shut your eyes. Good on ya.",
       "doctor_open":    "Doctor, open your eyes, legend.",
@@ -35,6 +38,7 @@
       "detective_close": "Detective, close your eyes. She'll be right."
     },
     "southern": {
+      "everyone_close":  "It's night time, y'all. Everyone close your eyes now.",
       "mafia_open":     "Alright Mafia, y'all go on and open your eyes.",
       "mafia_close":    "Mafia, close your eyes now, darlin'.",
       "doctor_open":    "Doctor, open them eyes up, sugar.",
@@ -43,6 +47,7 @@
       "detective_close": "Detective, close your eyes, bless your heart."
     },
     "italian": {
+      "everyone_close":  "È notte. Everyone, close your eyes.",
       "mafia_open":     "Mafia... aprite gli occhi. Open your eyes.",
       "mafia_close":    "Mafia, chiudete gli occhi. Close your eyes.",
       "doctor_open":    "Dottore! Open your eyes.",
@@ -51,6 +56,7 @@
       "detective_close": "Investigatore, close your eyes. Basta."
     },
     "pirate": {
+      "everyone_close":  "Night falls! All hands, shut yer eyes!",
       "mafia_open":     "Arrr! Mafia, open yer eyes, ye scallywags!",
       "mafia_close":    "Mafia, shut yer eyes! Back to the depths!",
       "doctor_open":    "Ship's surgeon! Open yer eyes!",
@@ -59,6 +65,7 @@
       "detective_close": "Lookout, shut yer eyes! Back to yer post!"
     },
     "transylvanian": {
+      "everyone_close":  "The night... has come. Everyone... close your eyes.",
       "mafia_open":     "Mafia... open your eyes. The night... is yours.",
       "mafia_close":    "Mafia... close your eyes. Sleep now.",
       "doctor_open":    "Doctor... open your eyes. Who vill you save tonight?",
@@ -67,6 +74,7 @@
       "detective_close": "Detective... close your eyes. The truth... can vait."
     },
     "noir": {
+      "everyone_close":  "Darkness descends. Everyone, close your eyes.",
       "mafia_open":     "The shadows stir. Mafia... open your eyes.",
       "mafia_close":    "Back into the darkness, Mafia. Close your eyes.",
       "doctor_open":    "The healer awakens. Doctor, open your eyes.",

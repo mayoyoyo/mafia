@@ -177,6 +177,7 @@ function handleSubPhaseAdvance(game: Game): void {
 /** Start the night sequence: sound cues + mafia prompts */
 function startNightSequence(game: Game): void {
   broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
+  broadcastToGame(game.code, { type: "sound_cue", sound: "everyone_close" });
   broadcastToGame(game.code, { type: "sound_cue", sound: "mafia_open" });
   sendMafiaPrompts(game);
 }

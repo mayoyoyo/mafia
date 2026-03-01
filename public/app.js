@@ -32,6 +32,9 @@
   let nightTransitionActive = false;
   let nightTransitionQueue = [];
   let executionTransitionActive = false;
+  let nightNarrationActive = false;
+  let nightNarrationQueue = [];
+  let audioUnlocked = false;
   let anonVoteChecked = true;
   let narratorTranscript = [];
   let deadDismissTimer = null;
@@ -145,9 +148,14 @@
       suspenseQueue.push(msg);
       return;
     }
-    // During night/execution transition, queue night action prompts so they replay after applyPhaseChange
-    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
+    // During night/execution transition, queue sound_cues and night action prompts
+    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
       nightTransitionQueue.push(msg);
+      return;
+    }
+    // During night narration (sounds playing after overlay), hold night prompts until narration finishes
+    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
+      nightNarrationQueue.push(msg);
       return;
     }
 
@@ -1679,9 +1687,11 @@
     const roundEvents = (msg.events || []).filter((e) => e.round === round);
     const hasSave = roundEvents.some((e) => e.type === "save");
     const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
-    if (hasSave && hasKill) return { text: "\u{1F6E1}\uFE0F A life was saved... but not everyone.", color: "#2196f3" };
+    const killEvent = roundEvents.find((e) => e.type === "kill");
+    const victimName = killEvent ? killEvent.playerName : "Someone";
+    if (hasSave && hasKill) return { text: `\u{1F6E1}\uFE0F A life was saved... but ${victimName} didn't make it.`, color: "#2196f3" };
     if (hasSave) return { text: "\u{1F6E1}\uFE0F The Doctor saved a life!", color: "#2196f3" };
-    if (hasKill) return { text: "\u{1F480} Someone didn't survive the night.", color: "#d32f2f" };
+    if (hasKill) return { text: `\u{1F480} ${victimName} didn't survive the night.`, color: "#d32f2f" };
     return { text: "\u{1F319} A peaceful night... somehow.", color: "#8e8e93" };
   }
 
@@ -2769,7 +2779,27 @@
     return audioCtx;
   }
 
+  // iOS Safari blocks all audio until a user gesture triggers playback.
+  // Since game sounds come from WebSocket messages (not taps), they silently fail.
+  // On first tap/click, resume AudioContext + play a silent buffer to unlock the audio pipeline.
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    const ctx = getAudioContext();
+    if (ctx.state === "suspended") ctx.resume();
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+    document.removeEventListener("touchstart", unlockAudio);
+    document.removeEventListener("click", unlockAudio);
+  }
+  document.addEventListener("touchstart", unlockAudio);
+  document.addEventListener("click", unlockAudio);
+
   const NARRATION_CUES = [
+    "everyone_close",
     "mafia_open", "mafia_close",
     "doctor_open", "doctor_close",
     "detective_open", "detective_close",
@@ -2778,12 +2808,45 @@
   function queueSound(type) {
     if (!soundEnabled) return;
     soundQueue.push(type);
+    // Mark narration active when night tone or any narration cue enters the queue
+    if (type === "night" || NARRATION_CUES.includes(type)) {
+      nightNarrationActive = true;
+    }
     if (!soundPlaying) processNextSound();
+  }
+
+  function finishNarrationQueue() {
+    if (nightNarrationActive) {
+      nightNarrationActive = false;
+      const queued = nightNarrationQueue;
+      nightNarrationQueue = [];
+      for (const qMsg of queued) {
+        handleServerMessage(qMsg);
+      }
+    }
+  }
+
+  function playNarrationCue(type, onDone) {
+    const cached = narrationAudioCache[type];
+    if (cached) {
+      const audio = cached.cloneNode();
+      playAudioElement(audio, onDone);
+    } else {
+      const text = narrationData && narrationData.cues[currentAccent]
+        ? narrationData.cues[currentAccent][type]
+        : null;
+      if (text) {
+        speakNarrationQueued(text, onDone);
+      } else {
+        onDone();
+      }
+    }
   }
 
   function processNextSound() {
     if (soundQueue.length === 0) {
       soundPlaying = false;
+      finishNarrationQueue();
       return;
     }
     soundPlaying = true;
@@ -2797,22 +2860,14 @@
     }
 
     if (NARRATION_CUES.includes(type)) {
-      const cached = narrationAudioCache[type];
-      if (cached) {
-        // Clone the audio element so we can replay it
-        const audio = cached.cloneNode();
-        playAudioElement(audio, () => processNextSound());
-      } else {
-        // Fallback to SpeechSynthesis
-        const text = narrationData && narrationData.cues[currentAccent]
-          ? narrationData.cues[currentAccent][type]
-          : null;
-        if (text) {
-          speakNarrationQueued(text, () => processNextSound());
+      playNarrationCue(type, () => {
+        // 2-second pause after "everyone_close" before next sound
+        if (type === "everyone_close") {
+          setTimeout(() => processNextSound(), 2000);
         } else {
           processNextSound();
         }
-      }
+      });
       return;
     }
 
@@ -2906,6 +2961,15 @@
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
+    // Clear narration hold and replay any held prompts immediately
+    if (nightNarrationActive) {
+      nightNarrationActive = false;
+      const queued = nightNarrationQueue;
+      nightNarrationQueue = [];
+      for (const qMsg of queued) {
+        handleServerMessage(qMsg);
+      }
+    }
   }
 
   function populateAccentSelector() {
@@ -2954,7 +3018,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.57_202603010526";
+  const APP_VERSION = "v1.58_202603010535";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

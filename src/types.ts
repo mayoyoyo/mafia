@@ -141,7 +141,7 @@ export type ServerMessage =
   | { type: "config_saved"; config: SavedConfig }
   | { type: "config_deleted"; configId: number }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
-  | { type: "sound_cue"; sound: "night" | "day" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
+  | { type: "sound_cue"; sound: "night" | "day" | "everyone_close" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
   | { type: "night_action_done"; message: string }
   | { type: "room_closed"; message: string }
   | { type: "game_sync";
