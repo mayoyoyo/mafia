@@ -220,6 +220,11 @@
         <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
       </div>
 
+      <!-- Pull to Refresh -->
+      <div id="pull-refresh" class="pull-refresh">
+        <div class="pull-refresh-spinner" id="pull-refresh-spinner">&#8635;</div>
+      </div>
+
       <!-- Role Card -->
       <div id="role-card" class="role-card">
         <div class="card-inner">
@@ -254,20 +259,6 @@
         </div>
       </div>
 
-      <!-- Event History -->
-      <div id="event-history" class="event-history hidden">
-        <div class="eh-tabs">
-          <button class="eh-tab active" data-tab="events">Events</button>
-          <button class="eh-tab" data-tab="players">Players</button>
-        </div>
-        <div id="eh-panel-events" class="eh-panel">
-          <div id="event-history-list" class="event-history-list"></div>
-        </div>
-        <div id="eh-panel-players" class="eh-panel hidden">
-          <div id="player-status-list" class="player-status-list"></div>
-        </div>
-      </div>
-
       <!-- Narrator Messages -->
       <div id="narrator-area" class="narrator-area">
         <div class="narrator-header">
@@ -298,9 +289,21 @@
         <div id="action-status" class="action-status"></div>
       </div>
 
-      <!-- Admin Night Controls (Force Dawn) -->
-      <div id="admin-night-controls" class="admin-controls hidden">
-        <button id="btn-force-dawn" class="btn btn-primary">Force Dawn</button>
+      <!-- Admin Day Controls (nomination, end day) -->
+      <div id="admin-day-controls" class="admin-controls hidden">
+        <h3>Admin Controls <span id="vote-count-label" class="vote-count-label"></span></h3>
+        <div id="admin-status-msg" class="admin-status-msg"></div>
+        <div class="admin-target-section">
+          <p>Nominate a player for execution:</p>
+          <ul id="admin-target-list" class="target-list"></ul>
+        </div>
+        <div class="admin-anon-toggle">
+          <span>Anonymous Vote</span>
+          <label class="toggle"><input type="checkbox" id="toggle-anon-vote" checked><span class="slider"></span></label>
+        </div>
+        <div class="admin-buttons">
+          <button id="btn-end-day" class="btn btn-primary">End Day</button>
+        </div>
       </div>
 
       <!-- Mafia Vote Status (for mafia members) -->
@@ -321,21 +324,23 @@
         <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel Vote</button>
       </div>
 
-      <!-- Admin Day Controls -->
-      <div id="admin-day-controls" class="admin-controls hidden">
-        <h3>Admin Controls <span id="vote-count-label" class="vote-count-label"></span></h3>
-        <div id="admin-status-msg" class="admin-status-msg"></div>
-        <div class="admin-target-section">
-          <p>Nominate a player for execution:</p>
-          <ul id="admin-target-list" class="target-list"></ul>
+      <!-- Event History (always visible during game) -->
+      <div id="event-history" class="event-history hidden">
+        <div class="eh-tabs">
+          <button class="eh-tab active" data-tab="events">Events</button>
+          <button class="eh-tab" data-tab="players">Players</button>
         </div>
-        <div class="admin-anon-toggle">
-          <span>Anonymous Vote</span>
-          <label class="toggle"><input type="checkbox" id="toggle-anon-vote" checked><span class="slider"></span></label>
+        <div id="eh-panel-events" class="eh-panel">
+          <div id="event-history-list" class="event-history-list"></div>
         </div>
-        <div class="admin-buttons">
-          <button id="btn-end-day" class="btn btn-primary">End Day</button>
+        <div id="eh-panel-players" class="eh-panel hidden">
+          <div id="player-status-list" class="player-status-list"></div>
         </div>
+      </div>
+
+      <!-- Admin Night Controls (Force Dawn) -->
+      <div id="admin-night-controls" class="admin-controls hidden">
+        <button id="btn-force-dawn" class="btn btn-primary">Force Dawn</button>
       </div>
 
       <!-- Dead Overlay -->

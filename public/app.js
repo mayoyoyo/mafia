@@ -471,10 +471,7 @@
       });
     }
 
-    // Show event history during day/voting
-    if ((msg.phase === "day" || msg.phase === "voting") && $("event-history-list").innerHTML) {
-      $("event-history").classList.remove("hidden");
-    }
+    updatePlayerStatus();
 
     // 12. Show death overlay if dead
     if (isDead) {
@@ -1285,6 +1282,81 @@
   })();
 
   // ============================================================
+  // PULL-TO-REFRESH
+  // ============================================================
+  (function () {
+    const THRESHOLD = 60;
+    const MAX_PULL = 80;
+    let pulling = false;
+    let startY = 0;
+    let pullDist = 0;
+    let refreshing = false;
+
+    const indicator = $("pull-refresh");
+    const spinner = $("pull-refresh-spinner");
+
+    function isGameScreen() {
+      return screens.game.classList.contains("active");
+    }
+
+    function onStart(e) {
+      if (!isGameScreen() || refreshing || window.scrollY > 0) return;
+      const touch = e.touches ? e.touches[0] : e;
+      startY = touch.clientY;
+      pulling = true;
+      pullDist = 0;
+    }
+
+    function onMove(e) {
+      if (!pulling) return;
+      const touch = e.touches ? e.touches[0] : e;
+      const dy = touch.clientY - startY;
+      if (dy <= 0) {
+        pullDist = 0;
+        indicator.style.height = "0px";
+        return;
+      }
+      e.preventDefault();
+      pullDist = Math.min(dy, MAX_PULL);
+      indicator.style.height = pullDist + "px";
+      spinner.style.transform = "rotate(" + (pullDist * 4) + "deg)";
+      if (pullDist >= THRESHOLD) {
+        indicator.classList.add("ready");
+      } else {
+        indicator.classList.remove("ready");
+      }
+    }
+
+    function onEnd() {
+      if (!pulling) return;
+      pulling = false;
+
+      if (pullDist >= THRESHOLD) {
+        refreshing = true;
+        indicator.classList.remove("ready");
+        indicator.classList.add("refreshing");
+        indicator.style.height = "40px";
+        spinner.style.transform = "";
+        if (ws) ws.close();
+        setTimeout(function () {
+          indicator.classList.remove("refreshing");
+          indicator.style.height = "0px";
+          refreshing = false;
+        }, 1500);
+      } else {
+        indicator.classList.remove("ready");
+        indicator.style.height = "0px";
+        spinner.style.transform = "";
+      }
+      pullDist = 0;
+    }
+
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd, { passive: true });
+  })();
+
+  // ============================================================
   // DAY TIMER
   // ============================================================
   function startDayTimer(fromTimestamp) {
@@ -1385,7 +1457,6 @@
       hasVoted = false;
       dayVoteCount = 0;
       nightActionLocked = false;
-      $("event-history").classList.add("hidden");
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
       if (isAdmin) {
@@ -1393,10 +1464,7 @@
       }
     }
 
-    // Show event history during day/voting
-    if ((msg.phase === "day" || msg.phase === "voting") && $("event-history-list").innerHTML) {
-      $("event-history").classList.remove("hidden");
-    }
+    updatePlayerStatus();
   }
 
   // ============================================================
@@ -1601,7 +1669,6 @@
       }
     }
 
-    $("event-history").classList.remove("hidden");
     updatePlayerStatus();
   }
 
@@ -2043,6 +2110,7 @@
     if (confirm("Leave the game? You can rejoin later with the same room code.")) {
       wsSend({ type: "leave_game" });
       localStorage.removeItem("mafia_game_code");
+      $("event-history").classList.add("hidden");
       gameCode = null;
       isAdmin = false;
       closeSettingsModal();
@@ -2390,7 +2458,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.34_202602281646";
+  const APP_VERSION = "v1.35_202602281727";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
