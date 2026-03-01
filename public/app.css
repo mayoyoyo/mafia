@@ -577,9 +577,8 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 13px;
   font-weight: 600;
   padding: 6px 14px;
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.08);
+  color: #aaa;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;

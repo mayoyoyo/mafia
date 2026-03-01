@@ -2862,7 +2862,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.52_202603010451";
+  const APP_VERSION = "v1.53_202603010454";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
