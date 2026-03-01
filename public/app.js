@@ -628,6 +628,7 @@
   });
 
   $("btn-start").addEventListener("click", () => {
+    ensureAudioReady();
     wsSend({ type: "start_game" });
   });
 
@@ -2401,6 +2402,7 @@
 
   $("btn-end-day").addEventListener("click", () => {
     if (confirm("End the day and transition to night?")) {
+      ensureAudioReady();
       wsSend({ type: "end_day" });
     }
   });
@@ -2436,6 +2438,7 @@
 
   $("btn-vote-yes").addEventListener("click", () => {
     if (hasVoted || isDead) return;
+    ensureAudioReady();
     hasVoted = true;
     $("btn-vote-yes").classList.add("selected");
     $("btn-vote-yes").disabled = true;
@@ -2445,6 +2448,7 @@
 
   $("btn-vote-no").addEventListener("click", () => {
     if (hasVoted || isDead) return;
+    ensureAudioReady();
     hasVoted = true;
     $("btn-vote-no").classList.add("selected");
     $("btn-vote-yes").disabled = true;
@@ -2832,6 +2836,7 @@
   }
 
   $("btn-play-again-same").addEventListener("click", () => {
+    ensureAudioReady();
     wsSend({ type: "restart_game" });
   });
 
@@ -2874,6 +2879,26 @@
       }
     }
     return audioCtx;
+  }
+
+  // Call from any user-gesture handler that precedes night audio (Start Game, End Day, etc.)
+  // This ensures iOS AudioContext is running before WebSocket sound_cues arrive.
+  function ensureAudioReady() {
+    if (!soundEnabled) return;
+    var ctx = getAudioContext();
+    if (ctx.state !== "running") {
+      ctx.resume();
+    }
+    // Play silent buffer to keep iOS audio pipeline warm
+    var buf = ctx.createBuffer(1, 1, 22050);
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    // Re-preload narration in case cache was lost
+    if (Object.keys(narrationAudioCache).length === 0) {
+      preloadNarrationAudio(currentAccent);
+    }
   }
 
   // iOS Safari blocks all audio until a user gesture triggers playback.
@@ -3126,7 +3151,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.63_202603010639";
+  const APP_VERSION = "v1.64_202603010649";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
