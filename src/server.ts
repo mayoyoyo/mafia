@@ -314,6 +314,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     type: "game_sync",
     code: game.code,
     isAdmin: userId === game.adminId,
+    narrationAccent: game.settings.narrationAccent,
     players: getPlayerInfo(game),
     role: rejoined.role!,
     isLover: rejoined.isLover,

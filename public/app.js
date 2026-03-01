@@ -20,7 +20,7 @@
   let soundQueue = [];
   let soundPlaying = false;
   let narrationData = null;
-  let currentAccent = localStorage.getItem("mafia_accent") || "classic";
+  let currentAccent = "classic";
   let narrationAudioCache = {};
   let currentAudio = null;
   let knownPlayers = [];
@@ -390,6 +390,10 @@
     previousPhase = msg.phase;
 
     // 5. Restore accumulated state
+    if (msg.narrationAccent) {
+      currentAccent = msg.narrationAccent;
+      preloadNarrationAudio(currentAccent);
+    }
     dayVoteCount = msg.dayVoteCount;
     narratorTranscript = msg.narratorHistory;
     detectiveHistory = msg.detectiveHistory;
@@ -634,6 +638,10 @@
     });
   });
 
+  $("lobby-accent").addEventListener("change", (e) => {
+    wsSend({ type: "update_settings", settings: { narrationAccent: e.target.value } });
+  });
+
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
 
@@ -672,6 +680,12 @@
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-lovers").checked = settings.enableLovers;
     if ($("toggle-anon-vote")) $("toggle-anon-vote").checked = anonVoteChecked;
+    if (settings.narrationAccent) {
+      currentAccent = settings.narrationAccent;
+      const sel = $("lobby-accent");
+      if (sel) sel.value = currentAccent;
+      preloadNarrationAudio(currentAccent);
+    }
   }
 
   // ============================================================
@@ -2417,7 +2431,6 @@
   // ============================================================
   $("btn-settings").addEventListener("click", () => {
     $("toggle-sound").checked = soundEnabled;
-    $("setting-accent").classList.toggle("hidden", !soundEnabled);
     $("toggle-dark-mode").checked = document.documentElement.getAttribute("data-theme") !== "light";
     // Show room code for admin
     if (isAdmin && gameCode) {
@@ -2453,17 +2466,7 @@
 
   $("toggle-sound").addEventListener("change", (e) => {
     soundEnabled = e.target.checked;
-    const accentRow = $("setting-accent");
-    if (accentRow) {
-      accentRow.classList.toggle("hidden", !soundEnabled);
-    }
     if (!soundEnabled) flushSoundQueue();
-  });
-
-  $("select-accent").addEventListener("change", (e) => {
-    currentAccent = e.target.value;
-    localStorage.setItem("mafia_accent", currentAccent);
-    preloadNarrationAudio(currentAccent);
   });
 
   // Dark mode toggle
@@ -2792,6 +2795,8 @@
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
+    // Re-preload narration audio from user-gesture context (required for iOS Safari)
+    preloadNarrationAudio(currentAccent);
     document.removeEventListener("touchstart", unlockAudio);
     document.removeEventListener("click", unlockAudio);
   }
@@ -2832,14 +2837,8 @@
       const audio = cached.cloneNode();
       playAudioElement(audio, onDone);
     } else {
-      const text = narrationData && narrationData.cues[currentAccent]
-        ? narrationData.cues[currentAccent][type]
-        : null;
-      if (text) {
-        speakNarrationQueued(text, onDone);
-      } else {
-        onDone();
-      }
+      // No mp3 cached — skip (no SpeechSynthesis fallback)
+      onDone();
     }
   }
 
@@ -2924,18 +2923,6 @@
     audio.play().catch(() => { currentAudio = null; onDone(); });
   }
 
-  function speakNarrationQueued(text, onDone) {
-    if (!window.speechSynthesis) { onDone(); return; }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9;
-    utterance.pitch = 0.8;
-    utterance.volume = 1.0;
-    utterance.onend = () => onDone();
-    utterance.onerror = () => onDone();
-    window.speechSynthesis.speak(utterance);
-  }
-
   function preloadNarrationAudio(accent) {
     narrationAudioCache = {};
     NARRATION_CUES.forEach((cue) => {
@@ -2945,8 +2932,9 @@
       audio.addEventListener("canplaythrough", () => {
         narrationAudioCache[cue] = audio;
       }, { once: true });
-      // Silently ignore load errors — fallback to SpeechSynthesis
       audio.addEventListener("error", () => {}, { once: true });
+      // Force iOS to start downloading (requires prior user-gesture unlock)
+      audio.load();
     });
   }
 
@@ -2957,9 +2945,6 @@
       currentAudio.pause();
       currentAudio.currentTime = 0;
       currentAudio = null;
-    }
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
     }
     // Clear narration hold and replay any held prompts immediately
     if (nightNarrationActive) {
@@ -2973,7 +2958,7 @@
   }
 
   function populateAccentSelector() {
-    const sel = $("select-accent");
+    const sel = $("lobby-accent");
     if (!sel || !narrationData) return;
     sel.innerHTML = "";
     for (const [key, info] of Object.entries(narrationData.accents)) {
@@ -3018,7 +3003,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.58_202603010535";
+  const APP_VERSION = "v1.59_202603010551";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

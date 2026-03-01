@@ -18,6 +18,7 @@ export interface GameSettings {
   enableJoker: boolean;
   enableLovers: boolean;
   soundEnabled: boolean;
+  narrationAccent: string;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableJoker: false,
   enableLovers: false,
   soundEnabled: false,
+  narrationAccent: "classic",
 };
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
@@ -148,6 +150,7 @@ export type ServerMessage =
       // Identity
       code: string;
       isAdmin: boolean;
+      narrationAccent: string;
       // Players
       players: PlayerInfo[];
       // Role
