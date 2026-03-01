@@ -18,6 +18,7 @@
   let hasVoted = false;
   let audioCtx = null;
   let knownPlayers = [];
+  let deathOrderCounter = 0;
   let mafiaTeam = [];
   let dayVoteCount = 0;
   let suspenseActive = false;
@@ -103,15 +104,25 @@
     }
     if (msg.type === "player_died") {
       const p = knownPlayers.find((pl) => pl.id === msg.playerId);
-      if (p) p.isAlive = false;
+      if (p) {
+        p.isAlive = false;
+        p.deathOrder = ++deathOrderCounter;
+      }
     }
     if (msg.type === "game_started") {
+      deathOrderCounter = 0;
       if (gotPlayerList) {
         // Rejoin — player_list already has correct alive/dead state, don't overwrite
         gotPlayerList = false;
+        // Reconstruct death order for rejoin based on existing dead players
+        let order = 0;
+        knownPlayers.forEach((p) => {
+          if (!p.isAlive) p.deathOrder = ++order;
+        });
+        deathOrderCounter = order;
       } else {
         // Fresh game start — everyone is alive
-        knownPlayers = knownPlayers.map((p) => ({ ...p, isAlive: true }));
+        knownPlayers = knownPlayers.map((p) => ({ ...p, isAlive: true, deathOrder: 0 }));
       }
     }
   }
@@ -1746,7 +1757,14 @@
   function updatePlayerStatus() {
     const container = $("player-status-list");
     if (!container) return;
-    container.innerHTML = knownPlayers
+    const sorted = [...knownPlayers].sort((a, b) => {
+      // Dead players first (sorted by death order, earliest death at top)
+      if (!a.isAlive && b.isAlive) return -1;
+      if (a.isAlive && !b.isAlive) return 1;
+      if (!a.isAlive && !b.isAlive) return (a.deathOrder || 0) - (b.deathOrder || 0);
+      return 0; // Both alive — preserve original order
+    });
+    container.innerHTML = sorted
       .map((p) => {
         const status = p.isAlive ? "alive" : "dead";
         const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
@@ -2518,7 +2536,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.41_202603010250";
+  const APP_VERSION = "v1.42_202603010300";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
