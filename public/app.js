@@ -986,29 +986,29 @@
 
   // Slide-to-confirm pixel art icons
   const KNIFE_ART = [
-    [_,_,_,_,_,_,_,"#ccc","#ccc",_],
+    [_,_,_,_,_,_,_,_,"#ccc",_],
+    [_,_,_,_,_,_,_,"#ccc","#eee",_],
     [_,_,_,_,_,_,"#ccc","#eee","#ccc",_],
     [_,_,_,_,_,"#ccc","#eee","#ccc",_,_],
-    [_,_,_,_,"#ccc","#eee","#ccc",_,_,_],
-    [_,_,_,"#ccc","#eee","#ccc",_,_,_,_],
-    [_,_,"#ccc","#eee","#ccc",_,_,_,_,_],
-    [_,"#ccc","#eee","#ccc",_,_,_,_,_,_],
-    [_,"#a62","#ccc",_,_,_,_,_,_,_],
-    [_,"#a62","#a62",_,_,_,_,_,_,_],
-    [_,_,"#a62",_,_,_,_,_,_,_],
+    [_,"#d32","#d32","#ccc","#eee","#ccc",_,_,_,_],
+    [_,_,"#d32","#d32","#eee","#ccc",_,_,_,_],
+    [_,_,_,"#a62","#ccc",_,_,_,_,_],
+    [_,_,"#a62","#555","#a62",_,_,_,_,_],
+    [_,"#a62","#555",_,"#555","#a62",_,_,_,_],
+    [_,"#a62",_,_,_,"#a62",_,_,_,_],
   ];
 
-  const SYRINGE_ART = [
-    [_,_,_,_,_,_,_,_,"#29f",_],
-    [_,_,_,_,_,_,_,"#29f","#29f",_],
-    [_,_,_,_,_,_,"#29f","#fff","#29f",_],
-    [_,_,_,_,_,"#29f","#fff","#29f",_,_],
-    [_,_,_,_,"#29f","#fff","#29f",_,_,_],
-    [_,_,_,"#ccc","#fff","#29f",_,_,_,_],
-    [_,_,"#ccc","#fff","#ccc",_,_,_,_,_],
-    [_,"#ccc","#fff","#ccc",_,_,_,_,_,_],
-    [_,"#ccc","#ccc",_,_,_,_,_,_,_],
-    [_,"#888",_,_,_,_,_,_,_,_],
+  const PILL_ART = [
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,"#29f","#29f","#29f","#29f",_,_,_],
+    [_,_,"#29f","#29f","#29f","#29f","#29f","#29f",_,_],
+    [_,"#29f","#29f","#49f","#29f","#29f","#29f","#29f","#29f",_],
+    [_,"#29f","#49f","#49f","#29f","#29f","#29f","#29f","#29f",_],
+    [_,"#fff","#fff","#fff","#fff","#fff","#eee","#eee","#fff",_],
+    [_,"#fff","#fff","#fff","#fff","#eee","#eee","#fff","#fff",_],
+    [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
+    [_,_,_,"#fff","#fff","#fff","#fff",_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
   ];
 
   const MAGNIFIER_ART = [
@@ -1198,7 +1198,7 @@
 
     // Set role-specific icon and label
     const iconArt = role === "mafia" ? KNIFE_ART
-      : role === "doctor" ? SYRINGE_ART : MAGNIFIER_ART;
+      : role === "doctor" ? PILL_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
     const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate" };
@@ -2257,7 +2257,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.31_202602281601";
+  const APP_VERSION = "v1.32_202602281603";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
