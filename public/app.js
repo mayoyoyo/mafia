@@ -2881,20 +2881,46 @@
     return audioCtx;
   }
 
+  // Silent WAV data URI (7 samples, 8-bit mono) — keeps iOS audio session alive
+  var silentAudioUri = (function () {
+    var sr = 22050;
+    try { sr = new (window.AudioContext || window.webkitAudioContext)().sampleRate; } catch {}
+    var ab = new ArrayBuffer(10);
+    var dv = new DataView(ab);
+    dv.setUint32(0, sr, true);
+    dv.setUint32(4, sr, true);
+    dv.setUint16(8, 1, true);
+    var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(ab))).slice(0, 13);
+    return "data:audio/wav;base64,UklGRisAAABXQVZFZm10IBAAAAABAAEA" + b64 + "AgAZGF0YQcAAACAgICAgICAAAA=";
+  })();
+  var silentAudioLoop = null;
+
+  // Start a silent looping <audio> element to keep iOS audio session permanently alive.
+  // This bypasses the mute switch and prevents AudioContext from auto-suspending.
+  function startSilentLoop() {
+    if (silentAudioLoop) return;
+    var audio = document.createElement("audio");
+    audio.setAttribute("x-webkit-airplay", "deny");
+    audio.preload = "auto";
+    audio.loop = true;
+    audio.src = silentAudioUri;
+    audio.load();
+    audio.play().then(function () {
+      silentAudioLoop = audio;
+    }).catch(function () {
+      // Will retry on next user gesture
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    });
+  }
+
   // Call from any user-gesture handler that precedes night audio (Start Game, End Day, etc.)
-  // This ensures iOS AudioContext is running before WebSocket sound_cues arrive.
   function ensureAudioReady() {
     if (!soundEnabled) return;
+    startSilentLoop();
     var ctx = getAudioContext();
-    if (ctx.state !== "running") {
-      ctx.resume();
-    }
-    // Play silent buffer to keep iOS audio pipeline warm
-    var buf = ctx.createBuffer(1, 1, 22050);
-    var src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(ctx.destination);
-    src.start(0);
+    if (ctx.state !== "running") ctx.resume();
     // Re-preload narration in case cache was lost
     if (Object.keys(narrationAudioCache).length === 0) {
       preloadNarrationAudio(currentAccent);
@@ -2902,28 +2928,22 @@
   }
 
   // iOS Safari blocks all audio until a user gesture triggers playback.
-  // Since game sounds come from WebSocket messages (not taps), they silently fail.
-  // On first tap/touchend, resume AudioContext + play a silent buffer to unlock the audio pipeline.
-  // iOS 17+ requires touchend (not touchstart) as a completed user gesture.
+  // On first tap/touchend, start silent loop + resume AudioContext + preload narration.
   function unlockAudio() {
     if (audioUnlocked) return;
-    const ctx = getAudioContext();
-    // Play silent buffer (old iOS compat) + call resume() (modern method)
-    const buffer = ctx.createBuffer(1, 1, 22050);
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start(0);
+    startSilentLoop();
+    var ctx = getAudioContext();
     ctx.resume().then(function () {
       audioUnlocked = true;
-      // Re-preload after AudioContext unlock so decodeAudioData works on iOS
       preloadNarrationAudio(currentAccent);
     });
     document.removeEventListener("touchend", unlockAudio, true);
     document.removeEventListener("click", unlockAudio, true);
+    document.removeEventListener("keydown", unlockAudio, true);
   }
   document.addEventListener("touchend", unlockAudio, true);
   document.addEventListener("click", unlockAudio, true);
+  document.addEventListener("keydown", unlockAudio, true);
 
   // Recover from iOS "interrupted" state when returning from background/lock screen
   document.addEventListener("visibilitychange", function () {
@@ -3151,7 +3171,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.64_202603010649";
+  const APP_VERSION = "v1.65_202603010704";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
