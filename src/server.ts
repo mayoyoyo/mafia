@@ -1015,7 +1015,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     const target = game.players.get(result.target);
     const targetName = target ? target.username : "target";
     for (const m of aliveMafia) {
-      sendToUser(m.id, { type: "mafia_confirm_ready", targetName });
+      sendToUser(m.id, { type: "mafia_confirm_ready", targetName, targetId: result.target });
     }
   }
 }
