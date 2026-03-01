@@ -22,6 +22,9 @@
   let dayVoteCount = 0;
   let suspenseActive = false;
   let suspenseQueue = [];
+  let nightTransitionActive = false;
+  let nightTransitionQueue = [];
+  let executionTransitionActive = false;
   let anonVoteChecked = true;
   let narratorTranscript = [];
   let deadDismissTimer = null;
@@ -30,6 +33,7 @@
   let detectiveHistory = [];
   let mafiaConfirmTarget = null;
   let lastGameEvents = [];
+  let lastVoteResult = null;
 
   // ============================================================
   // DOM REFS
@@ -121,6 +125,11 @@
       suspenseQueue.push(msg);
       return;
     }
+    // During night/execution transition, queue night action prompts so they replay after applyPhaseChange
+    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
+      nightTransitionQueue.push(msg);
+      return;
+    }
 
     switch (msg.type) {
       case "error":
@@ -198,6 +207,7 @@
         nightActionLocked = false;
         mafiaConfirmTarget = null;
         lastGameEvents = [];
+        lastVoteResult = null;
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -346,6 +356,7 @@
     hasVoted = false;
     nightActionLocked = false;
     mafiaConfirmTarget = null;
+    lastVoteResult = null;
     lastGameEvents = msg.eventHistory || [];
 
     // 6. Render event history
@@ -1391,9 +1402,19 @@
 
     // Day/voting → night transition
     if ((previousPhase === "day" || previousPhase === "voting") && msg.phase === "night") {
-      showNightTransition(() => {
-        applyPhaseChange(msg);
-      });
+      const voteResult = lastVoteResult;
+      lastVoteResult = null;
+      if (voteResult) {
+        showExecutionTransition(voteResult, () => {
+          showNightTransition(() => {
+            applyPhaseChange(msg);
+          });
+        });
+      } else {
+        showNightTransition(() => {
+          applyPhaseChange(msg);
+        });
+      }
     // Night-to-day suspense transition (Phase 5)
     } else if (previousPhase === "night" && msg.phase === "day") {
       showSuspenseTransition(msg, () => {
@@ -1464,6 +1485,39 @@
   }
 
   // ============================================================
+  // EXECUTION TRANSITION (vote result → night)
+  // ============================================================
+  function showExecutionTransition(voteResult, callback) {
+    executionTransitionActive = true;
+    const overlay = $("suspense-overlay");
+    const text = $("suspense-text");
+
+    overlay.classList.remove("hidden", "fade-out");
+
+    const msg = voteResult.executed
+      ? `${voteResult.targetName} was executed.`
+      : "The vote was abstained.";
+    const color = voteResult.executed ? "#d32f2f" : "#8e8e93";
+
+    text.textContent = msg;
+    text.style.color = color;
+    text.style.animation = "none";
+    void text.offsetWidth;
+    text.style.animation = "suspenseFadeIn 0.8s ease";
+
+    setTimeout(() => {
+      overlay.classList.add("fade-out");
+      setTimeout(() => {
+        overlay.classList.add("hidden");
+        overlay.classList.remove("fade-out");
+        text.style.color = "";
+        executionTransitionActive = false;
+        callback();
+      }, 600);
+    }, 2000);
+  }
+
+  // ============================================================
   // NIGHT TRANSITION (day/voting → night)
   // ============================================================
   const NIGHT_MESSAGES = [
@@ -1483,6 +1537,9 @@
   let nightMsgIndex = 0;
 
   function showNightTransition(callback) {
+    nightTransitionActive = true;
+    nightTransitionQueue = [];
+
     const pair = NIGHT_MESSAGES[nightMsgIndex % NIGHT_MESSAGES.length];
     nightMsgIndex++;
 
@@ -1510,7 +1567,13 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        nightTransitionActive = false;
         callback();
+        // Replay queued night action prompts after applyPhaseChange
+        for (const qMsg of nightTransitionQueue) {
+          handleServerMessage(qMsg);
+        }
+        nightTransitionQueue = [];
       }, 600);
     }, 3400);
   }
@@ -2011,6 +2074,7 @@
 
   function handleVoteResult(msg) {
     $("voting-panel").classList.add("hidden");
+    lastVoteResult = msg;
 
     const resultText = msg.executed
       ? `${msg.targetName} has been executed. (${msg.votesFor} for, ${msg.votesAgainst} against)`
@@ -2454,7 +2518,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.36_202602281741";
+  const APP_VERSION = "v1.37_202602281755";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
