@@ -2,7 +2,7 @@ import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, dele
 import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
   getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
-  submitDetectiveInvestigation, checkNightReady, transitionToDay,
+  submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
 } from "./game-engine";
@@ -56,8 +56,18 @@ function recordNarrator(game: Game, messages: string[]): void {
   for (const m of messages) game.narratorHistory.push(m);
 }
 
-function sendNightActionPrompts(game: Game): void {
-  // Send mafia their targets
+// Night timer management for sequential sub-phases
+const nightTimers = new Map<string, Timer>();
+
+function clearNightTimer(gameCode: string): void {
+  const timer = nightTimers.get(gameCode);
+  if (timer) {
+    clearTimeout(timer);
+    nightTimers.delete(gameCode);
+  }
+}
+
+function sendMafiaPrompts(game: Game): void {
   const aliveMafia = getAliveByRole(game, "mafia");
   const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
   const mafiaTargets = aliveNonMafia.map((p) => ({
@@ -70,8 +80,9 @@ function sendNightActionPrompts(game: Game): void {
   for (const m of aliveMafia) {
     sendToUser(m.id, { type: "mafia_targets", players: mafiaTargets });
   }
+}
 
-  // Send doctor their targets
+function sendDoctorPrompts(game: Game): void {
   const aliveDoctor = getAliveByRole(game, "doctor");
   if (aliveDoctor.length > 0) {
     const allAlive = getAlivePlayers(game).map((p) => ({
@@ -84,8 +95,9 @@ function sendNightActionPrompts(game: Game): void {
       sendToUser(d.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
     }
   }
+}
 
-  // Send detective their targets
+function sendDetectivePrompts(game: Game): void {
   const aliveDetective = getAliveByRole(game, "detective");
   if (aliveDetective.length > 0) {
     const allAliveExceptSelf = getAlivePlayers(game)
@@ -102,13 +114,80 @@ function sendNightActionPrompts(game: Game): void {
   }
 }
 
+function handleSubPhaseAdvance(game: Game): void {
+  if (!getGame(game.code)) return; // game was removed
+
+  // Send close cue for the current sub-phase
+  const closingPhase = game.nightSubPhase;
+  if (closingPhase && closingPhase !== "resolving") {
+    broadcastToGame(game.code, { type: "sound_cue", sound: `${closingPhase}_close` as any });
+  }
+
+  const result = advanceNightSubPhase(game);
+
+  if (result.nextPhase === "resolving") {
+    // Small delay after last close cue before resolving
+    const timer = setTimeout(() => {
+      nightTimers.delete(game.code);
+      if (!getGame(game.code)) return;
+      resolveNightAndTransition(game);
+    }, 1000);
+    nightTimers.set(game.code, timer);
+    return;
+  }
+
+  if (result.isFake) {
+    // Fake sub-phase: enabled but dead role → open cue, random delay, close cue, then advance
+    const delay = 1500; // pause after close cue before open
+    const timer = setTimeout(() => {
+      nightTimers.delete(game.code);
+      if (!getGame(game.code)) return;
+      broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+
+      // Random 3-9s fake acting delay
+      const fakeDelay = 3000 + Math.floor(Math.random() * 6001);
+      const fakeTimer = setTimeout(() => {
+        nightTimers.delete(game.code);
+        if (!getGame(game.code)) return;
+        // Recurse to next sub-phase (sends close cue for this phase)
+        handleSubPhaseAdvance(game);
+      }, fakeDelay);
+      nightTimers.set(game.code, fakeTimer);
+    }, delay);
+    nightTimers.set(game.code, timer);
+    return;
+  }
+
+  // Real sub-phase: alive + enabled role → open cue + send prompts, wait for player action
+  const delay = 1500; // pause after close cue before open
+  const timer = setTimeout(() => {
+    nightTimers.delete(game.code);
+    if (!getGame(game.code)) return;
+    broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+
+    if (result.nextPhase === "doctor") {
+      sendDoctorPrompts(game);
+    } else if (result.nextPhase === "detective") {
+      sendDetectivePrompts(game);
+    }
+  }, delay);
+  nightTimers.set(game.code, timer);
+}
+
+/** Start the night sequence: sound cues + mafia prompts */
+function startNightSequence(game: Game): void {
+  broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
+  broadcastToGame(game.code, { type: "sound_cue", sound: "mafia_open" });
+  sendMafiaPrompts(game);
+}
+
 function buildGameSync(game: Game, client: WSClient, rejoined: import("./types").Player): ServerMessage {
   const userId = client.userId!;
 
-  // Night action state (only if night + alive + has role with action)
+  // Night action state (only if night + alive + has role with action + correct sub-phase)
   let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
   if (game.phase === "night" && rejoined.isAlive) {
-    if (rejoined.role === "mafia") {
+    if (rejoined.role === "mafia" && game.nightSubPhase === "mafia") {
       const locked = game.mafiaTarget !== null;
       const targetName = locked ? (game.players.get(game.mafiaTarget!)?.username ?? null) : null;
 
@@ -127,7 +206,17 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         lockedTarget: status.lockedTarget,
         lastDoctorTarget: null,
       };
-    } else if (rejoined.role === "doctor") {
+    } else if (rejoined.role === "mafia" && game.nightSubPhase !== "mafia") {
+      // Mafia sub-phase is done — show locked state
+      nightAction = {
+        locked: true,
+        targetName: game.mafiaTarget !== null ? (game.players.get(game.mafiaTarget)?.username ?? null) : null,
+        targets: [],
+        voterTargets: getMafiaVoteStatus(game).voterTargets,
+        lockedTarget: null,
+        lastDoctorTarget: null,
+      };
+    } else if (rejoined.role === "doctor" && game.nightSubPhase === "doctor") {
       const locked = game.doctorTarget !== null;
       const targetName = locked ? (game.players.get(game.doctorTarget!)?.username ?? null) : null;
       const targets = locked ? [] : getAlivePlayers(game)
@@ -138,7 +227,19 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         voterTargets: {}, lockedTarget: null,
         lastDoctorTarget: game.lastDoctorTarget,
       };
-    } else if (rejoined.role === "detective") {
+    } else if (rejoined.role === "doctor" && game.nightSubPhase !== "doctor") {
+      // Doctor sub-phase hasn't started or is done — show locked if acted, null otherwise
+      if (game.doctorTarget !== null) {
+        nightAction = {
+          locked: true,
+          targetName: game.players.get(game.doctorTarget!)?.username ?? null,
+          targets: [],
+          voterTargets: {}, lockedTarget: null,
+          lastDoctorTarget: game.lastDoctorTarget,
+        };
+      }
+      // else nightAction stays null (waiting for their turn)
+    } else if (rejoined.role === "detective" && game.nightSubPhase === "detective") {
       const locked = game.detectiveTarget !== null;
       const targetName = locked ? (game.players.get(game.detectiveTarget!)?.username ?? null) : null;
       const targets = locked ? [] : getAlivePlayers(game)
@@ -150,6 +251,18 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         voterTargets: {}, lockedTarget: null,
         lastDoctorTarget: null,
       };
+    } else if (rejoined.role === "detective" && game.nightSubPhase !== "detective") {
+      // Detective sub-phase hasn't started or is done — show locked if acted, null otherwise
+      if (game.detectiveTarget !== null) {
+        nightAction = {
+          locked: true,
+          targetName: game.players.get(game.detectiveTarget!)?.username ?? null,
+          targets: [],
+          voterTargets: {}, lockedTarget: null,
+          lastDoctorTarget: null,
+        };
+      }
+      // else nightAction stays null (waiting for their turn)
     }
   }
 
@@ -197,6 +310,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     variant: rejoined.variant,
     phase: game.phase,
     round: game.round,
+    nightSubPhase: game.nightSubPhase,
     isDead: !rejoined.isAlive,
     dayStartedAt: game.dayStartedAt,
     dayVoteCount: game.dayVoteCount,
@@ -351,6 +465,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         // Active game (night/day/voting)
         if (client.userId === game.adminId) {
           // Admin leaves active game = force end (room persists at game_over)
+          clearNightTimer(game.code);
           forceEndGame(game);
           broadcastToGame(game.code, {
             type: "phase_change",
@@ -488,18 +603,15 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         messages,
       });
 
-      // Sound cue
-      broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
-
-      // Send night action prompts
-      sendNightActionPrompts(game);
+      // Start sequential night
+      startNightSequence(game);
       break;
     }
 
     case "mafia_vote": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
-      if (!game || game.phase !== "night") return;
+      if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
 
       const voteType = msg.voteType || "lock";
       const result = submitMafiaVote(game, client.userId, msg.targetId, voteType);
@@ -508,10 +620,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
+
     case "mafia_remove_vote": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
-      if (!game || game.phase !== "night") return;
+      if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
 
       if (!removeMafiaVote(game, client.userId, msg.targetId)) break;
 
@@ -522,14 +635,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     case "doctor_save": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
-      if (!game) return;
+      if (!game || game.nightSubPhase !== "doctor") return;
 
       const saved = submitDoctorSave(game, client.userId, msg.targetId);
       if (saved) {
         sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
-        if (checkNightReady(game)) {
-          resolveNightAndTransition(game);
-        }
+        // Advance to next sub-phase (detective/resolving)
+        handleSubPhaseAdvance(game);
       } else {
         send(ws, { type: "error", message: "You cannot protect the same player two nights in a row." });
       }
@@ -539,7 +651,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     case "detective_investigate": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
-      if (!game) return;
+      if (!game || game.nightSubPhase !== "detective") return;
 
       const result = submitDetectiveInvestigation(game, client.userId, msg.targetId);
       if (result) {
@@ -547,9 +659,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           type: "night_action_done",
           message: "You have chosen to investigate someone tonight. Results will be revealed at dawn.",
         });
-        if (checkNightReady(game)) {
-          resolveNightAndTransition(game);
-        }
+        // Advance to resolving
+        handleSubPhaseAdvance(game);
       }
       break;
     }
@@ -683,8 +794,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               messages: voteResult.messages,
               events: game.eventHistory,
             });
-            broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
-            sendNightActionPrompts(game);
+            startNightSequence(game);
           } else {
             // Spared — stay in day
             game.dayStartedAt = Date.now();
@@ -706,6 +816,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
+      clearNightTimer(game.code);
       const messages = forceDawn(game);
       if (messages.length === 0) return;
       game.dayStartedAt = Date.now();
@@ -750,8 +861,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         round: game.round,
         messages,
       });
-      broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
-      sendNightActionPrompts(game);
+      startNightSequence(game);
       break;
     }
 
@@ -760,6 +870,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
+      clearNightTimer(game.code);
       forceEndGame(game);
       recordNarrator(game, ["Host has ended the game."]);
       broadcastToGame(game.code, {
@@ -800,6 +911,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
+      clearNightTimer(game.code);
       broadcastToGame(game.code, { type: "room_closed", message: "The host has closed the room." });
       const closedCode = game.code;
       removeGame(closedCode);
@@ -850,11 +962,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         messages,
       });
 
-      // Sound cue
-      broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
-
-      // Send night action prompts
-      sendNightActionPrompts(game);
+      // Start sequential night
+      startNightSequence(game);
       break;
     }
 
@@ -878,9 +987,8 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
       sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
     }
 
-    if (checkNightReady(game)) {
-      resolveNightAndTransition(game);
-    }
+    // Advance to next sub-phase (doctor/detective/resolving)
+    handleSubPhaseAdvance(game);
   }
 }
 
@@ -1041,6 +1149,7 @@ setInterval(() => {
   const now = Date.now();
   for (const [code, game] of getAllGames()) {
     if (now - game.createdAt > TWO_HOURS) {
+      clearNightTimer(code);
       broadcastToGame(code, {
         type: "game_over",
         winner: "town",

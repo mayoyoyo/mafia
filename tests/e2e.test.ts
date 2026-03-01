@@ -376,3 +376,231 @@ test("night action prompts arrive after phase_change on end_day", async () => {
 
   for (const w of allWs) w.close();
 }, 30000);
+
+// ── Sequential Night Tests ─────────────────────────────────────────────
+
+test("sequential night: mafia → doctor → detective → day (all alive + enabled)", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs, userId: uid1 } = await reg(`seq_admin_${ts}`, "1111");
+  const { ws: p2ws, userId: uid2 } = await reg(`seq_p2_${ts}`, "2222");
+  const { ws: p3ws, userId: uid3 } = await reg(`seq_p3_${ts}`, "3333");
+  const { ws: p4ws, userId: uid4 } = await reg(`seq_p4_${ts}`, "4444");
+  const { ws: p5ws, userId: uid5 } = await reg(`seq_p5_${ts}`, "5555");
+  const { ws: p6ws, userId: uid6 } = await reg(`seq_p6_${ts}`, "6666");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws, p6ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+
+  // Enable doctor and detective
+  send(adminWs, { type: "update_settings", settings: { enableDoctor: true, enableDetective: true } });
+  await waitFor(adminWs, "settings_updated");
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws];
+
+  // Collect on all ws from start
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  // Find roles from collected messages
+  let mafiaIdx = -1, doctorIdx = -1, detectiveIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia" && mafiaIdx === -1) mafiaIdx = i;
+    if (started?.role === "doctor") doctorIdx = i;
+    if (started?.role === "detective") detectiveIdx = i;
+  }
+  expect(mafiaIdx).toBeGreaterThanOrEqual(0);
+  expect(doctorIdx).toBeGreaterThanOrEqual(0);
+  expect(detectiveIdx).toBeGreaterThanOrEqual(0);
+
+  const mafiaWs = allWs[mafiaIdx];
+  const doctorWs = allWs[doctorIdx];
+  const detectiveWs = allWs[detectiveIdx];
+
+  // Get mafia targets
+  const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
+  expect(mafiaTargets).toBeDefined();
+  collectors.forEach((c) => c.stop());
+
+  // 1. Mafia sub-phase: vote and confirm
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
+  await waitFor(mafiaWs, "mafia_vote_update");
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+  await waitFor(mafiaWs, "night_action_done");
+
+  // 2. Doctor sub-phase: wait for targets, then save
+  const doctorTargets = await waitFor(doctorWs, "doctor_targets");
+  expect(doctorTargets.players.length).toBeGreaterThan(0);
+  send(doctorWs, { type: "doctor_save", targetId: doctorTargets.players[0].id });
+  await waitFor(doctorWs, "night_action_done");
+
+  // 3. Detective sub-phase: wait for targets, then investigate
+  const detectiveTargets = await waitFor(detectiveWs, "detective_targets");
+  expect(detectiveTargets.players.length).toBeGreaterThan(0);
+  send(detectiveWs, { type: "detective_investigate", targetId: detectiveTargets.players[0].id });
+  await waitFor(detectiveWs, "night_action_done");
+
+  // 4. Should resolve to day
+  const dayPhase = await waitFor(adminWs, "phase_change");
+  expect(dayPhase.phase === "day" || dayPhase.phase === "game_over").toBe(true);
+
+  for (const w of allWs) w.close();
+}, 30000);
+
+test("sequential night: mafia-only (no special roles) → immediate resolution after delay", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`monly_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`monly_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`monly_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`monly_p4_${ts}`, "4444");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  // Find mafia
+  let mafiaIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia") { mafiaIdx = i; break; }
+  }
+  expect(mafiaIdx).toBeGreaterThanOrEqual(0);
+  const mafiaWs = allWs[mafiaIdx];
+  const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
+  collectors.forEach((c) => c.stop());
+
+  // Mafia votes and confirms
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
+  await waitFor(mafiaWs, "mafia_vote_update");
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+
+  // Should resolve to day (no doctor/detective to wait for)
+  const dayPhase = await waitFor(adminWs, "phase_change");
+  expect(dayPhase.phase === "day" || dayPhase.phase === "game_over").toBe(true);
+
+  for (const w of allWs) w.close();
+}, 30000);
+
+test("sequential night: sub-phase guard rejects doctor_save during mafia sub-phase", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`guard_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`guard_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`guard_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`guard_p4_${ts}`, "4444");
+  const { ws: p5ws } = await reg(`guard_p5_${ts}`, "5555");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+
+  send(adminWs, { type: "update_settings", settings: { enableDoctor: true } });
+  await waitFor(adminWs, "settings_updated");
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  let doctorIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "doctor") { doctorIdx = i; break; }
+  }
+  expect(doctorIdx).toBeGreaterThanOrEqual(0);
+  const doctorWs = allWs[doctorIdx];
+  collectors.forEach((c) => c.stop());
+
+  // Try to submit doctor_save during mafia sub-phase — should be silently rejected
+  const collector = collectMessages(doctorWs);
+  send(doctorWs, { type: "doctor_save", targetId: 1 });
+  await Bun.sleep(500);
+  collector.stop();
+
+  // Should NOT receive night_action_done (the save was rejected)
+  const actionDone = collector.messages.find((m) => m.type === "night_action_done");
+  expect(actionDone).toBeUndefined();
+
+  for (const w of allWs) w.close();
+}, 15000);
+
+test("sequential night: force dawn during doctor sub-phase transition", async () => {
+  const ts = Date.now();
+
+  const { ws: adminWs } = await reg(`fdawn_admin_${ts}`, "1111");
+  const { ws: p2ws } = await reg(`fdawn_p2_${ts}`, "2222");
+  const { ws: p3ws } = await reg(`fdawn_p3_${ts}`, "3333");
+  const { ws: p4ws } = await reg(`fdawn_p4_${ts}`, "4444");
+  const { ws: p5ws } = await reg(`fdawn_p5_${ts}`, "5555");
+  const { ws: p6ws } = await reg(`fdawn_p6_${ts}`, "6666");
+
+  send(adminWs, { type: "create_game" });
+  const created = await waitFor(adminWs, "game_created");
+  const code = created.code;
+
+  for (const w of [p2ws, p3ws, p4ws, p5ws, p6ws]) {
+    send(w, { type: "join_game", code });
+    await waitFor(w, "game_joined");
+  }
+
+  // Enable doctor
+  send(adminWs, { type: "update_settings", settings: { enableDoctor: true } });
+  await waitFor(adminWs, "settings_updated");
+  await Bun.sleep(200);
+
+  const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws];
+  const collectors = allWs.map((w) => collectMessages(w));
+  send(adminWs, { type: "start_game" });
+  await Bun.sleep(1000);
+
+  let mafiaIdx = -1;
+  for (let i = 0; i < collectors.length; i++) {
+    const started = collectors[i].messages.find((m) => m.type === "game_started");
+    if (started?.role === "mafia") { mafiaIdx = i; break; }
+  }
+  const mafiaWs = allWs[mafiaIdx];
+  const mafiaTargets = collectors[mafiaIdx].messages.find((m) => m.type === "mafia_targets");
+  collectors.forEach((c) => c.stop());
+
+  // Complete mafia sub-phase
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "maybe" });
+  await waitFor(mafiaWs, "mafia_vote_update");
+  send(mafiaWs, { type: "mafia_vote", targetId: mafiaTargets.players[0].id, voteType: "lock" });
+  await waitFor(mafiaWs, "night_action_done");
+
+  // Force dawn during the doctor sub-phase transition
+  await Bun.sleep(200); // still within the 1.5s delay before doctor opens
+  send(adminWs, { type: "force_dawn" });
+
+  const dayPhase = await waitFor(adminWs, "phase_change");
+  expect(dayPhase.phase).toBe("day");
+
+  for (const w of allWs) w.close();
+}, 20000);

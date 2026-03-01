@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import {
   createGame, getGame, addPlayer, updateSettings, startGame,
   submitMafiaVote, submitDoctorSave, submitDetectiveInvestigation,
-  checkNightReady, transitionToDay, callVote, castVote, resolveVote,
+  checkNightReady, transitionToDay, advanceNightSubPhase, callVote, castVote, resolveVote,
   cancelVote, endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
   getPlayerInfo, forceEndGame, removeGame, restartGame,
 } from "../src/game-engine";
@@ -755,6 +755,127 @@ describe("Room Lifecycle", () => {
     restartGame(game);
     expect(game.forceEnded).toBe(false);
     expect(game.phase).toBe("night"); // restarted into active game
+    removeGame(game.code);
+  });
+});
+
+describe("advanceNightSubPhase", () => {
+  function setupNightGame(playerCount: number, settings?: Partial<import("../src/types").GameSettings>): Game {
+    const game = setupGame(playerCount, settings);
+    startGame(game);
+    expect(game.phase).toBe("night");
+    expect(game.nightSubPhase).toBe("mafia");
+    return game;
+  }
+
+  test("mafia → doctor (doctor alive + enabled) returns isFake: false", () => {
+    const game = setupNightGame(5, { enableDoctor: true });
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("doctor");
+    expect(result.isFake).toBe(false);
+    expect(game.nightSubPhase).toBe("doctor");
+    removeGame(game.code);
+  });
+
+  test("mafia → doctor (doctor dead + enabled) returns isFake: true", () => {
+    const game = setupNightGame(5, { enableDoctor: true });
+    const doctor = getAliveByRole(game, "doctor")[0];
+    doctor.isAlive = false; // simulate dead
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("doctor");
+    expect(result.isFake).toBe(true);
+    expect(game.nightSubPhase).toBe("doctor");
+    removeGame(game.code);
+  });
+
+  test("mafia → detective (doctor disabled, detective alive)", () => {
+    const game = setupNightGame(5, { enableDoctor: false, enableDetective: true });
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("detective");
+    expect(result.isFake).toBe(false);
+    expect(game.nightSubPhase).toBe("detective");
+    removeGame(game.code);
+  });
+
+  test("mafia → resolving (both disabled)", () => {
+    const game = setupNightGame(4, { enableDoctor: false, enableDetective: false });
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("resolving");
+    expect(result.isFake).toBe(false);
+    expect(game.nightSubPhase).toBe("resolving");
+    removeGame(game.code);
+  });
+
+  test("doctor → detective (detective alive) returns isFake: false", () => {
+    const game = setupNightGame(6, { enableDoctor: true, enableDetective: true });
+    game.nightSubPhase = "doctor"; // simulate already on doctor
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("detective");
+    expect(result.isFake).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("doctor → detective (detective dead + enabled) returns isFake: true", () => {
+    const game = setupNightGame(6, { enableDoctor: true, enableDetective: true });
+    game.nightSubPhase = "doctor";
+    const detective = getAliveByRole(game, "detective")[0];
+    detective.isAlive = false;
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("detective");
+    expect(result.isFake).toBe(true);
+    removeGame(game.code);
+  });
+
+  test("doctor → resolving (detective disabled)", () => {
+    const game = setupNightGame(5, { enableDoctor: true, enableDetective: false });
+    game.nightSubPhase = "doctor";
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("resolving");
+    expect(result.isFake).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("detective → resolving", () => {
+    const game = setupNightGame(5, { enableDetective: true });
+    game.nightSubPhase = "detective";
+    const result = advanceNightSubPhase(game);
+    expect(result.nextPhase).toBe("resolving");
+    expect(result.isFake).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("startGame initializes nightSubPhase to mafia", () => {
+    const game = setupGame(4);
+    startGame(game);
+    expect(game.nightSubPhase).toBe("mafia");
+    removeGame(game.code);
+  });
+
+  test("transitionToDay resets nightSubPhase to null", () => {
+    const game = setupNightGame(4);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    transitionToDay(game);
+    expect(game.nightSubPhase).toBeNull();
+    removeGame(game.code);
+  });
+
+  test("endDay sets nightSubPhase to mafia", () => {
+    const game = setupNightGame(4);
+    const mafia = getAliveByRole(game, "mafia");
+    const citizens = getAliveByRole(game, "citizen");
+    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    transitionToDay(game);
+    endDay(game);
+    expect(game.nightSubPhase).toBe("mafia");
+    removeGame(game.code);
+  });
+
+  test("restartGame sets nightSubPhase to mafia", () => {
+    const game = setupNightGame(4);
+    restartGame(game);
+    expect(game.nightSubPhase).toBe("mafia");
     removeGame(game.code);
   });
 });
