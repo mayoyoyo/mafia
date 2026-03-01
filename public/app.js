@@ -2137,6 +2137,7 @@
   // ============================================================
   $("btn-settings").addEventListener("click", () => {
     $("toggle-sound").checked = soundEnabled;
+    $("toggle-dark-mode").checked = document.documentElement.getAttribute("data-theme") !== "light";
     // Show room code for admin
     if (isAdmin && gameCode) {
       $("settings-room-code").classList.remove("hidden");
@@ -2171,6 +2172,25 @@
 
   $("toggle-sound").addEventListener("change", (e) => {
     soundEnabled = e.target.checked;
+  });
+
+  // Dark mode toggle
+  function applyTheme(dark) {
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", dark ? "#0a0a0a" : "#f0ebe1");
+  }
+
+  // Initialize theme from localStorage (dark by default)
+  const savedTheme = localStorage.getItem("mafia_dark_mode");
+  const darkMode = savedTheme === null ? true : savedTheme === "true";
+  $("toggle-dark-mode").checked = darkMode;
+  if (!darkMode) applyTheme(false);
+
+  $("toggle-dark-mode").addEventListener("change", (e) => {
+    const isDark = e.target.checked;
+    localStorage.setItem("mafia_dark_mode", String(isDark));
+    applyTheme(isDark);
   });
 
   $("btn-end-game").addEventListener("click", () => {
@@ -2532,7 +2552,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.39_202602281836";
+  const APP_VERSION = "v1.40_202602281958";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

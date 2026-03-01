@@ -26,6 +26,26 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Light theme */
+[data-theme="light"] {
+  --bg: #f0ebe1;
+  --bg-card: #faf7f2;
+  --bg-elevated: #e8e3d9;
+  --bg-input: #faf7f2;
+  --text: #1a1a1a;
+  --text-secondary: #6b6b6b;
+  --border: #d1cbc0;
+}
+[data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
+
+/* Keep membership card dark regardless of theme */
+.role-card {
+  --bg-card: #151515;
+  --border: #2c2c2e;
+  --text: #f5f5f5;
+  --text-secondary: #8e8e93;
+}
+
 html, body {
   height: 100%;
   background: var(--bg);
