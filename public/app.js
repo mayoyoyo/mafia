@@ -221,7 +221,6 @@
         $("event-history-list").innerHTML = "";
         $("dead-overlay").classList.add("hidden");
         $("dead-dismiss-hint").classList.add("hidden");
-        $("btn-play-again").classList.add("hidden");
         // Show players tab from game start
         resetEventHistoryTabs("players");
         $("event-history").classList.remove("hidden");
@@ -2533,7 +2532,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.38_202602281820";
+  const APP_VERSION = "v1.39_202602281836";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
