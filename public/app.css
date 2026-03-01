@@ -570,21 +570,6 @@ input::placeholder { color: var(--text-secondary); }
 .mtc-btn-object { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); flex: 1; }
 .mtc-btn-unlock { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
 .mtc-btn-remove-objection { background: var(--bg-card); color: #e53935; border: 1px solid rgba(229,57,53,0.3); }
-.mafia-confirm-row { display: flex; align-items: center; justify-content: space-between; }
-.mtc-btn-cancel {
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 6px 14px;
-  background: rgba(255,255,255,0.08);
-  color: #aaa;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  min-height: 36px;
-}
-.mtc-btn-cancel:active { opacity: 0.7; }
 
 /* Single mafia target */
 .single-mafia-target {

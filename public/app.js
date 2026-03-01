@@ -2207,27 +2207,9 @@
     if (nightActionLocked) return;
     mafiaConfirmTarget = msg.targetName;
 
-    // Collapse target list to only show the locked target with cancel button
+    // Collapse target list to only show the locked target
     const list = $("action-targets");
-    const li = document.createElement("li");
-    li.className = "selected mafia-confirm-row";
-    const nameSpan = document.createElement("span");
-    nameSpan.textContent = escapeHtml(msg.targetName);
-    li.appendChild(nameSpan);
-    const cancelBtn = document.createElement("button");
-    cancelBtn.className = "mtc-btn-cancel";
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (nightActionLocked) return;
-      // Unlock all mafia votes on this target to break consensus
-      wsSend({ type: "mafia_vote", targetId: msg.targetId, voteType: "lock" }); // toggle off lock
-      hideSlideConfirm();
-      mafiaConfirmTarget = null;
-    });
-    li.appendChild(cancelBtn);
-    list.innerHTML = "";
-    list.appendChild(li);
+    list.innerHTML = `<li class="selected">${escapeHtml(msg.targetName)}</li>`;
 
     // Hide vote status
     $("mafia-vote-status").classList.add("hidden");
@@ -2862,7 +2844,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.53_202603010454";
+  const APP_VERSION = "v1.54_202603010456";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
