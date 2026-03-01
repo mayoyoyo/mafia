@@ -41,6 +41,14 @@ function sendToUser(userId: number, msg: ServerMessage): void {
   }
 }
 
+function sendToDeadPlayers(game: Game, msg: ServerMessage): void {
+  for (const [, player] of game.players) {
+    if (!player.isAlive) {
+      sendToUser(player.id, msg);
+    }
+  }
+}
+
 function broadcastLobbyUpdate(game: Game): void {
   const players = getPlayerInfo(game);
   const admin = game.players.get(game.adminId);
@@ -80,6 +88,16 @@ function sendMafiaPrompts(game: Game): void {
   for (const m of aliveMafia) {
     sendToUser(m.id, { type: "mafia_targets", players: mafiaTargets });
   }
+
+  // Send initial spectator view to dead players
+  sendToDeadPlayers(game, {
+    type: "spectator_mafia_update",
+    voterTargets: {},
+    lockedTarget: null,
+    objectedTargets: {},
+    aliveMafiaCount: aliveMafia.length,
+    targets: mafiaTargets,
+  });
 }
 
 function sendDoctorPrompts(game: Game): void {
@@ -187,7 +205,25 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 
   // Night action state (only if night + alive + has role with action + correct sub-phase)
   let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
-  if (game.phase === "night" && rejoined.isAlive) {
+  if (game.phase === "night" && !rejoined.isAlive && game.nightSubPhase === "mafia") {
+    // Dead player spectator view during mafia sub-phase
+    const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
+    const spectatorTargets = aliveNonMafia.map(p => ({
+      id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId,
+    }));
+    const status = getMafiaVoteStatus(game);
+    nightAction = {
+      locked: false,
+      targetName: null,
+      targets: spectatorTargets,
+      voterTargets: status.voterTargets,
+      lockedTarget: status.lockedTarget,
+      objectedTargets: status.objectedTargets,
+      aliveMafiaCount: status.aliveMafiaCount,
+      lastDoctorTarget: null,
+      isSpectatorView: true,
+    } as any;
+  } else if (game.phase === "night" && rejoined.isAlive) {
     if (rejoined.role === "mafia" && game.nightSubPhase === "mafia") {
       const locked = game.mafiaTarget !== null;
       const targetName = locked ? (game.players.get(game.mafiaTarget!)?.username ?? null) : null;
@@ -1012,6 +1048,23 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets, lockedTarget: status.lockedTarget, objectedTargets: status.objectedTargets, aliveMafiaCount: status.aliveMafiaCount });
   }
 
+  // Send spectator update to dead players
+  const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
+  const spectatorTargets = aliveNonMafia.map((p) => ({
+    id: p.id,
+    username: p.username,
+    isAlive: true,
+    isAdmin: p.id === game.adminId,
+  }));
+  sendToDeadPlayers(game, {
+    type: "spectator_mafia_update",
+    voterTargets: status.voterTargets,
+    lockedTarget: status.lockedTarget,
+    objectedTargets: status.objectedTargets,
+    aliveMafiaCount: status.aliveMafiaCount,
+    targets: spectatorTargets,
+  });
+
   // On consensus: send confirm-ready so mafia can slide to confirm the kill
   if (result.consensus && result.target !== null) {
     const target = game.players.get(result.target);
@@ -1043,6 +1096,26 @@ function resolveNightAndTransition(game: Game): void {
       });
     }
     game.detectiveResult = null;
+  }
+
+  // Send spectator kill result to dead players (before phase change clears their panel)
+  if (nightResult.killed.length > 0 || nightResult.saved) {
+    const targetName = nightResult.killed.length > 0
+      ? nightResult.killed[0].player.username
+      : nightResult.savedName!;
+    let doctorMessage: string | null = null;
+    if (game.settings.enableDoctor) {
+      if (nightResult.saved && nightResult.savedName) {
+        doctorMessage = `Doctor saved ${nightResult.savedName}`;
+      } else {
+        doctorMessage = `Doctor was not able to save ${targetName}`;
+      }
+    }
+    sendToDeadPlayers(game, {
+      type: "spectator_kill_confirmed",
+      targetName,
+      doctorMessage,
+    });
   }
 
   // Notify killed players

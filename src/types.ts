@@ -145,6 +145,8 @@ export type ServerMessage =
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
   | { type: "sound_cue"; sound: "night" | "day" | "everyone_close" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
   | { type: "night_action_done"; message: string }
+  | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
+  | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null }
   | { type: "room_closed"; message: string }
   | { type: "game_sync";
       // Identity

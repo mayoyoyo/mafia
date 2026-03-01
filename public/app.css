@@ -583,6 +583,10 @@ input::placeholder { color: var(--text-secondary); }
 .mtc-btn-unlock { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
 .mtc-btn-remove-objection { background: var(--bg-card); color: #e53935; border: 1px solid rgba(229,57,53,0.3); }
 
+/* Spectator (dead player) styles */
+.spectator-locked { color: var(--primary); font-weight: 600; }
+.spectator-kill-result { color: #d32f2f; font-weight: 600; }
+
 /* Single mafia target */
 .single-mafia-target {
   padding: 14px 16px;
@@ -921,6 +925,7 @@ input::placeholder { color: var(--text-secondary); }
   border: 1px solid var(--role-mafia); border-radius: 4px;
   padding: 1px 5px; margin-left: auto; letter-spacing: 0.5px;
 }
+.detective-tag { margin-left: auto; font-size: 16px; line-height: 1; }
 .event-history-list { font-size: 13px; line-height: 1.6; }
 .event-history-round {
   font-size: 11px;
