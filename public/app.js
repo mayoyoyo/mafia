@@ -1990,25 +1990,7 @@
       nameEl.textContent = p.username;
       header.appendChild(nameEl);
 
-      if (isObjected) {
-        const badge = document.createElement("span");
-        badge.className = "mtc-blocked-label";
-        badge.textContent = "Blocked";
-        header.appendChild(badge);
-      } else if (cardState === "unanimous") {
-        const badge = document.createElement("span");
-        badge.className = "mtc-lock-progress";
-        badge.textContent = "Unanimous";
-        header.appendChild(badge);
-      } else if (counts.lock > 0) {
-        const badge = document.createElement("span");
-        badge.className = "mtc-lock-progress";
-        badge.textContent = counts.lock + "/" + aliveMafiaCount + " locked";
-        header.appendChild(badge);
-      }
-      card.appendChild(header);
-
-      // Voter chips (only if there are votes)
+      // Voter chips inline in header (between name and badge)
       if (counts.maybe > 0 || counts.lock > 0 || counts.letsnot > 0) {
         const chipsDiv = document.createElement("div");
         chipsDiv.className = "mtc-chips";
@@ -2026,8 +2008,26 @@
             }
           }
         }
-        card.appendChild(chipsDiv);
+        header.appendChild(chipsDiv);
       }
+
+      if (isObjected) {
+        const badge = document.createElement("span");
+        badge.className = "mtc-blocked-label";
+        badge.textContent = "Blocked";
+        header.appendChild(badge);
+      } else if (cardState === "unanimous") {
+        const badge = document.createElement("span");
+        badge.className = "mtc-lock-progress";
+        badge.textContent = "Unanimous";
+        header.appendChild(badge);
+      } else if (counts.lock > 0) {
+        const badge = document.createElement("span");
+        badge.className = "mtc-lock-progress";
+        badge.textContent = counts.lock + "/" + aliveMafiaCount + " locked";
+        header.appendChild(badge);
+      }
+      card.appendChild(header);
 
       // Objection message
       if (isObjected) {
@@ -2056,15 +2056,25 @@
       } else if (cardState === "unanimous") {
         // No buttons — slide-to-kill takes over
       } else if (cardState === "idle") {
-        const btn = document.createElement("button");
-        btn.className = "mtc-btn mtc-btn-suggest";
-        btn.textContent = "\u{1F914} Suggest";
-        btn.addEventListener("click", (e) => {
+        const nomBtn = document.createElement("button");
+        nomBtn.className = "mtc-btn mtc-btn-suggest";
+        nomBtn.textContent = "\u{1F449} Nominate";
+        nomBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           if (nightActionLocked) return;
           wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
         });
-        actions.appendChild(btn);
+        actions.appendChild(nomBtn);
+
+        const spareBtn = document.createElement("button");
+        spareBtn.className = "mtc-btn mtc-btn-object";
+        spareBtn.textContent = "\u{274C} Spare";
+        spareBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (nightActionLocked) return;
+          wsSend({ type: "mafia_vote", targetId, voteType: "letsnot" });
+        });
+        actions.appendChild(spareBtn);
       } else {
         // Suggested or partial-lock
         if (myVoteType === "lock") {
@@ -2102,15 +2112,15 @@
           });
           actions.appendChild(lockBtn);
         } else {
-          const suggestBtn = document.createElement("button");
-          suggestBtn.className = "mtc-btn mtc-btn-suggest";
-          suggestBtn.textContent = "\u{1F914} Suggest";
-          suggestBtn.addEventListener("click", (e) => {
+          const nomBtn = document.createElement("button");
+          nomBtn.className = "mtc-btn mtc-btn-suggest";
+          nomBtn.textContent = "\u{1F449} Nominate";
+          nomBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (nightActionLocked) return;
             wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
           });
-          actions.appendChild(suggestBtn);
+          actions.appendChild(nomBtn);
         }
 
         if (myVoteType !== "letsnot") {
@@ -2178,7 +2188,7 @@
       const lines = [];
       for (const [voterName, votes] of Object.entries(msg.voterTargets)) {
         for (const v of votes) {
-          if (v.voteType === "maybe") lines.push(`${escapeHtml(voterName)} suggests ${escapeHtml(v.target)}`);
+          if (v.voteType === "maybe") lines.push(`${escapeHtml(voterName)} nominates ${escapeHtml(v.target)}`);
           else if (v.voteType === "lock") lines.push(`${escapeHtml(voterName)} locks in ${escapeHtml(v.target)}`);
           else if (v.voteType === "letsnot") lines.push(`${escapeHtml(voterName)} objects to killing ${escapeHtml(v.target)}`);
         }
@@ -2834,7 +2844,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.50_202603010437";
+  const APP_VERSION = "v1.51_202603010446";
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);

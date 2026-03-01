@@ -517,9 +517,9 @@ input::placeholder { color: var(--text-secondary); }
 }
 .mtc-chips {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin: 0 auto 0 8px;
 }
 .mtc-chip {
   width: 24px;
@@ -567,7 +567,7 @@ input::placeholder { color: var(--text-secondary); }
 .mtc-btn:active { transform: scale(0.97); opacity: 0.8; }
 .mtc-btn-suggest { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 .mtc-btn-lock { background: var(--primary); color: #fff; }
-.mtc-btn-object { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); flex: 0.5; }
+.mtc-btn-object { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); flex: 1; }
 .mtc-btn-unlock { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
 .mtc-btn-remove-objection { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 
