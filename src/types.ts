@@ -134,8 +134,8 @@ export type ServerMessage =
   | { type: "detective_targets"; players: PlayerInfo[] }
   | { type: "detective_result"; targetName: string; isMafia: boolean }
   | { type: "vote_called"; targetName: string; targetId: number; anonymous: boolean }
-  | { type: "vote_update"; votesFor: number; votesAgainst: number; total: number; voterNames?: Record<string, boolean> }
-  | { type: "vote_result"; targetName: string; executed: boolean; votesFor: number; votesAgainst: number; voterNames?: Record<string, boolean> }
+  | { type: "vote_update"; votesFor?: number; votesAgainst?: number; totalVotes: number; total: number; voterNames?: Record<string, boolean> }
+  | { type: "vote_result"; targetName: string; executed: boolean; votesFor?: number; votesAgainst?: number; voterNames?: Record<string, boolean> }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[] }

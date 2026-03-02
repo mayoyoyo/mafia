@@ -801,10 +801,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       broadcastToGame(game.code, {
         type: "vote_update",
-        votesFor,
-        votesAgainst,
+        ...(game.voteAnonymous ? {} : { votesFor, votesAgainst, voterNames }),
+        totalVotes: votesFor + votesAgainst,
         total: getAlivePlayers(game).length,
-        ...(game.voteAnonymous ? {} : { voterNames }),
       });
 
       if (result.allVoted || result.earlyResolve) {
@@ -817,9 +816,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             type: "vote_result",
             targetName: voteResult.targetName,
             executed: voteResult.executed,
-            votesFor: voteResult.votesFor,
-            votesAgainst: voteResult.votesAgainst,
-            ...(isAnon ? {} : { voterNames: voteResult.voterNames }),
+            ...(isAnon ? {} : { votesFor: voteResult.votesFor, votesAgainst: voteResult.votesAgainst, voterNames: voteResult.voterNames }),
           });
 
           let voteLoverDeathName: string | undefined;

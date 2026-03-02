@@ -2461,7 +2461,7 @@
   });
 
   function updateVoteProgress(msg) {
-    $("vote-progress").textContent = `${msg.votesFor + msg.votesAgainst} / ${msg.total} votes cast`;
+    $("vote-progress").textContent = `${msg.totalVotes} / ${msg.total} votes cast`;
 
     if (msg.voterNames) {
       const names = $("vote-names");
@@ -2478,9 +2478,10 @@
     $("voting-panel").classList.add("hidden");
     lastVoteResult = msg;
 
+    const hasCounts = msg.votesFor != null && msg.votesAgainst != null;
     const resultText = msg.executed
-      ? `${msg.targetName} has been executed. (${msg.votesFor} for, ${msg.votesAgainst} against)`
-      : `${msg.targetName} has been spared. (${msg.votesFor} for, ${msg.votesAgainst} against)`;
+      ? `${msg.targetName} has been executed.${hasCounts ? ` (${msg.votesFor} for, ${msg.votesAgainst} against)` : ""}`
+      : `${msg.targetName} has been spared.${hasCounts ? ` (${msg.votesFor} for, ${msg.votesAgainst} against)` : ""}`;
     showNarratorMessage(resultText);
 
     if (msg.voterNames) {
