@@ -586,6 +586,15 @@ input::placeholder { color: var(--text-secondary); }
 /* Spectator (dead player) styles */
 .spectator-locked { color: var(--primary); font-weight: 600; }
 .spectator-kill-result { color: #d32f2f; font-weight: 600; }
+#spectator-night-log { margin-bottom: 12px; }
+.spectator-log-entry {
+  font-size: 13px; padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.spectator-log-entry:last-child { border-bottom: none; }
+.spectator-log-entry .log-target { color: var(--text); font-weight: 600; }
+.spectator-log-entry.log-dead { opacity: 0.5; font-style: italic; }
 
 /* Single mafia target */
 .single-mafia-target {
