@@ -313,6 +313,10 @@
         if (isDead) showSpectatorKillResult(msg);
         break;
 
+      case "spectator_night_phase":
+        if (isDead) showSpectatorNightPhase(msg);
+        break;
+
       case "detective_result":
         showDetectiveResult(msg);
         break;
@@ -487,8 +491,14 @@
       // Night action
       if (msg.nightAction) {
         const na = msg.nightAction;
-        if (na.isSpectatorView) {
-          // Dead player spectator view
+        if (na.isSpectatorView && na.spectatorSubPhase) {
+          // Dead player spectator view for doctor/detective/resolving sub-phases
+          showSpectatorNightPhase({
+            subPhase: na.spectatorSubPhase,
+            isRoleAlive: na.spectatorSubPhaseAlive,
+          });
+        } else if (na.isSpectatorView) {
+          // Dead player spectator view for mafia sub-phase
           showSpectatorMafiaPanel({
             voterTargets: na.voterTargets,
             lockedTarget: na.lockedTarget,
@@ -545,11 +555,8 @@
     $("event-history").classList.remove("hidden");
     updatePlayerStatus();
 
-    // 12. Show death overlay if dead
+    // 12. Dead player state (card back only — overlay only shows on real-time you_died)
     if (isDead) {
-      $("dead-overlay").classList.remove("hidden");
-      $("death-message").textContent = "You were killed.";
-      $("dead-dismiss-hint").classList.remove("hidden");
       $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
     }
   }
@@ -2324,6 +2331,36 @@
     $("action-status").textContent = msg.doctorMessage || "";
   }
 
+  function showSpectatorNightPhase(msg) {
+    const panel = $("night-actions");
+    panel.classList.remove("hidden");
+    hideSlideConfirm();
+    $("mafia-vote-status").classList.add("hidden");
+    $("action-status").textContent = "";
+
+    const list = $("action-targets");
+    if (msg.subPhase === "doctor") {
+      if (msg.isRoleAlive) {
+        $("action-title").textContent = "Doctor is deliberating\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing who to protect\u2026</li>`;
+      } else {
+        $("action-title").textContent = "The Doctor has fallen\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No one will be saved tonight</li>`;
+      }
+    } else if (msg.subPhase === "detective") {
+      if (msg.isRoleAlive) {
+        $("action-title").textContent = "Detective is investigating\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing who to investigate\u2026</li>`;
+      } else {
+        $("action-title").textContent = "The Detective has fallen\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No investigation tonight</li>`;
+      }
+    } else if (msg.subPhase === "resolving") {
+      $("action-title").textContent = "Dawn approaches\u2026";
+      list.innerHTML = "";
+    }
+  }
+
   function handleMafiaConfirmReady(msg) {
     if (nightActionLocked) return;
     mafiaConfirmTarget = msg.targetName;
@@ -3177,7 +3214,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.1_202603031958";
+  const APP_VERSION_STAGING = "staging.2_202603040043";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
