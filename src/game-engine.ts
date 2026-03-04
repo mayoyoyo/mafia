@@ -1,4 +1,5 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, DEFAULT_SETTINGS, MafiaVoteType, MafiaVoteEntry, NightSubPhase } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase } from "./types";
+import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
 
 const games = new Map<string, Game>();
@@ -21,7 +22,7 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-export function createGame(adminId: number, adminUsername: string): Game {
+export function createGame(adminId: number, adminUsername: string, initialSettings?: Partial<GameSettings>): Game {
   let code: string;
   do {
     code = generateCode();
@@ -45,16 +46,7 @@ export function createGame(adminId: number, adminUsername: string): Game {
     phase: "lobby",
     round: 0,
     mafiaVariant: 0,
-    settings: {
-      mafiaCount: 1,
-      enableDoctor: false,
-      enableDetective: false,
-      enableJoker: false,
-      enableLovers: false,
-      soundEnabled: false,
-      doctorMode: "house",
-      jokerMode: "house",
-    },
+    settings: { ...DEFAULT_SETTINGS, ...(initialSettings || {}) },
     players: new Map([[adminId, admin]]),
     mafiaVotes: new Map(),
     mafiaTarget: null,

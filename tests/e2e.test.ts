@@ -171,19 +171,32 @@ test("full E2E flow", async () => {
     expect(phase.round).toBe(1);
   }
 
-  // 10. Config save/load
+  // 10. Last settings persistence
   const { ws: cfgWs } = await reg(`cfg_${ts}`, "6666");
   send(cfgWs, { type: "create_game" });
   const cfgGame = await waitFor(cfgWs, "game_created");
-  send(cfgWs, { type: "update_settings", settings: { mafiaCount: 3 } });
+  send(cfgWs, { type: "update_settings", settings: { mafiaCount: 3, enableDoctor: true } });
   await waitFor(cfgWs, "settings_updated");
-  send(cfgWs, { type: "save_config", name: "TestPreset" });
-  const saved = await waitFor(cfgWs, "config_saved");
-  expect(saved.config.name).toBe("TestPreset");
 
-  send(cfgWs, { type: "list_configs" });
-  const configs = await waitFor(cfgWs, "configs_list");
-  expect(configs.configs.length).toBeGreaterThanOrEqual(1);
+  // Add enough players to start
+  const cfgPlayers = [];
+  for (let i = 0; i < 3; i++) {
+    const { ws: pw } = await reg(`cfgp${i}_${ts}`, `777${i}`);
+    send(pw, { type: "join_game", code: cfgGame.code });
+    await waitFor(pw, "game_joined");
+    cfgPlayers.push(pw);
+  }
+  send(cfgWs, { type: "start_game" });
+  await waitFor(cfgWs, "game_started");
+
+  // Leave and create a new game — settings should persist
+  for (const pw of cfgPlayers) { send(pw, { type: "leave_game" }); pw.close(); }
+  send(cfgWs, { type: "leave_game" });
+  send(cfgWs, { type: "create_game" });
+  const cfgGame2 = await waitFor(cfgWs, "game_created");
+  const lobby2 = await waitFor(cfgWs, "lobby_update");
+  expect(lobby2.settings.mafiaCount).toBe(3);
+  expect(lobby2.settings.enableDoctor).toBe(true);
 
   cfgWs.close();
 

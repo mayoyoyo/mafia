@@ -37,6 +37,7 @@ function initSchema() {
   // Migrations for player preferences
   try { db.exec("ALTER TABLE users ADD COLUMN hide_mafia_tag INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE users ADD COLUMN player_color TEXT DEFAULT NULL"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN last_settings_json TEXT DEFAULT NULL"); } catch {}
 }
 
 export function createUser(username: string, passcode: string): number | null {
@@ -74,24 +75,13 @@ export function updateUserPref(userId: number, key: "hide_mafia_tag" | "player_c
   }
 }
 
-export function saveConfig(adminId: number, name: string, settingsJson: string): number {
+export function saveLastSettings(userId: number, settingsJson: string): void {
   const d = getDb();
-  const result = d.query("INSERT INTO saved_configs (admin_id, name, settings_json) VALUES (?, ?, ?)").run(adminId, name, settingsJson);
-  return Number(result.lastInsertRowid);
+  d.query("UPDATE users SET last_settings_json = ? WHERE id = ?").run(settingsJson, userId);
 }
 
-export function getConfigs(adminId: number): Array<{ id: number; admin_id: number; name: string; settings_json: string }> {
+export function getLastSettings(userId: number): string | null {
   const d = getDb();
-  return d.query("SELECT id, admin_id, name, settings_json FROM saved_configs WHERE admin_id = ? ORDER BY created_at DESC").all(adminId) as any[];
-}
-
-export function deleteConfig(configId: number, adminId: number): boolean {
-  const d = getDb();
-  const result = d.query("DELETE FROM saved_configs WHERE id = ? AND admin_id = ?").run(configId, adminId);
-  return result.changes > 0;
-}
-
-export function getConfig(configId: number): { id: number; admin_id: number; name: string; settings_json: string } | null {
-  const d = getDb();
-  return d.query("SELECT id, admin_id, name, settings_json FROM saved_configs WHERE id = ?").get(configId) as any;
+  const row = d.query("SELECT last_settings_json FROM users WHERE id = ?").get(userId) as any;
+  return row ? row.last_settings_json : null;
 }

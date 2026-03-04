@@ -388,10 +388,6 @@
         handleGameOver(msg);
         break;
 
-      case "configs_list":
-        showConfigList(msg.configs, false);
-        break;
-
       case "room_closed":
         localStorage.removeItem("mafia_game_code");
         gameCode = null;
@@ -403,15 +399,6 @@
         resetEventHistoryTabs();
         closeSettingsModal();
         showScreen("menu");
-        break;
-
-      case "config_saved":
-        showError(""); // clear
-        closeConfigModal();
-        break;
-
-      case "config_deleted":
-        wsSend({ type: "list_configs" });
         break;
 
       case "player_prefs":
@@ -882,9 +869,9 @@
     if (!container) return;
 
     const roles = [];
-    if (settings.enableDoctor) roles.push("Doctor");
+    if (settings.enableDoctor) roles.push(`Doctor (${settings.doctorMode === "official" ? "Official" : "House"})`);
     if (settings.enableDetective) roles.push("Detective");
-    if (settings.enableJoker) roles.push("Joker");
+    if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
     if (settings.enableLovers) roles.push("Lovers");
 
     container.innerHTML = `
@@ -897,77 +884,6 @@
         <span class="lobby-settings-value">${roles.length > 0 ? roles.join(", ") : "None"}</span>
       </div>
     `;
-  }
-
-  // ============================================================
-  // CONFIGS
-  // ============================================================
-  $("btn-save-config").addEventListener("click", () => {
-    openConfigModal(true);
-  });
-
-  $("btn-load-config").addEventListener("click", () => {
-    openConfigModal(false);
-    wsSend({ type: "list_configs" });
-  });
-
-  $("btn-close-config-modal").addEventListener("click", closeConfigModal);
-
-  $("btn-confirm-save-config").addEventListener("click", () => {
-    const name = $("config-name-input").value.trim();
-    if (!name) return;
-    wsSend({ type: "save_config", name });
-  });
-
-  function openConfigModal(isSave) {
-    $("modal-config").classList.remove("hidden");
-    $("modal-config-title").textContent = isSave ? "Save Preset" : "Load Preset";
-    if (isSave) {
-      $("config-save-section").classList.remove("hidden");
-      $("config-name-input").value = "";
-      $("config-name-input").focus();
-    } else {
-      $("config-save-section").classList.add("hidden");
-    }
-  }
-
-  function closeConfigModal() {
-    $("modal-config").classList.add("hidden");
-  }
-
-  function showConfigList(configs, isSave) {
-    const list = $("config-list");
-    const empty = $("config-empty");
-    if (configs.length === 0) {
-      list.innerHTML = "";
-      empty.classList.remove("hidden");
-      return;
-    }
-    empty.classList.add("hidden");
-    list.innerHTML = configs
-      .map(
-        (c) =>
-          `<li data-id="${c.id}">
-            <span class="config-name">${escapeHtml(c.name)}</span>
-            <button class="config-delete" data-id="${c.id}">&times;</button>
-          </li>`
-      )
-      .join("");
-
-    list.querySelectorAll("li").forEach((li) => {
-      li.addEventListener("click", (e) => {
-        if (e.target.classList.contains("config-delete")) return;
-        wsSend({ type: "load_config", configId: parseInt(li.dataset.id) });
-        closeConfigModal();
-      });
-    });
-
-    list.querySelectorAll(".config-delete").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        wsSend({ type: "delete_config", configId: parseInt(btn.dataset.id) });
-      });
-    });
   }
 
   // ============================================================
@@ -3487,8 +3403,8 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.6_202603040342";
+  const APP_VERSION = "v1.2_202603040319";
+  const APP_VERSION_STAGING = "staging.7_202603040353";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

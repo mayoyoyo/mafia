@@ -513,7 +513,7 @@ describe("Rejoin during game_over", () => {
   }, 15000);
 
   test("joker win is correctly reported on rejoin", async () => {
-    const { code, players } = await setupAndStart(5, { enableJoker: true });
+    const { code, players } = await setupAndStart(5, { enableJoker: true, jokerMode: "house" });
 
     const mafia = players.find(p => p.role === "mafia")!;
     const joker = players.find(p => p.role === "joker");
