@@ -39,7 +39,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 
-export type NightSubPhase = "mafia" | "doctor" | "detective" | "joker_haunt" | "resolving";
+export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
 

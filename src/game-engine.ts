@@ -389,7 +389,7 @@ export function submitDetectiveInvestigation(game: Game, detectiveId: number, ta
 
 export function submitJokerHaunt(game: Game, jokerId: number, targetId: number): boolean {
   if (game.phase !== "night") return false;
-  if (game.nightSubPhase !== "joker_haunt") return false;
+  if (game.nightSubPhase === "resolving") return false;
   const joker = game.players.get(jokerId);
   if (!joker || joker.role !== "joker") return false;
   // Joker must be dead (was lynched)
@@ -465,7 +465,7 @@ export interface SubPhaseAdvanceResult {
 
 export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
   const current = game.nightSubPhase;
-  const phases: NightSubPhase[] = ["mafia", "doctor", "detective", "joker_haunt", "resolving"];
+  const phases: NightSubPhase[] = ["mafia", "doctor", "detective", "resolving"];
   const currentIdx = current ? phases.indexOf(current) : -1;
 
   // Try each subsequent phase after current
@@ -503,15 +503,7 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
       return { nextPhase: "detective", isFake: false };
     }
 
-    if (candidate === "joker_haunt") {
-      // Only active in official mode when joker has haunt voters (was lynched recently)
-      if (game.settings.jokerMode !== "official") continue;
-      if (game.jokerHauntVoters.length === 0) continue;
-      // Joker is dead (was lynched) — this is a real sub-phase for dead joker
-      game.nightSubPhase = "joker_haunt";
-      return { nextPhase: "joker_haunt", isFake: false };
-    }
-  }
+}
 
   // Fallback (shouldn't happen, resolving always catches)
   game.nightSubPhase = "resolving";
@@ -520,7 +512,7 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
 
 export interface NightResult {
   messages: string[];
-  killed: Array<{ player: Player; message: string }>;
+  killed: Array<{ player: Player; message: string; source: "mafia" | "joker_haunt" }>;
   saved: boolean;
   savedName: string | null;
   savedTargetId: number | null; // for official doctor mode: private notification
@@ -554,12 +546,12 @@ export function resolveNight(game: Game): NightResult {
       if (killResult) {
         const deathMsg = Narrator.nightKill(killResult.killed.username);
         result.messages.push(deathMsg);
-        result.killed.push({ player: killResult.killed, message: deathMsg });
+        result.killed.push({ player: killResult.killed, message: deathMsg, source: "mafia" });
 
         if (killResult.loverKilled) {
           const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
           result.messages.push(loverMsg);
-          result.killed.push({ player: killResult.loverKilled, message: loverMsg });
+          result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "mafia" });
         }
       }
     }
@@ -570,42 +562,46 @@ export function resolveNight(game: Game): NightResult {
     const hauntTargetId = game.jokerHauntTarget;
     const hauntTarget = game.players.get(hauntTargetId);
 
-    if (hauntTarget && hauntTarget.isAlive) {
-      // Check if doctor saved the haunt target
-      if (game.doctorTarget === hauntTargetId) {
-        // Doctor already handled above if mafia also targeted this player
-        // If mafia targeted someone else, doctor still saves from haunt
-        if (game.mafiaTarget !== hauntTargetId) {
-          const savedPlayer = game.players.get(hauntTargetId)!;
+    if (hauntTarget) {
+      // Doctor save only blocks one source. If mafia also targeted this player
+      // and the doctor saved them from mafia, the joker haunt still kills.
+      const doctorSavedFromMafia = game.doctorTarget === hauntTargetId && game.mafiaTarget === hauntTargetId;
+      const doctorSavedFromHaunt = game.doctorTarget === hauntTargetId && game.mafiaTarget !== hauntTargetId;
+
+      if (doctorSavedFromHaunt) {
+        // Doctor blocks the haunt (mafia targeted someone else or nobody)
+        if (hauntTarget.isAlive) {
           result.saved = true;
-          result.savedName = savedPlayer.username;
+          result.savedName = hauntTarget.username;
           result.savedTargetId = hauntTargetId;
           if (game.settings.doctorMode === "official") {
-            // Only add message if we haven't already added one for the mafia save
             if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
               result.messages.push(Narrator.doctorSaveOfficial());
             }
           } else {
             if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
-              result.messages.push(Narrator.doctorSave(savedPlayer.username));
+              result.messages.push(Narrator.doctorSave(hauntTarget.username));
             }
           }
         }
-        // If both mafia and joker targeted same person and doctor saved, already handled
       } else {
-        // Joker haunt kill - narrator doesn't distinguish from mafia kill
-        const killResult = killPlayer(game, hauntTargetId);
-        if (killResult) {
-          const deathMsg = Narrator.nightKill(killResult.killed.username);
-          result.messages.push(deathMsg);
-          result.killed.push({ player: killResult.killed, message: deathMsg });
+        // No doctor save for haunt (either doctor saved from mafia, or doctor targeted elsewhere)
+        // Kill if still alive
+        if (hauntTarget.isAlive) {
+          const killResult = killPlayer(game, hauntTargetId);
+          if (killResult) {
+            const deathMsg = Narrator.nightKill(killResult.killed.username);
+            result.messages.push(deathMsg);
+            result.killed.push({ player: killResult.killed, message: deathMsg, source: "joker_haunt" });
 
-          if (killResult.loverKilled) {
-            const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-            result.messages.push(loverMsg);
-            result.killed.push({ player: killResult.loverKilled, message: loverMsg });
+            if (killResult.loverKilled) {
+              const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
+              result.messages.push(loverMsg);
+              result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "joker_haunt" });
+            }
           }
         }
+        // If target already dead (killed by mafia above), haunt has no additional effect
       }
     }
   }
@@ -628,7 +624,7 @@ export function transitionToDay(game: Game): NightResult {
     const isLoverDeath = k.player.isLover && nightResult.killed.length > 1 && k !== nightResult.killed[0];
     game.eventHistory.push({
       round: game.round,
-      type: isLoverDeath ? "lover_death" : "kill",
+      type: isLoverDeath ? "lover_death" : (k.source === "joker_haunt" ? "joker_haunt" : "kill"),
       playerName: k.player.username,
     });
   }

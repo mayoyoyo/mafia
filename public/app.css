@@ -928,7 +928,7 @@ input::placeholder { color: var(--text-secondary); }
 .game-history-round { font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-top: 12px; margin-bottom: 4px; }
 .game-history-round:first-child { margin-top: 0; }
 .game-history-item { font-size: 14px; padding: 4px 0; color: var(--text); }
-.game-history-item.kill { color: var(--role-mafia); }
+.game-history-item.kill, .game-history-item.joker_haunt { color: var(--role-mafia); }
 .game-history-item.execution { color: #ff9800; }
 .game-history-item.save { color: var(--role-doctor); }
 .game-history-item.lover_death { color: var(--role-lover); }
@@ -1030,7 +1030,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 .event-history-round:first-child { margin-top: 0; }
 .event-item { padding: 2px 0; }
-.event-item.kill { color: var(--danger); }
+.event-item.kill, .event-item.joker_haunt { color: var(--danger); }
 .event-item.lover_death { color: var(--role-lover); }
 .event-item.save { color: var(--success); }
 .event-item.execution { color: #ff9800; }
