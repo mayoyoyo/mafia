@@ -151,7 +151,10 @@
       <div class="header">
         <button id="btn-leave-admin" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
-        <div class="room-code">Code: <span id="lobby-code"></span></div>
+        <div class="header-right">
+          <div class="room-code">Code: <span id="lobby-code"></span></div>
+          <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
 
       <div class="settings-panel">
@@ -170,6 +173,13 @@
           <span>Doctor</span>
           <label class="toggle"><input type="checkbox" id="toggle-doctor"><span class="slider"></span></label>
         </div>
+        <div id="doctor-mode-row" class="setting-sub-row hidden">
+          <div class="rule-tabs" id="doctor-mode-tabs">
+            <button class="rule-tab active" data-mode="house">House</button>
+            <button class="rule-tab" data-mode="official">Official</button>
+          </div>
+          <div class="rule-hint" id="doctor-mode-hint">Narrator reveals who was saved</div>
+        </div>
 
         <div class="setting-row">
           <span>Detective</span>
@@ -179,6 +189,13 @@
         <div class="setting-row">
           <span>Joker</span>
           <label class="toggle"><input type="checkbox" id="toggle-joker"><span class="slider"></span></label>
+        </div>
+        <div id="joker-mode-row" class="setting-sub-row hidden">
+          <div class="rule-tabs" id="joker-mode-tabs">
+            <button class="rule-tab active" data-mode="house">House</button>
+            <button class="rule-tab" data-mode="official">Official</button>
+          </div>
+          <div class="rule-hint" id="joker-mode-hint">Game ends when Joker is executed</div>
         </div>
 
         <div class="setting-row">
@@ -202,6 +219,8 @@
         <ul id="players-list-admin" class="players-list"></ul>
       </div>
 
+      <div id="color-picker-admin" class="color-picker-section"></div>
+
       <button id="btn-start" class="btn btn-primary btn-large">Start Game</button>
       <div id="lobby-error" class="error-msg"></div>
     </div>
@@ -211,13 +230,18 @@
       <div class="header">
         <button id="btn-leave-player" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
-        <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+        <div class="header-right">
+          <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+          <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
       <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
+      <div id="player-lobby-settings" class="player-lobby-settings"></div>
       <div class="players-section">
         <h3>Players (<span id="player-count-player">0</span>/20)</h3>
         <ul id="players-list-player" class="players-list"></ul>
       </div>
+      <div id="color-picker-player" class="color-picker-section"></div>
     </div>
 
     <!-- GAME SCREEN -->
@@ -283,6 +307,7 @@
       <!-- Night Actions -->
       <div id="night-actions" class="action-panel hidden">
         <h3 id="action-title"></h3>
+        <div id="spectator-night-log" class="hidden"></div>
         <ul id="action-targets" class="target-list"></ul>
         <div id="slide-confirm" class="slide-confirm hidden">
           <div class="slide-track">
@@ -356,6 +381,14 @@
         <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
       </div>
 
+      <!-- Joker Win Overlay (official mode — shows for everyone, dismissible) -->
+      <div id="joker-win-overlay" class="joker-win-overlay hidden">
+        <div class="joker-trophy">&#127942;</div>
+        <h2 class="joker-win-title">Joker Wins!</h2>
+        <p id="joker-win-name" class="joker-win-name"></p>
+        <p class="joker-win-hint">Tap to dismiss</p>
+      </div>
+
     </div>
 
     <!-- GAME OVER SCREEN -->
@@ -372,6 +405,9 @@
           <button id="btn-play-again-same" class="btn btn-primary btn-large">Play Again</button>
           <button id="btn-play-again-new" class="btn btn-secondary btn-large">New Settings</button>
           <button id="btn-close-room" class="btn btn-danger btn-large">Close Room</button>
+        </div>
+        <div id="gameover-buttons-player" class="gameover-buttons hidden">
+          <button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large">Return to Lobby</button>
         </div>
       </div>
     </div>
@@ -416,6 +452,10 @@
           <div class="setting-row">
             <span>Dark Mode</span>
             <label class="toggle"><input type="checkbox" id="toggle-dark-mode" checked><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <span>Hide Mafia Tag</span>
+            <label class="toggle"><input type="checkbox" id="toggle-hide-mafia-tag"><span class="slider"></span></label>
           </div>
           <div id="settings-end-game" class="settings-end-game hidden">
             <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End Game</button>

@@ -11,6 +11,8 @@ export interface Player {
   variant: number; // pixel art variant index
 }
 
+export type RuleMode = "official" | "house";
+
 export interface GameSettings {
   mafiaCount: number;
   enableDoctor: boolean;
@@ -19,6 +21,8 @@ export interface GameSettings {
   enableLovers: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
+  doctorMode: RuleMode;
+  jokerMode: RuleMode;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -29,6 +33,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableLovers: false,
   soundEnabled: false,
   narrationAccent: "classic",
+  doctorMode: "house",
+  jokerMode: "house",
 };
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
@@ -57,6 +63,10 @@ export interface Game {
   doctorTarget: number | null;
   detectiveTarget: number | null;
   lastDoctorTarget: number | null;
+  // Joker haunt (official mode)
+  jokerHauntTarget: number | null;
+  jokerHauntVoters: number[]; // player IDs who voted to lynch the joker
+  jokerJointWinner: boolean; // true if joker achieved a joint win (official mode)
   // Day voting
   voteTarget: number | null; // who is being voted on
   votes: Map<number, boolean>; // playerId -> thumbsUp(true)/thumbsDown(false)
@@ -105,6 +115,7 @@ export type ClientMessage =
   | { type: "confirm_mafia_kill" }
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
+  | { type: "joker_haunt"; targetId: number }
   | { type: "call_vote"; targetId: number; anonymous?: boolean }
   | { type: "abstain_vote" }
   | { type: "cancel_vote" }
@@ -115,12 +126,14 @@ export type ClientMessage =
   | { type: "toggle_sound" }
   | { type: "restart_game" }
   | { type: "return_to_lobby" }
-  | { type: "close_room" };
+  | { type: "close_room" }
+  | { type: "update_player_pref"; key: "hide_mafia_tag" | "player_color"; value: any }
+  | { type: "player_return_to_lobby" };
 
 export type ServerMessage =
   | { type: "error"; message: string }
-  | { type: "registered"; userId: number; username: string }
-  | { type: "logged_in"; userId: number; username: string }
+  | { type: "registered"; userId: number; username: string; hide_mafia_tag: boolean; player_color: string | null }
+  | { type: "logged_in"; userId: number; username: string; hide_mafia_tag: boolean; player_color: string | null }
   | { type: "game_created"; code: string }
   | { type: "game_joined"; code: string; isAdmin: boolean }
   | { type: "player_list"; players: PlayerInfo[] }
@@ -133,12 +146,15 @@ export type ServerMessage =
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }
   | { type: "detective_result"; targetName: string; isMafia: boolean }
+  | { type: "joker_haunt_targets"; players: PlayerInfo[] }
+  | { type: "joker_win_overlay"; jokerName: string }
+  | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number; anonymous: boolean }
   | { type: "vote_update"; votesFor?: number; votesAgainst?: number; totalVotes: number; total: number; voterNames?: Record<string, boolean> }
   | { type: "vote_result"; targetName: string; executed: boolean; votesFor?: number; votesAgainst?: number; voterNames?: Record<string, boolean> }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
-  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[] }
+  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "configs_list"; configs: SavedConfig[] }
   | { type: "config_saved"; config: SavedConfig }
   | { type: "config_deleted"; configId: number }
@@ -147,12 +163,16 @@ export type ServerMessage =
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
   | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null }
+  | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "resolving"; isRoleAlive: boolean }
+  | { type: "spectator_night_complete"; phase: string; targetName: string | null; alive: boolean }
+  | { type: "player_prefs"; hide_mafia_tag: boolean; player_color: string | null }
   | { type: "room_closed"; message: string }
   | { type: "game_sync";
       // Identity
       code: string;
       isAdmin: boolean;
       narrationAccent: string;
+      hide_mafia_tag: boolean;
       // Players
       players: PlayerInfo[];
       // Role
@@ -188,6 +208,10 @@ export type ServerMessage =
         objectedTargets: Record<number, string[]>;
         aliveMafiaCount: number;
         lastDoctorTarget: number | null;
+        isSpectatorView?: boolean;
+        spectatorSubPhase?: NightSubPhase;
+        spectatorSubPhaseAlive?: boolean;
+        spectatorLog?: Array<{ phase: string; targetName: string | null; alive: boolean }>;
       } | null;
       // Vote state (null if not in voting)
       voteState: {
@@ -206,6 +230,7 @@ export type ServerMessage =
         message: string;
         forceEnded: boolean;
         revealPlayers: PlayerInfo[];
+        jokerJointWinner?: boolean;
       } | null;
     };
 
@@ -214,6 +239,7 @@ export interface PlayerInfo {
   username: string;
   isAlive: boolean;
   isAdmin: boolean;
+  color?: string | null;
   role?: Role;
   isLover?: boolean;
   loverId?: number;
@@ -221,7 +247,7 @@ export interface PlayerInfo {
 
 export interface GameEvent {
   round: number;
-  type: "kill" | "save" | "execution" | "lover_death" | "spared";
+  type: "kill" | "save" | "execution" | "lover_death" | "spared" | "joker_haunt";
   playerName: string;
   detail?: string;
 }

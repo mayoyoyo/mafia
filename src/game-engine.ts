@@ -52,6 +52,8 @@ export function createGame(adminId: number, adminUsername: string): Game {
       enableJoker: false,
       enableLovers: false,
       soundEnabled: false,
+      doctorMode: "house",
+      jokerMode: "house",
     },
     players: new Map([[adminId, admin]]),
     mafiaVotes: new Map(),
@@ -59,6 +61,9 @@ export function createGame(adminId: number, adminUsername: string): Game {
     doctorTarget: null,
     detectiveTarget: null,
     lastDoctorTarget: null,
+    jokerHauntTarget: null,
+    jokerHauntVoters: [],
+    jokerJointWinner: false,
     voteTarget: null,
     votes: new Map(),
     voteAnonymous: true,
@@ -382,6 +387,34 @@ export function submitDetectiveInvestigation(game: Game, detectiveId: number, ta
   return { isMafia, targetName: target.username };
 }
 
+export function submitJokerHaunt(game: Game, jokerId: number, targetId: number): boolean {
+  if (game.phase !== "night") return false;
+  if (game.nightSubPhase === "resolving") return false;
+  const joker = game.players.get(jokerId);
+  if (!joker || joker.role !== "joker") return false;
+  // Joker must be dead (was lynched)
+  if (joker.isAlive) return false;
+  // Target must be in the haunt voters list and alive
+  if (!game.jokerHauntVoters.includes(targetId)) return false;
+  const target = game.players.get(targetId);
+  if (!target || !target.isAlive) return false;
+
+  game.jokerHauntTarget = targetId;
+  return true;
+}
+
+export function getJokerHauntTargets(game: Game): PlayerInfo[] {
+  return game.jokerHauntVoters
+    .map(id => game.players.get(id))
+    .filter((p): p is Player => p !== undefined && p.isAlive)
+    .map(p => ({
+      id: p.id,
+      username: p.username,
+      isAlive: true,
+      isAdmin: p.id === game.adminId,
+    }));
+}
+
 function killPlayer(game: Game, playerId: number): { killed: Player; loverKilled: Player | null } | null {
   const player = game.players.get(playerId);
   if (!player || !player.isAlive) return null;
@@ -418,6 +451,9 @@ export function checkNightReady(game: Game): boolean {
     const aliveDetective = getAliveByRole(game, "detective");
     if (aliveDetective.length > 0 && game.detectiveTarget === null) return false;
   }
+
+  // Joker haunt is optional — joker doesn't have to pick
+  // (handled by time-based advancement in server)
 
   return true;
 }
@@ -466,7 +502,8 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
       game.nightSubPhase = "detective";
       return { nextPhase: "detective", isFake: false };
     }
-  }
+
+}
 
   // Fallback (shouldn't happen, resolving always catches)
   game.nightSubPhase = "resolving";
@@ -475,39 +512,96 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
 
 export interface NightResult {
   messages: string[];
-  killed: Array<{ player: Player; message: string }>;
+  killed: Array<{ player: Player; message: string; source: "mafia" | "joker_haunt" }>;
   saved: boolean;
   savedName: string | null;
+  savedTargetId: number | null; // for official doctor mode: private notification
 }
 
 // DESIGN: Night actions resolve simultaneously. If mafia kills the doctor or detective,
 // their submitted action still takes effect (doctor save, detective investigation).
 // The detective receives their result even if killed the same night.
 export function resolveNight(game: Game): NightResult {
-  const result: NightResult = { messages: [], killed: [], saved: false, savedName: null };
+  const result: NightResult = { messages: [], killed: [], saved: false, savedName: null, savedTargetId: null };
 
-  if (game.mafiaTarget === null) return result;
+  if (game.mafiaTarget === null && game.jokerHauntTarget === null) return result;
 
-  const targetId = game.mafiaTarget;
+  // Resolve mafia kill
+  if (game.mafiaTarget !== null) {
+    const targetId = game.mafiaTarget;
 
-  // Check if doctor saved the target
-  if (game.doctorTarget === targetId) {
-    const savedPlayer = game.players.get(targetId)!;
-    result.saved = true;
-    result.savedName = savedPlayer.username;
-    result.messages.push(Narrator.doctorSave(savedPlayer.username));
-  } else if (game.mafiaTarget !== null) {
-    // Kill the target
-    const killResult = killPlayer(game, targetId);
-    if (killResult) {
-      const deathMsg = Narrator.nightKill(killResult.killed.username);
-      result.messages.push(deathMsg);
-      result.killed.push({ player: killResult.killed, message: deathMsg });
+    // Check if doctor saved the mafia target
+    if (game.doctorTarget === targetId) {
+      const savedPlayer = game.players.get(targetId)!;
+      result.saved = true;
+      result.savedName = savedPlayer.username;
+      result.savedTargetId = targetId;
+      if (game.settings.doctorMode === "official") {
+        result.messages.push(Narrator.doctorSaveOfficial());
+      } else {
+        result.messages.push(Narrator.doctorSave(savedPlayer.username));
+      }
+    } else {
+      const killResult = killPlayer(game, targetId);
+      if (killResult) {
+        const deathMsg = Narrator.nightKill(killResult.killed.username);
+        result.messages.push(deathMsg);
+        result.killed.push({ player: killResult.killed, message: deathMsg, source: "mafia" });
 
-      if (killResult.loverKilled) {
-        const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-        result.messages.push(loverMsg);
-        result.killed.push({ player: killResult.loverKilled, message: loverMsg });
+        if (killResult.loverKilled) {
+          const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
+          result.messages.push(loverMsg);
+          result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "mafia" });
+        }
+      }
+    }
+  }
+
+  // Resolve joker haunt kill (official joker mode)
+  if (game.jokerHauntTarget !== null) {
+    const hauntTargetId = game.jokerHauntTarget;
+    const hauntTarget = game.players.get(hauntTargetId);
+
+    if (hauntTarget) {
+      // Doctor save only blocks one source. If mafia also targeted this player
+      // and the doctor saved them from mafia, the joker haunt still kills.
+      const doctorSavedFromMafia = game.doctorTarget === hauntTargetId && game.mafiaTarget === hauntTargetId;
+      const doctorSavedFromHaunt = game.doctorTarget === hauntTargetId && game.mafiaTarget !== hauntTargetId;
+
+      if (doctorSavedFromHaunt) {
+        // Doctor blocks the haunt (mafia targeted someone else or nobody)
+        if (hauntTarget.isAlive) {
+          result.saved = true;
+          result.savedName = hauntTarget.username;
+          result.savedTargetId = hauntTargetId;
+          if (game.settings.doctorMode === "official") {
+            if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
+              result.messages.push(Narrator.doctorSaveOfficial());
+            }
+          } else {
+            if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
+              result.messages.push(Narrator.doctorSave(hauntTarget.username));
+            }
+          }
+        }
+      } else {
+        // No doctor save for haunt (either doctor saved from mafia, or doctor targeted elsewhere)
+        // Kill if still alive
+        if (hauntTarget.isAlive) {
+          const killResult = killPlayer(game, hauntTargetId);
+          if (killResult) {
+            const deathMsg = Narrator.nightKill(killResult.killed.username);
+            result.messages.push(deathMsg);
+            result.killed.push({ player: killResult.killed, message: deathMsg, source: "joker_haunt" });
+
+            if (killResult.loverKilled) {
+              const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
+              result.messages.push(loverMsg);
+              result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "joker_haunt" });
+            }
+          }
+        }
+        // If target already dead (killed by mafia above), haunt has no additional effect
       }
     }
   }
@@ -530,7 +624,7 @@ export function transitionToDay(game: Game): NightResult {
     const isLoverDeath = k.player.isLover && nightResult.killed.length > 1 && k !== nightResult.killed[0];
     game.eventHistory.push({
       round: game.round,
-      type: isLoverDeath ? "lover_death" : "kill",
+      type: isLoverDeath ? "lover_death" : (k.source === "joker_haunt" ? "joker_haunt" : "kill"),
       playerName: k.player.username,
     });
   }
@@ -541,6 +635,8 @@ export function transitionToDay(game: Game): NightResult {
   game.mafiaTarget = null;
   game.doctorTarget = null;
   game.detectiveTarget = null;
+  game.jokerHauntTarget = null;
+  game.jokerHauntVoters = []; // clear haunt voters after this night
   game.nightSubPhase = null;
   game.voteTarget = null;
   game.votes.clear();
@@ -646,27 +742,76 @@ export function resolveVote(game: Game): VoteResult | null {
   };
 
   if (executed) {
-    // DESIGN: Joker win takes priority. If executing the joker also kills the last
-    // mafia (via lover chain), the joker still wins — checkWinCondition is not called.
     if (target.role === "joker") {
       result.jokerWin = true;
       result.messages.push(Narrator.jokerWin(target.username));
-      game.winner = "joker";
-      game.phase = "game_over";
 
-      const killResult = killPlayer(game, target.id);
-      if (killResult) {
-        game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
-        result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
+      if (game.settings.jokerMode === "official") {
+        // Official: game continues, joker is joint winner
+        game.jokerJointWinner = true;
 
-        if (killResult.loverKilled) {
-          const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-          result.messages.push(loverMsg);
-          result.killed.push({ player: killResult.loverKilled, message: loverMsg });
-          game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
+        // Store voters who voted FOR the joker's execution (haunt targets)
+        game.jokerHauntVoters = [];
+        for (const [voterId, approve] of game.votes) {
+          if (approve) game.jokerHauntVoters.push(voterId);
         }
+
+        const killResult = killPlayer(game, target.id);
+        if (killResult) {
+          game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
+          result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
+
+          if (killResult.loverKilled) {
+            const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
+            result.messages.push(loverMsg);
+            result.killed.push({ player: killResult.loverKilled, message: loverMsg });
+            game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
+          }
+        }
+
+        // Reset vote state
+        game.voteTarget = null;
+        game.votes.clear();
+
+        // Check win condition after joker death (+ possible lover death)
+        const winner = checkWinCondition(game);
+        if (winner) {
+          game.winner = winner;
+          game.phase = "game_over";
+          if (winner === "town") result.messages.push(Narrator.townWin());
+          else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
+        } else {
+          // Auto-transition to night after execution
+          game.phase = "night";
+          game.round++;
+          game.nightSubPhase = "mafia";
+          game.mafiaVotes.clear();
+          game.mafiaTarget = null;
+          game.doctorTarget = null;
+          game.detectiveTarget = null;
+          game.jokerHauntTarget = null;
+          result.messages.push(Narrator.nightFalls());
+        }
+        return result;
+      } else {
+        // House: instant game over, joker wins
+        game.winner = "joker";
+        game.phase = "game_over";
+
+        const killResult = killPlayer(game, target.id);
+        if (killResult) {
+          game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
+          result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
+
+          if (killResult.loverKilled) {
+            const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
+            result.messages.push(loverMsg);
+            result.killed.push({ player: killResult.loverKilled, message: loverMsg });
+            game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
+          }
+        }
+        return result;
       }
-      return result;
     }
 
     const killResult = killPlayer(game, target.id);
@@ -708,6 +853,7 @@ export function resolveVote(game: Game): VoteResult | null {
     game.mafiaTarget = null;
     game.doctorTarget = null;
     game.detectiveTarget = null;
+    game.jokerHauntTarget = null;
     result.messages.push(Narrator.nightFalls());
   } else {
     // Spared — stay in day
@@ -734,6 +880,7 @@ export function forceDawn(game: Game): string[] {
   game.mafiaTarget = null;
   game.doctorTarget = null;
   game.detectiveTarget = null;
+  game.jokerHauntTarget = null;
   game.nightSubPhase = null;
   game.voteTarget = null;
   game.votes.clear();
@@ -754,6 +901,7 @@ export function endDay(game: Game): string[] {
   game.mafiaTarget = null;
   game.doctorTarget = null;
   game.detectiveTarget = null;
+  game.jokerHauntTarget = null;
 
   const messages = [Narrator.nightFalls()];
   game.pendingMessages = messages;
@@ -801,6 +949,9 @@ export function returnToLobby(game: Game): boolean {
   game.votes.clear();
   game.voteAnonymous = true;
   game.lastDoctorTarget = null;
+  game.jokerHauntTarget = null;
+  game.jokerHauntVoters = [];
+  game.jokerJointWinner = false;
   game.nightKill = null;
   game.doctorSaved = false;
   game.detectiveResult = null;
@@ -839,6 +990,9 @@ export function restartGame(game: Game): string[] | null {
   game.votes.clear();
   game.voteAnonymous = true;
   game.lastDoctorTarget = null;
+  game.jokerHauntTarget = null;
+  game.jokerHauntVoters = [];
+  game.jokerJointWinner = false;
   game.nightKill = null;
   game.doctorSaved = false;
   game.detectiveResult = null;
