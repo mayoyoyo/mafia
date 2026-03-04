@@ -262,7 +262,7 @@ test("night action prompts arrive after phase_change on vote execution", async (
 
   // Set up listeners BEFORE sending call_vote
   const voteCalledPromises = allWs.map((w) => waitFor(w, "vote_called"));
-  send(adminWs, { type: "call_vote", targetId: nomineeId, anonymous: false });
+  send(adminWs, { type: "call_vote", targetId: nomineeId });
   await Promise.all(voteCalledPromises);
 
   // Start collecting on mafia ws BEFORE voting

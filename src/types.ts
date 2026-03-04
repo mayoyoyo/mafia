@@ -70,7 +70,6 @@ export interface Game {
   // Day voting
   voteTarget: number | null; // who is being voted on
   votes: Map<number, boolean>; // playerId -> thumbsUp(true)/thumbsDown(false)
-  voteAnonymous: boolean; // per-vote anonymous toggle
   // Results
   nightKill: number | null; // who was killed at night (after doctor check)
   doctorSaved: boolean;
@@ -116,7 +115,7 @@ export type ClientMessage =
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
   | { type: "joker_haunt"; targetId: number }
-  | { type: "call_vote"; targetId: number; anonymous?: boolean }
+  | { type: "call_vote"; targetId: number }
   | { type: "abstain_vote" }
   | { type: "cancel_vote" }
   | { type: "cast_vote"; approve: boolean }
@@ -149,9 +148,9 @@ export type ServerMessage =
   | { type: "joker_haunt_targets"; players: PlayerInfo[] }
   | { type: "joker_win_overlay"; jokerName: string }
   | { type: "doctor_save_private"; message: string }
-  | { type: "vote_called"; targetName: string; targetId: number; anonymous: boolean }
-  | { type: "vote_update"; votesFor?: number; votesAgainst?: number; totalVotes: number; total: number; voterNames?: Record<string, boolean> }
-  | { type: "vote_result"; targetName: string; executed: boolean; votesFor?: number; votesAgainst?: number; voterNames?: Record<string, boolean> }
+  | { type: "vote_called"; targetName: string; targetId: number }
+  | { type: "vote_update"; totalVotes: number; total: number }
+  | { type: "vote_result"; targetName: string; executed: boolean; votesFor: number; votesAgainst: number }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
@@ -196,8 +195,6 @@ export type ServerMessage =
       eventHistory: GameEvent[];
       // Mafia team (only for mafia players)
       mafiaTeam?: string[];
-      // Anonymous vote default
-      anonVoteChecked: boolean;
       // Night action (null if not in night or dead or no action needed)
       nightAction: {
         locked: boolean;
@@ -217,12 +214,9 @@ export type ServerMessage =
       voteState: {
         targetName: string;
         targetId: number;
-        anonymous: boolean;
         hasVoted: boolean;
-        votesFor: number;
-        votesAgainst: number;
+        totalVotes: number;
         total: number;
-        voterNames: Record<string, boolean> | null;
       } | null;
       // Game over (null if game not over)
       gameOver: {

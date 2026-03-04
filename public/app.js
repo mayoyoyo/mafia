@@ -36,7 +36,6 @@
   let nightNarrationActive = false;
   let nightNarrationQueue = [];
   let audioUnlocked = false;
-  let anonVoteChecked = true;
   let narratorTranscript = [];
   let deadDismissTimer = null;
   let dayTimerInterval = null;
@@ -460,7 +459,6 @@
     dayVoteCount = msg.dayVoteCount;
     narratorTranscript = msg.narratorHistory;
     detectiveHistory = msg.detectiveHistory;
-    anonVoteChecked = msg.anonVoteChecked;
     hasVoted = false;
     nightActionLocked = false;
     jokerHauntActive = false;
@@ -606,13 +604,10 @@
       handleVoteCalled({
         targetName: vs.targetName,
         targetId: vs.targetId,
-        anonymous: vs.anonymous,
-      });
+      }, vs.hasVoted);
       updateVoteProgress({
-        votesFor: vs.votesFor,
-        votesAgainst: vs.votesAgainst,
+        totalVotes: vs.totalVotes,
         total: vs.total,
-        voterNames: vs.voterNames || undefined,
       });
     }
 
@@ -798,7 +793,6 @@
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-lovers").checked = settings.enableLovers;
-    if ($("toggle-anon-vote")) $("toggle-anon-vote").checked = anonVoteChecked;
     if (settings.narrationAccent) {
       currentAccent = settings.narrationAccent;
       const sel = $("lobby-accent");
@@ -2670,10 +2664,6 @@
       $("admin-status-msg").textContent = "";
     }
 
-    // Sync anon toggle
-    if ($("toggle-anon-vote")) {
-      $("toggle-anon-vote").checked = anonVoteChecked;
-    }
   }
 
   function populateAdminTargets(players) {
@@ -2687,16 +2677,8 @@
       li.addEventListener("click", () => {
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
-        const anon = $("toggle-anon-vote") ? $("toggle-anon-vote").checked : true;
-        wsSend({ type: "call_vote", targetId: parseInt(li.dataset.id), anonymous: anon });
+        wsSend({ type: "call_vote", targetId: parseInt(li.dataset.id) });
       });
-    });
-  }
-
-  // Per-vote anon toggle (Phase 3)
-  if ($("toggle-anon-vote")) {
-    $("toggle-anon-vote").addEventListener("change", (e) => {
-      anonVoteChecked = e.target.checked;
     });
   }
 
@@ -2713,15 +2695,14 @@
     }
   });
 
-  function handleVoteCalled(msg) {
-    hasVoted = false;
+  function handleVoteCalled(msg, fromSync) {
+    if (!fromSync) hasVoted = false;
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("vote-target-name").textContent = msg.targetName;
     $("vote-progress").textContent = "Waiting for votes...";
-    $("vote-names").innerHTML = "";
 
     // Hide vote buttons if dead or already voted (rejoin), show otherwise
     if (isDead || hasVoted) {
@@ -2768,35 +2749,16 @@
 
   function updateVoteProgress(msg) {
     $("vote-progress").textContent = `${msg.totalVotes} / ${msg.total} votes cast`;
-
-    if (msg.voterNames) {
-      const names = $("vote-names");
-      names.innerHTML = Object.entries(msg.voterNames)
-        .map(
-          ([name, approved]) =>
-            `<div class="${approved ? "vote-for" : "vote-against"}">${escapeHtml(name)}: ${approved ? "\u{1F44D}" : "\u{1F44E}"}</div>`
-        )
-        .join("");
-    }
   }
 
   function handleVoteResult(msg) {
     $("voting-panel").classList.add("hidden");
     lastVoteResult = msg;
 
-    const hasCounts = msg.votesFor != null && msg.votesAgainst != null;
     const resultText = msg.executed
-      ? `${msg.targetName} has been executed.${hasCounts ? ` (${msg.votesFor} for, ${msg.votesAgainst} against)` : ""}`
-      : `${msg.targetName} has been spared.${hasCounts ? ` (${msg.votesFor} for, ${msg.votesAgainst} against)` : ""}`;
+      ? `${msg.targetName} has been executed. (${msg.votesFor} for, ${msg.votesAgainst} against)`
+      : `${msg.targetName} has been spared. (${msg.votesFor} for, ${msg.votesAgainst} against)`;
     showNarratorMessage(resultText);
-
-    if (msg.voterNames) {
-      const breakdown = Object.entries(msg.voterNames)
-        .map(([name, v]) => `${name}: ${v ? "\u{1F44D}" : "\u{1F44E}"}`)
-        .join(", ");
-      showNarratorMessage(`Votes: ${breakdown}`);
-    }
-
   }
 
   // ============================================================
@@ -3526,7 +3488,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.5_202603040307";
+  const APP_VERSION_STAGING = "staging.6_202603040342";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

@@ -413,7 +413,7 @@ describe("Rejoin during voting phase", () => {
     // Admin calls a vote on another surviving citizen
     const survivingCitizens = citizens.filter(p => p.userId !== killTarget.userId && p.userId !== admin.userId);
     const voteTarget = survivingCitizens[0] || mafia;
-    send(admin.ws, { type: "call_vote", targetId: voteTarget.userId, anonymous: false });
+    send(admin.ws, { type: "call_vote", targetId: voteTarget.userId });
     await waitFor(admin.ws, "vote_called");
     await Bun.sleep(100);
 
@@ -440,7 +440,7 @@ describe("Rejoin during voting phase", () => {
     expect(sync.voteState.targetName).toBe(voteTarget.username);
     expect(sync.voteState.targetId).toBe(voteTarget.userId);
     expect(sync.voteState.hasVoted).toBe(false);
-    expect(sync.voteState.votesFor).toBeGreaterThanOrEqual(1);
+    expect(sync.voteState.totalVotes).toBeGreaterThanOrEqual(1);
     expect(sync.voteState.total).toBeGreaterThan(0);
     expect(sync.nightAction).toBeNull();
 
@@ -706,17 +706,6 @@ describe("Rejoin state accumulation", () => {
     for (const p of players) p.ws.close();
   }, 15000);
 
-  test("anonVoteChecked reflects game setting", async () => {
-    const { code, players } = await setupAndStart(4);
-
-    const citizen = players.find(p => p.role === "citizen")!;
-    const sync = await rejoin(citizen, code);
-
-    // Default anonymous vote setting
-    expect(typeof sync.anonVoteChecked).toBe("boolean");
-
-    for (const p of players) p.ws.close();
-  }, 15000);
 });
 
 describe("Rejoin with force dawn", () => {
