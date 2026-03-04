@@ -182,6 +182,44 @@ input::placeholder { color: var(--text-secondary); }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
 .config-buttons { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }
 
+/* RULE MODE TABS (Official vs House) */
+.setting-sub-row {
+  padding: 4px 0 8px 16px;
+}
+.rule-tabs {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  width: fit-content;
+}
+.rule-tab {
+  border: none;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.rule-tab.active {
+  background: var(--primary);
+  color: #fff;
+}
+.rule-tab:not(.active):active {
+  background: var(--bg-card);
+}
+.rule-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-style: italic;
+}
+
 /* TOGGLE SWITCH */
 .toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; }
 .toggle input { opacity: 0; width: 0; height: 0; }
@@ -767,6 +805,52 @@ input::placeholder { color: var(--text-secondary); }
 .dead-text { font-size: 28px; font-weight: 800; color: var(--danger); text-transform: uppercase; letter-spacing: 4px; margin-top: 16px; }
 .death-message { color: var(--text-secondary); font-size: 14px; margin-top: 12px; padding: 0 32px; text-align: center; max-width: 350px; }
 .dead-dismiss-hint { color: var(--text-secondary); font-size: 13px; margin-top: 20px; opacity: 0.7; animation: pulse 2s ease-in-out infinite; }
+
+/* JOKER WIN OVERLAY */
+.joker-win-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.8s ease;
+  cursor: pointer;
+}
+.joker-trophy { font-size: 100px; animation: pulse 2s ease-in-out infinite; }
+.joker-win-title {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--role-joker);
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  margin-top: 12px;
+}
+.joker-win-name {
+  color: var(--text-secondary);
+  font-size: 16px;
+  margin-top: 8px;
+}
+.joker-win-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 24px;
+  opacity: 0.7;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* JOKER TROPHY BADGE (game over role reveal) */
+.role-reveal-trophy {
+  font-size: 14px;
+  margin-left: 6px;
+}
+
+/* SLIDE CONFIRM - JOKER HAUNT */
+.slide-confirm.role-joker_haunt .slide-fill {
+  background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
+}
 
 /* SETTINGS MODAL */
 .settings-modal-body { display: flex; flex-direction: column; gap: 12px; }

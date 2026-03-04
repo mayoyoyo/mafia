@@ -69,6 +69,22 @@ const DOCTOR_SAVE_MESSAGES = [
   "{name} was on the brink, but {saveMethod} brought them back. The Doctor deserves a raise.",
 ];
 
+// Official mode: narrator hints someone survived but doesn't name who
+const DOCTOR_SAVE_OFFICIAL_MESSAGES = [
+  "The Mafia struck in the night, but someone was saved by a mysterious intervention. The Doctor works in silence.",
+  "Someone was targeted last night, but against all odds, they survived. The details remain a mystery.",
+  "The Mafia's plans were foiled — their target survived thanks to an unknown savior. No one knows who cheated death.",
+  "A life was saved in the shadows last night. The Doctor's work goes unnoticed... for now.",
+  "The night was not without incident, but someone lives to see another day. Who? Only the Doctor knows.",
+];
+
+// Private message sent to the victim in official mode
+const DOCTOR_SAVE_VICTIM_MESSAGES = [
+  "You were targeted by the Mafia last night, but the Doctor saved your life. You live to see another day.",
+  "Someone tried to kill you in the night, but a mysterious savior intervened. You survived.",
+  "The Mafia came for you, but you were saved. Consider yourself lucky — and watch your back.",
+];
+
 const NO_KILL_MESSAGES = [
   "The town wakes to an unusual calm. Everyone is alive. The Mafia must've had WiFi issues.",
   "Dawn arrives peacefully. No blood was spilled. Did the Mafia oversleep? Classic.",
@@ -158,6 +174,12 @@ export const Narrator = {
       location: pick(LOCATIONS),
     });
   },
+  doctorSaveOfficial(): string {
+    return pick(DOCTOR_SAVE_OFFICIAL_MESSAGES);
+  },
+  doctorSaveVictim(): string {
+    return pick(DOCTOR_SAVE_VICTIM_MESSAGES);
+  },
   noKill(): string {
     return pick(NO_KILL_MESSAGES);
   },
@@ -175,6 +197,16 @@ export const Narrator = {
   },
   jokerWin(name: string): string {
     return fill(pick(JOKER_WIN_MESSAGES), { name });
+  },
+  jokerHauntKill(name: string): string {
+    // Used in event history — narrator doesn't distinguish haunt from mafia at dawn
+    return fill(pick(NIGHT_KILL_MESSAGES), {
+      name,
+      location: pick(LOCATIONS),
+      tool: pick(TOOLS),
+      lastWords: pick(LAST_WORDS),
+      food: pick(FOODS),
+    });
   },
   townWin(): string {
     return pick(TOWN_WIN_MESSAGES);
