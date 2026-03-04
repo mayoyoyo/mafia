@@ -151,7 +151,10 @@
       <div class="header">
         <button id="btn-leave-admin" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
-        <div class="room-code">Code: <span id="lobby-code"></span></div>
+        <div class="header-right">
+          <div class="room-code">Code: <span id="lobby-code"></span></div>
+          <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
 
       <div class="settings-panel">
@@ -202,6 +205,8 @@
         <ul id="players-list-admin" class="players-list"></ul>
       </div>
 
+      <div id="color-picker-admin" class="color-picker-section"></div>
+
       <button id="btn-start" class="btn btn-primary btn-large">Start Game</button>
       <div id="lobby-error" class="error-msg"></div>
     </div>
@@ -211,13 +216,18 @@
       <div class="header">
         <button id="btn-leave-player" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
-        <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+        <div class="header-right">
+          <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+          <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
       <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
+      <div id="player-lobby-settings" class="player-lobby-settings"></div>
       <div class="players-section">
         <h3>Players (<span id="player-count-player">0</span>/20)</h3>
         <ul id="players-list-player" class="players-list"></ul>
       </div>
+      <div id="color-picker-player" class="color-picker-section"></div>
     </div>
 
     <!-- GAME SCREEN -->
@@ -373,6 +383,9 @@
           <button id="btn-play-again-new" class="btn btn-secondary btn-large">New Settings</button>
           <button id="btn-close-room" class="btn btn-danger btn-large">Close Room</button>
         </div>
+        <div id="gameover-buttons-player" class="gameover-buttons hidden">
+          <button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large">Return to Lobby</button>
+        </div>
       </div>
     </div>
 
@@ -416,6 +429,10 @@
           <div class="setting-row">
             <span>Dark Mode</span>
             <label class="toggle"><input type="checkbox" id="toggle-dark-mode" checked><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <span>Hide Mafia Tag</span>
+            <label class="toggle"><input type="checkbox" id="toggle-hide-mafia-tag"><span class="slider"></span></label>
           </div>
           <div id="settings-end-game" class="settings-end-game hidden">
             <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End Game</button>

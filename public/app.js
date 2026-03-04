@@ -47,6 +47,14 @@
   let aliveMafiaCount = 0;
   let lastGameEvents = [];
   let lastVoteResult = null;
+  let hideMafiaTag = false;
+  let myPlayerColor = null;
+  const PLAYER_COLORS = [
+    "#E53935", "#EC407A", "#AB47BC", "#7E57C2", "#5C6BC0",
+    "#42A5F5", "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A",
+    "#9CCC65", "#C0CA33", "#FFEE58", "#FFA726", "#FF7043",
+    "#D84315", "#8D6E63", "#78909C", "#546E7A", "#F06292",
+  ];
 
   // ============================================================
   // DOM REFS
@@ -172,11 +180,14 @@
       case "logged_in":
         userId = msg.userId;
         username = msg.username;
+        hideMafiaTag = !!msg.hide_mafia_tag;
+        myPlayerColor = msg.player_color || null;
         if (msg.type === "registered") {
           const passcode = $("auth-passcode").value;
           localStorage.setItem("mafia_user", JSON.stringify({ username: msg.username, passcode }));
         }
         $("menu-username").textContent = username;
+        $("toggle-hide-mafia-tag").checked = hideMafiaTag;
         showScreen("menu");
         clearErrors();
         // Auto-rejoin if we have a stored game code
@@ -376,6 +387,13 @@
       case "config_deleted":
         wsSend({ type: "list_configs" });
         break;
+
+      case "player_prefs":
+        hideMafiaTag = !!msg.hide_mafia_tag;
+        myPlayerColor = msg.player_color;
+        $("toggle-hide-mafia-tag").checked = hideMafiaTag;
+        updatePlayerStatus();
+        break;
     }
   }
 
@@ -400,6 +418,12 @@
     // 4. Set phase
     currentPhase = msg.phase;
     previousPhase = msg.phase;
+
+    // 4b. Restore hide_mafia_tag preference
+    if (msg.hide_mafia_tag !== undefined) {
+      hideMafiaTag = msg.hide_mafia_tag;
+      $("toggle-hide-mafia-tag").checked = hideMafiaTag;
+    }
 
     // 5. Restore accumulated state
     if (msg.narrationAccent) {
@@ -670,24 +694,22 @@
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
 
+    const renderPlayerItem = (p) => {
+      const colorDot = p.color ? `<span class="player-color-dot" style="background:${p.color}"></span>` : '';
+      return `<li>${colorDot}${escapeHtml(p.username)}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`;
+    };
+
     $("player-count-admin").textContent = players.length;
-    $("players-list-admin").innerHTML = players
-      .map(
-        (p) =>
-          `<li>${p.username}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`
-      )
-      .join("");
+    $("players-list-admin").innerHTML = players.map(renderPlayerItem).join("");
 
     $("player-count-player").textContent = players.length;
     $("admin-name-display").textContent = adminName;
-    $("players-list-player").innerHTML = players
-      .map(
-        (p) =>
-          `<li>${p.username}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`
-      )
-      .join("");
+    $("players-list-player").innerHTML = players.map(renderPlayerItem).join("");
 
     updateSettingsUI(settings);
+    updatePlayerLobbySettings(settings);
+    renderColorPicker("color-picker-admin", players);
+    renderColorPicker("color-picker-player", players);
 
     // If we're on the game or gameover screen, navigate to lobby
     const currentScreen = document.querySelector(".screen.active");
@@ -711,6 +733,84 @@
       if (sel) sel.value = currentAccent;
       preloadNarrationAudio(currentAccent);
     }
+  }
+
+  // ============================================================
+  // COLOR PICKER
+  // ============================================================
+  function renderColorPicker(containerId, players) {
+    const container = $(containerId);
+    if (!container) return;
+
+    // Build lookup of color -> player names
+    const colorOwners = {};
+    for (const p of players) {
+      if (p.color && p.id !== userId) {
+        if (!colorOwners[p.color]) colorOwners[p.color] = [];
+        colorOwners[p.color].push(p.username);
+      }
+    }
+
+    container.innerHTML = '<h4>Your Color</h4>';
+    const grid = document.createElement("div");
+    grid.className = "color-picker-grid";
+
+    for (const color of PLAYER_COLORS) {
+      const cell = document.createElement("div");
+      cell.className = "color-picker-cell";
+
+      const circle = document.createElement("div");
+      circle.className = "color-circle";
+      if (myPlayerColor === color) circle.classList.add("selected");
+      if (colorOwners[color]) circle.classList.add("taken");
+      circle.style.background = color;
+      circle.addEventListener("click", () => {
+        myPlayerColor = color;
+        wsSend({ type: "update_player_pref", key: "player_color", value: color });
+        // Update selection visually immediately
+        container.querySelectorAll(".color-circle").forEach(c => c.classList.remove("selected"));
+        circle.classList.add("selected");
+      });
+      cell.appendChild(circle);
+
+      // Label showing who has this color
+      const owners = colorOwners[color];
+      if (owners) {
+        const label = document.createElement("div");
+        label.className = "color-circle-label";
+        label.textContent = owners.length === 1 ? owners[0] : owners.length + " players";
+        label.title = owners.join(", ");
+        cell.appendChild(label);
+      }
+
+      grid.appendChild(cell);
+    }
+    container.appendChild(grid);
+  }
+
+  // ============================================================
+  // READ-ONLY SETTINGS DISPLAY (for non-admin player lobby)
+  // ============================================================
+  function updatePlayerLobbySettings(settings) {
+    const container = $("player-lobby-settings");
+    if (!container) return;
+
+    const roles = [];
+    if (settings.enableDoctor) roles.push("Doctor");
+    if (settings.enableDetective) roles.push("Detective");
+    if (settings.enableJoker) roles.push("Joker");
+    if (settings.enableLovers) roles.push("Lovers");
+
+    container.innerHTML = `
+      <div class="lobby-settings-row">
+        <span class="lobby-settings-label">Mafia Members</span>
+        <span class="lobby-settings-value">${settings.mafiaCount}</span>
+      </div>
+      <div class="lobby-settings-row">
+        <span class="lobby-settings-label">Special Roles</span>
+        <span class="lobby-settings-value">${roles.length > 0 ? roles.join(", ") : "None"}</span>
+      </div>
+    `;
   }
 
   // ============================================================
@@ -1906,13 +2006,15 @@
     container.innerHTML = sorted
       .map((p) => {
         const status = p.isAlive ? "alive" : "dead";
+        const dotStyle = p.isAlive && p.color ? `style="background:${p.color}"` : '';
         const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
+        const showMafiaTag = isMafiaTeammate && !hideMafiaTag;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
         return `<div class="player-status-item">
-          <span class="player-status-dot ${status}"></span>
+          <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
-          ${isMafiaTeammate ? '<span class="mafia-tag">MAFIA</span>' : ''}
+          ${showMafiaTag ? '<span class="mafia-tag">MAFIA</span>' : ''}
           ${investigated ? (isMafia ? '<span class="detective-tag mafia">\u{1F44E}</span>' : '<span class="detective-tag clear">\u{1F44D}</span>') : ''}
         </div>`;
       })
@@ -2071,6 +2173,13 @@
               else if (v.voteType === "maybe") chip.className = "mtc-chip chip-suggest";
               else chip.className = "mtc-chip chip-object";
               chip.title = voterName + ": " + v.voteType;
+              // Apply voter's player color as chip background (except for objections)
+              if (v.voteType !== "letsnot") {
+                const voterPlayer = knownPlayers.find(kp => kp.username === voterName);
+                if (voterPlayer && voterPlayer.color) {
+                  chip.style.background = voterPlayer.color;
+                }
+              }
               chipsDiv.appendChild(chip);
             }
           }
@@ -2561,9 +2670,10 @@
   // ============================================================
   // SETTINGS MODAL
   // ============================================================
-  $("btn-settings").addEventListener("click", () => {
+  function openSettingsModal() {
     $("toggle-sound").checked = soundEnabled;
     $("toggle-dark-mode").checked = document.documentElement.getAttribute("data-theme") !== "light";
+    $("toggle-hide-mafia-tag").checked = hideMafiaTag;
     // Show room code for admin
     if (isAdmin && gameCode) {
       $("settings-room-code").classList.remove("hidden");
@@ -2584,7 +2694,11 @@
       $("settings-leave-game").classList.add("hidden");
     }
     $("modal-settings").classList.remove("hidden");
-  });
+  }
+
+  $("btn-settings").addEventListener("click", openSettingsModal);
+  $("btn-settings-lobby-admin").addEventListener("click", openSettingsModal);
+  $("btn-settings-lobby-player").addEventListener("click", openSettingsModal);
 
   $("btn-close-settings").addEventListener("click", closeSettingsModal);
 
@@ -2618,6 +2732,12 @@
     const isDark = e.target.checked;
     localStorage.setItem("mafia_dark_mode", String(isDark));
     applyTheme(isDark);
+  });
+
+  $("toggle-hide-mafia-tag").addEventListener("change", (e) => {
+    hideMafiaTag = e.target.checked;
+    wsSend({ type: "update_player_pref", key: "hide_mafia_tag", value: hideMafiaTag });
+    updatePlayerStatus();
   });
 
   $("btn-end-game").addEventListener("click", () => {
@@ -2687,6 +2807,7 @@
     }
     $("gameover-message").textContent = msg.message;
     $("gameover-buttons").classList.add("hidden");
+    $("gameover-buttons-player").classList.add("hidden");
     renderGameHistory();
   }
 
@@ -2754,6 +2875,10 @@
   function showGameOverButtons(admin) {
     if (admin) {
       $("gameover-buttons").classList.remove("hidden");
+      $("gameover-buttons-player").classList.add("hidden");
+    } else {
+      $("gameover-buttons-player").classList.remove("hidden");
+      $("gameover-buttons").classList.add("hidden");
     }
   }
 
@@ -2897,6 +3022,10 @@
     gameCode = null;
     isAdmin = false;
     showScreen("menu");
+  });
+
+  $("btn-return-to-lobby-player").addEventListener("click", () => {
+    wsSend({ type: "player_return_to_lobby" });
   });
 
   $("btn-close-room").addEventListener("click", () => {
@@ -3214,7 +3343,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.2_202603040043";
+  const APP_VERSION_STAGING = "staging.3_202603040236";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
