@@ -4,25 +4,42 @@ A real-time multiplayer Mafia party game. Host a room, share the code, and play 
 
 **[Play now](https://maf1a.fly.dev)**
 
+## Role Roster
+
+### Core Roles (always active)
+
+| Role | Team | Night Action | Win Condition |
+|------|------|-------------|---------------|
+| **Citizen** | Town | None — sleeps at night | Eliminate all Mafia |
+| **Mafia** | Mafia | Chooses a victim to kill (deliberates with other Mafia) | Equal or outnumber non-Mafia alive |
+
+### Special Roles (toggled in lobby settings)
+
+| Role | Team | Night Action | Details |
+|------|------|-------------|---------|
+| **Doctor** | Town | Protects one player from being killed | Cannot protect the same player two nights in a row. If they protect the Mafia's target, the kill is prevented. |
+| **Detective** | Town | Investigates one player to learn if they are Mafia | Result is revealed privately at dawn. Investigation still resolves even if the Detective is killed that night. |
+| **Joker** | Solo | None | Wins instantly if voted out during the day. The Joker's execution ends the game. Does not count toward either team's numbers. |
+| **Lovers** | — | None | Two random players are paired. If one dies, the other dies of heartbreak. Lovers can be any role, including Mafia. |
+
+### Multi-Mafia Deliberation
+
+When there are 2+ Mafia, the night kill uses a card-based deliberation system:
+- **Nominate** — suggest a target
+- **Lock In** — commit your vote to a target
+- **Object** — block a target from being chosen
+- Requires **unanimous lock** from all alive Mafia to confirm the kill
+- Dead players spectate the deliberation in real-time (read-only)
+
 ## Features
 
-- **Real-time WebSocket gameplay** — no page reloads, instant updates
-- **Pixel art UI** — role cards, avatars, and animations rendered as inline SVGs
-- **Optional roles** — Doctor, Detective, Joker, Lovers (configurable per game)
-- **Multi-mafia deliberation** — nomination, locking, and objection system for 2+ mafia
-- **Narrated nights** — audio narration with multiple accent options
-- **Anonymous voting** — toggle per-vote to hide tallies and voter identities
-- **Spectator mode** — dead players watch mafia deliberation in real-time
-- **Auto-rejoin** — reconnect mid-game without losing state
-- **Save/load configs** — store game presets for quick setup
-
-## Tech Stack
-
-- **Runtime:** [Bun](https://bun.sh)
-- **Server:** TypeScript, WebSocket (Bun native)
-- **Client:** Vanilla JS, CSS — single-file frontend, no build step
-- **Database:** SQLite (via `bun:sqlite`)
-- **Deploy:** [Fly.io](https://fly.io) with Docker
+- Real-time WebSocket gameplay — no page reloads
+- Pixel art role cards and avatars
+- Audio narration with multiple accent options
+- Anonymous voting toggle (hides tallies and voter identities)
+- Dead player spectator mode during night
+- Auto-rejoin on disconnect
+- Save/load game setting presets
 
 ## Running Locally
 
@@ -48,6 +65,6 @@ bun test
 
 Push to `staging` auto-deploys to staging. Merge a PR from `staging` → `main` to promote to production.
 
-## License
+## Tech Stack
 
-Private.
+Bun, TypeScript, vanilla JS, SQLite, Fly.io

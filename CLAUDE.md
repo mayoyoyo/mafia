@@ -37,6 +37,7 @@ Use `TZ="America/Los_Angeles" date +"%Y%m%d%H%M"` to get the PST timestamp.
 
 ## Game Rules
 - The admin retains full admin rights (call votes, force dawn, end day, etc.) regardless of whether they are alive or dead
+- **When adding/changing/removing roles**, update the Role Roster tables in `README.md`
 
 ## Pixel Art
 - Role art and card back art defined as 10x10 grid arrays in `public/app.js`
