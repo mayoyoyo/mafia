@@ -66,7 +66,6 @@ export function createGame(adminId: number, adminUsername: string): Game {
     jokerJointWinner: false,
     voteTarget: null,
     votes: new Map(),
-    voteAnonymous: true,
     nightKill: null,
     doctorSaved: false,
     detectiveResult: null,
@@ -656,7 +655,7 @@ export function transitionToDay(game: Game): NightResult {
   return nightResult;
 }
 
-export function callVote(game: Game, adminId: number, targetId: number, anonymous?: boolean): boolean {
+export function callVote(game: Game, adminId: number, targetId: number): boolean {
   if (game.phase !== "day") return false;
   if (adminId !== game.adminId) return false;
   const target = game.players.get(targetId);
@@ -665,39 +664,23 @@ export function callVote(game: Game, adminId: number, targetId: number, anonymou
   game.voteTarget = targetId;
   game.votes.clear();
   game.phase = "voting";
-  if (anonymous !== undefined) {
-    game.voteAnonymous = anonymous;
-  }
   return true;
 }
 
-export function castVote(game: Game, voterId: number, approve: boolean): { allVoted: boolean; earlyResolve: boolean } {
-  if (game.phase !== "voting") return { allVoted: false, earlyResolve: false };
+export function castVote(game: Game, voterId: number, approve: boolean): { allVoted: boolean } {
+  if (game.phase !== "voting") return { allVoted: false };
   const voter = game.players.get(voterId);
-  if (!voter || !voter.isAlive) return { allVoted: false, earlyResolve: false };
+  if (!voter || !voter.isAlive) return { allVoted: false };
+
+  // Reject duplicate votes (e.g. from page refresh)
+  if (game.votes.has(voterId)) return { allVoted: false };
 
   game.votes.set(voterId, approve);
 
   const alive = getAlivePlayers(game);
   const allVoted = alive.every((p) => game.votes.has(p.id));
 
-  let earlyResolve = false;
-  if (!game.voteAnonymous && !allVoted) {
-    const totalAlive = alive.length;
-    let votesFor = 0;
-    let votesAgainst = 0;
-    for (const [, v] of game.votes) {
-      if (v) votesFor++;
-      else votesAgainst++;
-    }
-    const remaining = totalAlive - votesFor - votesAgainst;
-    // Majority already reached — execute early
-    if (votesFor > totalAlive / 2) earlyResolve = true;
-    // Impossible to reach majority — spare early
-    if (votesFor + remaining <= totalAlive / 2) earlyResolve = true;
-  }
-
-  return { allVoted, earlyResolve };
+  return { allVoted };
 }
 
 export interface VoteResult {
@@ -705,7 +688,6 @@ export interface VoteResult {
   targetName: string;
   votesFor: number;
   votesAgainst: number;
-  voterNames: Record<string, boolean>;
   messages: string[];
   killed: Array<{ player: Player; message: string }>;
   jokerWin: boolean;
@@ -717,12 +699,10 @@ export function resolveVote(game: Game): VoteResult | null {
   const target = game.players.get(game.voteTarget)!;
   let votesFor = 0;
   let votesAgainst = 0;
-  const voterNames: Record<string, boolean> = {};
 
   for (const [voterId, approve] of game.votes) {
     const voter = game.players.get(voterId)!;
     if (!voter.isAlive) continue; // skip dead players' votes
-    voterNames[voter.username] = approve;
     if (approve) votesFor++;
     else votesAgainst++;
   }
@@ -735,7 +715,6 @@ export function resolveVote(game: Game): VoteResult | null {
     targetName: target.username,
     votesFor,
     votesAgainst,
-    voterNames,
     messages: [],
     killed: [],
     jokerWin: false,
@@ -947,7 +926,6 @@ export function returnToLobby(game: Game): boolean {
   game.detectiveTarget = null;
   game.voteTarget = null;
   game.votes.clear();
-  game.voteAnonymous = true;
   game.lastDoctorTarget = null;
   game.jokerHauntTarget = null;
   game.jokerHauntVoters = [];
@@ -988,7 +966,6 @@ export function restartGame(game: Game): string[] | null {
   game.detectiveTarget = null;
   game.voteTarget = null;
   game.votes.clear();
-  game.voteAnonymous = true;
   game.lastDoctorTarget = null;
   game.jokerHauntTarget = null;
   game.jokerHauntVoters = [];

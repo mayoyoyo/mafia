@@ -566,76 +566,25 @@ describe("Auto-night after execution", () => {
   });
 });
 
-describe("Early Vote Resolution", () => {
-  function setupVoting(playerCount = 7) {
-    const game = setupGame(playerCount);
+describe("Duplicate Vote Rejection", () => {
+  test("duplicate votes are rejected", () => {
+    const game = setupGame(5);
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
     lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
-    return game;
-  }
 
-  test("majority for triggers early resolve (non-anonymous)", () => {
-    const game = setupVoting(7);
-    game.voteAnonymous = false;
     const alive = getAlivePlayers(game);
     const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
-
     callVote(game, game.adminId, target.id);
 
-    // Vote yes until majority reached
-    const voters = getAlivePlayers(game);
-    const majority = Math.floor(voters.length / 2) + 1;
-    let earlyResult = { allVoted: false, earlyResolve: false };
-    for (let i = 0; i < majority; i++) {
-      earlyResult = castVote(game, voters[i].id, true);
-    }
+    const voter = alive[0];
+    const first = castVote(game, voter.id, true);
+    const second = castVote(game, voter.id, false); // duplicate — should be rejected
 
-    expect(earlyResult.earlyResolve).toBe(true);
-    expect(earlyResult.allVoted).toBe(false);
-    removeGame(game.code);
-  });
-
-  test("impossible to pass triggers early spare (non-anonymous)", () => {
-    const game = setupVoting(7);
-    game.voteAnonymous = false;
-    const alive = getAlivePlayers(game);
-    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
-
-    callVote(game, game.adminId, target.id);
-
-    // Vote no until impossible to reach majority
-    const voters = getAlivePlayers(game);
-    const totalAlive = voters.length;
-    const noNeeded = Math.ceil(totalAlive / 2);
-    let earlyResult = { allVoted: false, earlyResolve: false };
-    for (let i = 0; i < noNeeded; i++) {
-      earlyResult = castVote(game, voters[i].id, false);
-    }
-
-    expect(earlyResult.earlyResolve).toBe(true);
-    expect(earlyResult.allVoted).toBe(false);
-    removeGame(game.code);
-  });
-
-  test("no early resolve in anonymous mode", () => {
-    const game = setupVoting(7);
-    game.voteAnonymous = true;
-    const alive = getAlivePlayers(game);
-    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
-
-    callVote(game, game.adminId, target.id);
-
-    const voters = getAlivePlayers(game);
-    const majority = Math.floor(voters.length / 2) + 1;
-    let earlyResult = { allVoted: false, earlyResolve: false };
-    for (let i = 0; i < majority; i++) {
-      earlyResult = castVote(game, voters[i].id, true);
-    }
-
-    expect(earlyResult.earlyResolve).toBe(false);
+    expect(game.votes.get(voter.id)).toBe(true); // original vote preserved
+    expect(second.allVoted).toBe(false);
     removeGame(game.code);
   });
 });

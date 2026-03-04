@@ -455,21 +455,12 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
   let voteState: Extract<ServerMessage, { type: "game_sync" }>["voteState"] = null;
   if (game.phase === "voting" && game.voteTarget !== null) {
     const target = game.players.get(game.voteTarget)!;
-    let votesFor = 0, votesAgainst = 0;
-    const voterNames: Record<string, boolean> = {};
-    for (const [voterId, approve] of game.votes) {
-      const voter = game.players.get(voterId)!;
-      voterNames[voter.username] = approve;
-      if (approve) votesFor++; else votesAgainst++;
-    }
     voteState = {
       targetName: target.username,
       targetId: game.voteTarget,
-      anonymous: game.voteAnonymous,
       hasVoted: game.votes.has(userId),
-      votesFor, votesAgainst,
+      totalVotes: game.votes.size,
       total: getAlivePlayers(game).length,
-      voterNames: game.voteAnonymous ? null : voterNames,
     };
   }
 
@@ -505,7 +496,6 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     narratorHistory: game.narratorHistory,
     detectiveHistory: game.detectiveHistory,
     eventHistory: game.eventHistory,
-    anonVoteChecked: game.voteAnonymous,
     ...(rejoined.role === "mafia" ? {
       mafiaTeam: Array.from(game.players.values())
         .filter(p => p.role === "mafia")
@@ -944,14 +934,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
-      if (callVote(game, client.userId, msg.targetId, msg.anonymous)) {
+      if (callVote(game, client.userId, msg.targetId)) {
         game.dayVoteCount++;
         const target = game.players.get(msg.targetId)!;
         broadcastToGame(game.code, {
           type: "vote_called",
           targetName: target.username,
           targetId: msg.targetId,
-          anonymous: game.voteAnonymous,
         });
       }
       break;
@@ -999,25 +988,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const result = castVote(game, client.userId, msg.approve);
 
       // Broadcast vote progress
-      let votesFor = 0;
-      let votesAgainst = 0;
-      const voterNames: Record<string, boolean> = {};
-      for (const [voterId, approve] of game.votes) {
-        const voter = game.players.get(voterId)!;
-        voterNames[voter.username] = approve;
-        if (approve) votesFor++;
-        else votesAgainst++;
-      }
-
       broadcastToGame(game.code, {
         type: "vote_update",
-        ...(game.voteAnonymous ? {} : { votesFor, votesAgainst, voterNames }),
-        totalVotes: votesFor + votesAgainst,
+        totalVotes: game.votes.size,
         total: getAlivePlayers(game).length,
       });
 
-      if (result.allVoted || result.earlyResolve) {
-        const isAnon = game.voteAnonymous;
+      if (result.allVoted) {
         const voteResult = resolveVote(game);
         if (voteResult) {
           recordNarrator(game, voteResult.messages);
@@ -1026,7 +1003,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             type: "vote_result",
             targetName: voteResult.targetName,
             executed: voteResult.executed,
-            ...(isAnon ? {} : { votesFor: voteResult.votesFor, votesAgainst: voteResult.votesAgainst, voterNames: voteResult.voterNames }),
+            votesFor: voteResult.votesFor,
+            votesAgainst: voteResult.votesAgainst,
           });
 
           // Send joker win overlay only to the joker (official mode: game continues)
