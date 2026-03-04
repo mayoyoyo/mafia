@@ -1966,7 +1966,7 @@
       execution: "Executed",
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
-      joker_haunt: "Killed by Mafia",
+      joker_haunt: "Haunted by the Joker",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -2464,7 +2464,14 @@
     renderSpectatorLog();
 
     $("action-title").textContent = "Dawn approaches\u2026";
-    $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 killed by the Mafia</li>`;
+    if (msg.kills && msg.kills.length > 0) {
+      $("action-targets").innerHTML = msg.kills.map(k => {
+        const label = k.source === "joker_haunt" ? "haunted by the Joker" : "killed by the Mafia";
+        return `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 ${label}</li>`;
+      }).join("");
+    } else {
+      $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 killed by the Mafia</li>`;
+    }
     $("action-status").textContent = msg.doctorMessage || "";
   }
 
@@ -3404,7 +3411,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.2_202603040319";
-  const APP_VERSION_STAGING = "staging.7_202603040353";
+  const APP_VERSION_STAGING = "staging.8_202603040409";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
