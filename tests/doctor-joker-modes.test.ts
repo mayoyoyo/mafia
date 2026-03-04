@@ -734,6 +734,34 @@ describe("Joker Haunt - Night Resolution", () => {
     removeGame(game.code);
   });
 
+  test("doctor save is additive: both target same person + doctor saves = still dies from haunt", () => {
+    const { game, joker, voters, mafia } = setupHauntNight();
+
+    const doctor = getAliveByRole(game, "doctor")[0];
+    // Find a voter who is alive and not the doctor
+    const targetId = voters.find(v => v !== doctor?.id && game.players.get(v)!.isAlive)!;
+
+    // Both mafia and joker target the same person
+    submitJokerHaunt(game, joker.id, targetId);
+    lockTarget(game, mafia.id, targetId);
+    advanceNightSubPhase(game);
+
+    if (game.nightSubPhase === "doctor" && doctor) {
+      // Doctor saves the same person — but can only block one source
+      submitDoctorSave(game, doctor.id, targetId);
+      advanceNightSubPhase(game);
+    }
+
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    const result = transitionToDay(game);
+
+    // Doctor blocks mafia kill, but joker haunt still goes through
+    expect(game.players.get(targetId)!.isAlive).toBe(false);
+    expect(result.saved).toBe(true); // doctor did save from mafia
+    removeGame(game.code);
+  });
+
   test("haunt voters are cleared after the night resolves", () => {
     const { game, mafia } = setupHauntNight();
 
