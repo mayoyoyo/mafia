@@ -180,8 +180,6 @@ input::placeholder { color: var(--text-secondary); }
 .accent-select:focus { border-color: var(--primary); }
 .counter { display: flex; align-items: center; gap: 12px; }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
-.config-buttons { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }
-
 /* RULE MODE TABS (Official vs House) */
 .setting-sub-row {
   padding: 4px 0 8px 16px;
@@ -901,24 +899,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .modal-header h3 { font-size: 18px; }
-.config-list { list-style: none; }
-.config-list li {
-  padding: 14px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-}
-.config-list li .config-name { font-weight: 500; flex: 1; }
-.config-list li .config-delete { color: var(--danger); font-size: 18px; padding: 0 8px; cursor: pointer; background: none; border: none; }
-.config-list li:active { background: var(--bg-elevated); }
 .empty-text { text-align: center; color: var(--text-secondary); padding: 20px; }
-#config-save-section { display: flex; gap: 8px; margin-bottom: 12px; }
-#config-save-section input { flex: 1; }
 
 /* GAME HISTORY (Game Over) */
 .game-history { width: 100%; margin-bottom: 16px; text-align: left; }

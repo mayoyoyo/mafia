@@ -336,7 +336,7 @@ describe("Day Voting", () => {
   });
 
   test("executing the joker triggers joker win", () => {
-    const game = setupGame(5, { enableJoker: true });
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house" });
     startGame(game);
 
     const mafia = getAliveByRole(game, "mafia");
@@ -613,7 +613,7 @@ describe("Cancel Vote", () => {
 
 describe("Joker Execution with Lovers", () => {
   test("joker is marked dead when executed", () => {
-    const game = setupGame(5, { enableJoker: true });
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house" });
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
@@ -633,7 +633,7 @@ describe("Joker Execution with Lovers", () => {
   });
 
   test("joker execution kills their lover via heartbreak", () => {
-    const game = setupGame(5, { enableJoker: true, enableLovers: true });
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house", enableLovers: true });
     startGame(game);
 
     const players = Array.from(game.players.values());

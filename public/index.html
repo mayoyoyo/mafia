@@ -175,10 +175,10 @@
         </div>
         <div id="doctor-mode-row" class="setting-sub-row hidden">
           <div class="rule-tabs" id="doctor-mode-tabs">
-            <button class="rule-tab active" data-mode="house">House</button>
-            <button class="rule-tab" data-mode="official">Official</button>
+            <button class="rule-tab active" data-mode="official">Official</button>
+            <button class="rule-tab" data-mode="house">House</button>
           </div>
-          <div class="rule-hint" id="doctor-mode-hint">Narrator reveals who was saved</div>
+          <div class="rule-hint" id="doctor-mode-hint">Save is secret &mdash; only victim is notified</div>
         </div>
 
         <div class="setting-row">
@@ -192,10 +192,10 @@
         </div>
         <div id="joker-mode-row" class="setting-sub-row hidden">
           <div class="rule-tabs" id="joker-mode-tabs">
-            <button class="rule-tab active" data-mode="house">House</button>
-            <button class="rule-tab" data-mode="official">Official</button>
+            <button class="rule-tab active" data-mode="official">Official</button>
+            <button class="rule-tab" data-mode="house">House</button>
           </div>
-          <div class="rule-hint" id="joker-mode-hint">Game ends when Joker is executed</div>
+          <div class="rule-hint" id="joker-mode-hint">Game continues &mdash; Joker can haunt a voter</div>
         </div>
 
         <div class="setting-row">
@@ -208,10 +208,6 @@
           <select id="lobby-accent" class="accent-select"></select>
         </div>
 
-        <div class="config-buttons">
-          <button id="btn-save-config" class="btn btn-small btn-ghost">Save Preset</button>
-          <button id="btn-load-config" class="btn btn-small btn-ghost">Load Preset</button>
-        </div>
       </div>
 
       <div class="players-section">
@@ -410,22 +406,6 @@
     <!-- SUSPENSE OVERLAY -->
     <div id="suspense-overlay" class="suspense-overlay hidden">
       <div id="suspense-text" class="suspense-text"></div>
-    </div>
-
-    <!-- CONFIG MODAL -->
-    <div id="modal-config" class="modal hidden">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 id="modal-config-title">Presets</h3>
-          <button id="btn-close-config-modal" class="btn btn-icon">&times;</button>
-        </div>
-        <div id="config-save-section" class="hidden">
-          <input type="text" id="config-name-input" placeholder="Preset name" maxlength="30">
-          <button id="btn-confirm-save-config" class="btn btn-primary">Save</button>
-        </div>
-        <ul id="config-list" class="config-list"></ul>
-        <p id="config-empty" class="empty-text hidden">No saved presets</p>
-      </div>
     </div>
 
     <!-- SETTINGS MODAL -->

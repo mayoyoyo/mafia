@@ -1,4 +1,4 @@
-import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig, getUserPrefs, updateUserPref } from "./db";
+import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings, getUserPrefs, updateUserPref } from "./db";
 import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
   getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
@@ -557,7 +557,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Already in a game" });
         return;
       }
-      const game = createGame(client.userId, getUsernameFromClients(client.userId));
+      let initialSettings: Partial<GameSettings> | undefined;
+      const savedJson = getLastSettings(client.userId);
+      if (savedJson) {
+        try { initialSettings = JSON.parse(savedJson); } catch {}
+      }
+      const game = createGame(client.userId, getUsernameFromClients(client.userId), initialSettings);
       client.gameCode = game.code;
       send(ws, { type: "game_created", code: game.code });
       broadcastLobbyUpdate(game);
@@ -707,62 +712,6 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
-    case "save_config": {
-      if (!client.userId) return;
-      const game = client.gameCode ? getGame(client.gameCode) : null;
-      const settings = game ? game.settings : null;
-      if (!settings) {
-        send(ws, { type: "error", message: "No game settings to save" });
-        return;
-      }
-      const configId = saveConfig(client.userId, msg.name, JSON.stringify(settings));
-      send(ws, {
-        type: "config_saved",
-        config: { id: configId, adminId: client.userId, name: msg.name, settings },
-      });
-      break;
-    }
-
-    case "load_config": {
-      if (!client.userId || !client.gameCode) return;
-      const game = getGame(client.gameCode);
-      if (!game || client.userId !== game.adminId || game.phase !== "lobby") return;
-      const config = getConfig(msg.configId);
-      if (!config || config.admin_id !== client.userId) {
-        send(ws, { type: "error", message: "Config not found" });
-        return;
-      }
-      const loadedSettings = JSON.parse(config.settings_json) as GameSettings;
-      updateSettings(game, loadedSettings);
-      send(ws, { type: "settings_updated", settings: game.settings });
-      broadcastLobbyUpdate(game);
-      break;
-    }
-
-    case "list_configs": {
-      if (!client.userId) return;
-      const configs = getConfigs(client.userId);
-      send(ws, {
-        type: "configs_list",
-        configs: configs.map((c) => ({
-          id: c.id,
-          adminId: c.admin_id,
-          name: c.name,
-          settings: JSON.parse(c.settings_json),
-        })),
-      });
-      break;
-    }
-
-    case "delete_config": {
-      if (!client.userId) return;
-      const deleted = deleteConfig(msg.configId, client.userId);
-      if (deleted) {
-        send(ws, { type: "config_deleted", configId: msg.configId });
-      }
-      break;
-    }
-
     case "start_game": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
@@ -775,6 +724,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Need at least 3 players to start" });
         return;
       }
+      saveLastSettings(game.adminId, JSON.stringify(game.settings));
       recordNarrator(game, messages);
 
       // Build mafia team names

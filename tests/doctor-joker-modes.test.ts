@@ -70,9 +70,9 @@ function completeNight(game: Game, mafiaTarget: number, doctorTarget?: number, d
 // DOCTOR MODE TESTS
 // ============================================================
 describe("Doctor Official Mode", () => {
-  test("default doctor mode is house", () => {
+  test("default doctor mode is official", () => {
     const game = setupGame(5, { enableDoctor: true });
-    expect(game.settings.doctorMode).toBe("house");
+    expect(game.settings.doctorMode).toBe("official");
     removeGame(game.code);
   });
 
@@ -219,9 +219,9 @@ describe("Narrator - Doctor Official Messages", () => {
 // JOKER MODE TESTS
 // ============================================================
 describe("Joker Official Mode - Settings", () => {
-  test("default joker mode is house", () => {
+  test("default joker mode is official", () => {
     const game = setupGame(5, { enableJoker: true });
-    expect(game.settings.jokerMode).toBe("house");
+    expect(game.settings.jokerMode).toBe("official");
     removeGame(game.code);
   });
 
@@ -738,8 +738,8 @@ describe("Joker Haunt - Night Resolution", () => {
     const { game, joker, voters, mafia } = setupHauntNight();
 
     const doctor = getAliveByRole(game, "doctor")[0];
-    // Find a voter who is alive and not the doctor
-    const targetId = voters.find(v => v !== doctor?.id && game.players.get(v)!.isAlive)!;
+    // Find a voter who is alive and not the doctor or mafia (mafia can't target themselves)
+    const targetId = voters.find(v => v !== doctor?.id && v !== mafia.id && game.players.get(v)!.isAlive)!;
 
     // Both mafia and joker target the same person
     submitJokerHaunt(game, joker.id, targetId);
@@ -948,25 +948,25 @@ describe("Night Resolution - No Kill Edge Cases", () => {
 describe("Settings Update", () => {
   test("can toggle doctorMode between house and official", () => {
     const game = setupGame(5, { enableDoctor: true });
-    expect(game.settings.doctorMode).toBe("house");
-
-    updateSettings(game, { doctorMode: "official" });
     expect(game.settings.doctorMode).toBe("official");
 
     updateSettings(game, { doctorMode: "house" });
     expect(game.settings.doctorMode).toBe("house");
+
+    updateSettings(game, { doctorMode: "official" });
+    expect(game.settings.doctorMode).toBe("official");
     removeGame(game.code);
   });
 
   test("can toggle jokerMode between house and official", () => {
     const game = setupGame(5, { enableJoker: true });
-    expect(game.settings.jokerMode).toBe("house");
-
-    updateSettings(game, { jokerMode: "official" });
     expect(game.settings.jokerMode).toBe("official");
 
     updateSettings(game, { jokerMode: "house" });
     expect(game.settings.jokerMode).toBe("house");
+
+    updateSettings(game, { jokerMode: "official" });
+    expect(game.settings.jokerMode).toBe("official");
     removeGame(game.code);
   });
 });

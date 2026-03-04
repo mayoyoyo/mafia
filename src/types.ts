@@ -33,8 +33,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableLovers: false,
   soundEnabled: false,
   narrationAccent: "classic",
-  doctorMode: "house",
-  jokerMode: "house",
+  doctorMode: "official",
+  jokerMode: "official",
 };
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
@@ -89,13 +89,6 @@ export interface Game {
   nightSubPhase: NightSubPhase | null;
 }
 
-export interface SavedConfig {
-  id: number;
-  adminId: number;
-  name: string;
-  settings: GameSettings;
-}
-
 // WebSocket message types
 export type ClientMessage =
   | { type: "register"; username: string; passcode: string }
@@ -104,10 +97,6 @@ export type ClientMessage =
   | { type: "join_game"; code: string }
   | { type: "leave_game" }
   | { type: "update_settings"; settings: Partial<GameSettings> }
-  | { type: "save_config"; name: string }
-  | { type: "load_config"; configId: number }
-  | { type: "list_configs" }
-  | { type: "delete_config"; configId: number }
   | { type: "start_game" }
   | { type: "mafia_vote"; targetId: number; voteType: "lock" | "maybe" | "letsnot" }
   | { type: "mafia_remove_vote"; targetId?: number }
@@ -154,9 +143,6 @@ export type ServerMessage =
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
-  | { type: "configs_list"; configs: SavedConfig[] }
-  | { type: "config_saved"; config: SavedConfig }
-  | { type: "config_deleted"; configId: number }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
   | { type: "sound_cue"; sound: "night" | "day" | "everyone_close" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
   | { type: "night_action_done"; message: string }

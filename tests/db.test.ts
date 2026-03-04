@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll } from "bun:test";
-import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig } from "../src/db";
+import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings } from "../src/db";
 
 describe("Database", () => {
   beforeAll(() => {
@@ -42,37 +42,22 @@ describe("Database", () => {
     expect(user!.username).toBe(name);
   });
 
-  test("save and retrieve config", () => {
-    const name = "configuser_" + Date.now();
+  test("save and retrieve last settings", () => {
+    const name = "settingsuser_" + Date.now();
     const userId = createUser(name, "5555")!;
     const settings = JSON.stringify({ mafiaCount: 2, enableDoctor: true });
-    const configId = saveConfig(userId, "Test Config", settings);
+    saveLastSettings(userId, settings);
 
-    const configs = getConfigs(userId);
-    expect(configs.length).toBeGreaterThanOrEqual(1);
-    const found = configs.find((c) => c.id === configId);
-    expect(found).toBeDefined();
-    expect(found!.name).toBe("Test Config");
-    expect(JSON.parse(found!.settings_json).mafiaCount).toBe(2);
+    const retrieved = getLastSettings(userId);
+    expect(retrieved).not.toBeNull();
+    expect(JSON.parse(retrieved!).mafiaCount).toBe(2);
+    expect(JSON.parse(retrieved!).enableDoctor).toBe(true);
   });
 
-  test("delete config", () => {
-    const name = "delconfig_" + Date.now();
+  test("getLastSettings returns null for new user", () => {
+    const name = "newuser_" + Date.now();
     const userId = createUser(name, "6666")!;
-    const configId = saveConfig(userId, "ToDelete", "{}");
-    const deleted = deleteConfig(configId, userId);
-    expect(deleted).toBe(true);
-    const config = getConfig(configId);
-    expect(config).toBeNull();
-  });
-
-  test("cannot delete another user's config", () => {
-    const name1 = "owner_" + Date.now();
-    const name2 = "other_" + Date.now();
-    const userId1 = createUser(name1, "7777")!;
-    const userId2 = createUser(name2, "8888")!;
-    const configId = saveConfig(userId1, "Private", "{}");
-    const deleted = deleteConfig(configId, userId2);
-    expect(deleted).toBe(false);
+    const result = getLastSettings(userId);
+    expect(result).toBeNull();
   });
 });
