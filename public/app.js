@@ -47,6 +47,7 @@
   let aliveMafiaCount = 0;
   let lastGameEvents = [];
   let lastVoteResult = null;
+  let jokerJointWinner = false;
 
   // ============================================================
   // DOM REFS
@@ -149,12 +150,12 @@
       return;
     }
     // During night/execution transition, queue sound_cues and night action prompts
-    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
+    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets")) {
       nightTransitionQueue.push(msg);
       return;
     }
     // During night narration (sounds playing after overlay), hold night prompts until narration finishes
-    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
+    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets")) {
       nightNarrationQueue.push(msg);
       return;
     }
@@ -243,6 +244,7 @@
         mafiaTargetPlayers = [];
         lastGameEvents = [];
         lastVoteResult = null;
+        jokerJointWinner = false;
         previousPhase = null;
         stopDayTimer();
         showScreen("game");
@@ -280,6 +282,18 @@
 
       case "detective_targets":
         showNightAction("Choose someone to investigate", msg.players, "detective_investigate");
+        break;
+
+      case "joker_haunt_targets":
+        showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
+        break;
+
+      case "joker_win_overlay":
+        showJokerWinOverlay(msg.jokerName);
+        break;
+
+      case "doctor_save_private":
+        showDoctorSavePrivate(msg.message);
         break;
 
       case "mafia_vote_update":
@@ -434,6 +448,7 @@
         message: msg.gameOver.message,
         forceEnded: msg.gameOver.forceEnded,
         players: msg.gameOver.revealPlayers,
+        jokerJointWinner: msg.gameOver.jokerJointWinner,
       });
       return;
     }
@@ -522,9 +537,13 @@
         } else if (na.targets.length > 0) {
           // Show target selection
           const actionType = myRole === "mafia" ? "mafia_vote"
-            : myRole === "doctor" ? "doctor_save" : "detective_investigate";
+            : myRole === "doctor" ? "doctor_save"
+            : myRole === "joker" ? "joker_haunt"
+            : "detective_investigate";
           const title = myRole === "mafia" ? "Choose a victim"
-            : myRole === "doctor" ? "Choose someone to protect" : "Choose someone to investigate";
+            : myRole === "doctor" ? "Choose someone to protect"
+            : myRole === "joker" ? "Choose someone to haunt"
+            : "Choose someone to investigate";
           showNightAction(title, na.targets, actionType, myRole === "doctor" ? na.lastDoctorTarget : undefined);
 
           // Restore mafia vote status
@@ -660,7 +679,38 @@
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
+      // Show/hide mode sub-rows
+      if (role === "doctor") {
+        $("doctor-mode-row").classList.toggle("hidden", !e.target.checked);
+      } else if (role === "joker") {
+        $("joker-mode-row").classList.toggle("hidden", !e.target.checked);
+      }
     });
+  });
+
+  // Rule mode tabs (Official vs House)
+  function setupRuleTabs(containerId, settingKey, hints) {
+    const container = $(containerId);
+    container.querySelectorAll(".rule-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        container.querySelectorAll(".rule-tab").forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+        const mode = tab.dataset.mode;
+        wsSend({ type: "update_settings", settings: { [settingKey]: mode } });
+        const hintEl = container.nextElementSibling;
+        if (hintEl && hints[mode]) hintEl.textContent = hints[mode];
+      });
+    });
+  }
+
+  setupRuleTabs("doctor-mode-tabs", "doctorMode", {
+    house: "Narrator reveals who was saved",
+    official: "Save is secret \u2014 only victim is notified",
+  });
+
+  setupRuleTabs("joker-mode-tabs", "jokerMode", {
+    house: "Game ends when Joker is executed",
+    official: "Game continues \u2014 Joker can haunt a voter",
   });
 
   $("lobby-accent").addEventListener("change", (e) => {
@@ -710,6 +760,26 @@
       const sel = $("lobby-accent");
       if (sel) sel.value = currentAccent;
       preloadNarrationAudio(currentAccent);
+    }
+    // Show/hide and sync mode sub-rows
+    $("doctor-mode-row").classList.toggle("hidden", !settings.enableDoctor);
+    $("joker-mode-row").classList.toggle("hidden", !settings.enableJoker);
+    // Sync tab active state
+    if (settings.doctorMode) {
+      $("doctor-mode-tabs").querySelectorAll(".rule-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.mode === settings.doctorMode);
+      });
+      $("doctor-mode-hint").textContent = settings.doctorMode === "official"
+        ? "Save is secret \u2014 only victim is notified"
+        : "Narrator reveals who was saved";
+    }
+    if (settings.jokerMode) {
+      $("joker-mode-tabs").querySelectorAll(".rule-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.mode === settings.jokerMode);
+      });
+      $("joker-mode-hint").textContent = settings.jokerMode === "official"
+        ? "Game continues \u2014 Joker can haunt a voter"
+        : "Game ends when Joker is executed";
     }
   }
 
@@ -1100,6 +1170,20 @@
     [_,_,_,_,_,_,_,_,_,_],
   ];
 
+  // 8-bit clown icon for joker haunt slide-to-confirm
+  const CLOWN_ART = [
+    [_,_,"#e53",_,_,_,_,"#e53",_,_],
+    [_,"#e53","#e53","#e53",_,_,"#e53","#e53","#e53",_],
+    [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+    [_,"#fdd","#29f",_,"#fdd","#fdd",_,"#29f","#fdd",_],
+    [_,"#fdd","#fdd","#fdd","#e53","#e53","#fdd","#fdd","#fdd",_],
+    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
+    [_,_,"#fdd","#e53","#e53","#e53","#e53","#fdd",_,_],
+    [_,_,_,"#fdd","#e53","#e53","#fdd",_,_,_],
+    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+  ];
+
   function getRoleImage(role, variant) {
     if (role === "citizen") {
       const grids = PIXEL_ART.citizen;
@@ -1274,10 +1358,11 @@
 
     // Set role-specific icon and label
     const iconArt = role === "mafia" ? KNIFE_ART
-      : role === "doctor" ? CROSS_ART : MAGNIFIER_ART;
+      : role === "doctor" ? CROSS_ART
+      : role === "joker_haunt" ? CLOWN_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate" };
+    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt" };
     label.textContent = labels[role] || "slide to confirm";
 
     slideCallback = callback;
@@ -1844,6 +1929,7 @@
       execution: "Executed",
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
+      joker_haunt: "Haunted by Joker",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -1945,7 +2031,8 @@
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
 
   function showNightAction(title, players, actionType, disabledId) {
-    if (isDead) return;
+    // Allow joker_haunt even when dead (joker haunts from beyond the grave)
+    if (isDead && actionType !== "joker_haunt") return;
 
     const panel = $("night-actions");
     panel.classList.remove("hidden");
@@ -1977,9 +2064,10 @@
         })
         .join("");
 
-      // Doctor/Detective: clicking selects visually, slide-to-confirm sends to server
+      // Doctor/Detective/Joker haunt: clicking selects visually, slide-to-confirm sends to server
       let selectedTargetId = null;
       let selectedName = null;
+      const slideRole = actionType === "joker_haunt" ? "joker_haunt" : myRole;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
           if (nightActionLocked) return;
@@ -1987,7 +2075,7 @@
           li.classList.add("selected");
           selectedTargetId = parseInt(li.dataset.id);
           selectedName = li.textContent;
-          setupSlideConfirm(myRole, () => {
+          setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
             wsSend({ type: actionType, targetId: selectedTargetId });
@@ -2355,6 +2443,9 @@
         $("action-title").textContent = "The Detective has fallen\u2026";
         list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No investigation tonight</li>`;
       }
+    } else if (msg.subPhase === "joker_haunt") {
+      $("action-title").textContent = "The Joker stirs from beyond\u2026";
+      list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing a target to haunt\u2026</li>`;
     } else if (msg.subPhase === "resolving") {
       $("action-title").textContent = "Dawn approaches\u2026";
       list.innerHTML = "";
@@ -2558,6 +2649,25 @@
     $("dead-dismiss-hint").classList.add("hidden");
   });
 
+  // Joker win overlay (official mode — shows for everyone, dismissible, one-time)
+  function showJokerWinOverlay(jokerName) {
+    $("joker-win-name").textContent = jokerName + " has achieved a joint victory!";
+    $("joker-win-overlay").classList.remove("hidden");
+  }
+
+  $("joker-win-overlay").addEventListener("click", () => {
+    $("joker-win-overlay").classList.add("hidden");
+  });
+
+  // Doctor save private notification (official mode)
+  function showDoctorSavePrivate(message) {
+    // Show as a detective-result-style notification
+    const el = $("detective-result");
+    el.textContent = message;
+    el.style.borderColor = "var(--role-doctor)";
+    el.classList.remove("hidden");
+  }
+
   // ============================================================
   // SETTINGS MODAL
   // ============================================================
@@ -2656,6 +2766,7 @@
     currentPhase = null;
     previousPhase = null;
     dayVoteCount = 0;
+    jokerJointWinner = !!msg.jokerJointWinner;
 
     if (msg.forceEnded) {
       // Force-ended: no suspense, show immediately
@@ -2702,6 +2813,7 @@
       save: "Saved by the Doctor",
       execution: "Executed by vote",
       lover_death: "Died of heartbreak",
+      joker_haunt: "Haunted by the Joker",
     };
 
     // Group by round, split night vs day
@@ -2711,7 +2823,7 @@
     let lastPhase = "night";
     for (const ev of events) {
       if (!grouped[ev.round]) grouped[ev.round] = { night: [], day: [] };
-      if (ev.type === "kill" || ev.type === "save") {
+      if (ev.type === "kill" || ev.type === "save" || ev.type === "joker_haunt") {
         grouped[ev.round].night.push(ev);
         lastPhase = "night";
       } else if (ev.type === "execution") {
@@ -2832,9 +2944,11 @@
         const dead = !p.isAlive;
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">\u2764 ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
+        const trophyText = (jokerJointWinner && p.role === "joker") ? '<span class="role-reveal-trophy">\uD83C\uDFC6</span>' : "";
         return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
           <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
+          ${trophyText}
           ${loverText}
           ${deadText}
         </div>`;
@@ -3214,7 +3328,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.2_202603040043";
+  const APP_VERSION_STAGING = "staging.3_202603040224";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
