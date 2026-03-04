@@ -6,17 +6,15 @@
 3. `main` is protected: requires 1 approving review (admin can bypass)
 
 ## Version Updates (MANDATORY)
-`APP_VERSION` constant lives in `public/app.js`.
+Two version constants in `public/app.js`:
+- `APP_VERSION` — production version, format `v1.{PATCH}_{YYYYMMDDHHmm}`
+- `APP_VERSION_STAGING` — staging version, format `staging.{PATCH}_{YYYYMMDDHHmm}`
 
-**On push to staging:**
-- Format: `staging.{PATCH}_{YYYYMMDDHHmm}` (PST timestamp)
-- PATCH = incremented by 1 from the current numeric value
-- Example: `const APP_VERSION = "staging.3_202603031200";`
+The client auto-selects which to display based on hostname (`staging` in URL → staging version).
 
-**On push to main (via PR merge):**
-- Format: `v1.{PATCH}_{YYYYMMDDHHmm}` (PST timestamp)
-- PATCH carries over from the staging version being promoted
-- Example: `const APP_VERSION = "v1.3_202603031200";`
+**On every push (staging or main):**
+- Update `APP_VERSION_STAGING` with incremented PATCH and fresh timestamp
+- Update `APP_VERSION` only when promoting to production (PR merge to main) — increment PATCH, fresh timestamp
 
 Use `TZ="America/Los_Angeles" date +"%Y%m%d%H%M"` to get the PST timestamp.
 

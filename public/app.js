@@ -3177,7 +3177,9 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.1_202603031956";
-  document.querySelectorAll(".app-version").forEach((el) => { el.textContent = APP_VERSION; });
+  const APP_VERSION_STAGING = "staging.1_202603031958";
+  const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
+  document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
 
