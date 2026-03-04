@@ -1316,10 +1316,12 @@ function resolveNightAndTransition(game: Game): void {
         doctorMessage = `Doctor was not able to save ${targetName}`;
       }
     }
+    const kills = nightResult.killed.map(k => ({ name: k.player.username, source: k.source }));
     sendToDeadPlayers(game, {
       type: "spectator_kill_confirmed",
       targetName,
       doctorMessage,
+      kills,
     });
   }
 
