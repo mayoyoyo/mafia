@@ -3525,8 +3525,8 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.5_202603040307";
+  const APP_VERSION = "v1.2_202603040319";
+  const APP_VERSION_STAGING = "staging.6_202603040319";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
