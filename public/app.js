@@ -47,6 +47,7 @@
   let aliveMafiaCount = 0;
   let lastGameEvents = [];
   let lastVoteResult = null;
+  let spectatorNightLog = [];
   let hideMafiaTag = false;
   let myPlayerColor = null;
   const PLAYER_COLORS = [
@@ -342,6 +343,10 @@
         if (isDead) showSpectatorNightPhase(msg);
         break;
 
+      case "spectator_night_complete":
+        if (isDead) appendSpectatorLog(msg);
+        break;
+
       case "detective_result":
         showDetectiveResult(msg);
         break;
@@ -530,6 +535,14 @@
       // Night action
       if (msg.nightAction) {
         const na = msg.nightAction;
+        // Restore spectator log from game_sync
+        if (na.isSpectatorView && na.spectatorLog && na.spectatorLog.length > 0) {
+          spectatorNightLog = [];
+          $("spectator-night-log").innerHTML = "";
+          for (const entry of na.spectatorLog) {
+            appendSpectatorLog(entry);
+          }
+        }
         if (na.isSpectatorView && na.spectatorSubPhase) {
           // Dead player spectator view for doctor/detective/resolving sub-phases
           showSpectatorNightPhase({
@@ -1777,6 +1790,10 @@
       nightActionLocked = false;
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
+      // Reset spectator night log for new night
+      spectatorNightLog = [];
+      $("spectator-night-log").innerHTML = "";
+      $("spectator-night-log").classList.add("hidden");
       if (isAdmin) {
         $("admin-night-controls").classList.remove("hidden");
       }
@@ -2522,6 +2539,7 @@
     panel.classList.remove("hidden");
     hideSlideConfirm();
     $("mafia-vote-status").classList.add("hidden");
+    renderSpectatorLog();
 
     $("action-title").textContent = "Dawn approaches\u2026";
     $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 killed by the Mafia</li>`;
@@ -2534,6 +2552,7 @@
     hideSlideConfirm();
     $("mafia-vote-status").classList.add("hidden");
     $("action-status").textContent = "";
+    renderSpectatorLog();
 
     const list = $("action-targets");
     if (msg.subPhase === "doctor") {
@@ -2559,6 +2578,47 @@
       $("action-title").textContent = "Dawn approaches\u2026";
       list.innerHTML = "";
     }
+  }
+
+  function formatSpectatorLogEntry(entry) {
+    const div = document.createElement("div");
+    div.className = "spectator-log-entry" + (entry.alive ? "" : " log-dead");
+    if (entry.phase === "mafia") {
+      div.innerHTML = `Mafia chose to kill <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+    } else if (entry.phase === "doctor") {
+      if (entry.alive) {
+        div.innerHTML = `Doctor chose to protect <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else {
+        div.textContent = "Doctor has fallen \u2014 no protection tonight";
+      }
+    } else if (entry.phase === "detective") {
+      if (entry.alive) {
+        div.innerHTML = `Detective chose to investigate <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else {
+        div.textContent = "Detective has fallen \u2014 no investigation tonight";
+      }
+    }
+    return div;
+  }
+
+  function appendSpectatorLog(entry) {
+    spectatorNightLog.push({ phase: entry.phase, targetName: entry.targetName, alive: entry.alive });
+    const logEl = $("spectator-night-log");
+    logEl.appendChild(formatSpectatorLogEntry(entry));
+    logEl.classList.remove("hidden");
+  }
+
+  function renderSpectatorLog() {
+    const logEl = $("spectator-night-log");
+    logEl.innerHTML = "";
+    if (spectatorNightLog.length === 0) {
+      logEl.classList.add("hidden");
+      return;
+    }
+    for (const entry of spectatorNightLog) {
+      logEl.appendChild(formatSpectatorLogEntry(entry));
+    }
+    logEl.classList.remove("hidden");
   }
 
   function handleMafiaConfirmReady(msg) {

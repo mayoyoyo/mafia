@@ -215,6 +215,15 @@ function handleSubPhaseAdvance(game: Game): void {
       const fakeTimer = setTimeout(() => {
         nightTimers.delete(game.code);
         if (!getGame(game.code)) return;
+        // Notify dead players that this fake sub-phase completed (role is dead)
+        if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
+          sendToDeadPlayers(game, {
+            type: "spectator_night_complete",
+            phase: result.nextPhase,
+            targetName: null,
+            alive: false,
+          });
+        }
         // Recurse to next sub-phase (sends close cue for this phase)
         handleSubPhaseAdvance(game);
       }, fakeDelay);
@@ -254,12 +263,52 @@ function startNightSequence(game: Game): void {
   sendMafiaPrompts(game);
 }
 
+function buildSpectatorLog(game: Game): Array<{ phase: string; targetName: string | null; alive: boolean }> {
+  // Sub-phase order: mafia=0, doctor=1, detective=2, resolving=3
+  const phaseOrder = ["mafia", "doctor", "detective", "resolving"];
+  const currentIdx = phaseOrder.indexOf(game.nightSubPhase || "mafia");
+  const log: Array<{ phase: string; targetName: string | null; alive: boolean }> = [];
+
+  for (let i = 0; i < currentIdx; i++) {
+    const phase = phaseOrder[i];
+    if (phase === "mafia") {
+      if (game.mafiaTarget !== null) {
+        const victim = game.players.get(game.mafiaTarget);
+        log.push({ phase: "mafia", targetName: victim ? victim.username : null, alive: true });
+      }
+    } else if (phase === "doctor") {
+      if (!game.settings.enableDoctor) continue;
+      const doctorAlive = getAliveByRole(game, "doctor").length > 0;
+      if (doctorAlive && game.doctorTarget !== null) {
+        const protected_ = game.players.get(game.doctorTarget);
+        log.push({ phase: "doctor", targetName: protected_ ? protected_.username : null, alive: true });
+      } else if (!doctorAlive) {
+        log.push({ phase: "doctor", targetName: null, alive: false });
+      }
+    } else if (phase === "detective") {
+      if (!game.settings.enableDetective) continue;
+      const detectiveAlive = getAliveByRole(game, "detective").length > 0;
+      if (detectiveAlive && game.detectiveTarget !== null) {
+        const investigated = game.players.get(game.detectiveTarget);
+        log.push({ phase: "detective", targetName: investigated ? investigated.username : null, alive: true });
+      } else if (!detectiveAlive) {
+        log.push({ phase: "detective", targetName: null, alive: false });
+      }
+    }
+  }
+
+  return log;
+}
+
 function buildGameSync(game: Game, client: WSClient, rejoined: import("./types").Player): ServerMessage {
   const userId = client.userId!;
 
   // Night action state (only if night + alive + has role with action + correct sub-phase)
   let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
   if (game.phase === "night" && !rejoined.isAlive) {
+    // Build spectator log of completed sub-phases for dead players
+    const spectatorLog = buildSpectatorLog(game);
+
     // Dead player spectator view for all night sub-phases
     if (game.nightSubPhase === "mafia") {
       const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
@@ -277,6 +326,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         aliveMafiaCount: status.aliveMafiaCount,
         lastDoctorTarget: null,
         isSpectatorView: true,
+        spectatorLog,
       };
     } else if (game.nightSubPhase === "doctor" || game.nightSubPhase === "detective") {
       const isRoleAlive = game.nightSubPhase === "doctor"
@@ -294,6 +344,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         isSpectatorView: true,
         spectatorSubPhase: game.nightSubPhase,
         spectatorSubPhaseAlive: isRoleAlive,
+        spectatorLog,
       };
     } else if (game.nightSubPhase === "joker_haunt") {
       // Dead joker rejoining during haunt phase gets their haunt targets
@@ -339,6 +390,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         isSpectatorView: true,
         spectatorSubPhase: "resolving",
         spectatorSubPhaseAlive: false,
+        spectatorLog,
       };
     }
   } else if (game.phase === "night" && !rejoined.isAlive && rejoined.role === "joker" && game.nightSubPhase === "joker_haunt" && game.jokerHauntTarget === null) {
@@ -831,6 +883,16 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       for (const m of aliveMafia) {
         sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
       }
+
+      // Notify dead players that mafia sub-phase completed
+      const mafiaVictim = game.players.get(game.mafiaTarget);
+      sendToDeadPlayers(game, {
+        type: "spectator_night_complete",
+        phase: "mafia",
+        targetName: mafiaVictim ? mafiaVictim.username : null,
+        alive: true,
+      });
+
       handleSubPhaseAdvance(game);
       break;
     }
@@ -843,6 +905,16 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const saved = submitDoctorSave(game, client.userId, msg.targetId);
       if (saved) {
         sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
+
+        // Notify dead players that doctor sub-phase completed
+        const protectedPlayer = game.players.get(msg.targetId);
+        sendToDeadPlayers(game, {
+          type: "spectator_night_complete",
+          phase: "doctor",
+          targetName: protectedPlayer ? protectedPlayer.username : null,
+          alive: true,
+        });
+
         // Advance to next sub-phase (detective/resolving)
         handleSubPhaseAdvance(game);
       } else {
@@ -862,6 +934,16 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           type: "night_action_done",
           message: "You have chosen to investigate someone tonight. Results will be revealed at dawn.",
         });
+
+        // Notify dead players that detective sub-phase completed
+        const investigatedPlayer = game.players.get(msg.targetId);
+        sendToDeadPlayers(game, {
+          type: "spectator_night_complete",
+          phase: "detective",
+          targetName: investigatedPlayer ? investigatedPlayer.username : null,
+          alive: true,
+        });
+
         // Advance to resolving
         handleSubPhaseAdvance(game);
       }
