@@ -170,6 +170,13 @@
           <span>Doctor</span>
           <label class="toggle"><input type="checkbox" id="toggle-doctor"><span class="slider"></span></label>
         </div>
+        <div id="doctor-mode-row" class="setting-sub-row hidden">
+          <div class="rule-tabs" id="doctor-mode-tabs">
+            <button class="rule-tab active" data-mode="house">House</button>
+            <button class="rule-tab" data-mode="official">Official</button>
+          </div>
+          <div class="rule-hint" id="doctor-mode-hint">Narrator reveals who was saved</div>
+        </div>
 
         <div class="setting-row">
           <span>Detective</span>
@@ -179,6 +186,13 @@
         <div class="setting-row">
           <span>Joker</span>
           <label class="toggle"><input type="checkbox" id="toggle-joker"><span class="slider"></span></label>
+        </div>
+        <div id="joker-mode-row" class="setting-sub-row hidden">
+          <div class="rule-tabs" id="joker-mode-tabs">
+            <button class="rule-tab active" data-mode="house">House</button>
+            <button class="rule-tab" data-mode="official">Official</button>
+          </div>
+          <div class="rule-hint" id="joker-mode-hint">Game ends when Joker is executed</div>
         </div>
 
         <div class="setting-row">
@@ -354,6 +368,14 @@
         <p class="dead-text">You are dead</p>
         <p id="death-message" class="death-message"></p>
         <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
+      </div>
+
+      <!-- Joker Win Overlay (official mode — shows for everyone, dismissible) -->
+      <div id="joker-win-overlay" class="joker-win-overlay hidden">
+        <div class="joker-trophy">&#127942;</div>
+        <h2 class="joker-win-title">Joker Wins!</h2>
+        <p id="joker-win-name" class="joker-win-name"></p>
+        <p class="joker-win-hint">Tap to dismiss</p>
       </div>
 
     </div>

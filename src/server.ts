@@ -5,7 +5,9 @@ import {
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
+  submitJokerHaunt, getJokerHauntTargets,
 } from "./game-engine";
+import { Narrator } from "./narrator";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
 import path from "path";
 import fs from "fs";
@@ -144,6 +146,18 @@ function sendDetectivePrompts(game: Game): void {
   });
 }
 
+function sendJokerHauntPrompts(game: Game): void {
+  // Find the dead joker
+  const joker = Array.from(game.players.values()).find(p => p.role === "joker" && !p.isAlive);
+  if (!joker) return;
+
+  const targets = getJokerHauntTargets(game);
+  if (targets.length === 0) return;
+
+  sendToUser(joker.id, { type: "joker_haunt_targets", players: targets });
+  // No spectator announcement, no sound cues — joker haunt is silent
+}
+
 function handleSubPhaseAdvance(game: Game): void {
   if (!getGame(game.code)) return; // game was removed
 
@@ -204,12 +218,18 @@ function handleSubPhaseAdvance(game: Game): void {
   const timer = setTimeout(() => {
     nightTimers.delete(game.code);
     if (!getGame(game.code)) return;
-    broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
 
-    if (result.nextPhase === "doctor") {
-      sendDoctorPrompts(game);
-    } else if (result.nextPhase === "detective") {
-      sendDetectivePrompts(game);
+    if (result.nextPhase === "joker_haunt") {
+      // Joker haunt is silent — no sound cues, no spectator announcements
+      sendJokerHauntPrompts(game);
+    } else {
+      broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+
+      if (result.nextPhase === "doctor") {
+        sendDoctorPrompts(game);
+      } else if (result.nextPhase === "detective") {
+        sendDetectivePrompts(game);
+      }
     }
   }, delay);
   nightTimers.set(game.code, timer);
@@ -264,6 +284,37 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         spectatorSubPhase: game.nightSubPhase,
         spectatorSubPhaseAlive: isRoleAlive,
       };
+    } else if (game.nightSubPhase === "joker_haunt") {
+      // Dead joker rejoining during haunt phase gets their haunt targets
+      if (rejoined.role === "joker" && !rejoined.isAlive && game.jokerHauntTarget === null) {
+        const targets = getJokerHauntTargets(game);
+        nightAction = {
+          locked: false,
+          targetName: null,
+          targets,
+          voterTargets: {},
+          lockedTarget: null,
+          objectedTargets: {},
+          aliveMafiaCount: 0,
+          lastDoctorTarget: null,
+          isSpectatorView: false,
+        };
+      } else {
+        // Other dead players see resolving
+        nightAction = {
+          locked: false,
+          targetName: null,
+          targets: [],
+          voterTargets: {},
+          lockedTarget: null,
+          objectedTargets: {},
+          aliveMafiaCount: 0,
+          lastDoctorTarget: null,
+          isSpectatorView: true,
+          spectatorSubPhase: "resolving",
+          spectatorSubPhaseAlive: false,
+        };
+      }
     } else if (game.nightSubPhase === "resolving") {
       nightAction = {
         locked: false,
@@ -279,6 +330,19 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         spectatorSubPhaseAlive: false,
       };
     }
+  } else if (game.phase === "night" && !rejoined.isAlive && rejoined.role === "joker" && game.nightSubPhase === "joker_haunt" && game.jokerHauntTarget === null) {
+    // Dead joker during haunt phase (special: not alive but gets action)
+    const targets = getJokerHauntTargets(game);
+    nightAction = {
+      locked: false,
+      targetName: null,
+      targets,
+      voterTargets: {},
+      lockedTarget: null,
+      objectedTargets: {},
+      aliveMafiaCount: 0,
+      lastDoctorTarget: null,
+    };
   } else if (game.phase === "night" && rejoined.isAlive) {
     if (rejoined.role === "mafia" && game.nightSubPhase === "mafia") {
       const locked = game.mafiaTarget !== null;
@@ -782,6 +846,30 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
+    case "joker_haunt": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.nightSubPhase !== "joker_haunt") return;
+
+      const haunted = submitJokerHaunt(game, client.userId, msg.targetId);
+      if (haunted) {
+        sendToUser(client.userId, { type: "night_action_done", message: "You have chosen your victim. Revenge is sweet." });
+        // Notify dead players (spectator chat) about the haunt choice
+        const target = game.players.get(msg.targetId);
+        if (target) {
+          // Use spectator_kill_confirmed to show the haunt target to dead chat
+          sendToDeadPlayers(game, {
+            type: "spectator_kill_confirmed",
+            targetName: target.username,
+            doctorMessage: "Joker chose to haunt " + target.username,
+          });
+        }
+        // Advance to resolving
+        handleSubPhaseAdvance(game);
+      }
+      break;
+    }
+
     case "call_vote": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
@@ -872,6 +960,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             ...(isAnon ? {} : { votesFor: voteResult.votesFor, votesAgainst: voteResult.votesAgainst, voterNames: voteResult.voterNames }),
           });
 
+          // Send joker win overlay to all players (official mode: game continues)
+          if (voteResult.jokerWin && game.settings.jokerMode === "official") {
+            const jokerPlayer = voteResult.killed.find(k => k.player.role === "joker");
+            if (jokerPlayer) {
+              broadcastToGame(game.code, {
+                type: "joker_win_overlay",
+                jokerName: jokerPlayer.player.username,
+              });
+            }
+          }
+
           let voteLoverDeathName: string | undefined;
           for (let i = 0; i < voteResult.killed.length; i++) {
             const k = voteResult.killed[i];
@@ -901,6 +1000,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               winner: game.winner!,
               message: voteResult.messages[voteResult.messages.length - 1],
               players: getPlayerInfo(game, true),
+              ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
             });
           } else if (game.phase === "night") {
             // Auto-transition to night after execution
@@ -1138,6 +1238,14 @@ function resolveNightAndTransition(game: Game): void {
     game.dayStartedAt = Date.now();
   }
 
+  // Send private doctor save message in official mode
+  if (nightResult.saved && nightResult.savedTargetId !== null && game.settings.doctorMode === "official") {
+    sendToUser(nightResult.savedTargetId, {
+      type: "doctor_save_private",
+      message: Narrator.doctorSaveVictim(),
+    });
+  }
+
   // Send detective result privately (even if detective died this night)
   if (game.detectiveResult) {
     const allDetectives = Array.from(game.players.values()).filter((p) => p.role === "detective");
@@ -1205,6 +1313,7 @@ function resolveNightAndTransition(game: Game): void {
       winner: game.winner!,
       message: nightResult.messages[nightResult.messages.length - 1],
       players: getPlayerInfo(game, true),
+      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
     });
   }
 }

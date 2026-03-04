@@ -11,6 +11,8 @@ export interface Player {
   variant: number; // pixel art variant index
 }
 
+export type RuleMode = "official" | "house";
+
 export interface GameSettings {
   mafiaCount: number;
   enableDoctor: boolean;
@@ -19,6 +21,8 @@ export interface GameSettings {
   enableLovers: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
+  doctorMode: RuleMode;
+  jokerMode: RuleMode;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -29,11 +33,13 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableLovers: false,
   soundEnabled: false,
   narrationAccent: "classic",
+  doctorMode: "house",
+  jokerMode: "house",
 };
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 
-export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
+export type NightSubPhase = "mafia" | "doctor" | "detective" | "joker_haunt" | "resolving";
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
 
@@ -57,6 +63,10 @@ export interface Game {
   doctorTarget: number | null;
   detectiveTarget: number | null;
   lastDoctorTarget: number | null;
+  // Joker haunt (official mode)
+  jokerHauntTarget: number | null;
+  jokerHauntVoters: number[]; // player IDs who voted to lynch the joker
+  jokerJointWinner: boolean; // true if joker achieved a joint win (official mode)
   // Day voting
   voteTarget: number | null; // who is being voted on
   votes: Map<number, boolean>; // playerId -> thumbsUp(true)/thumbsDown(false)
@@ -105,6 +115,7 @@ export type ClientMessage =
   | { type: "confirm_mafia_kill" }
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
+  | { type: "joker_haunt"; targetId: number }
   | { type: "call_vote"; targetId: number; anonymous?: boolean }
   | { type: "abstain_vote" }
   | { type: "cancel_vote" }
@@ -133,12 +144,15 @@ export type ServerMessage =
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }
   | { type: "detective_result"; targetName: string; isMafia: boolean }
+  | { type: "joker_haunt_targets"; players: PlayerInfo[] }
+  | { type: "joker_win_overlay"; jokerName: string }
+  | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number; anonymous: boolean }
   | { type: "vote_update"; votesFor?: number; votesAgainst?: number; totalVotes: number; total: number; voterNames?: Record<string, boolean> }
   | { type: "vote_result"; targetName: string; executed: boolean; votesFor?: number; votesAgainst?: number; voterNames?: Record<string, boolean> }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
-  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[] }
+  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "configs_list"; configs: SavedConfig[] }
   | { type: "config_saved"; config: SavedConfig }
   | { type: "config_deleted"; configId: number }
@@ -210,6 +224,7 @@ export type ServerMessage =
         message: string;
         forceEnded: boolean;
         revealPlayers: PlayerInfo[];
+        jokerJointWinner?: boolean;
       } | null;
     };
 
@@ -225,7 +240,7 @@ export interface PlayerInfo {
 
 export interface GameEvent {
   round: number;
-  type: "kill" | "save" | "execution" | "lover_death" | "spared";
+  type: "kill" | "save" | "execution" | "lover_death" | "spared" | "joker_haunt";
   playerName: string;
   detail?: string;
 }
