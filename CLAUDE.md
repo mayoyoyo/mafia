@@ -1,17 +1,31 @@
 # Mafia Game - Project Instructions
 
+## Deployment Workflow
+1. **Develop on `staging`** (default branch) — push triggers auto-deploy to `maf1a-staging.fly.dev`
+2. **Promote to production** — file a PR from `staging` → `main`, merge triggers auto-deploy to `maf1a.fly.dev`
+3. `main` is protected: requires 1 approving review (admin can bypass)
+
 ## Version Updates (MANDATORY)
-**Before every push to main**, update the `APP_VERSION` constant in `public/app.js`:
-- Format: `v1.{PR_NUMBER}_{YYYYMMDDHHmm}` (PST timestamp)
-- Increment the PR number by 1 from the current value
-- Use `TZ="America/Los_Angeles" date +"%Y%m%d%H%M"` to get the PST timestamp
-- Example: `const APP_VERSION = "v1.17_202602281300";`
+`APP_VERSION` constant lives in `public/app.js`.
+
+**On push to staging:**
+- Format: `staging.{PATCH}_{YYYYMMDDHHmm}` (PST timestamp)
+- PATCH = incremented by 1 from the current numeric value
+- Example: `const APP_VERSION = "staging.3_202603031200";`
+
+**On push to main (via PR merge):**
+- Format: `v1.{PATCH}_{YYYYMMDDHHmm}` (PST timestamp)
+- PATCH carries over from the staging version being promoted
+- Example: `const APP_VERSION = "v1.3_202603031200";`
+
+Use `TZ="America/Los_Angeles" date +"%Y%m%d%H%M"` to get the PST timestamp.
 
 ## Tech Stack
 - Bun runtime, TypeScript server, vanilla JS client
 - Single-file frontend: `public/app.js`, `public/app.css`, `public/index.html`
 - Tests: `bun test` (runs all test files in `tests/`)
-- Deploy: push to `main` auto-deploys via Fly.io
+- Production: push to `main` auto-deploys to `maf1a.fly.dev` via Fly.io
+- Staging: push to `staging` auto-deploys to `maf1a-staging.fly.dev` via Fly.io
 
 ## Key Files
 - `src/server.ts` - WebSocket server + static file serving
