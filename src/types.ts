@@ -147,6 +147,7 @@ export type ServerMessage =
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
   | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null }
+  | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "resolving"; isRoleAlive: boolean }
   | { type: "room_closed"; message: string }
   | { type: "game_sync";
       // Identity
@@ -188,6 +189,9 @@ export type ServerMessage =
         objectedTargets: Record<number, string[]>;
         aliveMafiaCount: number;
         lastDoctorTarget: number | null;
+        isSpectatorView?: boolean;
+        spectatorSubPhase?: NightSubPhase;
+        spectatorSubPhaseAlive?: boolean;
       } | null;
       // Vote state (null if not in voting)
       voteState: {

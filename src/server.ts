@@ -113,6 +113,12 @@ function sendDoctorPrompts(game: Game): void {
       sendToUser(d.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
     }
   }
+  // Notify dead players about doctor sub-phase
+  sendToDeadPlayers(game, {
+    type: "spectator_night_phase",
+    subPhase: "doctor",
+    isRoleAlive: aliveDoctor.length > 0,
+  });
 }
 
 function sendDetectivePrompts(game: Game): void {
@@ -130,6 +136,12 @@ function sendDetectivePrompts(game: Game): void {
       sendToUser(d.id, { type: "detective_targets", players: allAliveExceptSelf });
     }
   }
+  // Notify dead players about detective sub-phase
+  sendToDeadPlayers(game, {
+    type: "spectator_night_phase",
+    subPhase: "detective",
+    isRoleAlive: aliveDetective.length > 0,
+  });
 }
 
 function handleSubPhaseAdvance(game: Game): void {
@@ -161,6 +173,14 @@ function handleSubPhaseAdvance(game: Game): void {
       nightTimers.delete(game.code);
       if (!getGame(game.code)) return;
       broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+      // Notify dead players that this role is dead
+      if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
+        sendToDeadPlayers(game, {
+          type: "spectator_night_phase",
+          subPhase: result.nextPhase,
+          isRoleAlive: false,
+        });
+      }
 
       // Normal-distribution fake delay centered at 10s, range ~5-15s
       const u1 = Math.random() || 0.0001;
@@ -208,24 +228,57 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 
   // Night action state (only if night + alive + has role with action + correct sub-phase)
   let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
-  if (game.phase === "night" && !rejoined.isAlive && game.nightSubPhase === "mafia") {
-    // Dead player spectator view during mafia sub-phase
-    const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
-    const spectatorTargets = aliveNonMafia.map(p => ({
-      id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId,
-    }));
-    const status = getMafiaVoteStatus(game);
-    nightAction = {
-      locked: false,
-      targetName: null,
-      targets: spectatorTargets,
-      voterTargets: status.voterTargets,
-      lockedTarget: status.lockedTarget,
-      objectedTargets: status.objectedTargets,
-      aliveMafiaCount: status.aliveMafiaCount,
-      lastDoctorTarget: null,
-      isSpectatorView: true,
-    } as any;
+  if (game.phase === "night" && !rejoined.isAlive) {
+    // Dead player spectator view for all night sub-phases
+    if (game.nightSubPhase === "mafia") {
+      const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
+      const spectatorTargets = aliveNonMafia.map(p => ({
+        id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId,
+      }));
+      const status = getMafiaVoteStatus(game);
+      nightAction = {
+        locked: false,
+        targetName: null,
+        targets: spectatorTargets,
+        voterTargets: status.voterTargets,
+        lockedTarget: status.lockedTarget,
+        objectedTargets: status.objectedTargets,
+        aliveMafiaCount: status.aliveMafiaCount,
+        lastDoctorTarget: null,
+        isSpectatorView: true,
+      };
+    } else if (game.nightSubPhase === "doctor" || game.nightSubPhase === "detective") {
+      const isRoleAlive = game.nightSubPhase === "doctor"
+        ? getAliveByRole(game, "doctor").length > 0
+        : getAliveByRole(game, "detective").length > 0;
+      nightAction = {
+        locked: false,
+        targetName: null,
+        targets: [],
+        voterTargets: {},
+        lockedTarget: null,
+        objectedTargets: {},
+        aliveMafiaCount: 0,
+        lastDoctorTarget: null,
+        isSpectatorView: true,
+        spectatorSubPhase: game.nightSubPhase,
+        spectatorSubPhaseAlive: isRoleAlive,
+      };
+    } else if (game.nightSubPhase === "resolving") {
+      nightAction = {
+        locked: false,
+        targetName: null,
+        targets: [],
+        voterTargets: {},
+        lockedTarget: null,
+        objectedTargets: {},
+        aliveMafiaCount: 0,
+        lastDoctorTarget: null,
+        isSpectatorView: true,
+        spectatorSubPhase: "resolving",
+        spectatorSubPhaseAlive: false,
+      };
+    }
   } else if (game.phase === "night" && rejoined.isAlive) {
     if (rejoined.role === "mafia" && game.nightSubPhase === "mafia") {
       const locked = game.mafiaTarget !== null;
