@@ -33,6 +33,10 @@ function initSchema() {
       FOREIGN KEY (admin_id) REFERENCES users(id)
     );
   `);
+
+  // Migrations for player preferences
+  try { db.exec("ALTER TABLE users ADD COLUMN hide_mafia_tag INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN player_color TEXT DEFAULT NULL"); } catch {}
 }
 
 export function createUser(username: string, passcode: string): number | null {
@@ -43,16 +47,31 @@ export function createUser(username: string, passcode: string): number | null {
   return Number(result.lastInsertRowid);
 }
 
-export function loginUser(username: string, passcode: string): { id: number; username: string } | null {
+export function loginUser(username: string, passcode: string): { id: number; username: string; hide_mafia_tag: boolean; player_color: string | null } | null {
   const d = getDb();
-  const row = d.query("SELECT id, username FROM users WHERE username = ? AND passcode = ?").get(username, passcode) as any;
-  return row ? { id: row.id, username: row.username } : null;
+  const row = d.query("SELECT id, username, hide_mafia_tag, player_color FROM users WHERE username = ? AND passcode = ?").get(username, passcode) as any;
+  return row ? { id: row.id, username: row.username, hide_mafia_tag: !!row.hide_mafia_tag, player_color: row.player_color } : null;
 }
 
 export function getUserById(id: number): { id: number; username: string } | null {
   const d = getDb();
   const row = d.query("SELECT id, username FROM users WHERE id = ?").get(id) as any;
   return row ? { id: row.id, username: row.username } : null;
+}
+
+export function getUserPrefs(userId: number): { hide_mafia_tag: boolean; player_color: string | null } {
+  const d = getDb();
+  const row = d.query("SELECT hide_mafia_tag, player_color FROM users WHERE id = ?").get(userId) as any;
+  return row ? { hide_mafia_tag: !!row.hide_mafia_tag, player_color: row.player_color } : { hide_mafia_tag: false, player_color: null };
+}
+
+export function updateUserPref(userId: number, key: "hide_mafia_tag" | "player_color", value: any): void {
+  const d = getDb();
+  if (key === "hide_mafia_tag") {
+    d.query("UPDATE users SET hide_mafia_tag = ? WHERE id = ?").run(value ? 1 : 0, userId);
+  } else if (key === "player_color") {
+    d.query("UPDATE users SET player_color = ? WHERE id = ?").run(value, userId);
+  }
 }
 
 export function saveConfig(adminId: number, name: string, settingsJson: string): number {
