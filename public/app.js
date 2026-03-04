@@ -12,6 +12,7 @@
   let myRole = null;
   let isLover = false;
   let isDead = false;
+  let jokerWonOverlayShown = false;
   let currentPhase = null;
   let previousPhase = null;
   let soundEnabled = false;
@@ -154,7 +155,7 @@
   // ============================================================
   function handleServerMessage(msg) {
     // During suspense, queue certain messages
-    if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died")) {
+    if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died" || msg.type === "joker_win_overlay")) {
       suspenseQueue.push(msg);
       return;
     }
@@ -242,12 +243,14 @@
         myVariant = msg.variant || 0;
         mafiaTeam = msg.mafiaTeam || [];
         isDead = false;
+        jokerWonOverlayShown = false;
         // Fresh game start — reset all state
         hasVoted = false;
         dayVoteCount = 0;
         narratorTranscript = [];
         detectiveHistory = [];
         nightActionLocked = false;
+        jokerHauntActive = false;
         mafiaConfirmTarget = null;
         myMafiaVotes = [];
         mafiaObjectedTargets = {};
@@ -297,10 +300,12 @@
         break;
 
       case "joker_haunt_targets":
+        jokerHauntActive = true;
         showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
         break;
 
       case "joker_win_overlay":
+        jokerWonOverlayShown = true;
         showJokerWinOverlay(msg.jokerName);
         break;
 
@@ -332,7 +337,7 @@
         break;
 
       case "spectator_mafia_update":
-        if (isDead) showSpectatorMafiaPanel(msg);
+        if (isDead && !jokerHauntActive) showSpectatorMafiaPanel(msg);
         break;
 
       case "spectator_kill_confirmed":
@@ -370,11 +375,14 @@
 
       case "you_died":
         isDead = true;
-        $("dead-overlay").classList.remove("hidden");
-        $("dead-emoji").textContent = msg.isLoverDeath ? "\u{1F494}" : "\u{1F480}";
-        $("death-message").textContent = msg.message;
-        $("dead-dismiss-hint").classList.remove("hidden");
         $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+        // If joker win overlay is already showing, skip the death overlay
+        if (!jokerWonOverlayShown) {
+          $("dead-overlay").classList.remove("hidden");
+          $("dead-emoji").textContent = msg.isLoverDeath ? "\u{1F494}" : "\u{1F480}";
+          $("death-message").textContent = msg.message;
+          $("dead-dismiss-hint").classList.remove("hidden");
+        }
         break;
 
       case "game_over":
@@ -455,6 +463,7 @@
     anonVoteChecked = msg.anonVoteChecked;
     hasVoted = false;
     nightActionLocked = false;
+    jokerHauntActive = false;
     mafiaConfirmTarget = null;
     myMafiaVotes = [];
     mafiaObjectedTargets = {};
@@ -1788,6 +1797,7 @@
       hasVoted = false;
       dayVoteCount = 0;
       nightActionLocked = false;
+      jokerHauntActive = false;
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
       // Reset spectator night log for new night
@@ -2046,7 +2056,7 @@
       execution: "Executed",
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
-      joker_haunt: "Haunted by Joker",
+      joker_haunt: "Killed by Mafia",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -2147,6 +2157,7 @@
   // NIGHT ACTIONS
   // ============================================================
   let nightActionLocked = false; // true after doctor/detective confirm
+  let jokerHauntActive = false; // true while dead joker is choosing haunt target
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
 
   function showNightAction(title, players, actionType, disabledId) {
@@ -2197,6 +2208,7 @@
           setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
+            if (actionType === "joker_haunt") jokerHauntActive = false;
             wsSend({ type: actionType, targetId: selectedTargetId });
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
@@ -2571,9 +2583,6 @@
         $("action-title").textContent = "The Detective has fallen\u2026";
         list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No investigation tonight</li>`;
       }
-    } else if (msg.subPhase === "joker_haunt") {
-      $("action-title").textContent = "The Joker stirs from beyond\u2026";
-      list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing a target to haunt\u2026</li>`;
     } else if (msg.subPhase === "resolving") {
       $("action-title").textContent = "Dawn approaches\u2026";
       list.innerHTML = "";
@@ -2818,15 +2827,14 @@
     $("dead-dismiss-hint").classList.add("hidden");
   });
 
-  // Joker win overlay (official mode — shows for everyone, dismissible, one-time)
+  // Joker win overlay (official mode — only visible to the joker, replaces death screen)
   function showJokerWinOverlay(jokerName) {
-    $("joker-win-name").textContent = jokerName + " has achieved a joint victory!";
-    $("joker-win-overlay").classList.remove("hidden");
+    // Show using the death overlay but with joker-specific content
+    $("dead-overlay").classList.remove("hidden");
+    $("dead-emoji").textContent = "\u{1F0CF}"; // joker card emoji
+    $("death-message").textContent = "You achieved a joint victory!";
+    $("dead-dismiss-hint").classList.remove("hidden");
   }
-
-  $("joker-win-overlay").addEventListener("click", () => {
-    $("joker-win-overlay").classList.add("hidden");
-  });
 
   // Doctor save private notification (official mode)
   function showDoctorSavePrivate(message) {
@@ -2943,6 +2951,7 @@
     isLover = false;
     mafiaTeam = [];
     isDead = false;
+    jokerWonOverlayShown = false;
     currentPhase = null;
     previousPhase = null;
     dayVoteCount = 0;
@@ -3517,7 +3526,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.4_202603040236";
+  const APP_VERSION_STAGING = "staging.5_202603040307";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

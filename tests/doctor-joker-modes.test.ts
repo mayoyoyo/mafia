@@ -62,12 +62,7 @@ function completeNight(game: Game, mafiaTarget: number, doctorTarget?: number, d
       const detective = getAliveByRole(game, "detective")[0];
       if (detective) submitDetectiveInvestigation(game, detective.id, detectiveTarget);
     }
-    advanceNightSubPhase(game); // detective -> joker_haunt or resolving
-  }
-
-  // Handle joker_haunt sub-phase if present
-  if (game.nightSubPhase === "joker_haunt") {
-    advanceNightSubPhase(game); // joker_haunt -> resolving (no action by default)
+    advanceNightSubPhase(game); // detective -> resolving
   }
 }
 
@@ -394,35 +389,64 @@ describe("Joker Haunt - submitJokerHaunt", () => {
     return { game, joker, voters };
   }
 
-  test("joker can haunt a voter during joker_haunt sub-phase", () => {
+  test("joker can haunt a voter during mafia sub-phase", () => {
     const { game, joker, voters } = setupJokerHauntGame();
 
-    // Advance through mafia sub-phase
-    const mafia = findPlayerByRole(game, "mafia");
-    const citizen = getCitizens(game)[0];
-    lockTarget(game, mafia.id, citizen.id);
-    advanceNightSubPhase(game); // mafia -> next
-
-    // Skip to joker_haunt
-    while (game.nightSubPhase !== "joker_haunt" && game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-    }
-
-    expect(game.nightSubPhase).toBe("joker_haunt");
+    // Still in mafia sub-phase — joker can haunt in parallel
+    expect(game.nightSubPhase).toBe("mafia");
     const result = submitJokerHaunt(game, joker.id, voters[0]);
     expect(result).toBe(true);
     expect(game.jokerHauntTarget).toBe(voters[0]);
     removeGame(game.code);
   });
 
-  test("joker cannot haunt someone who didn't vote for execution", () => {
-    const { game, joker } = setupJokerHauntGame();
+  test("joker can haunt during doctor sub-phase", () => {
+    // Use a setup with doctor enabled so we get a doctor sub-phase
+    const game = setupGame(7, { enableJoker: true, jokerMode: "official", enableDoctor: true });
+    startGame(game);
+    const joker = findPlayerByRole(game, "joker");
 
-    // Advance to joker_haunt
+    // Execute joker
+    game.phase = "day";
+    callVote(game, game.adminId, joker.id);
+    const voters: number[] = [];
+    for (const [, p] of game.players) {
+      if (p.isAlive && p.id !== joker.id) {
+        castVote(game, p.id, true);
+        voters.push(p.id);
+      }
+    }
+    resolveVote(game);
+
+    // Advance to doctor sub-phase
     const mafia = findPlayerByRole(game, "mafia");
     const citizen = getCitizens(game)[0];
     lockTarget(game, mafia.id, citizen.id);
-    while (game.nightSubPhase !== "joker_haunt") advanceNightSubPhase(game);
+    advanceNightSubPhase(game); // mafia -> doctor
+
+    expect(game.nightSubPhase).toBe("doctor");
+    const result = submitJokerHaunt(game, joker.id, voters[0]);
+    expect(result).toBe(true);
+    expect(game.jokerHauntTarget).toBe(voters[0]);
+    removeGame(game.code);
+  });
+
+  test("joker cannot haunt during resolving", () => {
+    const { game, joker, voters } = setupJokerHauntGame();
+
+    const mafia = findPlayerByRole(game, "mafia");
+    const citizen = getCitizens(game)[0];
+    lockTarget(game, mafia.id, citizen.id);
+    // Advance to resolving
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    const result = submitJokerHaunt(game, joker.id, voters[0]);
+    expect(result).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("joker cannot haunt someone who didn't vote for execution", () => {
+    const { game, joker } = setupJokerHauntGame();
 
     // Joker trying to haunt themselves (not in voters list since they were the target)
     const result = submitJokerHaunt(game, joker.id, joker.id);
@@ -437,7 +461,7 @@ describe("Joker Haunt - submitJokerHaunt", () => {
 
     // Don't execute joker, just set up night manually
     game.phase = "night";
-    game.nightSubPhase = "joker_haunt";
+    game.nightSubPhase = "mafia";
     game.jokerHauntVoters = [2, 3, 4];
 
     const result = submitJokerHaunt(game, joker.id, 2);
@@ -445,21 +469,9 @@ describe("Joker Haunt - submitJokerHaunt", () => {
     removeGame(game.code);
   });
 
-  test("joker cannot haunt in wrong phase", () => {
-    const { game, joker, voters } = setupJokerHauntGame();
-
-    // Still in mafia sub-phase
-    const result = submitJokerHaunt(game, joker.id, voters[0]);
-    expect(result).toBe(false);
-    removeGame(game.code);
-  });
-
   test("non-joker cannot submit haunt", () => {
     const { game, voters } = setupJokerHauntGame();
     const mafia = findPlayerByRole(game, "mafia");
-    const citizen = getCitizens(game)[0];
-    lockTarget(game, mafia.id, citizen.id);
-    while (game.nightSubPhase !== "joker_haunt") advanceNightSubPhase(game);
 
     const result = submitJokerHaunt(game, mafia.id, voters[0]);
     expect(result).toBe(false);
@@ -518,8 +530,8 @@ describe("Joker Haunt - getJokerHauntTargets", () => {
   });
 });
 
-describe("Joker Haunt - Night Sub-Phase Ordering", () => {
-  test("joker_haunt comes after detective and before resolving", () => {
+describe("Joker Haunt - Parallel Action (no sub-phase)", () => {
+  test("joker_haunt is not a night sub-phase", () => {
     const game = setupGame(6, {
       enableJoker: true,
       jokerMode: "official",
@@ -551,63 +563,11 @@ describe("Joker Haunt - Night Sub-Phase Ordering", () => {
       phases.push(game.nightSubPhase!);
     }
 
-    // Verify order: mafia -> doctor -> detective -> joker_haunt -> resolving
-    const jokerIdx = phases.indexOf("joker_haunt");
-    const detectiveIdx = phases.indexOf("detective");
-    const resolvingIdx = phases.indexOf("resolving");
-
-    expect(jokerIdx).toBeGreaterThan(-1);
-    expect(jokerIdx).toBeGreaterThan(detectiveIdx);
-    expect(jokerIdx).toBeLessThan(resolvingIdx);
-    removeGame(game.code);
-  });
-
-  test("joker_haunt sub-phase is skipped when not in official mode", () => {
-    const game = setupGame(6, {
-      enableJoker: true,
-      jokerMode: "house",
-      enableDoctor: true,
-    });
-    startGame(game);
-
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
-    game.jokerHauntVoters = [2, 3]; // pretend there are voters
-
-    const mafia = findPlayerByRole(game, "mafia");
-    lockTarget(game, mafia.id, getCitizens(game)[0].id);
-
-    const phases: NightSubPhase[] = [game.nightSubPhase!];
-    while (game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-      phases.push(game.nightSubPhase!);
-    }
-
+    // joker_haunt should NOT appear in sub-phases — it's a parallel action now
     expect(phases).not.toContain("joker_haunt");
-    removeGame(game.code);
-  });
-
-  test("joker_haunt sub-phase is skipped when no haunt voters", () => {
-    const game = setupGame(6, {
-      enableJoker: true,
-      jokerMode: "official",
-    });
-    startGame(game);
-
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
-    game.jokerHauntVoters = []; // no voters
-
-    const mafia = findPlayerByRole(game, "mafia");
-    lockTarget(game, mafia.id, getCitizens(game)[0].id);
-
-    const phases: NightSubPhase[] = [game.nightSubPhase!];
-    while (game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-      phases.push(game.nightSubPhase!);
-    }
-
-    expect(phases).not.toContain("joker_haunt");
+    // Should go: mafia -> doctor -> detective -> resolving
+    expect(phases[0]).toBe("mafia");
+    expect(phases[phases.length - 1]).toBe("resolving");
     removeGame(game.code);
   });
 });
@@ -645,19 +605,15 @@ describe("Joker Haunt - Night Resolution", () => {
     const mafiaTargetId = aliveCitizens[0].id;
     const hauntTargetId = voters.find(v => v !== mafiaTargetId && game.players.get(v)!.isAlive)!;
 
+    // Joker submits haunt during mafia sub-phase (parallel action)
+    submitJokerHaunt(game, joker.id, hauntTargetId);
+
     // Run mafia sub-phase
     lockTarget(game, mafia.id, mafiaTargetId);
     advanceNightSubPhase(game);
 
-    // Skip to joker_haunt
-    while (game.nightSubPhase !== "joker_haunt" && game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-    }
-
-    if (game.nightSubPhase === "joker_haunt") {
-      submitJokerHaunt(game, joker.id, hauntTargetId);
-      advanceNightSubPhase(game); // -> resolving
-    }
+    // Advance to resolving
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
 
     const result = transitionToDay(game);
 
@@ -677,18 +633,10 @@ describe("Joker Haunt - Night Resolution", () => {
     const mafiaTargetId = aliveCitizens[0].id;
 
     lockTarget(game, mafia.id, mafiaTargetId);
-    advanceNightSubPhase(game);
 
-    while (game.nightSubPhase !== "joker_haunt" && game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-    }
+    // Advance to resolving (no haunt submitted)
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
 
-    if (game.nightSubPhase === "joker_haunt") {
-      // Don't submit any haunt
-      advanceNightSubPhase(game); // -> resolving
-    }
-
-    const aliveBefore = getAlivePlayers(game).length;
     const result = transitionToDay(game);
 
     // Only mafia kill should occur
@@ -703,17 +651,11 @@ describe("Joker Haunt - Night Resolution", () => {
     // Find a voter who is still alive
     const targetId = voters.find(v => game.players.get(v)!.isAlive)!;
 
+    // Joker haunts during mafia sub-phase
+    submitJokerHaunt(game, joker.id, targetId);
+
     lockTarget(game, mafia.id, targetId);
-    advanceNightSubPhase(game);
-
-    while (game.nightSubPhase !== "joker_haunt" && game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-    }
-
-    if (game.nightSubPhase === "joker_haunt") {
-      submitJokerHaunt(game, joker.id, targetId);
-      advanceNightSubPhase(game);
-    }
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
 
     const result = transitionToDay(game);
 
@@ -735,22 +677,18 @@ describe("Joker Haunt - Night Resolution", () => {
       v !== mafiaTargetId && v !== doctor?.id && game.players.get(v)!.isAlive
     )!;
 
+    // Joker haunts during mafia sub-phase (parallel)
+    submitJokerHaunt(game, joker.id, hauntTargetId);
+
     lockTarget(game, mafia.id, mafiaTargetId);
     advanceNightSubPhase(game); // mafia -> doctor
 
     if (game.nightSubPhase === "doctor" && doctor) {
       submitDoctorSave(game, doctor.id, hauntTargetId);
-      advanceNightSubPhase(game); // doctor -> detective or joker_haunt
+      advanceNightSubPhase(game); // doctor -> detective or resolving
     }
 
-    while (game.nightSubPhase !== "joker_haunt" && game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-    }
-
-    if (game.nightSubPhase === "joker_haunt") {
-      submitJokerHaunt(game, joker.id, hauntTargetId);
-      advanceNightSubPhase(game);
-    }
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
 
     const result = transitionToDay(game);
 
@@ -772,6 +710,9 @@ describe("Joker Haunt - Night Resolution", () => {
       v !== mafiaTargetId && v !== doctor?.id && game.players.get(v)!.isAlive
     )!;
 
+    // Joker haunts during mafia sub-phase (parallel)
+    submitJokerHaunt(game, joker.id, hauntTargetId);
+
     lockTarget(game, mafia.id, mafiaTargetId);
     advanceNightSubPhase(game);
 
@@ -781,14 +722,7 @@ describe("Joker Haunt - Night Resolution", () => {
       advanceNightSubPhase(game);
     }
 
-    while (game.nightSubPhase !== "joker_haunt" && game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-    }
-
-    if (game.nightSubPhase === "joker_haunt") {
-      submitJokerHaunt(game, joker.id, hauntTargetId);
-      advanceNightSubPhase(game);
-    }
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
 
     const result = transitionToDay(game);
 
@@ -806,12 +740,32 @@ describe("Joker Haunt - Night Resolution", () => {
     const aliveCitizens = getCitizens(game);
     lockTarget(game, mafia.id, aliveCitizens[0].id);
 
-    // Advance through all sub-phases
     while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
     transitionToDay(game);
 
     expect(game.jokerHauntVoters).toEqual([]);
     expect(game.jokerHauntTarget).toBeNull();
+    removeGame(game.code);
+  });
+
+  test("haunt kill creates joker_haunt event in history", () => {
+    const { game, joker, voters, mafia } = setupHauntNight();
+
+    const aliveCitizens = getCitizens(game);
+    const mafiaTargetId = aliveCitizens[0].id;
+    const hauntTargetId = voters.find(v => v !== mafiaTargetId && game.players.get(v)!.isAlive)!;
+
+    // Joker haunts during mafia sub-phase
+    submitJokerHaunt(game, joker.id, hauntTargetId);
+
+    lockTarget(game, mafia.id, mafiaTargetId);
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    transitionToDay(game);
+
+    const hauntEvent = game.eventHistory.find(e => e.type === "joker_haunt");
+    expect(hauntEvent).not.toBeUndefined();
+    expect(hauntEvent!.playerName).toBe(game.players.get(hauntTargetId)!.username);
     removeGame(game.code);
   });
 });
@@ -1021,6 +975,9 @@ describe("Doctor Official + Joker Haunt Combined", () => {
       v !== mafiaTargetId && v !== doctor?.id && game.players.get(v)!.isAlive
     )!;
 
+    // Joker haunts during mafia sub-phase (parallel)
+    submitJokerHaunt(game, joker.id, hauntTargetId);
+
     lockTarget(game, mafia.id, mafiaTargetId);
     advanceNightSubPhase(game);
 
@@ -1029,23 +986,12 @@ describe("Doctor Official + Joker Haunt Combined", () => {
       advanceNightSubPhase(game);
     }
 
-    while (game.nightSubPhase !== "joker_haunt" && game.nightSubPhase !== "resolving") {
-      advanceNightSubPhase(game);
-    }
-
-    if (game.nightSubPhase === "joker_haunt") {
-      submitJokerHaunt(game, joker.id, hauntTargetId);
-      advanceNightSubPhase(game);
-    }
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
 
     const result = transitionToDay(game);
 
     // Haunt victim saved: in official mode, save message should be generic
     expect(result.saved).toBe(true);
-    // Check that save message doesn't contain victim name
-    const hasNameInMsg = result.messages.some(m => m.includes(game.players.get(hauntTargetId)!.username));
-    // In official mode, the save message should NOT contain the name
-    // (the kill message for mafiaTarget will contain that name though)
     expect(game.players.get(hauntTargetId)!.isAlive).toBe(true);
     removeGame(game.code);
   });
