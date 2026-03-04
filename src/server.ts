@@ -1,4 +1,4 @@
-import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig } from "./db";
+import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig, getUserPrefs, updateUserPref } from "./db";
 import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
   getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
@@ -11,6 +11,14 @@ import { Narrator } from "./narrator";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
 import path from "path";
 import fs from "fs";
+
+// Player color palette (20 medium-brightness colors)
+const PLAYER_COLORS = [
+  "#E53935", "#EC407A", "#AB47BC", "#7E57C2", "#5C6BC0",
+  "#42A5F5", "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A",
+  "#9CCC65", "#C0CA33", "#FFEE58", "#FFA726", "#FF7043",
+  "#D84315", "#8D6E63", "#78909C", "#546E7A", "#F06292",
+];
 
 // Initialize database
 getDb();
@@ -52,7 +60,10 @@ function sendToDeadPlayers(game: Game, msg: ServerMessage): void {
 }
 
 function broadcastLobbyUpdate(game: Game): void {
-  const players = getPlayerInfo(game);
+  const players = getPlayerInfo(game).map(p => ({
+    ...p,
+    color: getUserPrefs(p.id).player_color,
+  }));
   const admin = game.players.get(game.adminId);
   broadcastToGame(game.code, {
     type: "lobby_update",
@@ -466,12 +477,14 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     };
   }
 
+  const userPrefs = getUserPrefs(userId);
   return {
     type: "game_sync",
     code: game.code,
     isAdmin: userId === game.adminId,
     narrationAccent: game.settings.narrationAccent,
-    players: getPlayerInfo(game),
+    hide_mafia_tag: userPrefs.hide_mafia_tag,
+    players: getPlayerInfo(game).map(p => ({ ...p, color: getUserPrefs(p.id).player_color })),
     role: rejoined.role!,
     isLover: rejoined.isLover,
     variant: rejoined.variant,
@@ -512,8 +525,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Username already taken" });
         return;
       }
+      // Assign random color on registration
+      const randomColor = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+      updateUserPref(userId, "player_color", randomColor);
       client.userId = userId;
-      send(ws, { type: "registered", userId, username: msg.username.trim() });
+      send(ws, { type: "registered", userId, username: msg.username.trim(), hide_mafia_tag: false, player_color: randomColor });
       break;
     }
 
@@ -523,8 +539,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Invalid username or passcode" });
         return;
       }
+      // Assign random color for legacy users without one
+      let playerColor = user.player_color;
+      if (!playerColor) {
+        playerColor = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+        updateUserPref(user.id, "player_color", playerColor);
+      }
       client.userId = user.id;
-      send(ws, { type: "logged_in", userId: user.id, username: user.username });
+      send(ws, { type: "logged_in", userId: user.id, username: user.username, hide_mafia_tag: user.hide_mafia_tag, player_color: playerColor });
       break;
     }
 
@@ -1189,6 +1211,53 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
     case "toggle_sound": {
       // Sound toggle is client-side only, but we acknowledge it
+      break;
+    }
+
+    case "update_player_pref": {
+      if (!client.userId) return;
+      const key = msg.key;
+      if (key === "hide_mafia_tag") {
+        updateUserPref(client.userId, "hide_mafia_tag", !!msg.value);
+      } else if (key === "player_color") {
+        if (!PLAYER_COLORS.includes(msg.value)) {
+          send(ws, { type: "error", message: "Invalid color" });
+          return;
+        }
+        updateUserPref(client.userId, "player_color", msg.value);
+      } else {
+        return;
+      }
+      const prefs = getUserPrefs(client.userId);
+      send(ws, { type: "player_prefs", hide_mafia_tag: prefs.hide_mafia_tag, player_color: prefs.player_color });
+      // If color changed and player is in a lobby, broadcast update
+      if (key === "player_color" && client.gameCode) {
+        const game = getGame(client.gameCode);
+        if (game && game.phase === "lobby") {
+          broadcastLobbyUpdate(game);
+        }
+      }
+      break;
+    }
+
+    case "player_return_to_lobby": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.phase !== "game_over") return;
+      // Non-admin only (admin uses return_to_lobby)
+      if (client.userId === game.adminId) return;
+      // Send lobby_update to just this player so they can navigate to lobby
+      const players = getPlayerInfo(game).map(p => ({
+        ...p,
+        color: getUserPrefs(p.id).player_color,
+      }));
+      const admin = game.players.get(game.adminId);
+      send(ws, {
+        type: "lobby_update",
+        players,
+        settings: game.settings,
+        adminName: admin?.username ?? "Unknown",
+      });
       break;
     }
   }

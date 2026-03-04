@@ -126,12 +126,14 @@ export type ClientMessage =
   | { type: "toggle_sound" }
   | { type: "restart_game" }
   | { type: "return_to_lobby" }
-  | { type: "close_room" };
+  | { type: "close_room" }
+  | { type: "update_player_pref"; key: "hide_mafia_tag" | "player_color"; value: any }
+  | { type: "player_return_to_lobby" };
 
 export type ServerMessage =
   | { type: "error"; message: string }
-  | { type: "registered"; userId: number; username: string }
-  | { type: "logged_in"; userId: number; username: string }
+  | { type: "registered"; userId: number; username: string; hide_mafia_tag: boolean; player_color: string | null }
+  | { type: "logged_in"; userId: number; username: string; hide_mafia_tag: boolean; player_color: string | null }
   | { type: "game_created"; code: string }
   | { type: "game_joined"; code: string; isAdmin: boolean }
   | { type: "player_list"; players: PlayerInfo[] }
@@ -162,12 +164,14 @@ export type ServerMessage =
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
   | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null }
   | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "resolving"; isRoleAlive: boolean }
+  | { type: "player_prefs"; hide_mafia_tag: boolean; player_color: string | null }
   | { type: "room_closed"; message: string }
   | { type: "game_sync";
       // Identity
       code: string;
       isAdmin: boolean;
       narrationAccent: string;
+      hide_mafia_tag: boolean;
       // Players
       players: PlayerInfo[];
       // Role
@@ -233,6 +237,7 @@ export interface PlayerInfo {
   username: string;
   isAlive: boolean;
   isAdmin: boolean;
+  color?: string | null;
   role?: Role;
   isLover?: boolean;
   loverId?: number;
