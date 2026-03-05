@@ -2356,8 +2356,8 @@
     lastVoteResult = msg;
 
     const resultText = msg.executed
-      ? `${msg.targetName} has been executed. (${msg.votesFor} for, ${msg.votesAgainst} against)`
-      : `${msg.targetName} has been spared. (${msg.votesFor} for, ${msg.votesAgainst} against)`;
+      ? `${msg.targetName} has been executed.`
+      : `${msg.targetName} has been spared.`;
     showNarratorMessage(resultText);
   }
 
@@ -3088,7 +3088,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.2_202603040319";
-  const APP_VERSION_STAGING = "staging.10_202603041621";
+  const APP_VERSION_STAGING = "staging.11_202603041639";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
