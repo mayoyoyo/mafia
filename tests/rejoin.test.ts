@@ -140,6 +140,10 @@ async function setupAndStart(count: number, settings?: any): Promise<{ code: str
   const started = await Promise.all(startedPromises);
   await Promise.all(phasePromises);
 
+  // Trigger night narration (Begin Night gate)
+  send(players[0].ws, { type: "narrator_ready" });
+  await Bun.sleep(200);
+
   for (let i = 0; i < count; i++) {
     players[i].role = started[i].role;
   }

@@ -486,6 +486,25 @@ input::placeholder { color: var(--text-secondary); }
 .narrator-messages .narrator-line:last-child { border-bottom: none; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
+/* AWAITING NARRATOR READY */
+.awaiting-ready {
+  background: var(--bg-card);
+  border: 2px solid var(--primary);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  animation: fadeIn 0.5s ease;
+}
+.awaiting-ready p {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.awaiting-ready .btn {
+  margin-top: 4px;
+}
+
 /* DETECTIVE RESULT */
 .detective-result {
   background: var(--bg-card);
