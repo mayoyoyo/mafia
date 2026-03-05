@@ -51,12 +51,19 @@ function sendToUser(userId: number, msg: ServerMessage): void {
   }
 }
 
-function sendToDeadPlayers(game: Game, msg: ServerMessage): void {
+function sendToDeadPlayers(game: Game, msg: ServerMessage, excludeUserId?: number): void {
   for (const [, player] of game.players) {
-    if (!player.isAlive) {
+    if (!player.isAlive && player.id !== excludeUserId) {
       sendToUser(player.id, msg);
     }
   }
+}
+
+/** Returns the dead joker's id if haunt is active this night, or undefined */
+function getHauntingJokerId(game: Game): number | undefined {
+  if (game.settings.jokerMode !== "official" || game.jokerHauntVoters.length === 0) return undefined;
+  const joker = Array.from(game.players.values()).find(p => p.role === "joker" && !p.isAlive);
+  return joker?.id;
 }
 
 function broadcastLobbyUpdate(game: Game): void {
@@ -102,7 +109,8 @@ function sendMafiaPrompts(game: Game): void {
     sendToUser(m.id, { type: "mafia_targets", players: mafiaTargets });
   }
 
-  // Send initial spectator view to dead players
+  // Send initial spectator view to dead players (exclude haunting joker)
+  const jokerExclude = getHauntingJokerId(game);
   sendToDeadPlayers(game, {
     type: "spectator_mafia_update",
     voterTargets: {},
@@ -110,7 +118,7 @@ function sendMafiaPrompts(game: Game): void {
     objectedTargets: {},
     aliveMafiaCount: aliveMafia.length,
     targets: mafiaTargets,
-  });
+  }, jokerExclude);
 }
 
 function sendDoctorPrompts(game: Game): void {
@@ -126,12 +134,12 @@ function sendDoctorPrompts(game: Game): void {
       sendToUser(d.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
     }
   }
-  // Notify dead players about doctor sub-phase
+  // Notify dead players about doctor sub-phase (exclude haunting joker)
   sendToDeadPlayers(game, {
     type: "spectator_night_phase",
     subPhase: "doctor",
     isRoleAlive: aliveDoctor.length > 0,
-  });
+  }, getHauntingJokerId(game));
 }
 
 function sendDetectivePrompts(game: Game): void {
@@ -149,12 +157,12 @@ function sendDetectivePrompts(game: Game): void {
       sendToUser(d.id, { type: "detective_targets", players: allAliveExceptSelf });
     }
   }
-  // Notify dead players about detective sub-phase
+  // Notify dead players about detective sub-phase (exclude haunting joker)
   sendToDeadPlayers(game, {
     type: "spectator_night_phase",
     subPhase: "detective",
     isRoleAlive: aliveDetective.length > 0,
-  });
+  }, getHauntingJokerId(game));
 }
 
 function sendJokerHauntPrompts(game: Game): void {
@@ -198,13 +206,13 @@ function handleSubPhaseAdvance(game: Game): void {
       nightTimers.delete(game.code);
       if (!getGame(game.code)) return;
       broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
-      // Notify dead players that this role is dead
+      // Notify dead players that this role is dead (exclude haunting joker)
       if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
         sendToDeadPlayers(game, {
           type: "spectator_night_phase",
           subPhase: result.nextPhase,
           isRoleAlive: false,
-        });
+        }, getHauntingJokerId(game));
       }
 
       // Normal-distribution fake delay centered at 10s, range ~5-15s
@@ -215,14 +223,14 @@ function handleSubPhaseAdvance(game: Game): void {
       const fakeTimer = setTimeout(() => {
         nightTimers.delete(game.code);
         if (!getGame(game.code)) return;
-        // Notify dead players that this fake sub-phase completed (role is dead)
+        // Notify dead players that this fake sub-phase completed (role is dead, exclude haunting joker)
         if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
           sendToDeadPlayers(game, {
             type: "spectator_night_complete",
             phase: result.nextPhase,
             targetName: null,
             alive: false,
-          });
+          }, getHauntingJokerId(game));
         }
         // Recurse to next sub-phase (sends close cue for this phase)
         handleSubPhaseAdvance(game);
@@ -260,6 +268,9 @@ function startNightSequence(game: Game): void {
   // Send joker haunt prompts if active (official mode + voters exist)
   if (game.settings.jokerMode === "official" && game.jokerHauntVoters.length > 0) {
     sendJokerHauntPrompts(game);
+    // Notify other dead players that joker is deliberating
+    const jokerId = getHauntingJokerId(game);
+    sendToDeadPlayers(game, { type: "spectator_joker_deliberating" }, jokerId);
   }
 }
 
@@ -306,8 +317,55 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
   // Night action state (only if night + alive + has role with action + correct sub-phase)
   let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
   if (game.phase === "night" && !rejoined.isAlive) {
+    // Dead joker with active haunt gets haunt view, not spectator view
+    const isHauntingJoker = rejoined.role === "joker"
+      && game.settings.jokerMode === "official"
+      && game.jokerHauntVoters.length > 0;
+
+    if (isHauntingJoker) {
+      if (game.jokerHauntTarget === null) {
+        // Joker hasn't picked yet — show haunt targets (sent separately via joker_haunt_targets on rejoin)
+        const hauntTargets = getJokerHauntTargets(game);
+        nightAction = {
+          locked: false,
+          targetName: null,
+          targets: hauntTargets,
+          voterTargets: {},
+          lockedTarget: null,
+          objectedTargets: {},
+          aliveMafiaCount: 0,
+          lastDoctorTarget: null,
+          jokerHauntPending: true,
+        };
+      } else {
+        // Joker already picked — show confirmed state
+        const hauntTarget = game.players.get(game.jokerHauntTarget);
+        nightAction = {
+          locked: true,
+          targetName: hauntTarget ? hauntTarget.username : null,
+          targets: [],
+          voterTargets: {},
+          lockedTarget: null,
+          objectedTargets: {},
+          aliveMafiaCount: 0,
+          lastDoctorTarget: null,
+          jokerHauntPending: true,
+        };
+      }
+    } else {
     // Build spectator log of completed sub-phases for dead players
     const spectatorLog = buildSpectatorLog(game);
+
+    // Check if joker haunt is active (for spectator joker status restoration)
+    const jokerStatus: { jokerDeliberating?: boolean; jokerResolvedTarget?: string } = {};
+    if (game.settings.jokerMode === "official" && game.jokerHauntVoters.length > 0) {
+      if (game.jokerHauntTarget === null) {
+        jokerStatus.jokerDeliberating = true;
+      } else {
+        const jTarget = game.players.get(game.jokerHauntTarget);
+        if (jTarget) jokerStatus.jokerResolvedTarget = jTarget.username;
+      }
+    }
 
     // Dead player spectator view for all night sub-phases
     if (game.nightSubPhase === "mafia") {
@@ -327,6 +385,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         lastDoctorTarget: null,
         isSpectatorView: true,
         spectatorLog,
+        ...jokerStatus,
       };
     } else if (game.nightSubPhase === "doctor" || game.nightSubPhase === "detective") {
       const isRoleAlive = game.nightSubPhase === "doctor"
@@ -345,6 +404,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         spectatorSubPhase: game.nightSubPhase,
         spectatorSubPhaseAlive: isRoleAlive,
         spectatorLog,
+        ...jokerStatus,
       };
     } else if (game.nightSubPhase === "resolving") {
       nightAction = {
@@ -360,8 +420,10 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         spectatorSubPhase: "resolving",
         spectatorSubPhaseAlive: false,
         spectatorLog,
+        ...jokerStatus,
       };
     }
+    } // close else (non-haunting dead player spectator view)
   } else if (game.phase === "night" && rejoined.isAlive) {
     if (rejoined.role === "mafia" && game.nightSubPhase === "mafia") {
       const locked = game.mafiaTarget !== null;
@@ -796,14 +858,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
       }
 
-      // Notify dead players that mafia sub-phase completed
+      // Notify dead players that mafia sub-phase completed (exclude haunting joker)
       const mafiaVictim = game.players.get(game.mafiaTarget);
       sendToDeadPlayers(game, {
         type: "spectator_night_complete",
         phase: "mafia",
         targetName: mafiaVictim ? mafiaVictim.username : null,
         alive: true,
-      });
+      }, getHauntingJokerId(game));
 
       handleSubPhaseAdvance(game);
       break;
@@ -818,14 +880,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (saved) {
         sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
 
-        // Notify dead players that doctor sub-phase completed
+        // Notify dead players that doctor sub-phase completed (exclude haunting joker)
         const protectedPlayer = game.players.get(msg.targetId);
         sendToDeadPlayers(game, {
           type: "spectator_night_complete",
           phase: "doctor",
           targetName: protectedPlayer ? protectedPlayer.username : null,
           alive: true,
-        });
+        }, getHauntingJokerId(game));
 
         // Advance to next sub-phase (detective/resolving)
         handleSubPhaseAdvance(game);
@@ -847,14 +909,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           message: "You have chosen to investigate someone tonight. Results will be revealed at dawn.",
         });
 
-        // Notify dead players that detective sub-phase completed
+        // Notify dead players that detective sub-phase completed (exclude haunting joker)
         const investigatedPlayer = game.players.get(msg.targetId);
         sendToDeadPlayers(game, {
           type: "spectator_night_complete",
           phase: "detective",
           targetName: investigatedPlayer ? investigatedPlayer.username : null,
           alive: true,
-        });
+        }, getHauntingJokerId(game));
 
         // Advance to resolving
         handleSubPhaseAdvance(game);
@@ -870,14 +932,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const haunted = submitJokerHaunt(game, client.userId, msg.targetId);
       if (haunted) {
         sendToUser(client.userId, { type: "night_action_done", message: "You have chosen your victim. Revenge is sweet." });
-        // Notify dead players (spectator chat) about the haunt choice
+        // Notify other dead players that joker has chosen (exclude joker themselves)
         const target = game.players.get(msg.targetId);
         if (target) {
           sendToDeadPlayers(game, {
-            type: "spectator_kill_confirmed",
+            type: "spectator_joker_resolved",
             targetName: target.username,
-            doctorMessage: "Joker chose to haunt " + target.username,
-          });
+          }, client.userId);
         }
         // No sub-phase advance — haunt is a parallel action
       }
@@ -1260,7 +1321,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets, lockedTarget: status.lockedTarget, objectedTargets: status.objectedTargets, aliveMafiaCount: status.aliveMafiaCount });
   }
 
-  // Send spectator update to dead players
+  // Send spectator update to dead players (exclude haunting joker)
   const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
   const spectatorTargets = aliveNonMafia.map((p) => ({
     id: p.id,
@@ -1275,7 +1336,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     objectedTargets: status.objectedTargets,
     aliveMafiaCount: status.aliveMafiaCount,
     targets: spectatorTargets,
-  });
+  }, getHauntingJokerId(game));
 
   // On consensus: send confirm-ready so mafia can slide to confirm the kill
   if (result.consensus && result.target !== null) {
@@ -1289,6 +1350,8 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
 
 function resolveNightAndTransition(game: Game): void {
   if (!getGame(game.code)) return; // game was removed (e.g., admin left)
+  // Capture haunting joker id before transitionToDay clears jokerHauntVoters
+  const hauntingJokerId = getHauntingJokerId(game);
   const nightResult = transitionToDay(game);
   recordNarrator(game, nightResult.messages);
 
@@ -1337,7 +1400,7 @@ function resolveNightAndTransition(game: Game): void {
       targetName,
       doctorMessage,
       kills,
-    });
+    }, hauntingJokerId);
   }
 
   // Notify killed players

@@ -634,6 +634,7 @@ input::placeholder { color: var(--text-secondary); }
 .mtc-btn:active { transform: scale(0.97); opacity: 0.8; }
 .mtc-btn-suggest { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 .mtc-btn-lock { background: var(--primary); color: #fff; }
+.mtc-btn-lock.mtc-btn-disabled { background: var(--bg-card); color: var(--text-secondary); opacity: 0.5; cursor: not-allowed; }
 .mtc-btn-object { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); flex: 1; }
 .mtc-btn-unlock { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
 .mtc-btn-remove-objection { background: var(--bg-card); color: #e53935; border: 1px solid rgba(229,57,53,0.3); }
@@ -650,6 +651,23 @@ input::placeholder { color: var(--text-secondary); }
 .spectator-log-entry:last-child { border-bottom: none; }
 .spectator-log-entry .log-target { color: var(--text); font-weight: 600; }
 .spectator-log-entry.log-dead { opacity: 0.5; font-style: italic; }
+
+/* Joker spectator status */
+.joker-spectator-status {
+  font-size: 13px; padding: 8px 12px;
+  border-radius: 8px; margin-bottom: 8px;
+  text-align: center; font-weight: 600;
+}
+.joker-spectator-status.deliberating {
+  background: rgba(156, 39, 176, 0.15);
+  color: #ce93d8;
+  border: 1px solid rgba(156, 39, 176, 0.3);
+}
+.joker-spectator-status.resolved {
+  background: rgba(156, 39, 176, 0.25);
+  color: #e1bee7;
+  border: 1px solid rgba(156, 39, 176, 0.5);
+}
 
 /* Single mafia target */
 .single-mafia-target {

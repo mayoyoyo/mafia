@@ -43,6 +43,17 @@ const SAVE_METHODS = [
   "a first-aid kit held together with duct tape", "a miracle smoothie recipe",
 ];
 
+const JOKER_HAUNT_KILL_MESSAGES = [
+  "{name} was found at dawn, pale as a ghost. It seems the Joker had the last laugh. {lastWords}",
+  "RIP {name}. Discovered {location} with a playing card pinned to their chest — the Joker. Revenge from beyond the grave.",
+  "{name} didn't survive the night. Witnesses say they heard cackling {location}. The Joker's ghost strikes.",
+  "The town wakes to find {name} {location}, haunted to death. A faint laugh echoes in the wind. {lastWords}",
+  "{name} has been claimed by the Joker's curse. Found {location}, clutching {food}. Even death couldn't stop the Joker.",
+  "A chill runs through the town. {name} was found {location}, taken by an unseen force. The Joker sends regards from the other side.",
+  "Pour one out for {name}, found {location}. Cause of death? Supernatural revenge via {tool}. The Joker's ghost is no joke.",
+  "It's a dark day. {name} was discovered {location}, haunted into oblivion. {lastWords} The Joker always gets the last laugh.",
+];
+
 const EXECUTION_STYLES = [
   "catapulted into the sunset", "voted off the island (wrong show, but same energy)",
   "escorted out by an aggressive hall monitor", "yeeted into the void",
@@ -199,8 +210,7 @@ export const Narrator = {
     return fill(pick(JOKER_WIN_MESSAGES), { name });
   },
   jokerHauntKill(name: string): string {
-    // Used in event history — narrator doesn't distinguish haunt from mafia at dawn
-    return fill(pick(NIGHT_KILL_MESSAGES), {
+    return fill(pick(JOKER_HAUNT_KILL_MESSAGES), {
       name,
       location: pick(LOCATIONS),
       tool: pick(TOOLS),

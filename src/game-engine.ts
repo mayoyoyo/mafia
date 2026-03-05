@@ -584,7 +584,7 @@ export function resolveNight(game: Game): NightResult {
         if (hauntTarget.isAlive) {
           const killResult = killPlayer(game, hauntTargetId);
           if (killResult) {
-            const deathMsg = Narrator.nightKill(killResult.killed.username);
+            const deathMsg = Narrator.jokerHauntKill(killResult.killed.username);
             result.messages.push(deathMsg);
             result.killed.push({ player: killResult.killed, message: deathMsg, source: "joker_haunt" });
 
