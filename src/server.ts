@@ -356,6 +356,17 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     // Build spectator log of completed sub-phases for dead players
     const spectatorLog = buildSpectatorLog(game);
 
+    // Check if joker haunt is active (for spectator joker status restoration)
+    const jokerStatus: { jokerDeliberating?: boolean; jokerResolvedTarget?: string } = {};
+    if (game.settings.jokerMode === "official" && game.jokerHauntVoters.length > 0) {
+      if (game.jokerHauntTarget === null) {
+        jokerStatus.jokerDeliberating = true;
+      } else {
+        const jTarget = game.players.get(game.jokerHauntTarget);
+        if (jTarget) jokerStatus.jokerResolvedTarget = jTarget.username;
+      }
+    }
+
     // Dead player spectator view for all night sub-phases
     if (game.nightSubPhase === "mafia") {
       const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
@@ -374,6 +385,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         lastDoctorTarget: null,
         isSpectatorView: true,
         spectatorLog,
+        ...jokerStatus,
       };
     } else if (game.nightSubPhase === "doctor" || game.nightSubPhase === "detective") {
       const isRoleAlive = game.nightSubPhase === "doctor"
@@ -392,6 +404,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         spectatorSubPhase: game.nightSubPhase,
         spectatorSubPhaseAlive: isRoleAlive,
         spectatorLog,
+        ...jokerStatus,
       };
     } else if (game.nightSubPhase === "resolving") {
       nightAction = {
@@ -407,6 +420,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         spectatorSubPhase: "resolving",
         spectatorSubPhaseAlive: false,
         spectatorLog,
+        ...jokerStatus,
       };
     }
     } // close else (non-haunting dead player spectator view)

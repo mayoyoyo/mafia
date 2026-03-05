@@ -365,11 +365,11 @@
         break;
 
       case "spectator_joker_deliberating":
-        if (isDead) showJokerDeliberating();
+        if (isDead && !jokerHauntActive) showJokerDeliberating();
         break;
 
       case "spectator_joker_resolved":
-        if (isDead) showJokerResolved(msg.targetName);
+        if (isDead && !jokerHauntActive) showJokerResolved(msg.targetName);
         break;
 
       case "detective_result":
@@ -566,6 +566,12 @@
           for (const entry of na.spectatorLog) {
             appendSpectatorLog(entry);
           }
+        }
+        // Restore joker deliberating/resolved status for spectators on rejoin
+        if (na.isSpectatorView && na.jokerDeliberating) {
+          showJokerDeliberating();
+        } else if (na.isSpectatorView && na.jokerResolvedTarget) {
+          showJokerResolved(na.jokerResolvedTarget);
         }
         if (na.jokerHauntPending) {
           // Dead joker with active haunt — show haunt view, not spectator view

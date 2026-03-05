@@ -203,6 +203,8 @@ export type ServerMessage =
         spectatorSubPhaseAlive?: boolean;
         spectatorLog?: Array<{ phase: string; targetName: string | null; alive: boolean }>;
         jokerHauntPending?: boolean;
+        jokerDeliberating?: boolean;
+        jokerResolvedTarget?: string;
       } | null;
       // Vote state (null if not in voting)
       voteState: {
