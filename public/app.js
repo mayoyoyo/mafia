@@ -159,12 +159,12 @@
       return;
     }
     // During night/execution transition, queue sound_cues and night action prompts
-    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets")) {
+    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
       nightTransitionQueue.push(msg);
       return;
     }
     // During night narration (sounds playing after overlay), hold night prompts until narration finishes
-    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets")) {
+    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
       nightNarrationQueue.push(msg);
       return;
     }
@@ -353,15 +353,23 @@
         break;
 
       case "spectator_kill_confirmed":
-        if (isDead) showSpectatorKillResult(msg);
+        if (isDead && !jokerHauntActive) showSpectatorKillResult(msg);
         break;
 
       case "spectator_night_phase":
-        if (isDead) showSpectatorNightPhase(msg);
+        if (isDead && !jokerHauntActive) showSpectatorNightPhase(msg);
         break;
 
       case "spectator_night_complete":
-        if (isDead) appendSpectatorLog(msg);
+        if (isDead && !jokerHauntActive) appendSpectatorLog(msg);
+        break;
+
+      case "spectator_joker_deliberating":
+        if (isDead) showJokerDeliberating();
+        break;
+
+      case "spectator_joker_resolved":
+        if (isDead) showJokerResolved(msg.targetName);
         break;
 
       case "detective_result":
@@ -559,7 +567,21 @@
             appendSpectatorLog(entry);
           }
         }
-        if (na.isSpectatorView && na.spectatorSubPhase) {
+        if (na.jokerHauntPending) {
+          // Dead joker with active haunt — show haunt view, not spectator view
+          jokerHauntActive = true;
+          if (na.locked && na.targetName) {
+            // Already chose — show confirmed state
+            const panel = $("night-actions");
+            panel.classList.remove("hidden");
+            $("action-title").textContent = "Haunt Target";
+            $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
+            hideSlideConfirm();
+            $("action-status").textContent = "You have chosen your victim. Revenge is sweet.";
+            nightActionLocked = true;
+          }
+          // If not locked, targets are sent separately via joker_haunt_targets
+        } else if (na.isSpectatorView && na.spectatorSubPhase) {
           // Dead player spectator view for doctor/detective/resolving sub-phases
           showSpectatorNightPhase({
             subPhase: na.spectatorSubPhase,
@@ -1387,10 +1409,11 @@
       jokerHauntActive = false;
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
-      // Reset spectator night log for new night
+      // Reset spectator night log and joker status for new night
       spectatorNightLog = [];
       $("spectator-night-log").innerHTML = "";
       $("spectator-night-log").classList.add("hidden");
+      $("joker-spectator-status").classList.add("hidden");
       if (isAdmin) {
         $("admin-night-controls").classList.remove("hidden");
       }
@@ -1795,7 +1818,7 @@
           setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
-            if (actionType === "joker_haunt") jokerHauntActive = false;
+            // Keep jokerHauntActive true for the entire night (reset on phase change to day)
             wsSend({ type: actionType, targetId: selectedTargetId });
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
@@ -1969,29 +1992,48 @@
             });
             actions.appendChild(unlockBtn);
           } else if (hasMyMaybe) {
-            const lockBtn = document.createElement("button");
-            lockBtn.className = "mtc-btn mtc-btn-lock";
-            lockBtn.textContent = "\u{1F512} Lock In";
-            lockBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (nightActionLocked) return;
-              wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-            });
-            actions.appendChild(lockBtn);
+            // Check if I already have a lock on a different target
+            const myExistingLock = myMafiaVotes.find(v => v.voteType === "lock");
+            if (myExistingLock && myExistingLock.targetId !== targetId) {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
+              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              lockBtn.disabled = true;
+              actions.appendChild(lockBtn);
+            } else {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock";
+              lockBtn.textContent = "\u{1F512} Lock In";
+              lockBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (nightActionLocked) return;
+                wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+              });
+              actions.appendChild(lockBtn);
+            }
           } else if (cardState === "partial-lock") {
             // Someone else already locked — show Lock In (auto-sends maybe+lock)
-            const lockBtn = document.createElement("button");
-            lockBtn.className = "mtc-btn mtc-btn-lock";
-            lockBtn.textContent = "\u{1F512} Lock In";
-            lockBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (nightActionLocked) return;
-              wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-              setTimeout(() => {
-                wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-              }, 50);
-            });
-            actions.appendChild(lockBtn);
+            const myExistingLock = myMafiaVotes.find(v => v.voteType === "lock");
+            if (myExistingLock && myExistingLock.targetId !== targetId) {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
+              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              lockBtn.disabled = true;
+              actions.appendChild(lockBtn);
+            } else {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock";
+              lockBtn.textContent = "\u{1F512} Lock In";
+              lockBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (nightActionLocked) return;
+                wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+                setTimeout(() => {
+                  wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+                }, 50);
+              });
+              actions.appendChild(lockBtn);
+            }
           } else {
             const nomBtn = document.createElement("button");
             nomBtn.className = "mtc-btn mtc-btn-suggest";
@@ -2222,6 +2264,24 @@
       logEl.appendChild(formatSpectatorLogEntry(entry));
     }
     logEl.classList.remove("hidden");
+  }
+
+  function showJokerDeliberating() {
+    const el = $("joker-spectator-status");
+    if (el) {
+      el.textContent = "Joker is choosing their victim\u2026";
+      el.className = "joker-spectator-status deliberating";
+      el.classList.remove("hidden");
+    }
+  }
+
+  function showJokerResolved(targetName) {
+    const el = $("joker-spectator-status");
+    if (el) {
+      el.textContent = "Joker has chosen " + targetName;
+      el.className = "joker-spectator-status resolved";
+      el.classList.remove("hidden");
+    }
   }
 
   function handleMafiaConfirmReady(msg) {
@@ -3088,7 +3148,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.2_202603040319";
-  const APP_VERSION_STAGING = "staging.11_202603041639";
+  const APP_VERSION_STAGING = "staging.12_202603041734";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
