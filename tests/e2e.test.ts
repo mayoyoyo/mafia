@@ -231,6 +231,8 @@ test("night action prompts arrive after phase_change on vote execution", async (
   // Collect on ALL ws from the start so we never miss messages
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
 
   // Wait for all messages to settle
   await Bun.sleep(1000);
@@ -346,6 +348,8 @@ test("night action prompts arrive after phase_change on end_day", async () => {
   // Collect on ALL ws from the start
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find mafia
@@ -425,6 +429,8 @@ test("sequential night: mafia → doctor → detective → day (all alive + enab
   // Collect on all ws from start
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find roles from collected messages
@@ -496,6 +502,8 @@ test("sequential night: mafia-only (no special roles) → immediate resolution a
   const allWs = [adminWs, p2ws, p3ws, p4ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find mafia
@@ -548,6 +556,8 @@ test("sequential night: sub-phase guard rejects doctor_save during mafia sub-pha
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let doctorIdx = -1;
@@ -599,6 +609,8 @@ test("sequential night: force dawn during doctor sub-phase transition", async ()
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let mafiaIdx = -1;
@@ -658,6 +670,8 @@ test("multi-mafia: both must lock same target before mafia_confirm_ready is sent
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find both mafia players
@@ -740,6 +754,8 @@ test("confirm_mafia_kill before consensus does nothing", async () => {
   const allWs = [adminWs, p2ws, p3ws, p4ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let mafiaIdx = -1;
@@ -785,6 +801,8 @@ test("mafia_confirm_ready contains correct targetName", async () => {
   const allWs = [adminWs, p2ws, p3ws, p4ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let mafiaIdx = -1;
@@ -842,6 +860,8 @@ test("mafia_vote_update includes objectedTargets and aliveMafiaCount", async () 
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   const mafiaIndices: number[] = [];
@@ -899,6 +919,8 @@ test("multi-mafia: one mafia lock does not advance, other mafia must also lock",
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   const mafiaIndices: number[] = [];

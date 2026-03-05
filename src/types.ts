@@ -87,6 +87,8 @@ export interface Game {
   detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
   // Sequential night sub-phase
   nightSubPhase: NightSubPhase | null;
+  // Begin Night gate (game start / restart only)
+  awaitingNarratorReady: boolean;
 }
 
 // WebSocket message types
@@ -116,6 +118,7 @@ export type ClientMessage =
   | { type: "return_to_lobby" }
   | { type: "close_room" }
   | { type: "update_player_pref"; key: "hide_mafia_tag" | "player_color"; value: any }
+  | { type: "narrator_ready" }
   | { type: "player_return_to_lobby" };
 
 export type ServerMessage =
@@ -145,6 +148,7 @@ export type ServerMessage =
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
   | { type: "sound_cue"; sound: "night" | "day" | "everyone_close" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
+  | { type: "awaiting_ready" }
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
   | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null; kills?: Array<{ name: string; source: "mafia" | "joker_haunt" }> }
@@ -168,6 +172,7 @@ export type ServerMessage =
       phase: GamePhase;
       round: number;
       nightSubPhase: NightSubPhase | null;
+      awaitingNarratorReady: boolean;
       // Alive
       isDead: boolean;
       // Day timer

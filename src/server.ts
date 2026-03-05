@@ -490,6 +490,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     phase: game.phase,
     round: game.round,
     nightSubPhase: game.nightSubPhase,
+    awaitingNarratorReady: game.awaitingNarratorReady,
     isDead: !rejoined.isAlive,
     dayStartedAt: game.dayStartedAt,
     dayVoteCount: game.dayVoteCount,
@@ -594,6 +595,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         // If game is active (not lobby), send single atomic game_sync
         if (game.phase !== "lobby") {
           send(ws, buildGameSync(game, client, rejoined));
+          // If admin rejoins during awaiting state, re-send awaiting_ready
+          if (game.awaitingNarratorReady && client.userId === game.adminId) {
+            send(ws, { type: "awaiting_ready" });
+          }
           // If dead joker with pending haunt during night, send haunt targets separately
           if (game.phase === "night" && game.nightSubPhase !== "resolving"
               && !rejoined.isAlive && rejoined.role === "joker"
@@ -751,8 +756,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         messages,
       });
 
-      // Start sequential night
-      startNightSequence(game);
+      // Gate night narration behind "Begin Night" button
+      send(ws, { type: "awaiting_ready" });
       break;
     }
 
@@ -1179,7 +1184,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         messages,
       });
 
-      // Start sequential night
+      // Gate night narration behind "Begin Night" button
+      send(ws, { type: "awaiting_ready" });
+      break;
+    }
+
+    case "narrator_ready": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+      if (!game.awaitingNarratorReady) return;
+      game.awaitingNarratorReady = false;
       startNightSequence(game);
       break;
     }

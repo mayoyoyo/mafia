@@ -276,6 +276,16 @@
         resetEventHistoryTabs("players");
         $("event-history").classList.remove("hidden");
         updatePlayerStatus();
+        // Show "Check your role card!" (all players); admin will also get awaiting_ready
+        $("awaiting-ready").classList.remove("hidden");
+        $("awaiting-ready-msg").textContent = "Check your role card!";
+        $("btn-begin-night").classList.add("hidden");
+        break;
+
+      case "awaiting_ready":
+        // Admin receives this — show "Begin Night" button
+        $("btn-begin-night").classList.remove("hidden");
+        $("awaiting-ready").classList.remove("hidden");
         break;
 
       case "phase_change":
@@ -283,6 +293,9 @@
         break;
 
       case "sound_cue":
+        // Hide awaiting-ready when night narration actually starts
+        $("awaiting-ready").classList.add("hidden");
+        $("btn-begin-night").classList.add("hidden");
         queueSound(msg.sound);
         break;
 
@@ -495,6 +508,15 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("admin-night-controls").classList.add("hidden");
+    $("awaiting-ready").classList.add("hidden");
+    $("btn-begin-night").classList.add("hidden");
+
+    // 9b. Show awaiting-ready if game is waiting for narrator
+    if (msg.awaitingNarratorReady) {
+      $("awaiting-ready").classList.remove("hidden");
+      $("awaiting-ready-msg").textContent = "Check your role card!";
+      // awaiting_ready message will arrive separately for admin to show button
+    }
 
     // 10. Show most recent narrator message
     $("narrator-messages").innerHTML = "";
@@ -684,6 +706,13 @@
   $("btn-start").addEventListener("click", () => {
     ensureAudioReady();
     wsSend({ type: "start_game" });
+  });
+
+  $("btn-begin-night").addEventListener("click", () => {
+    ensureAudioReady();
+    wsSend({ type: "narrator_ready" });
+    $("awaiting-ready").classList.add("hidden");
+    $("btn-begin-night").classList.add("hidden");
   });
 
   // Settings controls
@@ -1690,6 +1719,8 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("admin-night-controls").classList.add("hidden");
+    $("awaiting-ready").classList.add("hidden");
+    $("btn-begin-night").classList.add("hidden");
 
     if (msg.phase === "day") {
       startDayTimer();
@@ -3411,7 +3442,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.2_202603040319";
-  const APP_VERSION_STAGING = "staging.8_202603040409";
+  const APP_VERSION_STAGING = "staging.9_202603041610";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

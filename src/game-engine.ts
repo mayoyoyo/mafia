@@ -70,6 +70,7 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     narratorHistory: [],
     detectiveHistory: [],
     nightSubPhase: null,
+    awaitingNarratorReady: false,
   };
 
   games.set(code, game);
@@ -224,6 +225,8 @@ export function startGame(game: Game): string[] | null {
   game.dayVoteCount = 0;
   game.narratorHistory = [];
   game.detectiveHistory = [];
+
+  game.awaitingNarratorReady = true;
 
   const messages: string[] = [];
   if (actualMafiaCount < game.settings.mafiaCount) {
