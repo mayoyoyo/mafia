@@ -1552,7 +1552,9 @@
     // Check events for the current round to determine good/bad news
     const round = msg.round;
     const roundEvents = (msg.events || []).filter((e) => e.round === round);
-    const hasSave = roundEvents.some((e) => e.type === "save");
+    // Official doctor mode sends an anonymous `saved` flag (no named save event);
+    // house mode and older payloads still carry a named "save" event.
+    const hasSave = msg.saved === true || roundEvents.some((e) => e.type === "save");
     const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
     const killEvent = roundEvents.find((e) => e.type === "kill");
     const victimName = killEvent ? killEvent.playerName : "Someone";

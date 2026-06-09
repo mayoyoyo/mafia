@@ -1428,6 +1428,7 @@ function resolveNightAndTransition(game: Game): void {
     round: game.round,
     messages: nightResult.messages,
     events: game.eventHistory,
+    saved: nightResult.saved,
     ...(nightLoverDeathName ? { loverDeathName: nightLoverDeathName } : {}),
   });
 
