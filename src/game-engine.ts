@@ -611,7 +611,8 @@ export function transitionToDay(game: Game): NightResult {
   const nightResult = resolveNight(game);
 
   // Track events
-  if (nightResult.saved && nightResult.savedName) {
+  // In official doctor mode the save is anonymous; only push a named save event in house mode.
+  if (nightResult.saved && nightResult.savedName && game.settings.doctorMode === "house") {
     game.eventHistory.push({ round: game.round, type: "save", playerName: nightResult.savedName });
   }
   for (const k of nightResult.killed) {

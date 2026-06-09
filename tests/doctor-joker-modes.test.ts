@@ -199,6 +199,55 @@ describe("Doctor Official Mode", () => {
     expect(result.savedTargetId).toBeNull();
     removeGame(game.code);
   });
+
+  test("official mode: save event is NOT pushed to eventHistory (no leak)", () => {
+    const game = setupGame(5, { enableDoctor: true, doctorMode: "official" });
+    startGame(game);
+
+    const mafia = findPlayerByRole(game, "mafia");
+    const doctor = findPlayerByRole(game, "doctor");
+    const citizen = getCitizens(game)[0];
+
+    game.phase = "night";
+    game.nightSubPhase = "mafia";
+    lockTarget(game, mafia.id, citizen.id);
+    advanceNightSubPhase(game); // -> doctor
+    submitDoctorSave(game, doctor.id, citizen.id);
+
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    const result = transitionToDay(game);
+    expect(result.saved).toBe(true);
+    // Official mode: NO save event should appear in public eventHistory
+    const saveEvents = game.eventHistory.filter(e => e.type === "save");
+    expect(saveEvents).toHaveLength(0);
+    removeGame(game.code);
+  });
+
+  test("house mode: save event IS pushed to eventHistory with victim name", () => {
+    const game = setupGame(5, { enableDoctor: true, doctorMode: "house" });
+    startGame(game);
+
+    const mafia = findPlayerByRole(game, "mafia");
+    const doctor = findPlayerByRole(game, "doctor");
+    const citizen = getCitizens(game)[0];
+
+    game.phase = "night";
+    game.nightSubPhase = "mafia";
+    lockTarget(game, mafia.id, citizen.id);
+    advanceNightSubPhase(game); // -> doctor
+    submitDoctorSave(game, doctor.id, citizen.id);
+
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    const result = transitionToDay(game);
+    expect(result.saved).toBe(true);
+    // House mode: exactly one save event with the victim's name
+    const saveEvents = game.eventHistory.filter(e => e.type === "save");
+    expect(saveEvents).toHaveLength(1);
+    expect(saveEvents[0].playerName).toBe(citizen.username);
+    removeGame(game.code);
+  });
 });
 
 describe("Narrator - Doctor Official Messages", () => {
