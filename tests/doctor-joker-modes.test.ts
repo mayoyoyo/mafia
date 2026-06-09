@@ -5,7 +5,7 @@ import {
   submitJokerHaunt, getJokerHauntTargets,
   checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote,
-  cancelVote, endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
+  cancelVote, endDay, forceDawn, checkWinCondition, getAlivePlayers, getAliveByRole,
   getPlayerInfo, forceEndGame, removeGame, restartGame, returnToLobby,
 } from "../src/game-engine";
 import type { Game, Player, NightSubPhase } from "../src/types";
@@ -794,6 +794,55 @@ describe("Joker Haunt - Night Resolution", () => {
     const hauntEvent = game.eventHistory.find(e => e.type === "joker_haunt");
     expect(hauntEvent).not.toBeUndefined();
     expect(hauntEvent!.playerName).toBe(game.players.get(hauntTargetId)!.username);
+    removeGame(game.code);
+  });
+
+  test("forceDawn clears jokerHauntVoters so joker cannot haunt on later nights", () => {
+    const { game, joker, voters, mafia } = setupHauntNight();
+
+    // After joker is lynched, game auto-enters night with jokerHauntVoters populated
+    expect(game.phase).toBe("night");
+    expect(game.jokerHauntVoters.length).toBeGreaterThan(0);
+
+    // Admin force-dawns the haunt night without resolving
+    forceDawn(game);
+    expect(game.phase).toBe("day");
+
+    // jokerHauntVoters must be cleared
+    expect(game.jokerHauntVoters).toEqual([]);
+
+    // Enter the next night via endDay
+    endDay(game);
+    expect(game.phase).toBe("night");
+
+    // jokerHauntVoters must still be empty after endDay
+    expect(game.jokerHauntVoters).toEqual([]);
+
+    // The dead joker must not be able to submit a haunt kill
+    const aliveCitizen = getCitizens(game)[0];
+    const haunted = submitJokerHaunt(game, joker.id, aliveCitizen.id);
+    expect(haunted).toBe(false);
+
+    removeGame(game.code);
+  });
+
+  test("endDay does not reintroduce jokerHauntVoters after force-dawn cleared them", () => {
+    const { game, voters } = setupHauntNight();
+
+    // Haunt night entered automatically; voters populated
+    expect(game.jokerHauntVoters.length).toBeGreaterThan(0);
+
+    forceDawn(game);
+    expect(game.jokerHauntVoters).toEqual([]);
+
+    // Multiple day/night cycles must not restore the voter list
+    endDay(game);
+    expect(game.jokerHauntVoters).toEqual([]);
+
+    forceDawn(game);
+    endDay(game);
+    expect(game.jokerHauntVoters).toEqual([]);
+
     removeGame(game.code);
   });
 });

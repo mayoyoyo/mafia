@@ -855,6 +855,7 @@ export function forceDawn(game: Game): string[] {
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.jokerHauntTarget = null;
+  game.jokerHauntVoters = []; // clear haunt voters after this night
   game.nightSubPhase = null;
   game.voteTarget = null;
   game.votes.clear();
@@ -876,6 +877,7 @@ export function endDay(game: Game): string[] {
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.jokerHauntTarget = null;
+  game.jokerHauntVoters = []; // clear haunt voters after this night
 
   const messages = [Narrator.nightFalls()];
   game.pendingMessages = messages;
