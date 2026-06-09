@@ -798,7 +798,7 @@ describe("Joker Haunt - Night Resolution", () => {
   });
 
   test("forceDawn clears jokerHauntVoters so joker cannot haunt on later nights", () => {
-    const { game, joker, voters, mafia } = setupHauntNight();
+    const { game, joker } = setupHauntNight();
 
     // After joker is lynched, game auto-enters night with jokerHauntVoters populated
     expect(game.phase).toBe("night");
@@ -826,21 +826,15 @@ describe("Joker Haunt - Night Resolution", () => {
     removeGame(game.code);
   });
 
-  test("endDay does not reintroduce jokerHauntVoters after force-dawn cleared them", () => {
-    const { game, voters } = setupHauntNight();
+  test("endDay clears jokerHauntVoters", () => {
+    const game = setupGame(5, { enableJoker: true, jokerMode: "official" });
+    startGame(game);
 
-    // Haunt night entered automatically; voters populated
-    expect(game.jokerHauntVoters.length).toBeGreaterThan(0);
+    game.phase = "day";
+    game.jokerHauntVoters = [2, 3, 4];
 
-    forceDawn(game);
-    expect(game.jokerHauntVoters).toEqual([]);
-
-    // Multiple day/night cycles must not restore the voter list
     endDay(game);
-    expect(game.jokerHauntVoters).toEqual([]);
 
-    forceDawn(game);
-    endDay(game);
     expect(game.jokerHauntVoters).toEqual([]);
 
     removeGame(game.code);
