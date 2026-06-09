@@ -466,7 +466,7 @@
     }
     dayVoteCount = msg.dayVoteCount;
     narratorTranscript = msg.narratorHistory;
-    detectiveHistory = msg.detectiveHistory;
+    detectiveHistory = msg.detectiveHistory || [];
     hasVoted = false;
     nightActionLocked = false;
     jokerHauntActive = false;

@@ -182,8 +182,8 @@ export type ServerMessage =
       dayVoteCount: number;
       // Narrator
       narratorHistory: string[];
-      // Detective
-      detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
+      // Detective (only present when the rejoining player is the detective)
+      detectiveHistory?: Array<{ round: number; targetName: string; isMafia: boolean }>;
       // Events
       eventHistory: GameEvent[];
       // Mafia team (only for mafia players)

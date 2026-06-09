@@ -974,3 +974,68 @@ describe("Rejoin during sequential night sub-phases", () => {
     for (const p of players) p.ws.close();
   }, 20000);
 });
+
+describe("detectiveHistory privacy in game_sync (H3)", () => {
+  /**
+   * Helper: set up a 6-player game with detective + doctor enabled, run through
+   * night 1 so the detective completes an investigation, and return the players.
+   * Doctor is included so the night sub-phases don't auto-resolve before we act.
+   */
+  async function setupDetectiveGame(): Promise<{ code: string; players: TestPlayer[]; detective: TestPlayer; mafia: TestPlayer; citizen: TestPlayer; investigatedTarget: TestPlayer }> {
+    const { code, players } = await setupAndStart(6, { enableDetective: true, enableDoctor: true });
+
+    const detective = players.find(p => p.role === "detective")!;
+    const mafia = players.find(p => p.role === "mafia")!;
+    const doctor = players.find(p => p.role === "doctor")!;
+    const citizens = players.filter(p => p.role === "citizen");
+
+    // Complete mafia sub-phase
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitFor(mafia.ws, "night_action_done");
+
+    // Wait for doctor sub-phase, doctor saves someone
+    await waitFor(doctor.ws, "doctor_targets");
+    const saveTarget = players.find(p => p.userId !== doctor.userId && p.role !== "mafia")!;
+    send(doctor.ws, { type: "doctor_save", targetId: saveTarget.userId });
+    await waitFor(doctor.ws, "night_action_done");
+
+    // Wait for detective sub-phase, detective investigates a citizen
+    await waitFor(detective.ws, "detective_targets");
+    const investigatedTarget = players.find(p => p.role !== "detective" && p.role !== "mafia")!;
+    send(detective.ws, { type: "detective_investigate", targetId: investigatedTarget.userId });
+    await waitFor(detective.ws, "detective_result");
+    await Bun.sleep(100);
+
+    return { code, players, detective, mafia, citizen: citizens.find(p => p.userId !== citizens[0].userId)!, investigatedTarget };
+  }
+
+  test("non-detective rejoining does NOT receive detectiveHistory", async () => {
+    const { code, players, mafia } = await setupDetectiveGame();
+
+    // Mafia reconnects — must NOT get detectiveHistory entries
+    const sync = await rejoin(mafia, code);
+
+    expect(sync.detectiveHistory === undefined || (Array.isArray(sync.detectiveHistory) && sync.detectiveHistory.length === 0)).toBe(true);
+
+    for (const p of players) p.ws.close();
+  }, 30000);
+
+  test("detective rejoining receives their full investigation history", async () => {
+    const { code, players, detective, investigatedTarget } = await setupDetectiveGame();
+
+    // Detective reconnects — MUST get detectiveHistory with the investigation entry
+    const sync = await rejoin(detective, code);
+
+    expect(Array.isArray(sync.detectiveHistory)).toBe(true);
+    expect(sync.detectiveHistory.length).toBe(1);
+    expect(sync.detectiveHistory[0].round).toBe(1);
+    expect(sync.detectiveHistory[0].targetName).toBe(investigatedTarget.username);
+    expect(typeof sync.detectiveHistory[0].isMafia).toBe("boolean");
+
+    for (const p of players) p.ws.close();
+  }, 30000);
+});

@@ -557,8 +557,8 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     dayStartedAt: game.dayStartedAt,
     dayVoteCount: game.dayVoteCount,
     narratorHistory: game.narratorHistory,
-    detectiveHistory: game.detectiveHistory,
     eventHistory: game.eventHistory,
+    ...(rejoined.role === "detective" ? { detectiveHistory: game.detectiveHistory } : {}),
     ...(rejoined.role === "mafia" ? {
       mafiaTeam: Array.from(game.players.values())
         .filter(p => p.role === "mafia")
