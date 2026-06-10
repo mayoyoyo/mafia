@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { unlinkSync } from "node:fs";
 
 // E2E test: start server externally, run tests against it.
 // This test file spawns its own server and manages the lifecycle carefully.
@@ -6,6 +7,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 let serverProc: ReturnType<typeof Bun.spawn>;
 const PORT = 4567 + Math.floor(Math.random() * 1000);
 const WS_URL = `ws://localhost:${PORT}/ws`;
+const DB_PATH = `/tmp/mafia-e2e-${Date.now()}-${PORT}.db`;
 
 function waitFor(ws: WebSocket, type: string, timeout = 5000): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -56,7 +58,7 @@ async function reg(name: string, pin: string) {
 
 beforeAll(async () => {
   serverProc = Bun.spawn(["bun", "run", "src/server.ts"], {
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, PORT: String(PORT), DATABASE_PATH: DB_PATH },
     cwd: import.meta.dir + "/..",
     stdout: "ignore", stderr: "ignore",
   });
@@ -74,7 +76,12 @@ beforeAll(async () => {
   throw new Error("Server failed to start");
 });
 
-afterAll(() => { try { serverProc?.kill(); } catch {} });
+afterAll(() => {
+  try { serverProc?.kill(); } catch {}
+  for (const f of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
+    try { unlinkSync(f); } catch {}
+  }
+});
 
 // Single comprehensive E2E test to avoid process lifecycle issues
 test("full E2E flow", async () => {
