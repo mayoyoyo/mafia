@@ -17,7 +17,7 @@ import { unlinkSync } from "node:fs";
  * seats carry mafiaTeam; only the detective sees detective_result), and an
  * explicit leak scan over the raw inboxes backs the goldens up.
  *
- * Golden games (of five planned):
+ * Golden games (all five):
  *   #1 "full night with all roles enabled" — lobby → fixed deal → night 1 in
  *      which every enabled role acts (mafia consensus kill, doctor save
  *      elsewhere, detective investigation) → dawn → day. (Joker and lovers
@@ -30,6 +30,16 @@ import { unlinkSync } from "node:fs";
  *   #3 "spared vote" — day vote ties (strictly->50% rule) → target SPARED →
  *      the game STAYS IN DAY (current behavior: a fresh phase_change
  *      phase=day with a `spared` event; no auto-night).
+ *   #4 "force_dawn mid-night" — mafia kill locked, doctor save submitted,
+ *      detective prompted but STALLING → admin force_dawn discards every
+ *      pending night action (no deaths, no save, no detective_result) and
+ *      jumps to day with an empty event history.
+ *   #5 "restart_game mid-game" — night-1 kill → day 1 → admin restart_game:
+ *      everyone (including the dead victim) is reset and re-dealt the
+ *      IDENTICAL fixed deal (process-lifetime seam), the game re-enters
+ *      night 1 behind the admin's Begin Night gate, and plays on (the
+ *      revived victim is back on the mafia target list, gets no spectator
+ *      stream, and a different player dies).
  *
  * Each golden game runs against its OWN server subprocess (own port, own
  * /tmp database, own MAFIA_FIXED_DEAL env) — the fixed-deal seam is
@@ -39,9 +49,11 @@ import { unlinkSync } from "node:fs";
  * lists (public/app.js:165/172/177/182) depend on it. These goldens gate
  * every subsequent refactor step in Program B.
  *
- * Port band: 18600-18999 is claimed by this file (taken elsewhere: 4567,
- * 5567, 6567, 7600, 8600, 9600, 10600, 11600, 12600; 13600-17600 reserved).
- * Sub-bands: game #1 18600-18729, game #2 18730-18859, game #3 18860-18999.
+ * Port bands: 18600-18999 AND 19600-19999 are claimed by this file (taken
+ * elsewhere: 4567, 5567, 6567, 7600, 8600, 9600, 10600, 11600, 12600;
+ * 13600-17600 reserved). Sub-bands: game #1 18600-18729, game #2
+ * 18730-18859, game #3 18860-18999, game #4 19600-19729, game #5
+ * 19730-19859 (19860-19999 spare).
  */
 
 import { createGame, addPlayer, startGame, removeGame, setFixedDeal } from "../src/game-engine";
@@ -51,6 +63,8 @@ import type { Role } from "../src/types";
 const PORT_GAME_1 = 18600 + Math.floor(Math.random() * 130); // 18600-18729
 const PORT_GAME_2 = 18730 + Math.floor(Math.random() * 130); // 18730-18859
 const PORT_GAME_3 = 18860 + Math.floor(Math.random() * 140); // 18860-18999
+const PORT_GAME_4 = 19600 + Math.floor(Math.random() * 130); // 19600-19729
+const PORT_GAME_5 = 19730 + Math.floor(Math.random() * 130); // 19730-19859
 
 // ── Per-game server subprocess ──────────────────────────────────────────
 
@@ -205,9 +219,13 @@ async function mafiaSoloKill(mafia: GoldenPlayer, target: GoldenPlayer): Promise
   await done;
 }
 
-/** Cast one day vote and wait for its vote_update broadcast on `observer`. */
-async function castAndSee(voter: GoldenPlayer, approve: boolean, observer: GoldenPlayer): Promise<void> {
-  const update = waitFor(observer.ws, "vote_update", 6000);
+/**
+ * Cast one day vote and wait for its vote_update broadcast (observed on the
+ * voter's own socket — vote_update goes to everyone, and the wait serializes
+ * the casts so the n/total progress lines are deterministic).
+ */
+async function castAndSee(voter: GoldenPlayer, approve: boolean): Promise<void> {
+  const update = waitFor(voter.ws, "vote_update", 6000);
   send(voter.ws, { type: "cast_vote", approve });
   await update;
 }
@@ -339,6 +357,35 @@ function scanSecrecy(players: GoldenPlayer[], roleOf: (seat: string) => Role): s
     }
   }
   return violations;
+}
+
+// ── Shared per-game assertion tail ──────────────────────────────────────
+
+/**
+ * Every golden game ends the same way: settle briefly (so any stray
+ * trailing message lands in an inbox and breaks the golden), assert each
+ * client's full summarized sequence against its golden, run the
+ * role-secrecy leak scan over the raw inboxes, and close the sockets.
+ */
+async function assertGoldens(
+  players: GoldenPlayer[],
+  golden: Record<string, string[]>,
+  deal: FixedDeal,
+): Promise<void> {
+  await Bun.sleep(300); // let any stray trailing messages land (golden would catch them)
+
+  // Per-client golden sequences
+  const summarize = makeSummarizer(players);
+  const actual: Record<string, string[]> = {};
+  for (const p of players) actual[p.seat] = p.inbox.map(summarize);
+  if (process.env.GOLDEN_DUMP) console.log(JSON.stringify(actual, null, 2));
+  expect(actual).toEqual(golden);
+
+  // Role-secrecy invariants over the raw inboxes
+  const roleOf = (seat: string) => deal.roles[Number(seat.slice(1))];
+  expect(scanSecrecy(players, roleOf)).toEqual([]);
+
+  for (const p of players) { try { p.ws.close(); } catch {} }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -635,20 +682,8 @@ describe("golden game #1: full night with all roles enabled", () => {
     await Promise.all(players.map(p =>
       waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 12000,
         `${p.seat} day phase_change`)));
-    await Bun.sleep(300); // let any stray trailing messages land (golden would catch them)
 
-    // ── Assert: per-client golden sequences ─────────────────────────────
-    const summarize = makeSummarizer(players);
-    const actual: Record<string, string[]> = {};
-    for (const p of players) actual[p.seat] = p.inbox.map(summarize);
-    if (process.env.GOLDEN_DUMP) console.log(JSON.stringify(actual, null, 2));
-    expect(actual).toEqual(GOLDEN_GAME_1);
-
-    // ── Assert: role-secrecy invariants over the raw inboxes ────────────
-    const roleOf = (seat: string) => FIXED_DEAL_1.roles[Number(seat.slice(1))];
-    expect(scanSecrecy(players, roleOf)).toEqual([]);
-
-    for (const p of players) { try { p.ws.close(); } catch {} }
+    await assertGoldens(players, GOLDEN_GAME_1, FIXED_DEAL_1);
   }, 60000);
 });
 
@@ -1008,11 +1043,11 @@ describe("golden game #2: joker-execute → haunt night (official joker mode)", 
 
     // Cast in seat order: yes from P0,P1,P3,P4; no from P2,P5 → 4/2
     // executed. The yes-voters (in cast order) become the haunt list.
-    await castAndSee(p0, true, p0);
-    await castAndSee(p1, true, p0);
-    await castAndSee(p2, false, p0);
-    await castAndSee(p3, true, p0);
-    await castAndSee(p4, true, p0);
+    await castAndSee(p0, true);
+    await castAndSee(p1, true);
+    await castAndSee(p2, false);
+    await castAndSee(p3, true);
+    await castAndSee(p4, true);
     // Final vote resolves: joker executed → official mode auto-night with
     // the haunt active. Catch the transition + both private night prompts.
     const night2Promises = players.map(p =>
@@ -1020,7 +1055,7 @@ describe("golden game #2: joker-execute → haunt night (official joker mode)", 
         `${p.seat} night-2 phase_change`));
     const hauntTargetsPromise = waitFor(p2.ws, "joker_haunt_targets", 8000);
     const mafiaTargets2Promise = waitFor(p1.ws, "mafia_targets", 8000);
-    await castAndSee(p5, false, p0);
+    await castAndSee(p5, false);
     await Promise.all([...night2Promises, hauntTargetsPromise, mafiaTargets2Promise]);
 
     // ── Night 2 (haunt night): joker haunts P4, then mafia kills P5 ─────
@@ -1035,20 +1070,8 @@ describe("golden game #2: joker-execute → haunt night (official joker mode)", 
     await Promise.all(players.map(p =>
       waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day" && m.round === 2, 12000,
         `${p.seat} day-2 phase_change`)));
-    await Bun.sleep(300); // let any stray trailing messages land (golden would catch them)
 
-    // ── Assert: per-client golden sequences ─────────────────────────────
-    const summarize = makeSummarizer(players);
-    const actual: Record<string, string[]> = {};
-    for (const p of players) actual[p.seat] = p.inbox.map(summarize);
-    if (process.env.GOLDEN_DUMP) console.log(JSON.stringify(actual, null, 2));
-    expect(actual).toEqual(GOLDEN_GAME_2);
-
-    // ── Assert: role-secrecy invariants over the raw inboxes ────────────
-    const roleOf = (seat: string) => FIXED_DEAL_2.roles[Number(seat.slice(1))];
-    expect(scanSecrecy(players, roleOf)).toEqual([]);
-
-    for (const p of players) { try { p.ws.close(); } catch {} }
+    await assertGoldens(players, GOLDEN_GAME_2, FIXED_DEAL_2);
   }, 60000);
 });
 
@@ -1242,30 +1265,451 @@ describe("golden game #3: spared day vote → day continues", () => {
     send(p0.ws, { type: "call_vote", targetId: p1.userId });
     await voteCalledPromise;
 
-    await castAndSee(p0, true, p0);
-    await castAndSee(p1, false, p0);
-    await castAndSee(p2, true, p0);
+    await castAndSee(p0, true);
+    await castAndSee(p1, false);
+    await castAndSee(p2, true);
     // Final vote resolves: 2 yes / 2 no is NOT strictly >50% → spared.
     // Current behavior: the game stays in day (fresh day phase_change).
+    // NB: this predicate cannot discriminate the spared day from day-1's
+    // phase_change — it only works because each socket's day-1 message was
+    // already consumed by the wait above. Keep these waits in this order.
     const sparedPromises = players.map(p =>
       waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 8000,
         `${p.seat} spared phase_change`));
-    await castAndSee(p3, false, p0);
+    await castAndSee(p3, false);
     await Promise.all(sparedPromises);
-    await Bun.sleep(300); // let any stray trailing messages land (golden would catch them)
 
-    // ── Assert: per-client golden sequences ─────────────────────────────
-    const summarize = makeSummarizer(players);
-    const actual: Record<string, string[]> = {};
-    for (const p of players) actual[p.seat] = p.inbox.map(summarize);
-    if (process.env.GOLDEN_DUMP) console.log(JSON.stringify(actual, null, 2));
-    expect(actual).toEqual(GOLDEN_GAME_3);
+    await assertGoldens(players, GOLDEN_GAME_3, FIXED_DEAL_3);
+  }, 60000);
+});
 
-    // ── Assert: role-secrecy invariants over the raw inboxes ────────────
-    const roleOf = (seat: string) => FIXED_DEAL_3.roles[Number(seat.slice(1))];
-    expect(scanSecrecy(players, roleOf)).toEqual([]);
+// ═══════════════════════════════════════════════════════════════════════
+// Golden game #4: admin force_dawn mid-night discards all pending actions
+// ═══════════════════════════════════════════════════════════════════════
 
-    for (const p of players) { try { p.ws.close(); } catch {} }
+// The deal for golden game #4, by JOIN ORDER (P0 = admin):
+//   P0 citizen · P1 mafia · P2 doctor · P3 detective (stalls) · P4 citizen
+//   (the mafia target whose death is discarded)
+const FIXED_DEAL_4: FixedDeal = {
+  roles: ["citizen", "mafia", "doctor", "detective", "citizen"],
+};
+
+const GAME_SETTINGS_4 = {
+  mafiaCount: 1,
+  enableDoctor: true,
+  enableDetective: true,
+  enableJoker: false,
+  enableLovers: false,
+  doctorMode: "official",
+  jokerMode: "official",
+};
+
+// Script: night 1 — mafia locks AND confirms the kill on P4, doctor submits
+// a save on P4, the detective receives their prompt and STALLS → admin
+// force_dawn. CURRENT BEHAVIOR (pinned, not judged): forceDawn discards the
+// whole night without resolving — nobody dies (no player_died/you_died, the
+// doctor's save never materializes as doctor_save_private), no
+// detective_result is sent (none was submitted), the pending night timer is
+// cleared, and everyone gets sound_cue day + a day phase_change whose event
+// history is EMPTY (the discarded kill never happened) and which carries no
+// `saved` field — unlike a normally resolved dawn.
+const GOLDEN_GAME_4: Record<string, string[]> = {
+  // P0 — admin, citizen. Public stream + admin-only messages. The night dies
+  // mid-detective: detective_open is the last sub-phase cue before day.
+  P0: [
+    "registered",
+    "game_created",
+    "lobby_update players=[P0]",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "settings_updated",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=0",
+    "phase_change phase=night round=1",
+    "awaiting_ready",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue detective_open",
+    "sound_cue day",
+    "phase_change phase=day round=1 events=[]",
+  ],
+  // P1 — mafia. Their kill on P4 was locked, confirmed and acknowledged
+  // (night_action_done) — and then silently discarded by force_dawn.
+  P1: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=mafia lover=false variant=0 mafiaTeam=[P1]",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P2,P3,P4]",
+    "mafia_vote_update votes={P1:[P4/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P4/lock]} locked=P4 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P4",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue detective_open",
+    "sound_cue day",
+    "phase_change phase=day round=1 events=[]",
+  ],
+  // P2 — doctor. Save submitted and acknowledged, then discarded: no
+  // doctor_save_private ever arrives (that is resolution-only).
+  P2: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=doctor lover=false variant=0",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "doctor_targets [P0,P1,P2,P3,P4] last=-",
+    "night_action_done",
+    "sound_cue doctor_close",
+    "sound_cue detective_open",
+    "sound_cue day",
+    "phase_change phase=day round=1 events=[]",
+  ],
+  // P3 — detective, the staller force_dawn interrupts. Gets the prompt but
+  // never acts: no night_action_done, no detective_result — day just lands.
+  P3: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=detective lover=false variant=0",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue detective_open",
+    "detective_targets [P0,P1,P2,P4]",
+    "sound_cue day",
+    "phase_change phase=day round=1 events=[]",
+  ],
+  // P4 — citizen, the discarded mafia target. SURVIVES: no you_died, no
+  // death broadcast anywhere — just the public cue stream into day.
+  P4: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=1",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue detective_open",
+    "sound_cue day",
+    "phase_change phase=day round=1 events=[]",
+  ],
+};
+
+describe("golden game #4: force_dawn mid-night discards pending actions", () => {
+  let srv: GoldenServer | null = null;
+  beforeAll(async () => { srv = await spawnGoldenServer(PORT_GAME_4, FIXED_DEAL_4); });
+  afterAll(() => stopGoldenServer(srv));
+
+  test("every client's full ordered message sequence matches its golden", async () => {
+    const players = await setupGoldenGame(srv!.wsUrl, "g4", FIXED_DEAL_4, GAME_SETTINGS_4);
+    const [p0, p1, p2, p3, p4] = players;
+
+    // ── Night 1, partial: mafia locks + confirms the kill on P4 ─────────
+    const mafiaTargetsPromise = waitFor(p1.ws, "mafia_targets", 8000);
+    send(p0.ws, { type: "narrator_ready" });
+    await mafiaTargetsPromise;
+    await mafiaSoloKill(p1, p4);
+
+    // Doctor protects the mafia target — a save force_dawn will discard.
+    await waitFor(p2.ws, "doctor_targets", 10000);
+    const doctorDonePromise = waitFor(p2.ws, "night_action_done", 6000);
+    send(p2.ws, { type: "doctor_save", targetId: p4.userId });
+    await doctorDonePromise;
+
+    // Detective receives their prompt and STALLS (never investigates).
+    // Waiting for the prompt keeps the golden deterministic: the sub-phase
+    // timer has fired, so no detective_open can race the forced dawn.
+    await waitFor(p3.ws, "detective_targets", 10000);
+
+    // ── Admin forces dawn mid-detective: night discarded, nobody dies ───
+    const dayPromises = players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 8000,
+        `${p.seat} forced-dawn phase_change`));
+    send(p0.ws, { type: "force_dawn" });
+    await Promise.all(dayPromises);
+
+    await assertGoldens(players, GOLDEN_GAME_4, FIXED_DEAL_4);
+  }, 60000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Golden game #5: admin restart_game mid-game → identical re-deal, replay
+// ═══════════════════════════════════════════════════════════════════════
+
+// The deal for golden game #5, by JOIN ORDER (P0 = admin):
+//   P0 citizen · P1 mafia · P2 citizen (post-restart victim) · P3 citizen ·
+//   P4 citizen (night-1 victim — revived by the restart)
+const FIXED_DEAL_5: FixedDeal = {
+  roles: ["citizen", "mafia", "citizen", "citizen", "citizen"],
+};
+
+const GAME_SETTINGS_5 = {
+  mafiaCount: 1,
+  enableDoctor: false,
+  enableDetective: false,
+  enableJoker: false,
+  enableLovers: false,
+  doctorMode: "official",
+  jokerMode: "official",
+};
+
+// Script: night 1 mafia kills P4 → day 1 → admin restart_game mid-day.
+// CURRENT BEHAVIOR (pinned, not judged): the restart resets every player
+// (the dead P4 included — no returnToLobby/lobby_update leg, no game_over),
+// re-deals via startGame — the process-lifetime fixed-deal seam hands out
+// the IDENTICAL assignment and variants — and every client gets a fresh
+// game_started + phase_change phase=night round=1, with awaiting_ready to
+// the admin only (the Begin Night gate, exactly like a first start). The
+// game is then fully playable: P4 is back on the mafia target list and
+// receives a LIVING player's stream (no spectator messages), and a second
+// night kills P2 instead.
+const GOLDEN_GAME_5: Record<string, string[]> = {
+  // P0 — admin, citizen. The restart replays the start triplet
+  // (game_started / night phase_change / awaiting_ready) mid-day, with no
+  // lobby pass in between.
+  P0: [
+    "registered",
+    "game_created",
+    "lobby_update players=[P0]",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "settings_updated",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=0",
+    "phase_change phase=night round=1",
+    "awaiting_ready",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    // — restart_game: identical re-deal, fresh night-1 gate —
+    "game_started role=citizen lover=false variant=0",
+    "phase_change phase=night round=1",
+    "awaiting_ready",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P2",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+  ],
+  // P1 — mafia in BOTH deals (identical fixed deal). The post-restart
+  // target list includes P4 again — the restart revived them.
+  P1: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=mafia lover=false variant=0 mafiaTeam=[P1]",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P2,P3,P4]",
+    "mafia_vote_update votes={P1:[P4/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P4/lock]} locked=P4 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P4",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    // — restart_game —
+    "game_started role=mafia lover=false variant=0 mafiaTeam=[P1]",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P2,P3,P4]",
+    "mafia_vote_update votes={P1:[P2/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P2/lock]} locked=P2 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P2",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "player_died P2",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+  ],
+  // P2 — citizen; survives the first game, dies in the post-restart night.
+  P2: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=1",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    // — restart_game —
+    "game_started role=citizen lover=false variant=1",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P2/mafia] doctor=-",
+    "you_died loverDeath=false",
+    "player_died P2",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+  ],
+  // P3 — citizen. Plain public stream through both games.
+  P3: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=2",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    // — restart_game —
+    "game_started role=citizen lover=false variant=2",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P2",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+  ],
+  // P4 — citizen, night-1 victim. DEAD when the restart lands: receives the
+  // same restart triplet as the living (minus awaiting_ready) and is a
+  // normal living player afterwards — note ZERO spectator_* messages in the
+  // post-restart night (the dead/spectator state was fully reset).
+  P4: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=3",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P4/mafia] doctor=-",
+    "you_died loverDeath=false",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    // — restart_game (received while dead) —
+    "game_started role=citizen lover=false variant=3",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P2",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+  ],
+};
+
+describe("golden game #5: restart_game → identical re-deal, playable game", () => {
+  let srv: GoldenServer | null = null;
+  beforeAll(async () => { srv = await spawnGoldenServer(PORT_GAME_5, FIXED_DEAL_5); });
+  afterAll(() => stopGoldenServer(srv));
+
+  test("every client's full ordered message sequence matches its golden", async () => {
+    const players = await setupGoldenGame(srv!.wsUrl, "g5", FIXED_DEAL_5, GAME_SETTINGS_5);
+    const [p0, p1, p2, , p4] = players;
+
+    // ── Night 1: solo mafia kills P4 ────────────────────────────────────
+    const mafiaTargetsPromise = waitFor(p1.ws, "mafia_targets", 8000);
+    send(p0.ws, { type: "narrator_ready" });
+    await mafiaTargetsPromise;
+    await mafiaSoloKill(p1, p4);
+
+    await Promise.all(players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 12000,
+        `${p.seat} day-1 phase_change`)));
+
+    // ── Admin restarts mid-day: full reset, re-deal, night-1 gate ───────
+    const restartedPromises = players.map(p => waitFor(p.ws, "game_started", 8000));
+    const restartNightPromises = players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "night", 8000,
+        `${p.seat} post-restart night phase_change`));
+    const readyPromise = waitFor(p0.ws, "awaiting_ready", 8000);
+    send(p0.ws, { type: "restart_game" });
+    const restarted = await Promise.all(restartedPromises);
+    await Promise.all(restartNightPromises);
+    await readyPromise;
+
+    // The fixed-deal seam is process-lifetime: the restart re-dealt the
+    // IDENTICAL assignment, over the wire (the goldens pin it per-seat too).
+    expect(restarted.map(s => s.role)).toEqual(FIXED_DEAL_5.roles);
+
+    // ── Post-restart night: P4 is alive again; mafia kills P2 instead ───
+    const mafiaTargets2Promise = waitFor(p1.ws, "mafia_targets", 8000);
+    send(p0.ws, { type: "narrator_ready" });
+    await mafiaTargets2Promise;
+    await mafiaSoloKill(p1, p2);
+
+    await Promise.all(players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 12000,
+        `${p.seat} post-restart day phase_change`)));
+
+    await assertGoldens(players, GOLDEN_GAME_5, FIXED_DEAL_5);
   }, 60000);
 });
 
