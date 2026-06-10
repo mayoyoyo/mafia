@@ -81,6 +81,137 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
   return game;
 }
 
+// ── P1 reset seam: ONE field table, two reset scopes ────────────────────────
+//
+// Every mutable Game field is classified in EXACTLY ONE of:
+//   NIGHT_RESETS      — per-night scope: cleared by resetNightActions() at
+//                       every night/vote boundary (all seven former lists);
+//   GAME_RESETS       — whole-game scope: additionally cleared by
+//                       resetGameState() when returning to the lobby;
+//   PERSISTENT_FIELDS — never bulk-reset (each entry says why).
+//
+// Structural rule (audit P1): a new Game field gets ONE line in one of these
+// tables — no other reset list may exist. The compile-time guards below make
+// an unclassified (or doubly-classified) field a type error; the field-scope
+// coverage test in tests/reset-seam.test.ts enforces the same at runtime via
+// dumpGame's key universe.
+//
+// Two deliberate carve-outs (the entire subtlety — see audit §1.3 P1):
+//   1. transitionToDay assigns lastDoctorTarget = doctorTarget BEFORE calling
+//      resetNightActions (the doctor may not repeat tonight's save tomorrow);
+//      forceDawn deliberately does NOT capture it (the night never resolved).
+//   2. The official-joker execution passes { preserveHauntVoters: true } so
+//      the voters captured in resolveVote survive into the haunt night.
+
+const NIGHT_RESETS = {
+  mafiaVotes: (g: Game) => { g.mafiaVotes.clear(); },
+  mafiaTarget: (g: Game) => { g.mafiaTarget = null; },
+  doctorTarget: (g: Game) => { g.doctorTarget = null; },
+  detectiveTarget: (g: Game) => { g.detectiveTarget = null; },
+  jokerHauntTarget: (g: Game) => { g.jokerHauntTarget = null; },
+  jokerHauntVoters: (g: Game) => { g.jokerHauntVoters = []; },
+  nightSubPhase: (g: Game) => { g.nightSubPhase = null; },
+  voteTarget: (g: Game) => { g.voteTarget = null; },
+  votes: (g: Game) => { g.votes.clear(); },
+  awaitingNarratorReady: (g: Game) => { g.awaitingNarratorReady = false; },
+} as const;
+
+const GAME_RESETS = {
+  phase: (g: Game) => { g.phase = "lobby"; },
+  round: (g: Game) => { g.round = 0; },
+  players: (g: Game) => {
+    for (const [, player] of g.players) {
+      player.role = null;
+      player.isAlive = true;
+      player.isLover = false;
+      player.loverId = null;
+      player.variant = 0;
+    }
+  },
+  lastDoctorTarget: (g: Game) => { g.lastDoctorTarget = null; },
+  jokerJointWinner: (g: Game) => { g.jokerJointWinner = false; },
+  nightKill: (g: Game) => { g.nightKill = null; },
+  doctorSaved: (g: Game) => { g.doctorSaved = false; },
+  detectiveResult: (g: Game) => { g.detectiveResult = null; },
+  winner: (g: Game) => { g.winner = null; },
+  forceEnded: (g: Game) => { g.forceEnded = false; },
+  pendingMessages: (g: Game) => { g.pendingMessages = []; },
+  eventHistory: (g: Game) => { g.eventHistory = []; },
+  dayStartedAt: (g: Game) => { g.dayStartedAt = null; },
+  dayVoteCount: (g: Game) => { g.dayVoteCount = 0; },
+  narratorHistory: (g: Game) => { g.narratorHistory = []; },
+  detectiveHistory: (g: Game) => { g.detectiveHistory = []; },
+} as const;
+
+const PERSISTENT_FIELDS = [
+  "code",        // room identity
+  "adminId",     // room identity
+  "createdAt",   // refreshed explicitly by restartGame, kept by returnToLobby
+  "settings",    // deliberately kept across games
+  "mafiaVariant", // overwritten by assignRoles on every deal
+] as const satisfies readonly (keyof Game)[];
+
+// Exported for the field-scope coverage test (tests/reset-seam.test.ts).
+export const NIGHT_RESET_FIELDS = Object.keys(NIGHT_RESETS) as (keyof typeof NIGHT_RESETS)[];
+export const GAME_RESET_FIELDS = Object.keys(GAME_RESETS) as (keyof typeof GAME_RESETS)[];
+export const PERSISTENT_GAME_FIELDS: readonly (keyof Game)[] = PERSISTENT_FIELDS;
+
+// Compile-time guards: every Game key classified in exactly one scope.
+type _ClassifiedKey = keyof typeof NIGHT_RESETS | keyof typeof GAME_RESETS | (typeof PERSISTENT_FIELDS)[number];
+// compile error here means a Game field is missing from all three reset scopes
+const _everyGameFieldClassified: Exclude<keyof Game, _ClassifiedKey> extends never ? true : false = true;
+void _everyGameFieldClassified;
+// compile error here means a classified key does not exist on Game
+const _noPhantomFields: Exclude<_ClassifiedKey, keyof Game> extends never ? true : false = true;
+void _noPhantomFields;
+// compile error here means a Game field appears in more than one scope
+type _ScopeOverlap =
+  | (keyof typeof NIGHT_RESETS & keyof typeof GAME_RESETS)
+  | (keyof typeof NIGHT_RESETS & (typeof PERSISTENT_FIELDS)[number])
+  | (keyof typeof GAME_RESETS & (typeof PERSISTENT_FIELDS)[number]);
+const _scopesDisjoint: _ScopeOverlap extends never ? true : false = true;
+void _scopesDisjoint;
+
+export interface ResetNightOptions {
+  /** Official-joker carve-out: keep the captured voters for the haunt night. */
+  preserveHauntVoters?: boolean;
+}
+
+/** Clear every per-night field (night actions + day-vote state) from the table. */
+export function resetNightActions(game: Game, opts: ResetNightOptions = {}): void {
+  for (const key of NIGHT_RESET_FIELDS) {
+    if (key === "jokerHauntVoters" && opts.preserveHauntVoters) continue;
+    NIGHT_RESETS[key](game);
+  }
+}
+
+/**
+ * Enter the night phase: transition log + phase/round/sub-phase bookkeeping +
+ * per-night reset. Returns the narrator's night-falls line for the caller to
+ * place in its message flow. Used by startGame, endDay, and both resolveVote
+ * auto-night paths.
+ */
+export function beginNight(game: Game, reason: string, opts: ResetNightOptions = {}): string {
+  logTransition(game, game.phase, "night", reason);
+  game.phase = "night";
+  game.round++;
+  resetNightActions(game, opts);
+  game.nightSubPhase = "mafia";
+  return Narrator.nightFalls();
+}
+
+/**
+ * Whole-game reset back to the lobby (per-night scope + whole-game scope).
+ * Replaces the formerly byte-duplicated returnToLobby/restartGame blocks.
+ * Callers log their own transition (different reasons) BEFORE calling this.
+ */
+export function resetGameState(game: Game): void {
+  resetNightActions(game);
+  for (const key of GAME_RESET_FIELDS) {
+    GAME_RESETS[key](game);
+  }
+}
+
 export function getGame(code: string): Game | undefined {
   return games.get(code);
 }
@@ -335,22 +466,16 @@ export function startGame(game: Game): string[] | null {
   if (game.players.size < 3) return null;
 
   const actualMafiaCount = assignRoles(game);
-  logTransition(game, game.phase, "night", "start_game");
-  game.phase = "night";
-  game.nightSubPhase = "mafia";
-  game.round = 1;
-  game.dayStartedAt = null;
-  game.dayVoteCount = 0;
-  game.narratorHistory = [];
-  game.detectiveHistory = [];
-
-  game.awaitingNarratorReady = true;
+  // Lobby state is always fresh (createGame or resetGameState), so beginNight's
+  // round++ yields round 1 and the whole-game fields need no re-clearing here.
+  const nightMessage = beginNight(game, "start_game");
+  game.awaitingNarratorReady = true; // Begin Night gate: narrator confirms before night actions run
 
   const messages: string[] = [];
   if (actualMafiaCount < game.settings.mafiaCount) {
     messages.push(`Mafia count reduced from ${game.settings.mafiaCount} to ${actualMafiaCount} for balance (max 1/3 of players).`);
   }
-  messages.push(Narrator.nightFalls());
+  messages.push(nightMessage);
   game.pendingMessages = messages;
   return messages;
 }
@@ -757,17 +882,10 @@ export function transitionToDay(game: Game): NightResult {
     });
   }
 
-  // Reset night state
+  // Reset night state — carve-out: capture tonight's save target BEFORE the
+  // reset (the doctor may not repeat it tomorrow).
   game.lastDoctorTarget = game.doctorTarget;
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = []; // clear haunt voters after this night
-  game.nightSubPhase = null;
-  game.voteTarget = null;
-  game.votes.clear();
+  resetNightActions(game);
 
   // Check win conditions
   const winner = checkWinCondition(game);
@@ -880,9 +998,9 @@ export function resolveVote(game: Game): VoteResult | null {
           }
         }
 
-        // Reset vote state
-        game.voteTarget = null;
-        game.votes.clear();
+        // Reset vote+night state — carve-out: the FOR-voters captured above
+        // must survive into the haunt night.
+        resetNightActions(game, { preserveHauntVoters: true });
 
         // Check win condition after joker death (+ possible lover death)
         const winner = checkWinCondition(game);
@@ -893,17 +1011,8 @@ export function resolveVote(game: Game): VoteResult | null {
           if (winner === "town") result.messages.push(Narrator.townWin());
           else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
         } else {
-          // Auto-transition to night after execution
-          logTransition(game, game.phase, "night", "execution");
-          game.phase = "night";
-          game.round++;
-          game.nightSubPhase = "mafia";
-          game.mafiaVotes.clear();
-          game.mafiaTarget = null;
-          game.doctorTarget = null;
-          game.detectiveTarget = null;
-          game.jokerHauntTarget = null;
-          result.messages.push(Narrator.nightFalls());
+          // Auto-transition to the haunt night after execution
+          result.messages.push(beginNight(game, "execution", { preserveHauntVoters: true }));
         }
         return result;
       } else {
@@ -925,9 +1034,8 @@ export function resolveVote(game: Game): VoteResult | null {
           }
         }
 
-        // Reset vote state (mirrors the official branch and the normal path)
-        game.voteTarget = null;
-        game.votes.clear();
+        // Reset vote+night state (mirrors the official branch and the normal path)
+        resetNightActions(game);
         return result;
       }
     }
@@ -951,9 +1059,8 @@ export function resolveVote(game: Game): VoteResult | null {
     game.eventHistory.push({ round: game.round, type: "spared", playerName: target.username });
   }
 
-  // Reset vote state
-  game.voteTarget = null;
-  game.votes.clear();
+  // Reset vote+night state
+  resetNightActions(game);
 
   // Check win condition
   const winner = checkWinCondition(game);
@@ -965,16 +1072,7 @@ export function resolveVote(game: Game): VoteResult | null {
     else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
   } else if (result.executed) {
     // Auto-transition to night after execution
-    logTransition(game, game.phase, "night", "execution");
-    game.phase = "night";
-    game.round++;
-    game.nightSubPhase = "mafia";
-    game.mafiaVotes.clear();
-    game.mafiaTarget = null;
-    game.doctorTarget = null;
-    game.detectiveTarget = null;
-    game.jokerHauntTarget = null;
-    result.messages.push(Narrator.nightFalls());
+    result.messages.push(beginNight(game, "execution"));
   } else {
     // Spared — stay in day
     logTransition(game, game.phase, "day", "spared");
@@ -997,17 +1095,9 @@ export function cancelVote(game: Game, adminId: number): boolean {
 export function forceDawn(game: Game): string[] {
   if (game.phase !== "night") return [];
 
-  // Reset night state without resolving
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = []; // clear haunt voters after this night
-  game.nightSubPhase = null;
-  game.voteTarget = null;
-  game.votes.clear();
-  game.awaitingNarratorReady = false;
+  // Reset night state without resolving — deliberately NO lastDoctorTarget
+  // capture here: the night never resolved, so the pending save is discarded.
+  resetNightActions(game);
   logTransition(game, game.phase, "day", "force_dawn");
   game.phase = "day";
 
@@ -1019,19 +1109,7 @@ export function forceDawn(game: Game): string[] {
 export function endDay(game: Game): string[] {
   if (game.phase !== "day") return [];
 
-  logTransition(game, game.phase, "night", "end_day");
-  game.phase = "night";
-  game.round++;
-  game.nightSubPhase = "mafia";
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = []; // clear haunt voters after this night
-  game.awaitingNarratorReady = false;
-
-  const messages = [Narrator.nightFalls()];
+  const messages = [beginNight(game, "end_day")];
   game.pendingMessages = messages;
   return messages;
 }
@@ -1063,85 +1141,19 @@ export function forceEndGame(game: Game): void {
 export function returnToLobby(game: Game): boolean {
   if (game.phase !== "game_over") return false;
 
-  // Reset all players to lobby state
-  for (const [, player] of game.players) {
-    player.role = null;
-    player.isAlive = true;
-    player.isLover = false;
-    player.loverId = null;
-    player.variant = 0;
-  }
-
-  // Reset game state but keep settings
+  // Reset players + game state back to the lobby, keeping settings
   logTransition(game, game.phase, "lobby", "return_to_lobby");
-  game.phase = "lobby";
-  game.round = 0;
-  game.nightSubPhase = null;
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.voteTarget = null;
-  game.votes.clear();
-  game.lastDoctorTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = [];
-  game.jokerJointWinner = false;
-  game.nightKill = null;
-  game.doctorSaved = false;
-  game.detectiveResult = null;
-  game.winner = null;
-  game.forceEnded = false;
-  game.pendingMessages = [];
-  game.eventHistory = [];
-  game.dayStartedAt = null;
-  game.dayVoteCount = 0;
-  game.narratorHistory = [];
-  game.detectiveHistory = [];
-  game.awaitingNarratorReady = false;
+  resetGameState(game);
 
   return true;
 }
 
 export function restartGame(game: Game): string[] | null {
-  // Reset all players
-  for (const [, player] of game.players) {
-    player.role = null;
-    player.isAlive = true;
-    player.isLover = false;
-    player.loverId = null;
-    player.variant = 0;
-  }
-
-  // Reset game state
+  // Reset players + game state, then start fresh with the same settings
   game.createdAt = Date.now();
   logTransition(game, game.phase, "lobby", "restart_game");
-  game.phase = "lobby";
-  game.round = 0;
-  game.nightSubPhase = null;
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.voteTarget = null;
-  game.votes.clear();
-  game.lastDoctorTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = [];
-  game.jokerJointWinner = false;
-  game.nightKill = null;
-  game.doctorSaved = false;
-  game.detectiveResult = null;
-  game.winner = null;
-  game.forceEnded = false;
-  game.pendingMessages = [];
-  game.eventHistory = [];
-  game.dayStartedAt = null;
-  game.dayVoteCount = 0;
-  game.narratorHistory = [];
-  game.detectiveHistory = [];
+  resetGameState(game);
 
-  // Start fresh game with same settings
   return startGame(game);
 }
 
