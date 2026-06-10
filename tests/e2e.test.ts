@@ -171,19 +171,32 @@ test("full E2E flow", async () => {
     expect(phase.round).toBe(1);
   }
 
-  // 10. Config save/load
+  // 10. Last settings persistence
   const { ws: cfgWs } = await reg(`cfg_${ts}`, "6666");
   send(cfgWs, { type: "create_game" });
   const cfgGame = await waitFor(cfgWs, "game_created");
-  send(cfgWs, { type: "update_settings", settings: { mafiaCount: 3 } });
+  send(cfgWs, { type: "update_settings", settings: { mafiaCount: 3, enableDoctor: true } });
   await waitFor(cfgWs, "settings_updated");
-  send(cfgWs, { type: "save_config", name: "TestPreset" });
-  const saved = await waitFor(cfgWs, "config_saved");
-  expect(saved.config.name).toBe("TestPreset");
 
-  send(cfgWs, { type: "list_configs" });
-  const configs = await waitFor(cfgWs, "configs_list");
-  expect(configs.configs.length).toBeGreaterThanOrEqual(1);
+  // Add enough players to start
+  const cfgPlayers = [];
+  for (let i = 0; i < 3; i++) {
+    const { ws: pw } = await reg(`cfgp${i}_${ts}`, `777${i}`);
+    send(pw, { type: "join_game", code: cfgGame.code });
+    await waitFor(pw, "game_joined");
+    cfgPlayers.push(pw);
+  }
+  send(cfgWs, { type: "start_game" });
+  await waitFor(cfgWs, "game_started");
+
+  // Leave and create a new game — settings should persist
+  for (const pw of cfgPlayers) { send(pw, { type: "leave_game" }); pw.close(); }
+  send(cfgWs, { type: "leave_game" });
+  send(cfgWs, { type: "create_game" });
+  const cfgGame2 = await waitFor(cfgWs, "game_created");
+  const lobby2 = await waitFor(cfgWs, "lobby_update");
+  expect(lobby2.settings.mafiaCount).toBe(3);
+  expect(lobby2.settings.enableDoctor).toBe(true);
 
   cfgWs.close();
 
@@ -218,6 +231,8 @@ test("night action prompts arrive after phase_change on vote execution", async (
   // Collect on ALL ws from the start so we never miss messages
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
 
   // Wait for all messages to settle
   await Bun.sleep(1000);
@@ -262,7 +277,7 @@ test("night action prompts arrive after phase_change on vote execution", async (
 
   // Set up listeners BEFORE sending call_vote
   const voteCalledPromises = allWs.map((w) => waitFor(w, "vote_called"));
-  send(adminWs, { type: "call_vote", targetId: nomineeId, anonymous: false });
+  send(adminWs, { type: "call_vote", targetId: nomineeId });
   await Promise.all(voteCalledPromises);
 
   // Start collecting on mafia ws BEFORE voting
@@ -333,6 +348,8 @@ test("night action prompts arrive after phase_change on end_day", async () => {
   // Collect on ALL ws from the start
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find mafia
@@ -412,6 +429,8 @@ test("sequential night: mafia → doctor → detective → day (all alive + enab
   // Collect on all ws from start
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find roles from collected messages
@@ -483,6 +502,8 @@ test("sequential night: mafia-only (no special roles) → immediate resolution a
   const allWs = [adminWs, p2ws, p3ws, p4ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find mafia
@@ -535,6 +556,8 @@ test("sequential night: sub-phase guard rejects doctor_save during mafia sub-pha
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let doctorIdx = -1;
@@ -586,6 +609,8 @@ test("sequential night: force dawn during doctor sub-phase transition", async ()
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let mafiaIdx = -1;
@@ -645,6 +670,8 @@ test("multi-mafia: both must lock same target before mafia_confirm_ready is sent
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   // Find both mafia players
@@ -727,6 +754,8 @@ test("confirm_mafia_kill before consensus does nothing", async () => {
   const allWs = [adminWs, p2ws, p3ws, p4ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let mafiaIdx = -1;
@@ -772,6 +801,8 @@ test("mafia_confirm_ready contains correct targetName", async () => {
   const allWs = [adminWs, p2ws, p3ws, p4ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   let mafiaIdx = -1;
@@ -829,6 +860,8 @@ test("mafia_vote_update includes objectedTargets and aliveMafiaCount", async () 
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   const mafiaIndices: number[] = [];
@@ -886,6 +919,8 @@ test("multi-mafia: one mafia lock does not advance, other mafia must also lock",
   const allWs = [adminWs, p2ws, p3ws, p4ws, p5ws, p6ws, p7ws];
   const collectors = allWs.map((w) => collectMessages(w));
   send(adminWs, { type: "start_game" });
+  await Bun.sleep(200);
+  send(adminWs, { type: "narrator_ready" });
   await Bun.sleep(1000);
 
   const mafiaIndices: number[] = [];

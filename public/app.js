@@ -12,6 +12,7 @@
   let myRole = null;
   let isLover = false;
   let isDead = false;
+  let jokerWonOverlayShown = false;
   let currentPhase = null;
   let previousPhase = null;
   let soundEnabled = false;
@@ -32,10 +33,11 @@
   let nightTransitionActive = false;
   let nightTransitionQueue = [];
   let executionTransitionActive = false;
+  let heartbreakTransitionActive = false;
+  let pendingGameOver = null; // game_over held while an overlay chain animates (L5)
   let nightNarrationActive = false;
   let nightNarrationQueue = [];
   let audioUnlocked = false;
-  let anonVoteChecked = true;
   let narratorTranscript = [];
   let deadDismissTimer = null;
   let dayTimerInterval = null;
@@ -47,6 +49,16 @@
   let aliveMafiaCount = 0;
   let lastGameEvents = [];
   let lastVoteResult = null;
+  let spectatorNightLog = [];
+  let hideMafiaTag = false;
+  let myPlayerColor = null;
+  const PLAYER_COLORS = [
+    "#E53935", "#EC407A", "#AB47BC", "#7E57C2", "#5C6BC0",
+    "#42A5F5", "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A",
+    "#9CCC65", "#C0CA33", "#FFEE58", "#FFA726", "#FF7043",
+    "#D84315", "#8D6E63", "#78909C", "#546E7A", "#F06292",
+  ];
+  let jokerJointWinner = false;
 
   // ============================================================
   // DOM REFS
@@ -79,8 +91,14 @@
     ws.onopen = () => {
       const saved = localStorage.getItem("mafia_user");
       if (saved) {
-        const data = JSON.parse(saved);
-        wsSend({ type: "login", username: data.username, passcode: data.passcode });
+        let data = null;
+        try { data = JSON.parse(saved); } catch {}
+        if (data && data.username) {
+          wsSend({ type: "login", username: data.username, passcode: data.passcode });
+        } else {
+          // Corrupt stored credentials — drop them and stay logged out (L6)
+          localStorage.removeItem("mafia_user");
+        }
       }
     };
 
@@ -144,17 +162,24 @@
   // ============================================================
   function handleServerMessage(msg) {
     // During suspense, queue certain messages
-    if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died")) {
+    if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died" || msg.type === "joker_win_overlay")) {
       suspenseQueue.push(msg);
       return;
     }
+    // While a death/heartbreak/night overlay chain is animating, hold game_over
+    // so its reveal doesn't stomp the in-flight beats; it replays after the
+    // chain's final callback (applyPhaseChange) via flushPendingGameOver (L5)
+    if ((suspenseActive || executionTransitionActive || heartbreakTransitionActive || nightTransitionActive) && msg.type === "game_over") {
+      pendingGameOver = msg;
+      return;
+    }
     // During night/execution transition, queue sound_cues and night action prompts
-    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
+    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
       nightTransitionQueue.push(msg);
       return;
     }
     // During night narration (sounds playing after overlay), hold night prompts until narration finishes
-    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets")) {
+    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
       nightNarrationQueue.push(msg);
       return;
     }
@@ -172,11 +197,14 @@
       case "logged_in":
         userId = msg.userId;
         username = msg.username;
+        hideMafiaTag = !!msg.hide_mafia_tag;
+        myPlayerColor = msg.player_color || null;
         if (msg.type === "registered") {
           const passcode = $("auth-passcode").value;
           localStorage.setItem("mafia_user", JSON.stringify({ username: msg.username, passcode }));
         }
         $("menu-username").textContent = username;
+        $("toggle-hide-mafia-tag").checked = hideMafiaTag;
         showScreen("menu");
         clearErrors();
         // Auto-rejoin if we have a stored game code
@@ -229,12 +257,14 @@
         myVariant = msg.variant || 0;
         mafiaTeam = msg.mafiaTeam || [];
         isDead = false;
+        jokerWonOverlayShown = false;
         // Fresh game start — reset all state
         hasVoted = false;
         dayVoteCount = 0;
         narratorTranscript = [];
         detectiveHistory = [];
         nightActionLocked = false;
+        jokerHauntActive = false;
         mafiaConfirmTarget = null;
         myMafiaVotes = [];
         mafiaObjectedTargets = {};
@@ -243,7 +273,9 @@
         mafiaTargetPlayers = [];
         lastGameEvents = [];
         lastVoteResult = null;
+        jokerJointWinner = false;
         previousPhase = null;
+        pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -260,6 +292,16 @@
         resetEventHistoryTabs("players");
         $("event-history").classList.remove("hidden");
         updatePlayerStatus();
+        // Show "Check your role card!" (all players); admin will also get awaiting_ready
+        $("awaiting-ready").classList.remove("hidden");
+        $("awaiting-ready-msg").textContent = "Check your role card!";
+        $("btn-begin-night").classList.add("hidden");
+        break;
+
+      case "awaiting_ready":
+        // Admin receives this — show "Begin Night" button
+        $("btn-begin-night").classList.remove("hidden");
+        $("awaiting-ready").classList.remove("hidden");
         break;
 
       case "phase_change":
@@ -267,6 +309,9 @@
         break;
 
       case "sound_cue":
+        // Hide awaiting-ready when night narration actually starts
+        $("awaiting-ready").classList.add("hidden");
+        $("btn-begin-night").classList.add("hidden");
         queueSound(msg.sound);
         break;
 
@@ -282,6 +327,20 @@
         showNightAction("Choose someone to investigate", msg.players, "detective_investigate");
         break;
 
+      case "joker_haunt_targets":
+        jokerHauntActive = true;
+        showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
+        break;
+
+      case "joker_win_overlay":
+        jokerWonOverlayShown = true;
+        showJokerWinOverlay(msg.jokerName);
+        break;
+
+      case "doctor_save_private":
+        showDoctorSavePrivate(msg.message);
+        break;
+
       case "mafia_vote_update":
         updateMafiaVoteStatus(msg);
         break;
@@ -292,25 +351,43 @@
 
       case "night_action_done":
         $("action-status").textContent = msg.message;
-        // If mafia and consensus was reached, collapse target list
+        // If mafia and consensus was reached, collapse target list.
+        // Rejoined mafia have empty myMafiaVotes; fall back to the confirm
+        // target restored by mafia_confirm_ready after game_sync.
         if (myRole === "mafia" && !nightActionLocked) {
           const lockVote = myMafiaVotes.find(v => v.voteType === "lock");
-          if (lockVote) {
+          if (lockVote || mafiaConfirmTarget) {
             nightActionLocked = true;
             hideSlideConfirm();
-            const lockTarget = mafiaTargetPlayers.find(p => p.id === lockVote.targetId);
-            const targetName = lockTarget ? lockTarget.username : "target";
+            const lockTarget = lockVote && mafiaTargetPlayers.find(p => p.id === lockVote.targetId);
+            const targetName = lockTarget ? lockTarget.username : (mafiaConfirmTarget || "target");
             $("action-targets").innerHTML = `<li class="selected">${escapeHtml(targetName)} \u2714</li>`;
           }
         }
         break;
 
       case "spectator_mafia_update":
-        if (isDead) showSpectatorMafiaPanel(msg);
+        if (isDead && !jokerHauntActive) showSpectatorMafiaPanel(msg);
         break;
 
       case "spectator_kill_confirmed":
-        if (isDead) showSpectatorKillResult(msg);
+        if (isDead && !jokerHauntActive) showSpectatorKillResult(msg);
+        break;
+
+      case "spectator_night_phase":
+        if (isDead && !jokerHauntActive) showSpectatorNightPhase(msg);
+        break;
+
+      case "spectator_night_complete":
+        if (isDead && !jokerHauntActive) appendSpectatorLog(msg);
+        break;
+
+      case "spectator_joker_deliberating":
+        if (isDead && !jokerHauntActive) showJokerDeliberating();
+        break;
+
+      case "spectator_joker_resolved":
+        if (isDead && !jokerHauntActive) showJokerResolved(msg.targetName);
         break;
 
       case "detective_result":
@@ -336,25 +413,25 @@
 
       case "you_died":
         isDead = true;
-        $("dead-overlay").classList.remove("hidden");
-        $("dead-emoji").textContent = msg.isLoverDeath ? "\u{1F494}" : "\u{1F480}";
-        $("death-message").textContent = msg.message;
-        $("dead-dismiss-hint").classList.remove("hidden");
         $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+        // If joker win overlay is already showing, skip the death overlay
+        if (!jokerWonOverlayShown) {
+          $("dead-overlay").classList.remove("hidden");
+          $("dead-emoji").textContent = msg.isLoverDeath ? "\u{1F494}" : "\u{1F480}";
+          $("death-message").textContent = msg.message;
+          $("dead-dismiss-hint").classList.remove("hidden");
+        }
         break;
 
       case "game_over":
         handleGameOver(msg);
         break;
 
-      case "configs_list":
-        showConfigList(msg.configs, false);
-        break;
-
       case "room_closed":
         localStorage.removeItem("mafia_game_code");
         gameCode = null;
         isAdmin = false;
+        pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         $("narrator-messages").innerHTML = "";
         $("role-reveal").innerHTML = "";
         $("event-history-list").innerHTML = "";
@@ -364,13 +441,11 @@
         showScreen("menu");
         break;
 
-      case "config_saved":
-        showError(""); // clear
-        closeConfigModal();
-        break;
-
-      case "config_deleted":
-        wsSend({ type: "list_configs" });
+      case "player_prefs":
+        hideMafiaTag = !!msg.hide_mafia_tag;
+        myPlayerColor = msg.player_color;
+        $("toggle-hide-mafia-tag").checked = hideMafiaTag;
+        updatePlayerStatus();
         break;
     }
   }
@@ -397,6 +472,12 @@
     currentPhase = msg.phase;
     previousPhase = msg.phase;
 
+    // 4b. Restore hide_mafia_tag preference
+    if (msg.hide_mafia_tag !== undefined) {
+      hideMafiaTag = msg.hide_mafia_tag;
+      $("toggle-hide-mafia-tag").checked = hideMafiaTag;
+    }
+
     // 5. Restore accumulated state
     if (msg.narrationAccent) {
       currentAccent = msg.narrationAccent;
@@ -404,10 +485,10 @@
     }
     dayVoteCount = msg.dayVoteCount;
     narratorTranscript = msg.narratorHistory;
-    detectiveHistory = msg.detectiveHistory;
-    anonVoteChecked = msg.anonVoteChecked;
+    detectiveHistory = msg.detectiveHistory || [];
     hasVoted = false;
     nightActionLocked = false;
+    jokerHauntActive = false;
     mafiaConfirmTarget = null;
     myMafiaVotes = [];
     mafiaObjectedTargets = {};
@@ -430,6 +511,7 @@
         message: msg.gameOver.message,
         forceEnded: msg.gameOver.forceEnded,
         players: msg.gameOver.revealPlayers,
+        jokerJointWinner: msg.gameOver.jokerJointWinner,
       });
       return;
     }
@@ -453,6 +535,15 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("admin-night-controls").classList.add("hidden");
+    $("awaiting-ready").classList.add("hidden");
+    $("btn-begin-night").classList.add("hidden");
+
+    // 9b. Show awaiting-ready if game is waiting for narrator
+    if (msg.awaitingNarratorReady) {
+      $("awaiting-ready").classList.remove("hidden");
+      $("awaiting-ready-msg").textContent = "Check your role card!";
+      // awaiting_ready message will arrive separately for admin to show button
+    }
 
     // 10. Show most recent narrator message
     $("narrator-messages").innerHTML = "";
@@ -487,8 +578,42 @@
       // Night action
       if (msg.nightAction) {
         const na = msg.nightAction;
-        if (na.isSpectatorView) {
-          // Dead player spectator view
+        // Restore spectator log from game_sync
+        if (na.isSpectatorView && na.spectatorLog && na.spectatorLog.length > 0) {
+          spectatorNightLog = [];
+          $("spectator-night-log").innerHTML = "";
+          for (const entry of na.spectatorLog) {
+            appendSpectatorLog(entry);
+          }
+        }
+        // Restore joker deliberating/resolved status for spectators on rejoin
+        if (na.isSpectatorView && na.jokerDeliberating) {
+          showJokerDeliberating();
+        } else if (na.isSpectatorView && na.jokerResolvedTarget) {
+          showJokerResolved(na.jokerResolvedTarget);
+        }
+        if (na.jokerHauntPending) {
+          // Dead joker with active haunt — show haunt view, not spectator view
+          jokerHauntActive = true;
+          if (na.locked && na.targetName) {
+            // Already chose — show confirmed state
+            const panel = $("night-actions");
+            panel.classList.remove("hidden");
+            $("action-title").textContent = "Haunt Target";
+            $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
+            hideSlideConfirm();
+            $("action-status").textContent = "You have chosen your victim. Revenge is sweet.";
+            nightActionLocked = true;
+          }
+          // If not locked, targets are sent separately via joker_haunt_targets
+        } else if (na.isSpectatorView && na.spectatorSubPhase) {
+          // Dead player spectator view for doctor/detective/resolving sub-phases
+          showSpectatorNightPhase({
+            subPhase: na.spectatorSubPhase,
+            isRoleAlive: na.spectatorSubPhaseAlive,
+          });
+        } else if (na.isSpectatorView) {
+          // Dead player spectator view for mafia sub-phase
           showSpectatorMafiaPanel({
             voterTargets: na.voterTargets,
             lockedTarget: na.lockedTarget,
@@ -508,13 +633,25 @@
           nightActionLocked = true;
           if (myRole === "mafia") {
             $("mafia-vote-status").classList.remove("hidden");
+            // H4: locked during the mafia sub-phase means consensus was
+            // reached but the kill is NOT yet confirmed — the server
+            // re-sends mafia_confirm_ready right after game_sync. Leave
+            // the action unlocked so handleMafiaConfirmReady can restore
+            // the slide-to-confirm UI.
+            if (msg.nightSubPhase === "mafia") {
+              nightActionLocked = false;
+            }
           }
         } else if (na.targets.length > 0) {
           // Show target selection
           const actionType = myRole === "mafia" ? "mafia_vote"
-            : myRole === "doctor" ? "doctor_save" : "detective_investigate";
+            : myRole === "doctor" ? "doctor_save"
+            : myRole === "joker" ? "joker_haunt"
+            : "detective_investigate";
           const title = myRole === "mafia" ? "Choose a victim"
-            : myRole === "doctor" ? "Choose someone to protect" : "Choose someone to investigate";
+            : myRole === "doctor" ? "Choose someone to protect"
+            : myRole === "joker" ? "Choose someone to haunt"
+            : "Choose someone to investigate";
           showNightAction(title, na.targets, actionType, myRole === "doctor" ? na.lastDoctorTarget : undefined);
 
           // Restore mafia vote status
@@ -531,13 +668,10 @@
       handleVoteCalled({
         targetName: vs.targetName,
         targetId: vs.targetId,
-        anonymous: vs.anonymous,
-      });
+      }, vs.hasVoted);
       updateVoteProgress({
-        votesFor: vs.votesFor,
-        votesAgainst: vs.votesAgainst,
+        totalVotes: vs.totalVotes,
         total: vs.total,
-        voterNames: vs.voterNames || undefined,
       });
     }
 
@@ -545,11 +679,8 @@
     $("event-history").classList.remove("hidden");
     updatePlayerStatus();
 
-    // 12. Show death overlay if dead
+    // 12. Dead player state (card back only — overlay only shows on real-time you_died)
     if (isDead) {
-      $("dead-overlay").classList.remove("hidden");
-      $("death-message").textContent = "You were killed.";
-      $("dead-dismiss-hint").classList.remove("hidden");
       $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
     }
   }
@@ -632,9 +763,16 @@
     wsSend({ type: "start_game" });
   });
 
+  $("btn-begin-night").addEventListener("click", () => {
+    ensureAudioReady();
+    wsSend({ type: "narrator_ready" });
+    $("awaiting-ready").classList.add("hidden");
+    $("btn-begin-night").classList.add("hidden");
+  });
+
   // Settings controls
   $("mafia-minus").addEventListener("click", () => {
-    const current = parseInt($("mafia-count").textContent);
+    const current = parseInt($("mafia-count").textContent) || 1;
     if (current > 1) {
       $("mafia-count").textContent = current - 1;
       wsSend({ type: "update_settings", settings: { mafiaCount: current - 1 } });
@@ -642,7 +780,7 @@
   });
 
   $("mafia-plus").addEventListener("click", () => {
-    const current = parseInt($("mafia-count").textContent);
+    const current = parseInt($("mafia-count").textContent) || 1;
     if (current < 6) {
       $("mafia-count").textContent = current + 1;
       wsSend({ type: "update_settings", settings: { mafiaCount: current + 1 } });
@@ -653,7 +791,38 @@
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
+      // Show/hide mode sub-rows
+      if (role === "doctor") {
+        $("doctor-mode-row").classList.toggle("hidden", !e.target.checked);
+      } else if (role === "joker") {
+        $("joker-mode-row").classList.toggle("hidden", !e.target.checked);
+      }
     });
+  });
+
+  // Rule mode tabs (Official vs House)
+  function setupRuleTabs(containerId, settingKey, hints) {
+    const container = $(containerId);
+    container.querySelectorAll(".rule-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        container.querySelectorAll(".rule-tab").forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+        const mode = tab.dataset.mode;
+        wsSend({ type: "update_settings", settings: { [settingKey]: mode } });
+        const hintEl = container.nextElementSibling;
+        if (hintEl && hints[mode]) hintEl.textContent = hints[mode];
+      });
+    });
+  }
+
+  setupRuleTabs("doctor-mode-tabs", "doctorMode", {
+    house: "Narrator reveals who was saved",
+    official: "Save is secret \u2014 only victim is notified",
+  });
+
+  setupRuleTabs("joker-mode-tabs", "jokerMode", {
+    house: "Game ends when Joker is executed",
+    official: "Game continues \u2014 Joker can haunt a voter",
   });
 
   $("lobby-accent").addEventListener("change", (e) => {
@@ -663,24 +832,22 @@
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
 
+    const renderPlayerItem = (p) => {
+      const colorDot = p.color ? `<span class="player-color-dot" style="background:${p.color}"></span>` : '';
+      return `<li>${colorDot}${escapeHtml(p.username)}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`;
+    };
+
     $("player-count-admin").textContent = players.length;
-    $("players-list-admin").innerHTML = players
-      .map(
-        (p) =>
-          `<li>${p.username}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`
-      )
-      .join("");
+    $("players-list-admin").innerHTML = players.map(renderPlayerItem).join("");
 
     $("player-count-player").textContent = players.length;
     $("admin-name-display").textContent = adminName;
-    $("players-list-player").innerHTML = players
-      .map(
-        (p) =>
-          `<li>${p.username}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`
-      )
-      .join("");
+    $("players-list-player").innerHTML = players.map(renderPlayerItem).join("");
 
     updateSettingsUI(settings);
+    updatePlayerLobbySettings(settings);
+    renderColorPicker("color-picker-admin", players);
+    renderColorPicker("color-picker-player", players);
 
     // If we're on the game or gameover screen, navigate to lobby
     const currentScreen = document.querySelector(".screen.active");
@@ -697,84 +864,110 @@
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-lovers").checked = settings.enableLovers;
-    if ($("toggle-anon-vote")) $("toggle-anon-vote").checked = anonVoteChecked;
     if (settings.narrationAccent) {
       currentAccent = settings.narrationAccent;
       const sel = $("lobby-accent");
       if (sel) sel.value = currentAccent;
       preloadNarrationAudio(currentAccent);
     }
-  }
-
-  // ============================================================
-  // CONFIGS
-  // ============================================================
-  $("btn-save-config").addEventListener("click", () => {
-    openConfigModal(true);
-  });
-
-  $("btn-load-config").addEventListener("click", () => {
-    openConfigModal(false);
-    wsSend({ type: "list_configs" });
-  });
-
-  $("btn-close-config-modal").addEventListener("click", closeConfigModal);
-
-  $("btn-confirm-save-config").addEventListener("click", () => {
-    const name = $("config-name-input").value.trim();
-    if (!name) return;
-    wsSend({ type: "save_config", name });
-  });
-
-  function openConfigModal(isSave) {
-    $("modal-config").classList.remove("hidden");
-    $("modal-config-title").textContent = isSave ? "Save Preset" : "Load Preset";
-    if (isSave) {
-      $("config-save-section").classList.remove("hidden");
-      $("config-name-input").value = "";
-      $("config-name-input").focus();
-    } else {
-      $("config-save-section").classList.add("hidden");
+    // Show/hide and sync mode sub-rows
+    $("doctor-mode-row").classList.toggle("hidden", !settings.enableDoctor);
+    $("joker-mode-row").classList.toggle("hidden", !settings.enableJoker);
+    // Sync tab active state
+    if (settings.doctorMode) {
+      $("doctor-mode-tabs").querySelectorAll(".rule-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.mode === settings.doctorMode);
+      });
+      $("doctor-mode-hint").textContent = settings.doctorMode === "official"
+        ? "Save is secret \u2014 only victim is notified"
+        : "Narrator reveals who was saved";
+    }
+    if (settings.jokerMode) {
+      $("joker-mode-tabs").querySelectorAll(".rule-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.mode === settings.jokerMode);
+      });
+      $("joker-mode-hint").textContent = settings.jokerMode === "official"
+        ? "Game continues \u2014 Joker can haunt a voter"
+        : "Game ends when Joker is executed";
     }
   }
 
-  function closeConfigModal() {
-    $("modal-config").classList.add("hidden");
+  // ============================================================
+  // COLOR PICKER
+  // ============================================================
+  function renderColorPicker(containerId, players) {
+    const container = $(containerId);
+    if (!container) return;
+
+    // Build lookup of color -> player names
+    const colorOwners = {};
+    for (const p of players) {
+      if (p.color && p.id !== userId) {
+        if (!colorOwners[p.color]) colorOwners[p.color] = [];
+        colorOwners[p.color].push(p.username);
+      }
+    }
+
+    container.innerHTML = '<h4>Your Color</h4>';
+    const grid = document.createElement("div");
+    grid.className = "color-picker-grid";
+
+    for (const color of PLAYER_COLORS) {
+      const cell = document.createElement("div");
+      cell.className = "color-picker-cell";
+
+      const circle = document.createElement("div");
+      circle.className = "color-circle";
+      if (myPlayerColor === color) circle.classList.add("selected");
+      if (colorOwners[color]) circle.classList.add("taken");
+      circle.style.background = color;
+      circle.addEventListener("click", () => {
+        myPlayerColor = color;
+        wsSend({ type: "update_player_pref", key: "player_color", value: color });
+        // Update selection visually immediately
+        container.querySelectorAll(".color-circle").forEach(c => c.classList.remove("selected"));
+        circle.classList.add("selected");
+      });
+      cell.appendChild(circle);
+
+      // Label showing who has this color
+      const owners = colorOwners[color];
+      if (owners) {
+        const label = document.createElement("div");
+        label.className = "color-circle-label";
+        label.textContent = owners.length === 1 ? owners[0] : owners.length + " players";
+        label.title = owners.join(", ");
+        cell.appendChild(label);
+      }
+
+      grid.appendChild(cell);
+    }
+    container.appendChild(grid);
   }
 
-  function showConfigList(configs, isSave) {
-    const list = $("config-list");
-    const empty = $("config-empty");
-    if (configs.length === 0) {
-      list.innerHTML = "";
-      empty.classList.remove("hidden");
-      return;
-    }
-    empty.classList.add("hidden");
-    list.innerHTML = configs
-      .map(
-        (c) =>
-          `<li data-id="${c.id}">
-            <span class="config-name">${escapeHtml(c.name)}</span>
-            <button class="config-delete" data-id="${c.id}">&times;</button>
-          </li>`
-      )
-      .join("");
+  // ============================================================
+  // READ-ONLY SETTINGS DISPLAY (for non-admin player lobby)
+  // ============================================================
+  function updatePlayerLobbySettings(settings) {
+    const container = $("player-lobby-settings");
+    if (!container) return;
 
-    list.querySelectorAll("li").forEach((li) => {
-      li.addEventListener("click", (e) => {
-        if (e.target.classList.contains("config-delete")) return;
-        wsSend({ type: "load_config", configId: parseInt(li.dataset.id) });
-        closeConfigModal();
-      });
-    });
+    const roles = [];
+    if (settings.enableDoctor) roles.push(`Doctor (${settings.doctorMode === "official" ? "Official" : "House"})`);
+    if (settings.enableDetective) roles.push("Detective");
+    if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
+    if (settings.enableLovers) roles.push("Lovers");
 
-    list.querySelectorAll(".config-delete").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        wsSend({ type: "delete_config", configId: parseInt(btn.dataset.id) });
-      });
-    });
+    container.innerHTML = `
+      <div class="lobby-settings-row">
+        <span class="lobby-settings-label">Mafia Members</span>
+        <span class="lobby-settings-value">${settings.mafiaCount}</span>
+      </div>
+      <div class="lobby-settings-row">
+        <span class="lobby-settings-label">Special Roles</span>
+        <span class="lobby-settings-value">${roles.length > 0 ? roles.join(", ") : "None"}</span>
+      </div>
+    `;
   }
 
   // ============================================================
@@ -782,347 +975,7 @@
   // ============================================================
   let myVariant = 0;
 
-  // ============================================================
-  // PIXEL ART ROLE IMAGES
-  // ============================================================
-  const _ = null; // transparent
-  const PIXEL_ART = {
-    doctor: [
-      [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-      [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
-      [_,"#fff","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fff",_],
-      [_,"#fff","#fdd","#29f","#fdd","#fdd","#29f","#fdd","#fff",_],
-      [_,_,"#fff","#fdd","#fdd","#fdd","#fdd","#fff",_,_],
-      [_,_,"#fff","#fdd","#222","#222","#fdd","#fff",_,_],
-      [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
-      [_,"#fff","#29f","#fff","#29f","#29f","#fff","#29f","#fff",_],
-      [_,"#fff","#29f","#29f","#29f","#29f","#29f","#29f","#fff",_],
-      [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-    ],
-    detective: [
-      [_,_,"#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2",_,_,_],
-      [_,"#7b1fa2","#7b1fa2","#9c27b0","#9c27b0","#9c27b0","#7b1fa2","#7b1fa2",_,_],
-      ["#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2","#7b1fa2",_],
-      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-      [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-      [_,_,"#555","#555","#555","#555","#555","#555",_,_],
-      [_,_,_,_,_,_,_,"#ff0","#ff0",_],
-      [_,_,_,_,_,_,"#ff0","#ccc","#ff0","#ff0"],
-    ],
-    joker: [
-      [_,"#f00","#ff0",_,_,"#0f0","#00f",_,_,_],
-      ["#f00","#f00","#ff0","#ff0",_,"#0f0","#0f0","#00f",_,_],
-      [_,"#ff0","#ff0","#ff0","#f0f","#0f0","#0f0","#00f","#00f",_],
-      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-      [_,_,"#fdd","#f00","#f00","#f00","#f00","#fdd",_,_],
-      [_,_,"#ff0","#0f0","#ff0","#0f0","#ff0","#0f0",_,_],
-      [_,_,"#ff0","#0f0","#ff0","#0f0","#ff0","#0f0",_,_],
-      [_,_,_,"#f00",_,_,"#00f",_,_,_],
-    ],
-    citizen: [
-      // 0: farmer
-      [
-        [_,_,"#8b4","#8b4","#8b4","#8b4","#8b4","#8b4",_,_],
-        [_,"#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4",_],
-        ["#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4","#8b4"],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#a62","#a62","#fdd","#fdd",_,_],
-        [_,_,"#27a","#27a","#27a","#27a","#27a","#27a",_,_],
-        [_,_,"#27a","#27a","#27a","#27a","#27a","#27a",_,_],
-        [_,_,"#a62","#a62",_,_,"#a62","#a62",_,_],
-      ],
-      // 1: engineer
-      [
-        [_,_,"#ff0","#ff0","#ff0","#ff0","#ff0","#ff0",_,_],
-        [_,"#ff0","#ff0","#ff0","#ff0","#ff0","#ff0","#ff0","#ff0",_],
-        [_,"#ff0","#222","#222","#222","#222","#222","#222","#ff0",_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        [_,_,"#f80","#f80","#f80","#f80","#f80","#f80",_,_],
-        [_,_,"#f80","#f80","#f80","#f80","#f80","#f80",_,_],
-        [_,_,"#555","#555",_,_,"#555","#555",_,_],
-      ],
-      // 2: baker
-      [
-        [_,_,_,"#fff","#fff","#fff","#fff",_,_,_],
-        [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
-        [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-        [_,_,"#fff","#da4","#fff","#fff","#da4","#fff",_,_],
-        [_,_,"#555","#555",_,_,"#555","#555",_,_],
-      ],
-      // 3: chef
-      [
-        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-        [_,"#fff","#fff","#fff","#fff","#fff","#fff","#fff","#fff",_],
-        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-        [_,_,"#fff","#222","#fff","#fff","#222","#fff",_,_],
-        [_,_,"#333","#333",_,_,"#333","#333",_,_],
-      ],
-      // 4: astronaut
-      [
-        [_,_,"#ccc","#ccc","#ccc","#ccc","#ccc","#ccc",_,_],
-        [_,"#ccc","#48f","#48f","#48f","#48f","#48f","#48f","#ccc",_],
-        [_,"#ccc","#48f","#48f","#48f","#48f","#48f","#48f","#ccc",_],
-        [_,"#ccc","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#ccc",_],
-        [_,"#ccc","#fdd","#222","#fdd","#fdd","#222","#fdd","#ccc",_],
-        [_,_,"#ccc","#fdd","#fdd","#fdd","#fdd","#ccc",_,_],
-        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-        [_,_,"#fff","#f80","#fff","#fff","#f80","#fff",_,_],
-        [_,_,"#fff","#fff","#fff","#fff","#fff","#fff",_,_],
-        [_,_,"#ccc","#ccc",_,_,"#ccc","#ccc",_,_],
-      ],
-      // 5: musician
-      [
-        [_,_,_,_,_,_,_,_,_,_],
-        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
-        [_,"#333","#333","#333","#333","#333","#333","#333","#333",_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-        [_,_,"#222","#f00","#222","#222","#f00","#222",_,_],
-        [_,_,"#222","#222",_,_,"#222","#222",_,_],
-      ],
-      // 6: artist
-      [
-        [_,_,"#e44","#e44","#e44","#e44","#e44",_,_,_],
-        [_,"#e44","#e44","#e44","#e44","#e44","#e44","#e44",_,_],
-        [_,_,"#e44","#e44","#e44","#e44","#e44",_,_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        [_,_,"#48f","#48f","#48f","#48f","#48f","#48f",_,_],
-        [_,_,"#48f","#ff0","#0f0","#f0f","#f80","#48f",_,_],
-        [_,_,"#333","#333",_,_,"#333","#333",_,_],
-      ],
-      // 7: firefighter
-      [
-        [_,_,"#d00","#d00","#d00","#d00","#d00","#d00",_,_],
-        [_,"#d00","#ff0","#ff0","#ff0","#ff0","#ff0","#ff0","#d00",_],
-        [_,"#d00","#d00","#d00","#d00","#d00","#d00","#d00","#d00",_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        [_,_,"#d00","#d00","#d00","#d00","#d00","#d00",_,_],
-        [_,_,"#d00","#ff0","#d00","#d00","#ff0","#d00",_,_],
-        [_,_,"#333","#333",_,_,"#333","#333",_,_],
-      ],
-    ],
-    mafia: [
-      // 0: gun robber
-      [
-        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
-        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
-        [_,_,"#fdd","#222","#222","#222","#222","#fdd",_,_],
-        [_,_,"#fdd","#fff","#fdd","#fdd","#fff","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
-        [_,_,"#333","#333","#333","#333","#333","#333",_,"#888"],
-        [_,_,"#222","#222",_,_,"#222","#222",_,_],
-      ],
-      // 1: sword warrior
-      [
-        [_,_,"#555","#555","#555","#555","#555","#555",_,_],
-        [_,"#555","#555","#555","#555","#555","#555","#555","#555",_],
-        [_,"#555","#555","#555","#555","#555","#555","#555","#555",_],
-        [_,_,"#fdd","#555","#555","#555","#555","#fdd",_,_],
-        [_,_,"#fdd","#d00","#fdd","#fdd","#d00","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
-        ["#ccc",_,"#444","#444","#444","#444","#444","#444",_,_],
-        ["#ccc",_,"#444","#d00","#444","#444","#d00","#444",_,_],
-        ["#a82",_,"#222","#222",_,_,"#222","#222",_,_],
-      ],
-      // 2: ninja
-      [
-        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
-        [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
-        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-        [_,_,"#222","#fff","#222","#222","#fff","#222",_,_],
-        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
-        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
-        [_,_,"#222","#222",_,_,"#222","#222",_,_],
-      ],
-      // 3: mafia boss
-      [
-        [_,_,"#333","#333","#333","#333","#333","#333",_,_],
-        [_,"#333","#333","#333","#333","#333","#333","#333","#333",_],
-        ["#333","#333","#333","#333","#333","#333","#333","#333","#333","#333"],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-        [_,_,"#fdd","#fdd","#a62","#a62","#fdd","#fdd",_,_],
-        [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-        [_,_,"#222","#fff","#222","#222","#fff","#222",_,_],
-        [_,_,"#222","#222",_,_,"#222","#222",_,_],
-      ],
-    ],
-  };
-
-  function pixelArtToSvg(grid) {
-    const size = grid.length;
-    let rects = "";
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < grid[y].length; x++) {
-        if (grid[y][x]) {
-          rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${grid[y][x]}"/>`;
-        }
-      }
-    }
-    return `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${rects}</svg>`;
-  }
-
-  // Card back: mafioso + civilian side by side
-  const CARD_BACK_ART = [
-    [_,"#222","#222","#222",_,     _,    _,    _,    _,    _   ],
-    ["#333","#c22","#c22","#c22","#333", _,"#654","#654","#654", _  ],
-    [_,"#fdd","#fdd","#fdd",_,     _,"#fdd","#fdd","#fdd", _  ],
-    [_,"#222","#fdd","#222",_,     _,"#222","#fdd","#222", _  ],
-    [_,"#fdd","#dbb","#fdd",_,     _,"#fdd","#fdd","#fdd", _  ],
-    [_,"#fdd","#fdd","#fdd",_,     _,"#fdd","#b77","#fdd", _  ],
-    [_,"#111","#c22","#111",_,     _,"#27a","#27a","#27a", _  ],
-    [_,"#111","#c22","#111",_,     _,"#27a","#27a","#27a", _  ],
-    [_,"#111", _ ,"#111",_,        _,"#27a", _ ,"#27a", _  ],
-    [_,"#111", _ ,"#111",_,        _,"#333", _ ,"#333", _  ],
-  ];
-
-  // Skull pixel art for dead player card back
-  const CARD_BACK_DEAD_ART = [
-    [_,_,_,"#aaa","#aaa","#aaa","#aaa",_,_,_],
-    [_,_,"#aaa","#ddd","#ddd","#ddd","#ddd","#aaa",_,_],
-    [_,"#aaa","#ddd","#ddd","#ddd","#ddd","#ddd","#ddd","#aaa",_],
-    [_,"#aaa","#ddd","#222","#222","#ddd","#222","#222","#aaa",_],
-    [_,"#aaa","#ddd","#222","#222","#ddd","#222","#222","#aaa",_],
-    [_,_,"#aaa","#ddd","#ddd","#333","#ddd","#ddd",_,_],
-    [_,_,"#aaa","#ddd","#333","#ddd","#333","#aaa",_,_],
-    [_,_,_,"#aaa","#ddd","#ddd","#ddd","#aaa",_,_],
-    [_,_,_,"#aaa","#333","#ddd","#333","#aaa",_,_],
-    [_,_,_,_,"#aaa","#aaa","#aaa",_,_,_],
-  ];
-
-  const THUMB_UP_ART = [
-    [_,_,_,_,_,"#fdd",_,_,_,_],
-    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
-    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
-    [_,"#fdd",_,_,"#fdd","#fdd",_,_,_,_],
-    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-    [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
-    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
-    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
-    [_,_,_,_,"#fdd","#fdd","#fdd","#fdd",_,_],
-  ];
-
-  const THUMB_DOWN_ART = [
-    [_,_,_,_,"#fdd","#fdd","#fdd","#fdd",_,_],
-    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
-    [_,_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
-    [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_],
-    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-    [_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-    [_,"#fdd",_,_,"#fdd","#fdd",_,_,_,_],
-    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
-    [_,_,_,_,"#fdd","#fdd",_,_,_,_],
-    [_,_,_,_,_,"#fdd",_,_,_,_],
-  ];
-
-  // Slide-to-confirm pixel art icons
-  const KNIFE_ART = [
-    [_,_,_,_,_,_,_,_,"#ccc",_],
-    [_,_,_,_,_,_,_,"#ccc","#eee",_],
-    [_,_,_,_,_,_,"#ccc","#eee","#ccc",_],
-    [_,_,_,_,_,"#ccc","#eee","#ccc",_,_],
-    [_,"#d32","#d32","#ccc","#eee","#ccc",_,_,_,_],
-    [_,_,"#d32","#d32","#eee","#ccc",_,_,_,_],
-    [_,_,_,"#a62","#ccc",_,_,_,_,_],
-    [_,_,"#a62","#555","#a62",_,_,_,_,_],
-    [_,"#a62","#555",_,"#555","#a62",_,_,_,_],
-    [_,"#a62",_,_,_,"#a62",_,_,_,_],
-  ];
-
-  // Capsule pill tilted ~30 degrees — top-left blue, bottom-right white
-  const CROSS_ART = [
-    [_,_,_,_,_,_,_,_,_,_],
-    [_,_,_,"#e53","#e53","#e53","#e53",_,_,_],
-    [_,_,_,"#f44","#f66","#f66","#e53",_,_,_],
-    [_,"#e53","#f44","#f44","#f66","#f66","#e53","#e53",_,_],
-    [_,"#e53","#f66","#f66","#f88","#f88","#f66","#e53",_,_],
-    [_,"#e53","#f44","#f66","#f88","#f66","#f44","#e53",_,_],
-    [_,"#e53","#e53","#f44","#f66","#f66","#e53","#e53",_,_],
-    [_,_,_,"#e53","#f44","#f44","#e53",_,_,_],
-    [_,_,_,"#c32","#e53","#e53","#c32",_,_,_],
-    [_,_,_,_,_,_,_,_,_,_],
-  ];
-
-  const MAGNIFIER_ART = [
-    [_,_,_,"#9c27b0","#9c27b0","#9c27b0",_,_,_,_],
-    [_,_,"#9c27b0",_,_,_,"#9c27b0",_,_,_],
-    [_,"#9c27b0",_,_,_,_,_,"#9c27b0",_,_],
-    [_,"#9c27b0",_,_,_,_,_,"#9c27b0",_,_],
-    [_,_,"#9c27b0",_,_,_,"#9c27b0",_,_,_],
-    [_,_,_,"#9c27b0","#9c27b0","#9c27b0",_,_,_,_],
-    [_,_,_,_,_,_,"#a62",_,_,_],
-    [_,_,_,_,_,_,_,"#a62",_,_],
-    [_,_,_,_,_,_,_,_,"#a62",_],
-    [_,_,_,_,_,_,_,_,_,_],
-  ];
-
-  function getRoleImage(role, variant) {
-    if (role === "citizen") {
-      const grids = PIXEL_ART.citizen;
-      return pixelArtToSvg(grids[variant % grids.length]);
-    }
-    if (role === "mafia") {
-      const grids = PIXEL_ART.mafia;
-      return pixelArtToSvg(grids[variant % grids.length]);
-    }
-    if (PIXEL_ART[role]) {
-      return pixelArtToSvg(PIXEL_ART[role]);
-    }
-    return "";
-  }
-
-  const ROLE_DESCRIPTIONS = {
-    citizen: "You are a Citizen. Find and eliminate the Mafia to win.",
-    mafia: "You are the Mafia. Eliminate citizens until you outnumber them.",
-    doctor: "You are the Doctor. Each night, choose one player to protect from the Mafia.",
-    detective: "You are the Detective. Each night, investigate one player to discover if they are Mafia.",
-    joker: "You are the Joker. Win by getting yourself executed during the day vote.",
-  };
-
-  const ROLE_COLORS = {
-    citizen: "citizen",
-    mafia: "mafia",
-    doctor: "doctor",
-    detective: "detective",
-    joker: "joker",
-  };
+  // Pixel art data loaded from pixel-art.js (window globals)
 
   function updateRoleCard() {
     const card = $("role-card");
@@ -1267,10 +1120,11 @@
 
     // Set role-specific icon and label
     const iconArt = role === "mafia" ? KNIFE_ART
-      : role === "doctor" ? CROSS_ART : MAGNIFIER_ART;
+      : role === "doctor" ? CROSS_ART
+      : role === "joker_haunt" ? CLOWN_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate" };
+    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt" };
     label.textContent = labels[role] || "slide to confirm";
 
     slideCallback = callback;
@@ -1566,6 +1420,8 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("admin-night-controls").classList.add("hidden");
+    $("awaiting-ready").classList.add("hidden");
+    $("btn-begin-night").classList.add("hidden");
 
     if (msg.phase === "day") {
       startDayTimer();
@@ -1583,14 +1439,30 @@
       hasVoted = false;
       dayVoteCount = 0;
       nightActionLocked = false;
+      jokerHauntActive = false;
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
+      // Reset spectator night log and joker status for new night
+      spectatorNightLog = [];
+      $("spectator-night-log").innerHTML = "";
+      $("spectator-night-log").classList.add("hidden");
+      $("joker-spectator-status").classList.add("hidden");
       if (isAdmin) {
         $("admin-night-controls").classList.remove("hidden");
       }
     }
 
     updatePlayerStatus();
+  }
+
+  // L5: a game_over that arrived mid-transition replays once the chain ends.
+  // If another transition chained on synchronously (execution → heartbreak →
+  // night), handleServerMessage simply re-holds it until the last one completes.
+  function flushPendingGameOver() {
+    if (!pendingGameOver) return;
+    const msg = pendingGameOver;
+    pendingGameOver = null;
+    handleServerMessage(msg);
   }
 
   // ============================================================
@@ -1621,12 +1493,14 @@
         overlay.classList.remove("fade-out");
         text.style.color = "";
         executionTransitionActive = false;
+        // no flushPendingGameOver here — all call sites chain into heartbreak/night, whose terminals flush
         callback();
       }, 600);
     }, 2000);
   }
 
   function showHeartbreakTransition(loverName, callback) {
+    heartbreakTransitionActive = true;
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
 
@@ -1643,7 +1517,9 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        heartbreakTransitionActive = false;
         callback();
+        flushPendingGameOver();
       }, 600);
     }, 2000);
   }
@@ -1706,6 +1582,7 @@
           handleServerMessage(qMsg);
         }
         nightTransitionQueue = [];
+        flushPendingGameOver();
       }, 600);
     }, 3400);
   }
@@ -1717,7 +1594,9 @@
     // Check events for the current round to determine good/bad news
     const round = msg.round;
     const roundEvents = (msg.events || []).filter((e) => e.round === round);
-    const hasSave = roundEvents.some((e) => e.type === "save");
+    // Official doctor mode sends an anonymous `saved` flag (no named save event);
+    // house mode and older payloads still carry a named "save" event.
+    const hasSave = msg.saved === true || roundEvents.some((e) => e.type === "save");
     const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
     const killEvent = roundEvents.find((e) => e.type === "kill");
     const victimName = killEvent ? killEvent.playerName : "Someone";
@@ -1787,6 +1666,7 @@
         handleServerMessage(qMsg);
       }
       suspenseQueue = [];
+      flushPendingGameOver();
     }, 6300 + extraDelay);
   }
 
@@ -1837,6 +1717,7 @@
       execution: "Executed",
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
+      joker_haunt: "Haunted by the Joker",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -1899,13 +1780,15 @@
     container.innerHTML = sorted
       .map((p) => {
         const status = p.isAlive ? "alive" : "dead";
+        const dotStyle = p.isAlive && p.color ? `style="background:${p.color}"` : '';
         const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
+        const showMafiaTag = isMafiaTeammate && !hideMafiaTag;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
         return `<div class="player-status-item">
-          <span class="player-status-dot ${status}"></span>
+          <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
-          ${isMafiaTeammate ? '<span class="mafia-tag">MAFIA</span>' : ''}
+          ${showMafiaTag ? '<span class="mafia-tag">MAFIA</span>' : ''}
           ${investigated ? (isMafia ? '<span class="detective-tag mafia">\u{1F44E}</span>' : '<span class="detective-tag clear">\u{1F44D}</span>') : ''}
         </div>`;
       })
@@ -1935,10 +1818,25 @@
   // NIGHT ACTIONS
   // ============================================================
   let nightActionLocked = false; // true after doctor/detective confirm
+  let jokerHauntActive = false; // true while dead joker is choosing haunt target
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
+  // M11: target of an in-flight maybe+lock pair. The pair is sent back-to-back
+  // (the WS stream is ordered, so nothing can interleave) and further taps are
+  // ignored until the server echoes a vote update — a duplicate "maybe" would
+  // toggle the vote off, and a second target's "lock" could diverge from the UI.
+  let pendingMafiaLockTarget = null;
+
+  function sendMafiaMaybeLock(targetId) {
+    if (pendingMafiaLockTarget !== null) return false;
+    pendingMafiaLockTarget = targetId;
+    wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+    wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+    return true;
+  }
 
   function showNightAction(title, players, actionType, disabledId) {
-    if (isDead) return;
+    // Allow joker_haunt even when dead (joker haunts from beyond the grave)
+    if (isDead && actionType !== "joker_haunt") return;
 
     const panel = $("night-actions");
     panel.classList.remove("hidden");
@@ -1952,6 +1850,7 @@
 
     if (actionType === "mafia_vote") {
       mafiaTargetPlayers = players;
+      pendingMafiaLockTarget = null; // fresh night render (M11)
       // Branch on single vs multi mafia
       if (mafiaTeam.length <= 1) {
         renderSingleMafiaTargets(list, players);
@@ -1970,9 +1869,10 @@
         })
         .join("");
 
-      // Doctor/Detective: clicking selects visually, slide-to-confirm sends to server
+      // Doctor/Detective/Joker haunt: clicking selects visually, slide-to-confirm sends to server
       let selectedTargetId = null;
       let selectedName = null;
+      const slideRole = actionType === "joker_haunt" ? "joker_haunt" : myRole;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
           if (nightActionLocked) return;
@@ -1980,9 +1880,10 @@
           li.classList.add("selected");
           selectedTargetId = parseInt(li.dataset.id);
           selectedName = li.textContent;
-          setupSlideConfirm(myRole, () => {
+          setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
+            // Keep jokerHauntActive true for the entire night (reset on phase change to day)
             wsSend({ type: actionType, targetId: selectedTargetId });
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
@@ -2001,13 +1902,11 @@
       li.addEventListener("click", () => {
         if (nightActionLocked) return;
         const targetId = parseInt(li.dataset.id);
+        // Atomic maybe+lock; further taps are no-ops so the UI can never
+        // highlight a different target than the one locked on the wire (M11)
+        if (!sendMafiaMaybeLock(targetId)) return;
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
-        // Send maybe then lock with small delay
-        wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-        setTimeout(() => {
-          wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-        }, 50);
       });
     });
   }
@@ -2064,6 +1963,13 @@
               else if (v.voteType === "maybe") chip.className = "mtc-chip chip-suggest";
               else chip.className = "mtc-chip chip-object";
               chip.title = voterName + ": " + v.voteType;
+              // Apply voter's player color as chip background (except for objections)
+              if (v.voteType !== "letsnot") {
+                const voterPlayer = knownPlayers.find(kp => kp.username === voterName);
+                if (voterPlayer && voterPlayer.color) {
+                  chip.style.background = voterPlayer.color;
+                }
+              }
               chipsDiv.appendChild(chip);
             }
           }
@@ -2149,29 +2055,45 @@
             });
             actions.appendChild(unlockBtn);
           } else if (hasMyMaybe) {
-            const lockBtn = document.createElement("button");
-            lockBtn.className = "mtc-btn mtc-btn-lock";
-            lockBtn.textContent = "\u{1F512} Lock In";
-            lockBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (nightActionLocked) return;
-              wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-            });
-            actions.appendChild(lockBtn);
+            // Check if I already have a lock on a different target
+            const myExistingLock = myMafiaVotes.find(v => v.voteType === "lock");
+            if (myExistingLock && myExistingLock.targetId !== targetId) {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
+              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              lockBtn.disabled = true;
+              actions.appendChild(lockBtn);
+            } else {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock";
+              lockBtn.textContent = "\u{1F512} Lock In";
+              lockBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (nightActionLocked) return;
+                wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+              });
+              actions.appendChild(lockBtn);
+            }
           } else if (cardState === "partial-lock") {
             // Someone else already locked — show Lock In (auto-sends maybe+lock)
-            const lockBtn = document.createElement("button");
-            lockBtn.className = "mtc-btn mtc-btn-lock";
-            lockBtn.textContent = "\u{1F512} Lock In";
-            lockBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              if (nightActionLocked) return;
-              wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-              setTimeout(() => {
-                wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-              }, 50);
-            });
-            actions.appendChild(lockBtn);
+            const myExistingLock = myMafiaVotes.find(v => v.voteType === "lock");
+            if (myExistingLock && myExistingLock.targetId !== targetId) {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
+              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              lockBtn.disabled = true;
+              actions.appendChild(lockBtn);
+            } else {
+              const lockBtn = document.createElement("button");
+              lockBtn.className = "mtc-btn mtc-btn-lock";
+              lockBtn.textContent = "\u{1F512} Lock In";
+              lockBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (nightActionLocked) return;
+                sendMafiaMaybeLock(targetId); // atomic maybe+lock; no-op while in flight (M11)
+              });
+              actions.appendChild(lockBtn);
+            }
           } else {
             const nomBtn = document.createElement("button");
             nomBtn.className = "mtc-btn mtc-btn-suggest";
@@ -2237,6 +2159,10 @@
 
     // For single mafia, don't re-render cards (consensus will trigger confirm)
     if (mafiaTeam.length <= 1) return;
+
+    // Server echoed vote state — cards re-render from truth below, so a new
+    // Lock In may be dispatched again (M11)
+    pendingMafiaLockTarget = null;
 
     // Re-render cards on the target list
     const list = $("action-targets");
@@ -2318,10 +2244,108 @@
     panel.classList.remove("hidden");
     hideSlideConfirm();
     $("mafia-vote-status").classList.add("hidden");
+    renderSpectatorLog();
 
     $("action-title").textContent = "Dawn approaches\u2026";
-    $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 killed by the Mafia</li>`;
+    if (msg.kills && msg.kills.length > 0) {
+      $("action-targets").innerHTML = msg.kills.map(k => {
+        const label = k.source === "joker_haunt" ? "haunted by the Joker" : "killed by the Mafia";
+        return `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 ${label}</li>`;
+      }).join("");
+    } else {
+      $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 killed by the Mafia</li>`;
+    }
     $("action-status").textContent = msg.doctorMessage || "";
+  }
+
+  function showSpectatorNightPhase(msg) {
+    const panel = $("night-actions");
+    panel.classList.remove("hidden");
+    hideSlideConfirm();
+    $("mafia-vote-status").classList.add("hidden");
+    $("action-status").textContent = "";
+    renderSpectatorLog();
+
+    const list = $("action-targets");
+    if (msg.subPhase === "doctor") {
+      if (msg.isRoleAlive) {
+        $("action-title").textContent = "Doctor is deliberating\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing who to protect\u2026</li>`;
+      } else {
+        $("action-title").textContent = "The Doctor has fallen\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No one will be saved tonight</li>`;
+      }
+    } else if (msg.subPhase === "detective") {
+      if (msg.isRoleAlive) {
+        $("action-title").textContent = "Detective is investigating\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing who to investigate\u2026</li>`;
+      } else {
+        $("action-title").textContent = "The Detective has fallen\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No investigation tonight</li>`;
+      }
+    } else if (msg.subPhase === "resolving") {
+      $("action-title").textContent = "Dawn approaches\u2026";
+      list.innerHTML = "";
+    }
+  }
+
+  function formatSpectatorLogEntry(entry) {
+    const div = document.createElement("div");
+    div.className = "spectator-log-entry" + (entry.alive ? "" : " log-dead");
+    if (entry.phase === "mafia") {
+      div.innerHTML = `Mafia chose to kill <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+    } else if (entry.phase === "doctor") {
+      if (entry.alive) {
+        div.innerHTML = `Doctor chose to protect <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else {
+        div.textContent = "Doctor has fallen \u2014 no protection tonight";
+      }
+    } else if (entry.phase === "detective") {
+      if (entry.alive) {
+        div.innerHTML = `Detective chose to investigate <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else {
+        div.textContent = "Detective has fallen \u2014 no investigation tonight";
+      }
+    }
+    return div;
+  }
+
+  function appendSpectatorLog(entry) {
+    spectatorNightLog.push({ phase: entry.phase, targetName: entry.targetName, alive: entry.alive });
+    const logEl = $("spectator-night-log");
+    logEl.appendChild(formatSpectatorLogEntry(entry));
+    logEl.classList.remove("hidden");
+  }
+
+  function renderSpectatorLog() {
+    const logEl = $("spectator-night-log");
+    logEl.innerHTML = "";
+    if (spectatorNightLog.length === 0) {
+      logEl.classList.add("hidden");
+      return;
+    }
+    for (const entry of spectatorNightLog) {
+      logEl.appendChild(formatSpectatorLogEntry(entry));
+    }
+    logEl.classList.remove("hidden");
+  }
+
+  function showJokerDeliberating() {
+    const el = $("joker-spectator-status");
+    if (el) {
+      el.textContent = "Joker is choosing their victim\u2026";
+      el.className = "joker-spectator-status deliberating";
+      el.classList.remove("hidden");
+    }
+  }
+
+  function showJokerResolved(targetName) {
+    const el = $("joker-spectator-status");
+    if (el) {
+      el.textContent = "Joker has chosen " + targetName;
+      el.className = "joker-spectator-status resolved";
+      el.classList.remove("hidden");
+    }
   }
 
   function handleMafiaConfirmReady(msg) {
@@ -2364,10 +2388,6 @@
       $("admin-status-msg").textContent = "";
     }
 
-    // Sync anon toggle
-    if ($("toggle-anon-vote")) {
-      $("toggle-anon-vote").checked = anonVoteChecked;
-    }
   }
 
   function populateAdminTargets(players) {
@@ -2381,16 +2401,8 @@
       li.addEventListener("click", () => {
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
-        const anon = $("toggle-anon-vote") ? $("toggle-anon-vote").checked : true;
-        wsSend({ type: "call_vote", targetId: parseInt(li.dataset.id), anonymous: anon });
+        wsSend({ type: "call_vote", targetId: parseInt(li.dataset.id) });
       });
-    });
-  }
-
-  // Per-vote anon toggle (Phase 3)
-  if ($("toggle-anon-vote")) {
-    $("toggle-anon-vote").addEventListener("change", (e) => {
-      anonVoteChecked = e.target.checked;
     });
   }
 
@@ -2407,15 +2419,14 @@
     }
   });
 
-  function handleVoteCalled(msg) {
-    hasVoted = false;
+  function handleVoteCalled(msg, fromSync) {
+    if (!fromSync) hasVoted = false;
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("vote-target-name").textContent = msg.targetName;
     $("vote-progress").textContent = "Waiting for votes...";
-    $("vote-names").innerHTML = "";
 
     // Hide vote buttons if dead or already voted (rejoin), show otherwise
     if (isDead || hasVoted) {
@@ -2462,35 +2473,16 @@
 
   function updateVoteProgress(msg) {
     $("vote-progress").textContent = `${msg.totalVotes} / ${msg.total} votes cast`;
-
-    if (msg.voterNames) {
-      const names = $("vote-names");
-      names.innerHTML = Object.entries(msg.voterNames)
-        .map(
-          ([name, approved]) =>
-            `<div class="${approved ? "vote-for" : "vote-against"}">${escapeHtml(name)}: ${approved ? "\u{1F44D}" : "\u{1F44E}"}</div>`
-        )
-        .join("");
-    }
   }
 
   function handleVoteResult(msg) {
     $("voting-panel").classList.add("hidden");
     lastVoteResult = msg;
 
-    const hasCounts = msg.votesFor != null && msg.votesAgainst != null;
     const resultText = msg.executed
-      ? `${msg.targetName} has been executed.${hasCounts ? ` (${msg.votesFor} for, ${msg.votesAgainst} against)` : ""}`
-      : `${msg.targetName} has been spared.${hasCounts ? ` (${msg.votesFor} for, ${msg.votesAgainst} against)` : ""}`;
+      ? `${msg.targetName} has been executed.`
+      : `${msg.targetName} has been spared.`;
     showNarratorMessage(resultText);
-
-    if (msg.voterNames) {
-      const breakdown = Object.entries(msg.voterNames)
-        .map(([name, v]) => `${name}: ${v ? "\u{1F44D}" : "\u{1F44E}"}`)
-        .join(", ");
-      showNarratorMessage(`Votes: ${breakdown}`);
-    }
-
   }
 
   // ============================================================
@@ -2521,12 +2513,31 @@
     $("dead-dismiss-hint").classList.add("hidden");
   });
 
+  // Joker win overlay (official mode — only visible to the joker, replaces death screen)
+  function showJokerWinOverlay(jokerName) {
+    // Show using the death overlay but with joker-specific content
+    $("dead-overlay").classList.remove("hidden");
+    $("dead-emoji").textContent = "\u{1F0CF}"; // joker card emoji
+    $("death-message").textContent = "You achieved a joint victory!";
+    $("dead-dismiss-hint").classList.remove("hidden");
+  }
+
+  // Doctor save private notification (official mode)
+  function showDoctorSavePrivate(message) {
+    // Show as a detective-result-style notification
+    const el = $("detective-result");
+    el.textContent = message;
+    el.style.borderColor = "var(--role-doctor)";
+    el.classList.remove("hidden");
+  }
+
   // ============================================================
   // SETTINGS MODAL
   // ============================================================
-  $("btn-settings").addEventListener("click", () => {
+  function openSettingsModal() {
     $("toggle-sound").checked = soundEnabled;
     $("toggle-dark-mode").checked = document.documentElement.getAttribute("data-theme") !== "light";
+    $("toggle-hide-mafia-tag").checked = hideMafiaTag;
     // Show room code for admin
     if (isAdmin && gameCode) {
       $("settings-room-code").classList.remove("hidden");
@@ -2547,7 +2558,11 @@
       $("settings-leave-game").classList.add("hidden");
     }
     $("modal-settings").classList.remove("hidden");
-  });
+  }
+
+  $("btn-settings").addEventListener("click", openSettingsModal);
+  $("btn-settings-lobby-admin").addEventListener("click", openSettingsModal);
+  $("btn-settings-lobby-player").addEventListener("click", openSettingsModal);
 
   $("btn-close-settings").addEventListener("click", closeSettingsModal);
 
@@ -2583,6 +2598,12 @@
     applyTheme(isDark);
   });
 
+  $("toggle-hide-mafia-tag").addEventListener("change", (e) => {
+    hideMafiaTag = e.target.checked;
+    wsSend({ type: "update_player_pref", key: "hide_mafia_tag", value: hideMafiaTag });
+    updatePlayerStatus();
+  });
+
   $("btn-end-game").addEventListener("click", () => {
     if (confirm("Are you sure you want to end the game?")) {
       wsSend({ type: "end_game" });
@@ -2616,9 +2637,11 @@
     isLover = false;
     mafiaTeam = [];
     isDead = false;
+    jokerWonOverlayShown = false;
     currentPhase = null;
     previousPhase = null;
     dayVoteCount = 0;
+    jokerJointWinner = !!msg.jokerJointWinner;
 
     if (msg.forceEnded) {
       // Force-ended: no suspense, show immediately
@@ -2650,6 +2673,7 @@
     }
     $("gameover-message").textContent = msg.message;
     $("gameover-buttons").classList.add("hidden");
+    $("gameover-buttons-player").classList.add("hidden");
     renderGameHistory();
   }
 
@@ -2665,6 +2689,7 @@
       save: "Saved by the Doctor",
       execution: "Executed by vote",
       lover_death: "Died of heartbreak",
+      joker_haunt: "Haunted by the Joker",
     };
 
     // Group by round, split night vs day
@@ -2674,7 +2699,7 @@
     let lastPhase = "night";
     for (const ev of events) {
       if (!grouped[ev.round]) grouped[ev.round] = { night: [], day: [] };
-      if (ev.type === "kill" || ev.type === "save") {
+      if (ev.type === "kill" || ev.type === "save" || ev.type === "joker_haunt") {
         grouped[ev.round].night.push(ev);
         lastPhase = "night";
       } else if (ev.type === "execution") {
@@ -2717,6 +2742,10 @@
   function showGameOverButtons(admin) {
     if (admin) {
       $("gameover-buttons").classList.remove("hidden");
+      $("gameover-buttons-player").classList.add("hidden");
+    } else {
+      $("gameover-buttons-player").classList.remove("hidden");
+      $("gameover-buttons").classList.add("hidden");
     }
   }
 
@@ -2795,9 +2824,11 @@
         const dead = !p.isAlive;
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">\u2764 ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
+        const trophyText = (jokerJointWinner && p.role === "joker") ? '<span class="role-reveal-trophy">\uD83C\uDFC6</span>' : "";
         return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
           <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
+          ${trophyText}
           ${loverText}
           ${deadText}
         </div>`;
@@ -2860,6 +2891,10 @@
     gameCode = null;
     isAdmin = false;
     showScreen("menu");
+  });
+
+  $("btn-return-to-lobby-player").addEventListener("click", () => {
+    wsSend({ type: "player_return_to_lobby" });
   });
 
   $("btn-close-room").addEventListener("click", () => {
@@ -3176,8 +3211,8 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.1_202603031956";
-  const APP_VERSION_STAGING = "staging.1_202603031958";
+  const APP_VERSION = "v1.3_202606100708";
+  const APP_VERSION_STAGING = "staging.14_202606100708";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

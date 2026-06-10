@@ -1,14 +1,24 @@
-import { getDb, createUser, loginUser, getUserById, saveConfig, getConfigs, deleteConfig, getConfig } from "./db";
+import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings, getUserPrefs, updateUserPref } from "./db";
 import {
-  createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
+  createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings, sanitizeSettings,
   getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
+  submitJokerHaunt, getJokerHauntTargets, classifyNightDeath,
 } from "./game-engine";
+import { Narrator } from "./narrator";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
 import path from "path";
 import fs from "fs";
+
+// Player color palette (20 medium-brightness colors)
+const PLAYER_COLORS = [
+  "#E53935", "#EC407A", "#AB47BC", "#7E57C2", "#5C6BC0",
+  "#42A5F5", "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A",
+  "#9CCC65", "#C0CA33", "#FFEE58", "#FFA726", "#FF7043",
+  "#D84315", "#8D6E63", "#78909C", "#546E7A", "#F06292",
+];
 
 // Initialize database
 getDb();
@@ -41,16 +51,26 @@ function sendToUser(userId: number, msg: ServerMessage): void {
   }
 }
 
-function sendToDeadPlayers(game: Game, msg: ServerMessage): void {
+function sendToDeadPlayers(game: Game, msg: ServerMessage, excludeUserId?: number): void {
   for (const [, player] of game.players) {
-    if (!player.isAlive) {
+    if (!player.isAlive && player.id !== excludeUserId) {
       sendToUser(player.id, msg);
     }
   }
 }
 
+/** Returns the dead joker's id if haunt is active this night, or undefined */
+function getHauntingJokerId(game: Game): number | undefined {
+  if (game.settings.jokerMode !== "official" || game.jokerHauntVoters.length === 0) return undefined;
+  const joker = Array.from(game.players.values()).find(p => p.role === "joker" && !p.isAlive);
+  return joker?.id;
+}
+
 function broadcastLobbyUpdate(game: Game): void {
-  const players = getPlayerInfo(game);
+  const players = getPlayerInfo(game).map(p => ({
+    ...p,
+    color: getUserPrefs(p.id).player_color,
+  }));
   const admin = game.players.get(game.adminId);
   broadcastToGame(game.code, {
     type: "lobby_update",
@@ -89,7 +109,8 @@ function sendMafiaPrompts(game: Game): void {
     sendToUser(m.id, { type: "mafia_targets", players: mafiaTargets });
   }
 
-  // Send initial spectator view to dead players
+  // Send initial spectator view to dead players (exclude haunting joker)
+  const jokerExclude = getHauntingJokerId(game);
   sendToDeadPlayers(game, {
     type: "spectator_mafia_update",
     voterTargets: {},
@@ -97,7 +118,7 @@ function sendMafiaPrompts(game: Game): void {
     objectedTargets: {},
     aliveMafiaCount: aliveMafia.length,
     targets: mafiaTargets,
-  });
+  }, jokerExclude);
 }
 
 function sendDoctorPrompts(game: Game): void {
@@ -113,6 +134,12 @@ function sendDoctorPrompts(game: Game): void {
       sendToUser(d.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
     }
   }
+  // Notify dead players about doctor sub-phase (exclude haunting joker)
+  sendToDeadPlayers(game, {
+    type: "spectator_night_phase",
+    subPhase: "doctor",
+    isRoleAlive: aliveDoctor.length > 0,
+  }, getHauntingJokerId(game));
 }
 
 function sendDetectivePrompts(game: Game): void {
@@ -130,6 +157,24 @@ function sendDetectivePrompts(game: Game): void {
       sendToUser(d.id, { type: "detective_targets", players: allAliveExceptSelf });
     }
   }
+  // Notify dead players about detective sub-phase (exclude haunting joker)
+  sendToDeadPlayers(game, {
+    type: "spectator_night_phase",
+    subPhase: "detective",
+    isRoleAlive: aliveDetective.length > 0,
+  }, getHauntingJokerId(game));
+}
+
+function sendJokerHauntPrompts(game: Game): void {
+  // Find the dead joker
+  const joker = Array.from(game.players.values()).find(p => p.role === "joker" && !p.isAlive);
+  if (!joker) return;
+
+  const targets = getJokerHauntTargets(game);
+  if (targets.length === 0) return;
+
+  sendToUser(joker.id, { type: "joker_haunt_targets", players: targets });
+  // No spectator announcement, no sound cues — joker haunt is silent
 }
 
 function handleSubPhaseAdvance(game: Game): void {
@@ -161,6 +206,14 @@ function handleSubPhaseAdvance(game: Game): void {
       nightTimers.delete(game.code);
       if (!getGame(game.code)) return;
       broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+      // Notify dead players that this role is dead (exclude haunting joker)
+      if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
+        sendToDeadPlayers(game, {
+          type: "spectator_night_phase",
+          subPhase: result.nextPhase,
+          isRoleAlive: false,
+        }, getHauntingJokerId(game));
+      }
 
       // Normal-distribution fake delay centered at 10s, range ~5-15s
       const u1 = Math.random() || 0.0001;
@@ -170,6 +223,15 @@ function handleSubPhaseAdvance(game: Game): void {
       const fakeTimer = setTimeout(() => {
         nightTimers.delete(game.code);
         if (!getGame(game.code)) return;
+        // Notify dead players that this fake sub-phase completed (role is dead, exclude haunting joker)
+        if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
+          sendToDeadPlayers(game, {
+            type: "spectator_night_complete",
+            phase: result.nextPhase,
+            targetName: null,
+            alive: false,
+          }, getHauntingJokerId(game));
+        }
         // Recurse to next sub-phase (sends close cue for this phase)
         handleSubPhaseAdvance(game);
       }, fakeDelay);
@@ -184,6 +246,7 @@ function handleSubPhaseAdvance(game: Game): void {
   const timer = setTimeout(() => {
     nightTimers.delete(game.code);
     if (!getGame(game.code)) return;
+
     broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
 
     if (result.nextPhase === "doctor") {
@@ -195,12 +258,57 @@ function handleSubPhaseAdvance(game: Game): void {
   nightTimers.set(game.code, timer);
 }
 
-/** Start the night sequence: sound cues + mafia prompts */
+/** Start the night sequence: sound cues + mafia prompts + joker haunt if active */
 function startNightSequence(game: Game): void {
   broadcastToGame(game.code, { type: "sound_cue", sound: "night" });
   broadcastToGame(game.code, { type: "sound_cue", sound: "everyone_close" });
   broadcastToGame(game.code, { type: "sound_cue", sound: "mafia_open" });
   sendMafiaPrompts(game);
+
+  // Send joker haunt prompts if active (official mode + voters exist)
+  if (game.settings.jokerMode === "official" && game.jokerHauntVoters.length > 0) {
+    sendJokerHauntPrompts(game);
+    // Notify other dead players that joker is deliberating
+    const jokerId = getHauntingJokerId(game);
+    sendToDeadPlayers(game, { type: "spectator_joker_deliberating" }, jokerId);
+  }
+}
+
+function buildSpectatorLog(game: Game): Array<{ phase: string; targetName: string | null; alive: boolean }> {
+  // Sub-phase order: mafia=0, doctor=1, detective=2, resolving=3
+  const phaseOrder = ["mafia", "doctor", "detective", "resolving"];
+  const currentIdx = phaseOrder.indexOf(game.nightSubPhase || "mafia");
+  const log: Array<{ phase: string; targetName: string | null; alive: boolean }> = [];
+
+  for (let i = 0; i < currentIdx; i++) {
+    const phase = phaseOrder[i];
+    if (phase === "mafia") {
+      if (game.mafiaTarget !== null) {
+        const victim = game.players.get(game.mafiaTarget);
+        log.push({ phase: "mafia", targetName: victim ? victim.username : null, alive: true });
+      }
+    } else if (phase === "doctor") {
+      if (!game.settings.enableDoctor) continue;
+      const doctorAlive = getAliveByRole(game, "doctor").length > 0;
+      if (doctorAlive && game.doctorTarget !== null) {
+        const protected_ = game.players.get(game.doctorTarget);
+        log.push({ phase: "doctor", targetName: protected_ ? protected_.username : null, alive: true });
+      } else if (!doctorAlive) {
+        log.push({ phase: "doctor", targetName: null, alive: false });
+      }
+    } else if (phase === "detective") {
+      if (!game.settings.enableDetective) continue;
+      const detectiveAlive = getAliveByRole(game, "detective").length > 0;
+      if (detectiveAlive && game.detectiveTarget !== null) {
+        const investigated = game.players.get(game.detectiveTarget);
+        log.push({ phase: "detective", targetName: investigated ? investigated.username : null, alive: true });
+      } else if (!detectiveAlive) {
+        log.push({ phase: "detective", targetName: null, alive: false });
+      }
+    }
+  }
+
+  return log;
 }
 
 function buildGameSync(game: Game, client: WSClient, rejoined: import("./types").Player): ServerMessage {
@@ -208,24 +316,114 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 
   // Night action state (only if night + alive + has role with action + correct sub-phase)
   let nightAction: Extract<ServerMessage, { type: "game_sync" }>["nightAction"] = null;
-  if (game.phase === "night" && !rejoined.isAlive && game.nightSubPhase === "mafia") {
-    // Dead player spectator view during mafia sub-phase
-    const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
-    const spectatorTargets = aliveNonMafia.map(p => ({
-      id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId,
-    }));
-    const status = getMafiaVoteStatus(game);
-    nightAction = {
-      locked: false,
-      targetName: null,
-      targets: spectatorTargets,
-      voterTargets: status.voterTargets,
-      lockedTarget: status.lockedTarget,
-      objectedTargets: status.objectedTargets,
-      aliveMafiaCount: status.aliveMafiaCount,
-      lastDoctorTarget: null,
-      isSpectatorView: true,
-    } as any;
+  if (game.phase === "night" && !rejoined.isAlive) {
+    // Dead joker with active haunt gets haunt view, not spectator view
+    const isHauntingJoker = rejoined.role === "joker"
+      && game.settings.jokerMode === "official"
+      && game.jokerHauntVoters.length > 0;
+
+    if (isHauntingJoker) {
+      if (game.jokerHauntTarget === null) {
+        // Joker hasn't picked yet — show haunt targets (sent separately via joker_haunt_targets on rejoin)
+        const hauntTargets = getJokerHauntTargets(game);
+        nightAction = {
+          locked: false,
+          targetName: null,
+          targets: hauntTargets,
+          voterTargets: {},
+          lockedTarget: null,
+          objectedTargets: {},
+          aliveMafiaCount: 0,
+          lastDoctorTarget: null,
+          jokerHauntPending: true,
+        };
+      } else {
+        // Joker already picked — show confirmed state
+        const hauntTarget = game.players.get(game.jokerHauntTarget);
+        nightAction = {
+          locked: true,
+          targetName: hauntTarget ? hauntTarget.username : null,
+          targets: [],
+          voterTargets: {},
+          lockedTarget: null,
+          objectedTargets: {},
+          aliveMafiaCount: 0,
+          lastDoctorTarget: null,
+          jokerHauntPending: true,
+        };
+      }
+    } else {
+    // Build spectator log of completed sub-phases for dead players
+    const spectatorLog = buildSpectatorLog(game);
+
+    // Check if joker haunt is active (for spectator joker status restoration)
+    const jokerStatus: { jokerDeliberating?: boolean; jokerResolvedTarget?: string } = {};
+    if (game.settings.jokerMode === "official" && game.jokerHauntVoters.length > 0) {
+      if (game.jokerHauntTarget === null) {
+        jokerStatus.jokerDeliberating = true;
+      } else {
+        const jTarget = game.players.get(game.jokerHauntTarget);
+        if (jTarget) jokerStatus.jokerResolvedTarget = jTarget.username;
+      }
+    }
+
+    // Dead player spectator view for all night sub-phases
+    if (game.nightSubPhase === "mafia") {
+      const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
+      const spectatorTargets = aliveNonMafia.map(p => ({
+        id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId,
+      }));
+      const status = getMafiaVoteStatus(game);
+      nightAction = {
+        locked: false,
+        targetName: null,
+        targets: spectatorTargets,
+        voterTargets: status.voterTargets,
+        lockedTarget: status.lockedTarget,
+        objectedTargets: status.objectedTargets,
+        aliveMafiaCount: status.aliveMafiaCount,
+        lastDoctorTarget: null,
+        isSpectatorView: true,
+        spectatorLog,
+        ...jokerStatus,
+      };
+    } else if (game.nightSubPhase === "doctor" || game.nightSubPhase === "detective") {
+      const isRoleAlive = game.nightSubPhase === "doctor"
+        ? getAliveByRole(game, "doctor").length > 0
+        : getAliveByRole(game, "detective").length > 0;
+      nightAction = {
+        locked: false,
+        targetName: null,
+        targets: [],
+        voterTargets: {},
+        lockedTarget: null,
+        objectedTargets: {},
+        aliveMafiaCount: 0,
+        lastDoctorTarget: null,
+        isSpectatorView: true,
+        spectatorSubPhase: game.nightSubPhase,
+        spectatorSubPhaseAlive: isRoleAlive,
+        spectatorLog,
+        ...jokerStatus,
+      };
+    } else if (game.nightSubPhase === "resolving") {
+      nightAction = {
+        locked: false,
+        targetName: null,
+        targets: [],
+        voterTargets: {},
+        lockedTarget: null,
+        objectedTargets: {},
+        aliveMafiaCount: 0,
+        lastDoctorTarget: null,
+        isSpectatorView: true,
+        spectatorSubPhase: "resolving",
+        spectatorSubPhaseAlive: false,
+        spectatorLog,
+        ...jokerStatus,
+      };
+    }
+    } // close else (non-haunting dead player spectator view)
   } else if (game.phase === "night" && rejoined.isAlive) {
     if (rejoined.role === "mafia" && game.nightSubPhase === "mafia") {
       const locked = game.mafiaTarget !== null;
@@ -319,21 +517,12 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
   let voteState: Extract<ServerMessage, { type: "game_sync" }>["voteState"] = null;
   if (game.phase === "voting" && game.voteTarget !== null) {
     const target = game.players.get(game.voteTarget)!;
-    let votesFor = 0, votesAgainst = 0;
-    const voterNames: Record<string, boolean> = {};
-    for (const [voterId, approve] of game.votes) {
-      const voter = game.players.get(voterId)!;
-      voterNames[voter.username] = approve;
-      if (approve) votesFor++; else votesAgainst++;
-    }
     voteState = {
       targetName: target.username,
       targetId: game.voteTarget,
-      anonymous: game.voteAnonymous,
       hasVoted: game.votes.has(userId),
-      votesFor, votesAgainst,
+      totalVotes: game.votes.size,
       total: getAlivePlayers(game).length,
-      voterNames: game.voteAnonymous ? null : voterNames,
     };
   }
 
@@ -346,28 +535,31 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       message: game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
       forceEnded: game.forceEnded,
       revealPlayers: getPlayerInfo(game, true),
+      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
     };
   }
 
+  const userPrefs = getUserPrefs(userId);
   return {
     type: "game_sync",
     code: game.code,
     isAdmin: userId === game.adminId,
     narrationAccent: game.settings.narrationAccent,
-    players: getPlayerInfo(game),
+    hide_mafia_tag: userPrefs.hide_mafia_tag,
+    players: getPlayerInfo(game).map(p => ({ ...p, color: getUserPrefs(p.id).player_color })),
     role: rejoined.role!,
     isLover: rejoined.isLover,
     variant: rejoined.variant,
     phase: game.phase,
     round: game.round,
     nightSubPhase: game.nightSubPhase,
+    awaitingNarratorReady: game.awaitingNarratorReady,
     isDead: !rejoined.isAlive,
     dayStartedAt: game.dayStartedAt,
     dayVoteCount: game.dayVoteCount,
     narratorHistory: game.narratorHistory,
-    detectiveHistory: game.detectiveHistory,
     eventHistory: game.eventHistory,
-    anonVoteChecked: game.voteAnonymous,
+    ...(rejoined.role === "detective" ? { detectiveHistory: game.detectiveHistory } : {}),
     ...(rejoined.role === "mafia" ? {
       mafiaTeam: Array.from(game.players.values())
         .filter(p => p.role === "mafia")
@@ -386,6 +578,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Username is required" });
         return;
       }
+      if (msg.username.trim().length > 32) {
+        send(ws, { type: "error", message: "Username must be 32 characters or fewer" });
+        return;
+      }
       if (!msg.passcode || !/^\d{4}$/.test(msg.passcode)) {
         send(ws, { type: "error", message: "Passcode must be exactly 4 digits" });
         return;
@@ -395,8 +591,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Username already taken" });
         return;
       }
+      // Assign random color on registration
+      const randomColor = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+      updateUserPref(userId, "player_color", randomColor);
       client.userId = userId;
-      send(ws, { type: "registered", userId, username: msg.username.trim() });
+      send(ws, { type: "registered", userId, username: msg.username.trim(), hide_mafia_tag: false, player_color: randomColor });
       break;
     }
 
@@ -406,8 +605,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Invalid username or passcode" });
         return;
       }
+      // Assign random color for legacy users without one
+      let playerColor = user.player_color;
+      if (!playerColor) {
+        playerColor = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+        updateUserPref(user.id, "player_color", playerColor);
+      }
       client.userId = user.id;
-      send(ws, { type: "logged_in", userId: user.id, username: user.username });
+      send(ws, { type: "logged_in", userId: user.id, username: user.username, hide_mafia_tag: user.hide_mafia_tag, player_color: playerColor });
       break;
     }
 
@@ -420,7 +625,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Already in a game" });
         return;
       }
-      const game = createGame(client.userId, getUsernameFromClients(client.userId));
+      let initialSettings: Partial<GameSettings> | undefined;
+      const savedJson = getLastSettings(client.userId);
+      if (savedJson) {
+        try { initialSettings = sanitizeSettings(JSON.parse(savedJson)); } catch {}
+      }
+      const game = createGame(client.userId, getUsernameFromClients(client.userId), initialSettings);
       client.gameCode = game.code;
       send(ws, { type: "game_created", code: game.code });
       broadcastLobbyUpdate(game);
@@ -452,6 +662,35 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         // If game is active (not lobby), send single atomic game_sync
         if (game.phase !== "lobby") {
           send(ws, buildGameSync(game, client, rejoined));
+          // If admin rejoins during awaiting state, re-send awaiting_ready
+          if (game.awaitingNarratorReady && client.userId === game.adminId) {
+            send(ws, { type: "awaiting_ready" });
+          }
+          // H4: mafia consensus locked but kill not yet confirmed — re-send
+          // mafia_confirm_ready so the rejoining mafia can slide-to-confirm
+          // (otherwise the night soft-locks waiting for a confirm the client
+          // no longer offers)
+          if (game.phase === "night" && game.nightSubPhase === "mafia"
+              && game.mafiaTarget !== null
+              && rejoined.isAlive && rejoined.role === "mafia") {
+            const confirmTarget = game.players.get(game.mafiaTarget);
+            send(ws, {
+              type: "mafia_confirm_ready",
+              targetName: confirmTarget ? confirmTarget.username : "target",
+              targetId: game.mafiaTarget,
+            });
+          }
+          // If dead joker with pending haunt during night, send haunt targets separately
+          if (game.phase === "night" && game.nightSubPhase !== "resolving"
+              && !rejoined.isAlive && rejoined.role === "joker"
+              && game.jokerHauntTarget === null
+              && game.settings.jokerMode === "official"
+              && game.jokerHauntVoters.length > 0) {
+            const hauntTargets = getJokerHauntTargets(game);
+            if (hauntTargets.length > 0) {
+              send(ws, { type: "joker_haunt_targets", players: hauntTargets });
+            }
+          }
         } else {
           broadcastLobbyUpdate(game);
         }
@@ -553,65 +792,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
       if (game.phase !== "lobby") return;
-      updateSettings(game, msg.settings);
+      updateSettings(game, sanitizeSettings(msg.settings));
       send(ws, { type: "settings_updated", settings: game.settings });
       broadcastLobbyUpdate(game);
-      break;
-    }
-
-    case "save_config": {
-      if (!client.userId) return;
-      const game = client.gameCode ? getGame(client.gameCode) : null;
-      const settings = game ? game.settings : null;
-      if (!settings) {
-        send(ws, { type: "error", message: "No game settings to save" });
-        return;
-      }
-      const configId = saveConfig(client.userId, msg.name, JSON.stringify(settings));
-      send(ws, {
-        type: "config_saved",
-        config: { id: configId, adminId: client.userId, name: msg.name, settings },
-      });
-      break;
-    }
-
-    case "load_config": {
-      if (!client.userId || !client.gameCode) return;
-      const game = getGame(client.gameCode);
-      if (!game || client.userId !== game.adminId || game.phase !== "lobby") return;
-      const config = getConfig(msg.configId);
-      if (!config || config.admin_id !== client.userId) {
-        send(ws, { type: "error", message: "Config not found" });
-        return;
-      }
-      const loadedSettings = JSON.parse(config.settings_json) as GameSettings;
-      updateSettings(game, loadedSettings);
-      send(ws, { type: "settings_updated", settings: game.settings });
-      broadcastLobbyUpdate(game);
-      break;
-    }
-
-    case "list_configs": {
-      if (!client.userId) return;
-      const configs = getConfigs(client.userId);
-      send(ws, {
-        type: "configs_list",
-        configs: configs.map((c) => ({
-          id: c.id,
-          adminId: c.admin_id,
-          name: c.name,
-          settings: JSON.parse(c.settings_json),
-        })),
-      });
-      break;
-    }
-
-    case "delete_config": {
-      if (!client.userId) return;
-      const deleted = deleteConfig(msg.configId, client.userId);
-      if (deleted) {
-        send(ws, { type: "config_deleted", configId: msg.configId });
-      }
       break;
     }
 
@@ -627,6 +810,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Need at least 3 players to start" });
         return;
       }
+      saveLastSettings(game.adminId, JSON.stringify(game.settings));
       recordNarrator(game, messages);
 
       // Build mafia team names
@@ -653,8 +837,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         messages,
       });
 
-      // Start sequential night
-      startNightSequence(game);
+      // Gate night narration behind "Begin Night" button
+      send(ws, { type: "awaiting_ready" });
       break;
     }
 
@@ -662,6 +846,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
 
       const voteType = msg.voteType || "lock";
       const result = submitMafiaVote(game, client.userId, msg.targetId, voteType);
@@ -675,6 +860,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
 
       if (!removeMafiaVote(game, client.userId, msg.targetId)) break;
 
@@ -686,12 +872,25 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
       if (game.mafiaTarget === null) return;
+      const confirmer = game.players.get(client.userId);
+      if (!confirmer || confirmer.role !== "mafia" || !confirmer.isAlive) return;
 
       const aliveMafia = getAliveByRole(game, "mafia");
       for (const m of aliveMafia) {
         sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
       }
+
+      // Notify dead players that mafia sub-phase completed (exclude haunting joker)
+      const mafiaVictim = game.players.get(game.mafiaTarget);
+      sendToDeadPlayers(game, {
+        type: "spectator_night_complete",
+        phase: "mafia",
+        targetName: mafiaVictim ? mafiaVictim.username : null,
+        alive: true,
+      }, getHauntingJokerId(game));
+
       handleSubPhaseAdvance(game);
       break;
     }
@@ -700,10 +899,21 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.nightSubPhase !== "doctor") return;
+      if (game.awaitingNarratorReady) return;
 
       const saved = submitDoctorSave(game, client.userId, msg.targetId);
       if (saved) {
         sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
+
+        // Notify dead players that doctor sub-phase completed (exclude haunting joker)
+        const protectedPlayer = game.players.get(msg.targetId);
+        sendToDeadPlayers(game, {
+          type: "spectator_night_complete",
+          phase: "doctor",
+          targetName: protectedPlayer ? protectedPlayer.username : null,
+          alive: true,
+        }, getHauntingJokerId(game));
+
         // Advance to next sub-phase (detective/resolving)
         handleSubPhaseAdvance(game);
       } else {
@@ -716,6 +926,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.nightSubPhase !== "detective") return;
+      if (game.awaitingNarratorReady) return;
 
       const result = submitDetectiveInvestigation(game, client.userId, msg.targetId);
       if (result) {
@@ -723,8 +934,40 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           type: "night_action_done",
           message: "You have chosen to investigate someone tonight. Results will be revealed at dawn.",
         });
+
+        // Notify dead players that detective sub-phase completed (exclude haunting joker)
+        const investigatedPlayer = game.players.get(msg.targetId);
+        sendToDeadPlayers(game, {
+          type: "spectator_night_complete",
+          phase: "detective",
+          targetName: investigatedPlayer ? investigatedPlayer.username : null,
+          alive: true,
+        }, getHauntingJokerId(game));
+
         // Advance to resolving
         handleSubPhaseAdvance(game);
+      }
+      break;
+    }
+
+    case "joker_haunt": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.phase !== "night" || game.nightSubPhase === "resolving") return;
+      if (game.awaitingNarratorReady) return;
+
+      const haunted = submitJokerHaunt(game, client.userId, msg.targetId);
+      if (haunted) {
+        sendToUser(client.userId, { type: "night_action_done", message: "You have chosen your victim. Revenge is sweet." });
+        // Notify other dead players that joker has chosen (exclude joker themselves)
+        const target = game.players.get(msg.targetId);
+        if (target) {
+          sendToDeadPlayers(game, {
+            type: "spectator_joker_resolved",
+            targetName: target.username,
+          }, client.userId);
+        }
+        // No sub-phase advance — haunt is a parallel action
       }
       break;
     }
@@ -734,14 +977,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
-      if (callVote(game, client.userId, msg.targetId, msg.anonymous)) {
+      if (callVote(game, client.userId, msg.targetId)) {
         game.dayVoteCount++;
         const target = game.players.get(msg.targetId)!;
         broadcastToGame(game.code, {
           type: "vote_called",
           targetName: target.username,
           targetId: msg.targetId,
-          anonymous: game.voteAnonymous,
         });
       }
       break;
@@ -751,6 +993,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase !== "day") return;
       // Admin abstains - just stay in day phase, no vote happens
       recordNarrator(game, ["The admin has chosen to abstain from calling a vote today."]);
       broadcastToGame(game.code, {
@@ -788,36 +1031,37 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const result = castVote(game, client.userId, msg.approve);
 
-      // Broadcast vote progress
-      let votesFor = 0;
-      let votesAgainst = 0;
-      const voterNames: Record<string, boolean> = {};
-      for (const [voterId, approve] of game.votes) {
-        const voter = game.players.get(voterId)!;
-        voterNames[voter.username] = approve;
-        if (approve) votesFor++;
-        else votesAgainst++;
+      // Only broadcast vote progress when in voting phase and the vote was recorded
+      if (game.phase === "voting" && game.votes.has(client.userId)) {
+        broadcastToGame(game.code, {
+          type: "vote_update",
+          totalVotes: game.votes.size,
+          total: getAlivePlayers(game).length,
+        });
       }
 
-      broadcastToGame(game.code, {
-        type: "vote_update",
-        ...(game.voteAnonymous ? {} : { votesFor, votesAgainst, voterNames }),
-        totalVotes: votesFor + votesAgainst,
-        total: getAlivePlayers(game).length,
-      });
-
-      if (result.allVoted || result.earlyResolve) {
-        const isAnon = game.voteAnonymous;
+      if (result.allVoted) {
         const voteResult = resolveVote(game);
         if (voteResult) {
           recordNarrator(game, voteResult.messages);
 
+          // M12: never broadcast exact tallies — in small games they de-anonymize voters
           broadcastToGame(game.code, {
             type: "vote_result",
             targetName: voteResult.targetName,
             executed: voteResult.executed,
-            ...(isAnon ? {} : { votesFor: voteResult.votesFor, votesAgainst: voteResult.votesAgainst, voterNames: voteResult.voterNames }),
           });
+
+          // Send joker win overlay only to the joker (official mode: game continues)
+          if (voteResult.jokerWin && game.settings.jokerMode === "official") {
+            const jokerPlayer = voteResult.killed.find(k => k.player.role === "joker");
+            if (jokerPlayer) {
+              sendToUser(jokerPlayer.player.id, {
+                type: "joker_win_overlay",
+                jokerName: jokerPlayer.player.username,
+              });
+            }
+          }
 
           let voteLoverDeathName: string | undefined;
           for (let i = 0; i < voteResult.killed.length; i++) {
@@ -848,6 +1092,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               winner: game.winner!,
               message: voteResult.messages[voteResult.messages.length - 1],
               players: getPlayerInfo(game, true),
+              ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
             });
           } else if (game.phase === "night") {
             // Auto-transition to night after execution
@@ -919,6 +1164,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       const messages = endDay(game);
+      if (messages.length === 0) return;
       game.dayStartedAt = null;
       game.dayVoteCount = 0;
       recordNarrator(game, messages);
@@ -936,6 +1182,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase === "game_over") return;
 
       clearNightTimer(game.code);
       forceEndGame(game);
@@ -953,6 +1200,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         message: "Host has ended the game.",
         forceEnded: true,
         players: getPlayerInfo(game, true),
+        ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
       });
       // Room persists — do NOT removeGame or clear gameCode refs
       break;
@@ -969,6 +1217,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Cannot return to lobby" });
         return;
       }
+      // After the success check: an errant return_to_lobby during an active
+      // night must NOT clear the legit pending timer (M2)
+      clearNightTimer(game.code);
       broadcastLobbyUpdate(game);
       break;
     }
@@ -998,6 +1249,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Only the admin can restart the game" });
         return;
       }
+      clearNightTimer(game.code);
       const messages = restartGame(game);
       if (!messages) {
         send(ws, { type: "error", message: "Cannot restart game" });
@@ -1029,13 +1281,71 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         messages,
       });
 
-      // Start sequential night
+      // Gate night narration behind "Begin Night" button
+      send(ws, { type: "awaiting_ready" });
+      break;
+    }
+
+    case "narrator_ready": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || client.userId !== game.adminId) return;
+      if (game.phase !== "night") return;
+      if (!game.awaitingNarratorReady) return;
+      game.awaitingNarratorReady = false;
       startNightSequence(game);
       break;
     }
 
     case "toggle_sound": {
       // Sound toggle is client-side only, but we acknowledge it
+      break;
+    }
+
+    case "update_player_pref": {
+      if (!client.userId) return;
+      const key = msg.key;
+      if (key === "hide_mafia_tag") {
+        updateUserPref(client.userId, "hide_mafia_tag", !!msg.value);
+      } else if (key === "player_color") {
+        if (!PLAYER_COLORS.includes(msg.value)) {
+          send(ws, { type: "error", message: "Invalid color" });
+          return;
+        }
+        updateUserPref(client.userId, "player_color", msg.value);
+      } else {
+        return;
+      }
+      const prefs = getUserPrefs(client.userId);
+      send(ws, { type: "player_prefs", hide_mafia_tag: prefs.hide_mafia_tag, player_color: prefs.player_color });
+      // If color changed and player is in a lobby, broadcast update
+      if (key === "player_color" && client.gameCode) {
+        const game = getGame(client.gameCode);
+        if (game && game.phase === "lobby") {
+          broadcastLobbyUpdate(game);
+        }
+      }
+      break;
+    }
+
+    case "player_return_to_lobby": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.phase !== "game_over") return;
+      // Non-admin only (admin uses return_to_lobby)
+      if (client.userId === game.adminId) return;
+      // Send lobby_update to just this player so they can navigate to lobby
+      const players = getPlayerInfo(game).map(p => ({
+        ...p,
+        color: getUserPrefs(p.id).player_color,
+      }));
+      const admin = game.players.get(game.adminId);
+      send(ws, {
+        type: "lobby_update",
+        players,
+        settings: game.settings,
+        adminName: admin?.username ?? "Unknown",
+      });
       break;
     }
   }
@@ -1048,7 +1358,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     sendToUser(m.id, { type: "mafia_vote_update", voterTargets: status.voterTargets, lockedTarget: status.lockedTarget, objectedTargets: status.objectedTargets, aliveMafiaCount: status.aliveMafiaCount });
   }
 
-  // Send spectator update to dead players
+  // Send spectator update to dead players (exclude haunting joker)
   const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
   const spectatorTargets = aliveNonMafia.map((p) => ({
     id: p.id,
@@ -1063,7 +1373,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     objectedTargets: status.objectedTargets,
     aliveMafiaCount: status.aliveMafiaCount,
     targets: spectatorTargets,
-  });
+  }, getHauntingJokerId(game));
 
   // On consensus: send confirm-ready so mafia can slide to confirm the kill
   if (result.consensus && result.target !== null) {
@@ -1077,12 +1387,22 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
 
 function resolveNightAndTransition(game: Game): void {
   if (!getGame(game.code)) return; // game was removed (e.g., admin left)
+  // Capture haunting joker id before transitionToDay clears jokerHauntVoters
+  const hauntingJokerId = getHauntingJokerId(game);
   const nightResult = transitionToDay(game);
   recordNarrator(game, nightResult.messages);
 
   // Track dayStartedAt
   if (game.phase === "day") {
     game.dayStartedAt = Date.now();
+  }
+
+  // Send private doctor save message in official mode
+  if (nightResult.saved && nightResult.savedTargetId !== null && game.settings.doctorMode === "official") {
+    sendToUser(nightResult.savedTargetId, {
+      type: "doctor_save_private",
+      message: Narrator.doctorSaveVictim(),
+    });
   }
 
   // Send detective result privately (even if detective died this night)
@@ -1111,18 +1431,20 @@ function resolveNightAndTransition(game: Game): void {
         doctorMessage = `Doctor was not able to save ${targetName}`;
       }
     }
+    const kills = nightResult.killed.map(k => ({ name: k.player.username, source: k.source }));
     sendToDeadPlayers(game, {
       type: "spectator_kill_confirmed",
       targetName,
       doctorMessage,
-    });
+      kills,
+    }, hauntingJokerId);
   }
 
   // Notify killed players
   let nightLoverDeathName: string | undefined;
   for (let i = 0; i < nightResult.killed.length; i++) {
     const k = nightResult.killed[i];
-    const isLoverDeath = i > 0 && k.player.isLover;
+    const isLoverDeath = classifyNightDeath(nightResult.killed, i) === "lover_death";
     if (isLoverDeath) nightLoverDeathName = k.player.username;
     sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
@@ -1143,6 +1465,7 @@ function resolveNightAndTransition(game: Game): void {
     round: game.round,
     messages: nightResult.messages,
     events: game.eventHistory,
+    saved: nightResult.saved,
     ...(nightLoverDeathName ? { loverDeathName: nightLoverDeathName } : {}),
   });
 
@@ -1152,6 +1475,7 @@ function resolveNightAndTransition(game: Game): void {
       winner: game.winner!,
       message: nightResult.messages[nightResult.messages.length - 1],
       players: getPlayerInfo(game, true),
+      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
     });
   }
 }

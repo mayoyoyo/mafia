@@ -4,7 +4,8 @@ import {
   submitMafiaVote, submitDoctorSave, submitDetectiveInvestigation,
   checkNightReady, transitionToDay, advanceNightSubPhase, callVote, castVote, resolveVote,
   cancelVote, endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
-  getPlayerInfo, forceEndGame, removeGame, restartGame,
+  getPlayerInfo, forceDawn, forceEndGame, removeGame, restartGame, returnToLobby,
+  sanitizeSettings,
 } from "../src/game-engine";
 import type { Game } from "../src/types";
 
@@ -69,6 +70,22 @@ describe("Role Assignment", () => {
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     expect(mafia.length).toBe(2);
+    removeGame(game.code);
+  });
+
+  test("non-numeric mafiaCount still produces at least 1 mafia (M6a)", () => {
+    const game = setupGame(6, { mafiaCount: "abc" as any });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    expect(mafia.length).toBeGreaterThanOrEqual(1);
+    removeGame(game.code);
+  });
+
+  test("null mafiaCount still produces at least 1 mafia (M6a)", () => {
+    const game = setupGame(6, { mafiaCount: null as any });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    expect(mafia.length).toBeGreaterThanOrEqual(1);
     removeGame(game.code);
   });
 
@@ -336,7 +353,7 @@ describe("Day Voting", () => {
   });
 
   test("executing the joker triggers joker win", () => {
-    const game = setupGame(5, { enableJoker: true });
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house" });
     startGame(game);
 
     const mafia = getAliveByRole(game, "mafia");
@@ -438,6 +455,37 @@ describe("Settings", () => {
     // 4 players → max 1 mafia (floor(4/3) = 1)
     expect(mafia.length).toBe(1);
     removeGame(game.code);
+  });
+});
+
+describe("sanitizeSettings edge bounds", () => {
+  test("mafiaCount is clamped and coerced to an integer", () => {
+    expect(sanitizeSettings({ mafiaCount: 0 }).mafiaCount).toBe(1);
+    expect(sanitizeSettings({ mafiaCount: 7 }).mafiaCount).toBe(6);
+    expect(sanitizeSettings({ mafiaCount: 2.7 }).mafiaCount).toBe(2);
+  });
+
+  test("non-numeric mafiaCount is dropped", () => {
+    expect(sanitizeSettings({ mafiaCount: "lol" })).toEqual({});
+  });
+
+  test("narrationAccent shape limits: over 32 chars or empty is dropped", () => {
+    expect(sanitizeSettings({ narrationAccent: "a".repeat(33) })).toEqual({});
+    expect(sanitizeSettings({ narrationAccent: "" })).toEqual({});
+  });
+
+  test("doctorMode must be a known mode string", () => {
+    expect(sanitizeSettings({ doctorMode: "bogus" })).toEqual({});
+    expect(sanitizeSettings({ doctorMode: "house" }).doctorMode).toBe("house");
+  });
+
+  test("unknown keys are dropped", () => {
+    expect(sanitizeSettings({ bogusKey: 123 })).toEqual({});
+  });
+
+  test("booleans are strict: truthy strings dropped, real booleans kept", () => {
+    expect(sanitizeSettings({ enableDoctor: "yes" })).toEqual({});
+    expect(sanitizeSettings({ enableDoctor: true }).enableDoctor).toBe(true);
   });
 });
 
@@ -566,76 +614,25 @@ describe("Auto-night after execution", () => {
   });
 });
 
-describe("Early Vote Resolution", () => {
-  function setupVoting(playerCount = 7) {
-    const game = setupGame(playerCount);
+describe("Duplicate Vote Rejection", () => {
+  test("duplicate votes are rejected", () => {
+    const game = setupGame(5);
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
     lockTarget(game, mafia[0].id, citizens[0].id);
     transitionToDay(game);
-    return game;
-  }
 
-  test("majority for triggers early resolve (non-anonymous)", () => {
-    const game = setupVoting(7);
-    game.voteAnonymous = false;
     const alive = getAlivePlayers(game);
     const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
-
     callVote(game, game.adminId, target.id);
 
-    // Vote yes until majority reached
-    const voters = getAlivePlayers(game);
-    const majority = Math.floor(voters.length / 2) + 1;
-    let earlyResult = { allVoted: false, earlyResolve: false };
-    for (let i = 0; i < majority; i++) {
-      earlyResult = castVote(game, voters[i].id, true);
-    }
+    const voter = alive[0];
+    const first = castVote(game, voter.id, true);
+    const second = castVote(game, voter.id, false); // duplicate — should be rejected
 
-    expect(earlyResult.earlyResolve).toBe(true);
-    expect(earlyResult.allVoted).toBe(false);
-    removeGame(game.code);
-  });
-
-  test("impossible to pass triggers early spare (non-anonymous)", () => {
-    const game = setupVoting(7);
-    game.voteAnonymous = false;
-    const alive = getAlivePlayers(game);
-    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
-
-    callVote(game, game.adminId, target.id);
-
-    // Vote no until impossible to reach majority
-    const voters = getAlivePlayers(game);
-    const totalAlive = voters.length;
-    const noNeeded = Math.ceil(totalAlive / 2);
-    let earlyResult = { allVoted: false, earlyResolve: false };
-    for (let i = 0; i < noNeeded; i++) {
-      earlyResult = castVote(game, voters[i].id, false);
-    }
-
-    expect(earlyResult.earlyResolve).toBe(true);
-    expect(earlyResult.allVoted).toBe(false);
-    removeGame(game.code);
-  });
-
-  test("no early resolve in anonymous mode", () => {
-    const game = setupVoting(7);
-    game.voteAnonymous = true;
-    const alive = getAlivePlayers(game);
-    const target = alive.find((p) => p.id !== game.adminId && p.role !== "mafia")!;
-
-    callVote(game, game.adminId, target.id);
-
-    const voters = getAlivePlayers(game);
-    const majority = Math.floor(voters.length / 2) + 1;
-    let earlyResult = { allVoted: false, earlyResolve: false };
-    for (let i = 0; i < majority; i++) {
-      earlyResult = castVote(game, voters[i].id, true);
-    }
-
-    expect(earlyResult.earlyResolve).toBe(false);
+    expect(game.votes.get(voter.id)).toBe(true); // original vote preserved
+    expect(second.allVoted).toBe(false);
     removeGame(game.code);
   });
 });
@@ -664,7 +661,7 @@ describe("Cancel Vote", () => {
 
 describe("Joker Execution with Lovers", () => {
   test("joker is marked dead when executed", () => {
-    const game = setupGame(5, { enableJoker: true });
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house" });
     startGame(game);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
@@ -684,7 +681,7 @@ describe("Joker Execution with Lovers", () => {
   });
 
   test("joker execution kills their lover via heartbreak", () => {
-    const game = setupGame(5, { enableJoker: true, enableLovers: true });
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house", enableLovers: true });
     startGame(game);
 
     const players = Array.from(game.players.values());
@@ -731,6 +728,9 @@ describe("Room Lifecycle", () => {
 
     expect(game.phase).toBe("game_over");
     expect(game.forceEnded).toBe(true);
+    // L3: winner must be well-defined (consumers dereference it with !);
+    // "town" matches the live end_game broadcast
+    expect(game.winner).toBe("town");
     // Game should still be in the map
     expect(getGame(code)).toBeDefined();
     removeGame(game.code);
@@ -1052,6 +1052,56 @@ describe("Lover Death Broadcast", () => {
     // Only the mafia target dies, no heartbreak (lover already dead)
     expect(nightResult.killed.length).toBe(1);
     expect(nightResult.killed[0].player.id).toBe(loverA.id);
+    removeGame(game.code);
+  });
+});
+
+describe("awaitingNarratorReady cleared on forced transitions (L2)", () => {
+  test("forceDawn clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    expect(game.awaitingNarratorReady).toBe(true);
+
+    forceDawn(game);
+    expect(game.phase).toBe("day");
+    expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("endDay clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    forceDawn(game);
+    // Simulate a stale flag surviving into the day
+    game.awaitingNarratorReady = true;
+
+    endDay(game);
+    expect(game.phase).toBe("night");
+    expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("forceEndGame clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    expect(game.awaitingNarratorReady).toBe(true);
+
+    forceEndGame(game);
+    expect(game.phase).toBe("game_over");
+    expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("returnToLobby clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    forceEndGame(game);
+    // Simulate a stale flag surviving into game_over
+    game.awaitingNarratorReady = true;
+
+    expect(returnToLobby(game)).toBe(true);
+    expect(game.phase).toBe("lobby");
+    expect(game.awaitingNarratorReady).toBe(false);
     removeGame(game.code);
   });
 });

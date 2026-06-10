@@ -1,12 +1,13 @@
-const CACHE_NAME = "mafia-v2";
+const CACHE_NAME = "mafia-v3";
 const ASSETS = [
   "/",
   "/index.html",
   "/app.css",
   "/app.js",
+  "/pixel-art.js",
   "/manifest.json",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/icons/icon-192.svg",
+  "/icons/icon-512.svg",
 ];
 
 self.addEventListener("install", (e) => {
@@ -32,8 +33,12 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     fetch(e.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        // Only cache OK responses — a 4xx/5xx (e.g. during a deploy) must
+        // not overwrite the cached app shell
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(e.request))

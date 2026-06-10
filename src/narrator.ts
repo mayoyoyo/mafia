@@ -43,6 +43,17 @@ const SAVE_METHODS = [
   "a first-aid kit held together with duct tape", "a miracle smoothie recipe",
 ];
 
+const JOKER_HAUNT_KILL_MESSAGES = [
+  "{name} was found at dawn, pale as a ghost. It seems the Joker had the last laugh. {lastWords}",
+  "RIP {name}. Discovered {location} with a playing card pinned to their chest — the Joker. Revenge from beyond the grave.",
+  "{name} didn't survive the night. Witnesses say they heard cackling {location}. The Joker's ghost strikes.",
+  "The town wakes to find {name} {location}, haunted to death. A faint laugh echoes in the wind. {lastWords}",
+  "{name} has been claimed by the Joker's curse. Found {location}, clutching {food}. Even death couldn't stop the Joker.",
+  "A chill runs through the town. {name} was found {location}, taken by an unseen force. The Joker sends regards from the other side.",
+  "Pour one out for {name}, found {location}. Cause of death? Supernatural revenge via {tool}. The Joker's ghost is no joke.",
+  "It's a dark day. {name} was discovered {location}, haunted into oblivion. {lastWords} The Joker always gets the last laugh.",
+];
+
 const EXECUTION_STYLES = [
   "catapulted into the sunset", "voted off the island (wrong show, but same energy)",
   "escorted out by an aggressive hall monitor", "yeeted into the void",
@@ -67,6 +78,22 @@ const DOCTOR_SAVE_MESSAGES = [
   "The Mafia came for {name}, but the Doctor intervened with {saveMethod}. Not today, death. Not today.",
   "Against all odds, {name} survived thanks to {saveMethod}. The Doctor's medical degree finally paid off.",
   "{name} was on the brink, but {saveMethod} brought them back. The Doctor deserves a raise.",
+];
+
+// Official mode: narrator hints someone survived but doesn't name who
+const DOCTOR_SAVE_OFFICIAL_MESSAGES = [
+  "The Mafia struck in the night, but someone was saved by a mysterious intervention. The Doctor works in silence.",
+  "Someone was targeted last night, but against all odds, they survived. The details remain a mystery.",
+  "The Mafia's plans were foiled — their target survived thanks to an unknown savior. No one knows who cheated death.",
+  "A life was saved in the shadows last night. The Doctor's work goes unnoticed... for now.",
+  "The night was not without incident, but someone lives to see another day. Who? Only the Doctor knows.",
+];
+
+// Private message sent to the victim in official mode
+const DOCTOR_SAVE_VICTIM_MESSAGES = [
+  "You were targeted by the Mafia last night, but the Doctor saved your life. You live to see another day.",
+  "Someone tried to kill you in the night, but a mysterious savior intervened. You survived.",
+  "The Mafia came for you, but you were saved. Consider yourself lucky — and watch your back.",
 ];
 
 const NO_KILL_MESSAGES = [
@@ -133,12 +160,15 @@ function pick(arr: string[]): string {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// Single-pass substitution: every placeholder in the template is replaced in
+// one scan, so substituted values (e.g. a player named "{tool}") are never
+// re-expanded. Unknown placeholders are left as-is. The callback form also
+// keeps `$` replacement patterns in values (e.g. a player named "$&") literal
+// — do not switch to string-replacement semantics, which would interpret them.
 function fill(template: string, vars: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(vars)) {
-    result = result.replaceAll(`{${key}}`, value);
-  }
-  return result;
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match
+  );
 }
 
 export const Narrator = {
@@ -158,6 +188,12 @@ export const Narrator = {
       location: pick(LOCATIONS),
     });
   },
+  doctorSaveOfficial(): string {
+    return pick(DOCTOR_SAVE_OFFICIAL_MESSAGES);
+  },
+  doctorSaveVictim(): string {
+    return pick(DOCTOR_SAVE_VICTIM_MESSAGES);
+  },
   noKill(): string {
     return pick(NO_KILL_MESSAGES);
   },
@@ -175,6 +211,15 @@ export const Narrator = {
   },
   jokerWin(name: string): string {
     return fill(pick(JOKER_WIN_MESSAGES), { name });
+  },
+  jokerHauntKill(name: string): string {
+    return fill(pick(JOKER_HAUNT_KILL_MESSAGES), {
+      name,
+      location: pick(LOCATIONS),
+      tool: pick(TOOLS),
+      lastWords: pick(LAST_WORDS),
+      food: pick(FOODS),
+    });
   },
   townWin(): string {
     return pick(TOWN_WIN_MESSAGES);

@@ -140,6 +140,10 @@ async function setupAndStart(count: number, settings?: any): Promise<{ code: str
   const started = await Promise.all(startedPromises);
   await Promise.all(phasePromises);
 
+  // Trigger night narration (Begin Night gate)
+  send(players[0].ws, { type: "narrator_ready" });
+  await Bun.sleep(200);
+
   for (let i = 0; i < count; i++) {
     players[i].role = started[i].role;
   }
@@ -413,7 +417,7 @@ describe("Rejoin during voting phase", () => {
     // Admin calls a vote on another surviving citizen
     const survivingCitizens = citizens.filter(p => p.userId !== killTarget.userId && p.userId !== admin.userId);
     const voteTarget = survivingCitizens[0] || mafia;
-    send(admin.ws, { type: "call_vote", targetId: voteTarget.userId, anonymous: false });
+    send(admin.ws, { type: "call_vote", targetId: voteTarget.userId });
     await waitFor(admin.ws, "vote_called");
     await Bun.sleep(100);
 
@@ -440,7 +444,7 @@ describe("Rejoin during voting phase", () => {
     expect(sync.voteState.targetName).toBe(voteTarget.username);
     expect(sync.voteState.targetId).toBe(voteTarget.userId);
     expect(sync.voteState.hasVoted).toBe(false);
-    expect(sync.voteState.votesFor).toBeGreaterThanOrEqual(1);
+    expect(sync.voteState.totalVotes).toBeGreaterThanOrEqual(1);
     expect(sync.voteState.total).toBeGreaterThan(0);
     expect(sync.nightAction).toBeNull();
 
@@ -501,6 +505,9 @@ describe("Rejoin during game_over", () => {
 
     expect(sync.phase).toBe("game_over");
     expect(sync.gameOver).not.toBeNull();
+    // L3: force-ended games must report a well-defined winner ("town"),
+    // matching the live end_game broadcast — never null
+    expect(sync.gameOver.winner).toBe("town");
     expect(sync.gameOver.forceEnded).toBe(true);
     expect(sync.gameOver.message).toBe("Host has ended the game.");
     expect(sync.gameOver.revealPlayers.length).toBe(4);
@@ -513,7 +520,7 @@ describe("Rejoin during game_over", () => {
   }, 15000);
 
   test("joker win is correctly reported on rejoin", async () => {
-    const { code, players } = await setupAndStart(5, { enableJoker: true });
+    const { code, players } = await setupAndStart(5, { enableJoker: true, jokerMode: "house" });
 
     const mafia = players.find(p => p.role === "mafia")!;
     const joker = players.find(p => p.role === "joker");
@@ -556,6 +563,57 @@ describe("Rejoin during game_over", () => {
 
     for (const p of players) p.ws.close();
   }, 20000);
+
+  test("jokerJointWinner is preserved in game_sync on rejoin (official mode)", async () => {
+    // 5 players: 1 mafia, 1 joker, 3 citizens (joker guaranteed when enabled)
+    const { code, players } = await setupAndStart(5, { enableJoker: true, jokerMode: "official" });
+
+    const admin = players[0];
+    const mafia = players.find(p => p.role === "mafia")!;
+    const joker = players.find(p => p.role === "joker")!;
+    const citizens = players.filter(p => p.role === "citizen");
+
+    // Night 1: mafia kills a non-admin citizen
+    const firstVictim = citizens.find(p => p.userId !== admin.userId)!;
+    send(mafia.ws, { type: "mafia_vote", targetId: firstVictim.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: firstVictim.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "day");
+    await Bun.sleep(200);
+
+    // Day 1: lynch the joker — official mode sets jokerJointWinner, game continues
+    send(admin.ws, { type: "call_vote", targetId: joker.userId });
+    await waitFor(admin.ws, "vote_called");
+    const nightPromise = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night");
+    const aliveDay1 = players.filter(p => p.userId !== firstVictim.userId);
+    for (const p of aliveDay1) send(p.ws, { type: "cast_vote", approve: true });
+    await nightPromise;
+    await Bun.sleep(200);
+
+    // Night 2: mafia kills another citizen → 1 mafia vs 1 citizen → mafia wins
+    const secondVictim = citizens.find(p => p.userId !== firstVictim.userId)!;
+    send(mafia.ws, { type: "mafia_vote", targetId: secondVictim.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: secondVictim.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    const liveOver = await waitFor(mafia.ws, "game_over");
+    // Sanity: the live broadcast carries the joint-win trophy
+    expect(liveOver.winner).toBe("mafia");
+    expect(liveOver.jokerJointWinner).toBe(true);
+    await Bun.sleep(100);
+
+    // L1: rejoin must carry the trophy too (game_sync.gameOver.jokerJointWinner)
+    const sync = await rejoin(mafia, code);
+    expect(sync.phase).toBe("game_over");
+    expect(sync.gameOver).not.toBeNull();
+    expect(sync.gameOver.winner).toBe("mafia");
+    expect(sync.gameOver.jokerJointWinner).toBe(true);
+
+    for (const p of players) p.ws.close();
+  }, 25000);
 });
 
 describe("Rejoin atomicity", () => {
@@ -706,17 +764,6 @@ describe("Rejoin state accumulation", () => {
     for (const p of players) p.ws.close();
   }, 15000);
 
-  test("anonVoteChecked reflects game setting", async () => {
-    const { code, players } = await setupAndStart(4);
-
-    const citizen = players.find(p => p.role === "citizen")!;
-    const sync = await rejoin(citizen, code);
-
-    // Default anonymous vote setting
-    expect(typeof sync.anonVoteChecked).toBe("boolean");
-
-    for (const p of players) p.ws.close();
-  }, 15000);
 });
 
 describe("Rejoin with force dawn", () => {
@@ -980,4 +1027,120 @@ describe("Rejoin during sequential night sub-phases", () => {
 
     for (const p of players) p.ws.close();
   }, 20000);
+});
+
+describe("Rejoin after mafia lock but before confirm (H4)", () => {
+  test("rejoining mafia receives mafia_confirm_ready and can confirm the kill", async () => {
+    const { code, players } = await setupAndStart(4);
+
+    const mafia = players.find(p => p.role === "mafia")!;
+    const citizens = players.filter(p => p.role === "citizen");
+    const target = citizens[0];
+
+    // Reach unanimous lock consensus, but do NOT send confirm_mafia_kill
+    send(mafia.ws, { type: "mafia_vote", targetId: target.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: target.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+
+    // Disconnect WITHOUT confirming
+    mafia.ws.close();
+    await Bun.sleep(100);
+
+    // Reconnect, login, and rejoin the game
+    const fresh = await login(mafia.username, mafia.passcode);
+    mafia.ws = fresh.ws;
+
+    const syncPromise = waitFor(mafia.ws, "game_sync");
+    const confirmReadyPromise = waitFor(mafia.ws, "mafia_confirm_ready", 3000);
+    send(mafia.ws, { type: "join_game", code });
+
+    const sync = await syncPromise;
+    expect(sync.phase).toBe("night");
+    expect(sync.nightSubPhase).toBe("mafia");
+    expect(sync.nightAction).not.toBeNull();
+    expect(sync.nightAction.locked).toBe(true);
+    expect(sync.nightAction.targetName).toBe(target.username);
+
+    // The fix: server must re-send mafia_confirm_ready so the rejoined
+    // mafia can still slide-to-confirm (pre-fix this times out and the
+    // night soft-locks).
+    const confirmReady = await confirmReadyPromise;
+    expect(confirmReady.targetName).toBe(target.username);
+    expect(confirmReady.targetId).toBe(target.userId);
+
+    // Continue the flow: confirm the kill from the rejoined socket and
+    // verify the night advances to day (no doctor/detective enabled).
+    const phasePromise = waitFor(mafia.ws, "phase_change", 4000);
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    const phase = await phasePromise;
+    expect(phase.phase).toBe("day");
+
+    for (const p of players) p.ws.close();
+  }, 20000);
+});
+
+describe("detectiveHistory privacy in game_sync (H3)", () => {
+  /**
+   * Helper: set up a 6-player game with detective + doctor enabled, run through
+   * night 1 so the detective completes an investigation, and return the players.
+   * Doctor is included so the night sub-phases don't auto-resolve before we act.
+   */
+  async function setupDetectiveGame(): Promise<{ code: string; players: TestPlayer[]; detective: TestPlayer; mafia: TestPlayer; citizen: TestPlayer; investigatedTarget: TestPlayer }> {
+    const { code, players } = await setupAndStart(6, { enableDetective: true, enableDoctor: true });
+
+    const detective = players.find(p => p.role === "detective")!;
+    const mafia = players.find(p => p.role === "mafia")!;
+    const doctor = players.find(p => p.role === "doctor")!;
+    const citizens = players.filter(p => p.role === "citizen");
+
+    // Complete mafia sub-phase
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: citizens[0].userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitFor(mafia.ws, "night_action_done");
+
+    // Wait for doctor sub-phase, doctor saves someone
+    await waitFor(doctor.ws, "doctor_targets");
+    const saveTarget = players.find(p => p.userId !== doctor.userId && p.role !== "mafia")!;
+    send(doctor.ws, { type: "doctor_save", targetId: saveTarget.userId });
+    await waitFor(doctor.ws, "night_action_done");
+
+    // Wait for detective sub-phase, detective investigates a citizen
+    await waitFor(detective.ws, "detective_targets");
+    const investigatedTarget = players.find(p => p.role !== "detective" && p.role !== "mafia")!;
+    send(detective.ws, { type: "detective_investigate", targetId: investigatedTarget.userId });
+    await waitFor(detective.ws, "detective_result");
+    await Bun.sleep(100);
+
+    return { code, players, detective, mafia, citizen: citizens.find(p => p.userId !== citizens[0].userId)!, investigatedTarget };
+  }
+
+  test("non-detective rejoining does NOT receive detectiveHistory", async () => {
+    const { code, players, mafia } = await setupDetectiveGame();
+
+    // Mafia reconnects — must NOT get detectiveHistory entries
+    const sync = await rejoin(mafia, code);
+
+    expect(sync.detectiveHistory === undefined || (Array.isArray(sync.detectiveHistory) && sync.detectiveHistory.length === 0)).toBe(true);
+
+    for (const p of players) p.ws.close();
+  }, 30000);
+
+  test("detective rejoining receives their full investigation history", async () => {
+    const { code, players, detective, investigatedTarget } = await setupDetectiveGame();
+
+    // Detective reconnects — MUST get detectiveHistory with the investigation entry
+    const sync = await rejoin(detective, code);
+
+    expect(Array.isArray(sync.detectiveHistory)).toBe(true);
+    expect(sync.detectiveHistory.length).toBe(1);
+    expect(sync.detectiveHistory[0].round).toBe(1);
+    expect(sync.detectiveHistory[0].targetName).toBe(investigatedTarget.username);
+    expect(typeof sync.detectiveHistory[0].isMafia).toBe("boolean");
+
+    for (const p of players) p.ws.close();
+  }, 30000);
 });

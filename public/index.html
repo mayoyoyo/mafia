@@ -151,7 +151,10 @@
       <div class="header">
         <button id="btn-leave-admin" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
-        <div class="room-code">Code: <span id="lobby-code"></span></div>
+        <div class="header-right">
+          <div class="room-code">Code: <span id="lobby-code"></span></div>
+          <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
 
       <div class="settings-panel">
@@ -170,6 +173,13 @@
           <span>Doctor</span>
           <label class="toggle"><input type="checkbox" id="toggle-doctor"><span class="slider"></span></label>
         </div>
+        <div id="doctor-mode-row" class="setting-sub-row hidden">
+          <div class="rule-tabs" id="doctor-mode-tabs">
+            <button class="rule-tab active" data-mode="official">Official</button>
+            <button class="rule-tab" data-mode="house">House</button>
+          </div>
+          <div class="rule-hint" id="doctor-mode-hint">Save is secret &mdash; only victim is notified</div>
+        </div>
 
         <div class="setting-row">
           <span>Detective</span>
@@ -179,6 +189,13 @@
         <div class="setting-row">
           <span>Joker</span>
           <label class="toggle"><input type="checkbox" id="toggle-joker"><span class="slider"></span></label>
+        </div>
+        <div id="joker-mode-row" class="setting-sub-row hidden">
+          <div class="rule-tabs" id="joker-mode-tabs">
+            <button class="rule-tab active" data-mode="official">Official</button>
+            <button class="rule-tab" data-mode="house">House</button>
+          </div>
+          <div class="rule-hint" id="joker-mode-hint">Game continues &mdash; Joker can haunt a voter</div>
         </div>
 
         <div class="setting-row">
@@ -191,16 +208,14 @@
           <select id="lobby-accent" class="accent-select"></select>
         </div>
 
-        <div class="config-buttons">
-          <button id="btn-save-config" class="btn btn-small btn-ghost">Save Preset</button>
-          <button id="btn-load-config" class="btn btn-small btn-ghost">Load Preset</button>
-        </div>
       </div>
 
       <div class="players-section">
         <h3>Players (<span id="player-count-admin">0</span>/20)</h3>
         <ul id="players-list-admin" class="players-list"></ul>
       </div>
+
+      <div id="color-picker-admin" class="color-picker-section"></div>
 
       <button id="btn-start" class="btn btn-primary btn-large">Start Game</button>
       <div id="lobby-error" class="error-msg"></div>
@@ -211,13 +226,18 @@
       <div class="header">
         <button id="btn-leave-player" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
-        <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+        <div class="header-right">
+          <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+          <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
       <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
+      <div id="player-lobby-settings" class="player-lobby-settings"></div>
       <div class="players-section">
         <h3>Players (<span id="player-count-player">0</span>/20)</h3>
         <ul id="players-list-player" class="players-list"></ul>
       </div>
+      <div id="color-picker-player" class="color-picker-section"></div>
     </div>
 
     <!-- GAME SCREEN -->
@@ -277,12 +297,20 @@
         <div id="narrator-messages" class="narrator-messages"></div>
       </div>
 
+      <!-- Awaiting Narrator Ready (Begin Night gate) -->
+      <div id="awaiting-ready" class="awaiting-ready hidden">
+        <p id="awaiting-ready-msg">Check your role card!</p>
+        <button id="btn-begin-night" class="btn btn-primary btn-large hidden">Begin Night</button>
+      </div>
+
       <!-- Detective Result (persistent) -->
       <div id="detective-result" class="detective-result hidden"></div>
 
       <!-- Night Actions -->
       <div id="night-actions" class="action-panel hidden">
         <h3 id="action-title"></h3>
+        <div id="spectator-night-log" class="hidden"></div>
+        <div id="joker-spectator-status" class="joker-spectator-status hidden"></div>
         <ul id="action-targets" class="target-list"></ul>
         <div id="slide-confirm" class="slide-confirm hidden">
           <div class="slide-track">
@@ -298,10 +326,6 @@
       <div id="admin-day-controls" class="admin-controls hidden">
         <h3>Admin Controls <span id="vote-count-label" class="vote-count-label"></span></h3>
         <div id="admin-status-msg" class="admin-status-msg"></div>
-        <div class="admin-anon-toggle">
-          <span>Anonymous Vote</span>
-          <label class="toggle"><input type="checkbox" id="toggle-anon-vote" checked><span class="slider"></span></label>
-        </div>
         <div class="admin-target-section">
           <p>Nominate a player for execution:</p>
           <ul id="admin-target-list" class="target-list"></ul>
@@ -325,7 +349,6 @@
           <button id="btn-vote-no" class="btn btn-vote btn-vote-no"></button>
         </div>
         <div id="vote-progress" class="vote-progress"></div>
-        <div id="vote-names" class="vote-names"></div>
         <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel Vote</button>
       </div>
 
@@ -356,6 +379,14 @@
         <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
       </div>
 
+      <!-- Joker Win Overlay (official mode — shows for everyone, dismissible) -->
+      <div id="joker-win-overlay" class="joker-win-overlay hidden">
+        <div class="joker-trophy">&#127942;</div>
+        <h2 class="joker-win-title">Joker Wins!</h2>
+        <p id="joker-win-name" class="joker-win-name"></p>
+        <p class="joker-win-hint">Tap to dismiss</p>
+      </div>
+
     </div>
 
     <!-- GAME OVER SCREEN -->
@@ -373,28 +404,15 @@
           <button id="btn-play-again-new" class="btn btn-secondary btn-large">New Settings</button>
           <button id="btn-close-room" class="btn btn-danger btn-large">Close Room</button>
         </div>
+        <div id="gameover-buttons-player" class="gameover-buttons hidden">
+          <button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large">Return to Lobby</button>
+        </div>
       </div>
     </div>
 
     <!-- SUSPENSE OVERLAY -->
     <div id="suspense-overlay" class="suspense-overlay hidden">
       <div id="suspense-text" class="suspense-text"></div>
-    </div>
-
-    <!-- CONFIG MODAL -->
-    <div id="modal-config" class="modal hidden">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 id="modal-config-title">Presets</h3>
-          <button id="btn-close-config-modal" class="btn btn-icon">&times;</button>
-        </div>
-        <div id="config-save-section" class="hidden">
-          <input type="text" id="config-name-input" placeholder="Preset name" maxlength="30">
-          <button id="btn-confirm-save-config" class="btn btn-primary">Save</button>
-        </div>
-        <ul id="config-list" class="config-list"></ul>
-        <p id="config-empty" class="empty-text hidden">No saved presets</p>
-      </div>
     </div>
 
     <!-- SETTINGS MODAL -->
@@ -416,6 +434,10 @@
           <div class="setting-row">
             <span>Dark Mode</span>
             <label class="toggle"><input type="checkbox" id="toggle-dark-mode" checked><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <span>Hide Mafia Tag</span>
+            <label class="toggle"><input type="checkbox" id="toggle-hide-mafia-tag"><span class="slider"></span></label>
           </div>
           <div id="settings-end-game" class="settings-end-game hidden">
             <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End Game</button>
@@ -441,6 +463,7 @@
 
   </div>
 
+  <script src="/pixel-art.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

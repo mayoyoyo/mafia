@@ -24,15 +24,15 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS saved_configs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      admin_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      settings_json TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (admin_id) REFERENCES users(id)
-    );
+    -- L10: saved_configs (named settings profiles) was never wired up; only
+    -- users.last_settings_json is live. Drop the dead table from old deployments.
+    DROP TABLE IF EXISTS saved_configs;
   `);
+
+  // Migrations for player preferences
+  try { db.exec("ALTER TABLE users ADD COLUMN hide_mafia_tag INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN player_color TEXT DEFAULT NULL"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN last_settings_json TEXT DEFAULT NULL"); } catch {}
 }
 
 export function createUser(username: string, passcode: string): number | null {
@@ -43,10 +43,10 @@ export function createUser(username: string, passcode: string): number | null {
   return Number(result.lastInsertRowid);
 }
 
-export function loginUser(username: string, passcode: string): { id: number; username: string } | null {
+export function loginUser(username: string, passcode: string): { id: number; username: string; hide_mafia_tag: boolean; player_color: string | null } | null {
   const d = getDb();
-  const row = d.query("SELECT id, username FROM users WHERE username = ? AND passcode = ?").get(username, passcode) as any;
-  return row ? { id: row.id, username: row.username } : null;
+  const row = d.query("SELECT id, username, hide_mafia_tag, player_color FROM users WHERE username = ? AND passcode = ?").get(username, passcode) as any;
+  return row ? { id: row.id, username: row.username, hide_mafia_tag: !!row.hide_mafia_tag, player_color: row.player_color } : null;
 }
 
 export function getUserById(id: number): { id: number; username: string } | null {
@@ -55,24 +55,28 @@ export function getUserById(id: number): { id: number; username: string } | null
   return row ? { id: row.id, username: row.username } : null;
 }
 
-export function saveConfig(adminId: number, name: string, settingsJson: string): number {
+export function getUserPrefs(userId: number): { hide_mafia_tag: boolean; player_color: string | null } {
   const d = getDb();
-  const result = d.query("INSERT INTO saved_configs (admin_id, name, settings_json) VALUES (?, ?, ?)").run(adminId, name, settingsJson);
-  return Number(result.lastInsertRowid);
+  const row = d.query("SELECT hide_mafia_tag, player_color FROM users WHERE id = ?").get(userId) as any;
+  return row ? { hide_mafia_tag: !!row.hide_mafia_tag, player_color: row.player_color } : { hide_mafia_tag: false, player_color: null };
 }
 
-export function getConfigs(adminId: number): Array<{ id: number; admin_id: number; name: string; settings_json: string }> {
+export function updateUserPref(userId: number, key: "hide_mafia_tag" | "player_color", value: any): void {
   const d = getDb();
-  return d.query("SELECT id, admin_id, name, settings_json FROM saved_configs WHERE admin_id = ? ORDER BY created_at DESC").all(adminId) as any[];
+  if (key === "hide_mafia_tag") {
+    d.query("UPDATE users SET hide_mafia_tag = ? WHERE id = ?").run(value ? 1 : 0, userId);
+  } else if (key === "player_color") {
+    d.query("UPDATE users SET player_color = ? WHERE id = ?").run(value, userId);
+  }
 }
 
-export function deleteConfig(configId: number, adminId: number): boolean {
+export function saveLastSettings(userId: number, settingsJson: string): void {
   const d = getDb();
-  const result = d.query("DELETE FROM saved_configs WHERE id = ? AND admin_id = ?").run(configId, adminId);
-  return result.changes > 0;
+  d.query("UPDATE users SET last_settings_json = ? WHERE id = ?").run(settingsJson, userId);
 }
 
-export function getConfig(configId: number): { id: number; admin_id: number; name: string; settings_json: string } | null {
+export function getLastSettings(userId: number): string | null {
   const d = getDb();
-  return d.query("SELECT id, admin_id, name, settings_json FROM saved_configs WHERE id = ?").get(configId) as any;
+  const row = d.query("SELECT last_settings_json FROM users WHERE id = ?").get(userId) as any;
+  return row ? row.last_settings_json : null;
 }
