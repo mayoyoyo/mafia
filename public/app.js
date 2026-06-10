@@ -167,9 +167,38 @@
   // ============================================================
   // SERVER MESSAGE HANDLER
   // ============================================================
+  // Hold-and-replay gate lists (L5): one source of truth, three derived
+  // gates. HOLD_GATE_PROMPTS is the shared base — the night-action /
+  // spectator prompt types that must not dispatch while an overlay chain is
+  // animating. A new prompt case added to the dispatch switch below MUST
+  // also be added here (once), or the overlay chains will swallow it.
+  // The three gates differ deliberately:
+  //   suspense   — death beats only; the suspense overlay IS the death
+  //                reveal, prompts pass through it
+  //   transition — prompts + sound_cue (narration waits for the overlay)
+  //   narration  — prompts only (sound_cue IS the narration playing)
+  const HOLD_GATE_PROMPTS = [
+    "mafia_targets",
+    "doctor_targets",
+    "detective_targets",
+    "joker_haunt_targets",
+    "spectator_joker_deliberating",
+    "spectator_joker_resolved",
+  ];
+  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay"]);
+  const TRANSITION_GATE_TYPES = new Set(["sound_cue", ...HOLD_GATE_PROMPTS]);
+  const NARRATION_GATE_TYPES = new Set(HOLD_GATE_PROMPTS);
+  // Test handle: tests pin the exact membership of the derived gate lists.
+  // Not read by any app code.
+  window.__holdGateLists = Object.freeze({
+    suspense: [...SUSPENSE_GATE_TYPES],
+    transition: [...TRANSITION_GATE_TYPES],
+    narration: [...NARRATION_GATE_TYPES],
+  });
+
   function handleServerMessage(msg) {
-    // During suspense, queue certain messages
-    if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died" || msg.type === "joker_win_overlay")) {
+    // During suspense, queue the death beats
+    if (suspenseActive && SUSPENSE_GATE_TYPES.has(msg.type)) {
       suspenseQueue.push(msg);
       return;
     }
@@ -181,12 +210,12 @@
       return;
     }
     // During night/execution transition, queue sound_cues and night action prompts
-    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
+    if ((nightTransitionActive || executionTransitionActive) && TRANSITION_GATE_TYPES.has(msg.type)) {
       nightTransitionQueue.push(msg);
       return;
     }
     // During night narration (sounds playing after overlay), hold night prompts until narration finishes
-    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
+    if (nightNarrationActive && NARRATION_GATE_TYPES.has(msg.type)) {
       nightNarrationQueue.push(msg);
       return;
     }
@@ -271,7 +300,7 @@
         narratorTranscript = [];
         detectiveHistory = [];
         nightActionLocked = false;
-        jokerHauntActive = false;
+        deadActionActive = false;
         mafiaConfirmTarget = null;
         myMafiaVotes = [];
         mafiaObjectedTargets = {};
@@ -335,7 +364,7 @@
         break;
 
       case "joker_haunt_targets":
-        jokerHauntActive = true;
+        deadActionActive = true;
         showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
         break;
 
@@ -374,27 +403,27 @@
         break;
 
       case "spectator_mafia_update":
-        if (isDead && !jokerHauntActive) showSpectatorMafiaPanel(msg);
+        if (isDead && !deadActionActive) showSpectatorMafiaPanel(msg);
         break;
 
       case "spectator_kill_confirmed":
-        if (isDead && !jokerHauntActive) showSpectatorKillResult(msg);
+        if (isDead && !deadActionActive) showSpectatorKillResult(msg);
         break;
 
       case "spectator_night_phase":
-        if (isDead && !jokerHauntActive) showSpectatorNightPhase(msg);
+        if (isDead && !deadActionActive) showSpectatorNightPhase(msg);
         break;
 
       case "spectator_night_complete":
-        if (isDead && !jokerHauntActive) appendSpectatorLog(msg);
+        if (isDead && !deadActionActive) appendSpectatorLog(msg);
         break;
 
       case "spectator_joker_deliberating":
-        if (isDead && !jokerHauntActive) showJokerDeliberating();
+        if (isDead && !deadActionActive) showJokerDeliberating();
         break;
 
       case "spectator_joker_resolved":
-        if (isDead && !jokerHauntActive) showJokerResolved(msg.targetName);
+        if (isDead && !deadActionActive) showJokerResolved(msg.targetName);
         break;
 
       case "detective_result":
@@ -500,7 +529,7 @@
     detectiveHistory = msg.detectiveHistory || [];
     hasVoted = false;
     nightActionLocked = false;
-    jokerHauntActive = false;
+    deadActionActive = false;
     mafiaConfirmTarget = null;
     myMafiaVotes = [];
     mafiaObjectedTargets = {};
@@ -606,7 +635,7 @@
         }
         if (na.jokerHauntPending) {
           // Dead joker with active haunt — show haunt view, not spectator view
-          jokerHauntActive = true;
+          deadActionActive = true;
           if (na.locked && na.targetName) {
             // Already chose — show confirmed state
             const panel = $("night-actions");
@@ -1451,7 +1480,7 @@
       hasVoted = false;
       dayVoteCount = 0;
       nightActionLocked = false;
-      jokerHauntActive = false;
+      deadActionActive = false;
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
       // Reset spectator night log and joker status for new night
@@ -1830,7 +1859,10 @@
   // NIGHT ACTIONS
   // ============================================================
   let nightActionLocked = false; // true after doctor/detective confirm
-  let jokerHauntActive = false; // true while dead joker is choosing haunt target
+  // True while a dead player's own action is in progress (today: only the
+  // joker haunt sets it; any future dead-player action sets the same flag).
+  // Suppresses the spectator views and exempts showNightAction's dead-guard.
+  let deadActionActive = false;
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
   // M11: target of an in-flight maybe+lock pair. The pair is sent back-to-back
   // (the WS stream is ordered, so nothing can interleave) and further taps are
@@ -1847,8 +1879,9 @@
   }
 
   function showNightAction(title, players, actionType, disabledId) {
-    // Allow joker_haunt even when dead (joker haunts from beyond the grave)
-    if (isDead && actionType !== "joker_haunt") return;
+    // A dead player may only act while their own dead action is active
+    // (deadActionActive — today: joker haunting from beyond the grave)
+    if (isDead && !deadActionActive) return;
 
     const panel = $("night-actions");
     panel.classList.remove("hidden");
@@ -1895,7 +1928,7 @@
           setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
-            // Keep jokerHauntActive true for the entire night (reset on phase change to day)
+            // Keep deadActionActive true for the entire night (reset when the next night begins)
             wsSend({ type: actionType, targetId: selectedTargetId });
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
