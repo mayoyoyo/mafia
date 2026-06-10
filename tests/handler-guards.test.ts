@@ -245,27 +245,71 @@ describe("M3: abstain_vote guard (no-op outside day phase)", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("M10: end_game guard (no-op when already game_over)", () => {
-  test("end_game when already game_over must NOT broadcast a second game_over", async () => {
+  test("end_game after a NATURAL win must NOT broadcast a second game_over or phase_change", async () => {
+    // 4 players, default settings: 1 mafia + 3 citizens.
+    // Natural town win path:
+    //   Night 1 — mafia kills a non-admin citizen (or a citizen if admin IS mafia).
+    //   Day 1   — admin calls vote on the mafia; all 3 alive players approve → mafia dies → town wins.
+    // Then admin sends end_game; guard must suppress any further broadcast.
     const { code, players } = await setupAndStart(4);
 
     const admin = players[0];
-    const observer = players.find(p => p.userId !== admin.userId)!;
+    const mafia = players.find(p => p.role === "mafia")!;
+    const citizens = players.filter(p => p.role === "citizen");
 
-    // First end_game — drives the game to game_over
-    send(admin.ws, { type: "end_game" });
-    await waitFor(admin.ws, "game_over");
+    // Choose kill target: a non-admin citizen (so admin survives and can call votes).
+    // If admin IS mafia there are 3 citizens; any of them works.
+    const killTarget = citizens.find(p => p.userId !== admin.userId) ?? citizens[0];
+
+    // ── Night 1: drive the mafia kill ──────────────────────────────
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    // Wait for day phase (resolving takes ~1 s on server; bounded by 5 s)
+    await waitFor(admin.ws, "phase_change", 5000);
     await Bun.sleep(100);
 
-    // Collect for 1.5s after sending a SECOND end_game (the guarded case)
+    // ── Day 1: lynch the mafia → natural town win ──────────────────
+    // After the night kill, 3 players are alive: mafia + 2 others (one of whom is admin
+    // if admin is citizen, or admin + 2 citizens if admin is mafia).
+    // Admin calls vote on the mafia player regardless.
+    send(admin.ws, { type: "call_vote", targetId: mafia.userId });
+    await waitFor(admin.ws, "vote_called");
+
+    // All 3 alive players approve.  Cast from each alive player's socket.
+    // Alive = everyone except killTarget.
+    const alivePlayers = players.filter(p => p.userId !== killTarget.userId);
+    expect(alivePlayers.length).toBe(3);
+
+    // Collect the natural game_over on the observer socket before sending votes.
+    // Pick observer = first alive player who is not admin (so not the vote-caller).
+    const observer = alivePlayers.find(p => p.userId !== admin.userId)!;
+    const naturalGameOverPromise = waitFor(observer.ws, "game_over", 5000);
+
+    for (const p of alivePlayers) {
+      send(p.ws, { type: "cast_vote", approve: true });
+    }
+
+    const naturalGameOver = await naturalGameOverPromise;
+    // Verify it is a genuine town win (no forceEnded flag)
+    expect(naturalGameOver.winner).toBe("town");
+    expect(naturalGameOver.forceEnded).toBeFalsy();
+    await Bun.sleep(100);
+
+    // ── Guard check: end_game after game_over must be a no-op ──────
     const collector = collectFor(observer.ws, 1500);
     send(admin.ws, { type: "end_game" });
 
     const msgs = await collector;
-    const gameOvers = msgs.filter(m => m.type === "game_over");
-    expect(gameOvers.length).toBe(0);
+    const extraGameOvers = msgs.filter(m => m.type === "game_over");
+    const extraPhaseChanges = msgs.filter(m => m.type === "phase_change");
+    expect(extraGameOvers.length).toBe(0);
+    expect(extraPhaseChanges.length).toBe(0);
 
     for (const p of players) p.ws.close();
-  }, 10000);
+  }, 20000);
 
   // Regression: end_game during an active game still broadcasts game_over
   test("end_game during active game still broadcasts game_over (regression)", async () => {
