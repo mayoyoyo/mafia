@@ -5,6 +5,7 @@ import {
   checkNightReady, transitionToDay, advanceNightSubPhase, callVote, castVote, resolveVote,
   cancelVote, endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
   getPlayerInfo, forceDawn, forceEndGame, removeGame, restartGame, returnToLobby,
+  sanitizeSettings,
 } from "../src/game-engine";
 import type { Game } from "../src/types";
 
@@ -454,6 +455,37 @@ describe("Settings", () => {
     // 4 players → max 1 mafia (floor(4/3) = 1)
     expect(mafia.length).toBe(1);
     removeGame(game.code);
+  });
+});
+
+describe("sanitizeSettings edge bounds", () => {
+  test("mafiaCount is clamped and coerced to an integer", () => {
+    expect(sanitizeSettings({ mafiaCount: 0 }).mafiaCount).toBe(1);
+    expect(sanitizeSettings({ mafiaCount: 7 }).mafiaCount).toBe(6);
+    expect(sanitizeSettings({ mafiaCount: 2.7 }).mafiaCount).toBe(2);
+  });
+
+  test("non-numeric mafiaCount is dropped", () => {
+    expect(sanitizeSettings({ mafiaCount: "lol" })).toEqual({});
+  });
+
+  test("narrationAccent shape limits: over 32 chars or empty is dropped", () => {
+    expect(sanitizeSettings({ narrationAccent: "a".repeat(33) })).toEqual({});
+    expect(sanitizeSettings({ narrationAccent: "" })).toEqual({});
+  });
+
+  test("doctorMode must be a known mode string", () => {
+    expect(sanitizeSettings({ doctorMode: "bogus" })).toEqual({});
+    expect(sanitizeSettings({ doctorMode: "house" }).doctorMode).toBe("house");
+  });
+
+  test("unknown keys are dropped", () => {
+    expect(sanitizeSettings({ bogusKey: 123 })).toEqual({});
+  });
+
+  test("booleans are strict: truthy strings dropped, real booleans kept", () => {
+    expect(sanitizeSettings({ enableDoctor: "yes" })).toEqual({});
+    expect(sanitizeSettings({ enableDoctor: true }).enableDoctor).toBe(true);
   });
 });
 

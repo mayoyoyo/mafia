@@ -128,6 +128,18 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
   Object.assign(game.settings, settings);
 }
 
+// Keys handled by sanitizeSettings, grouped by validation strategy.
+const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableLovers", "soundEnabled"] as const;
+const modeKeys = ["doctorMode", "jokerMode"] as const;
+
+// Compile-time exhaustiveness guard: if a key is added to GameSettings in
+// types.ts but not handled in sanitizeSettings, the assignment below becomes
+// a type error (true is not assignable to false).
+type _Covered = "mafiaCount" | (typeof boolKeys)[number] | (typeof modeKeys)[number] | "narrationAccent";
+// compile error here means a GameSettings key is missing from sanitizeSettings
+const _exhaustive: Exclude<keyof GameSettings, _Covered> extends never ? true : false = true;
+void _exhaustive;
+
 /**
  * Whitelist + coerce untrusted settings input (M6). Unknown keys are dropped;
  * invalid values are dropped so callers fall back to existing/default values.
@@ -145,14 +157,12 @@ export function sanitizeSettings(input: unknown): Partial<GameSettings> {
   }
 
   // Booleans: accept real booleans only
-  const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableLovers", "soundEnabled"] as const;
   for (const key of boolKeys) {
     const v = raw[key];
     if (typeof v === "boolean") out[key] = v;
   }
 
   // Rule modes: must be a known mode string
-  const modeKeys = ["doctorMode", "jokerMode"] as const;
   for (const key of modeKeys) {
     const v = raw[key];
     if (v === "official" || v === "house") out[key] = v;

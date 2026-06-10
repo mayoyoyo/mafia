@@ -118,7 +118,8 @@ describe("M6b: update_settings validation", () => {
     expect(Number.isInteger(updated.settings.mafiaCount)).toBe(true);
     expect(updated.settings.mafiaCount).toBeGreaterThanOrEqual(1);
     expect(updated.settings.bogusKey).toBeUndefined();
-    expect(typeof updated.settings.enableDoctor).toBe("boolean");
+    // "yes" must be dropped, leaving the default (false) — not coerced to true
+    expect(updated.settings.enableDoctor).toBe(false);
 
     // Game must start with at least one mafia
     const startedPromises = players.map(p => waitFor(p.ws, "game_started"));
@@ -168,7 +169,8 @@ describe("M6c: poisoned persisted settings are repaired on load", () => {
     expect(Number.isInteger(lobby.settings.mafiaCount)).toBe(true);
     expect(lobby.settings.mafiaCount).toBeGreaterThanOrEqual(1);
     expect(lobby.settings.bogusKey).toBeUndefined();
-    expect(typeof lobby.settings.enableDoctor).toBe("boolean");
+    // "yes" must be dropped, leaving the default (false) — not coerced to true
+    expect(lobby.settings.enableDoctor).toBe(false);
 
     admin.ws.close();
   }, 10000);
