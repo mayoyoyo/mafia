@@ -174,7 +174,11 @@
   // also be added here (once), or the overlay chains will swallow it.
   // The three gates differ deliberately:
   //   suspense   — death beats only; the suspense overlay IS the death
-  //                reveal, prompts pass through it
+  //                reveal, prompts pass through it. A prompt that must wait
+  //                for the death reveal (e.g. a death-triggered revenge
+  //                prompt arriving mid dawn-suspense) needs its own entry in
+  //                SUSPENSE_GATE_TYPES; adding it to HOLD_GATE_PROMPTS alone
+  //                does NOT cover the suspense window.
   //   transition — prompts + sound_cue (narration waits for the overlay)
   //   narration  — prompts only (sound_cue IS the narration playing)
   const HOLD_GATE_PROMPTS = [
@@ -191,9 +195,9 @@
   // Test handle: tests pin the exact membership of the derived gate lists.
   // Not read by any app code.
   window.__holdGateLists = Object.freeze({
-    suspense: [...SUSPENSE_GATE_TYPES],
-    transition: [...TRANSITION_GATE_TYPES],
-    narration: [...NARRATION_GATE_TYPES],
+    suspense: Object.freeze([...SUSPENSE_GATE_TYPES]),
+    transition: Object.freeze([...TRANSITION_GATE_TYPES]),
+    narration: Object.freeze([...NARRATION_GATE_TYPES]),
   });
 
   function handleServerMessage(msg) {
@@ -1862,6 +1866,8 @@
   // True while a dead player's own action is in progress (today: only the
   // joker haunt sets it; any future dead-player action sets the same flag).
   // Suppresses the spectator views and exempts showNightAction's dead-guard.
+  // Reset sites: the game_started case, the game_sync reset (handleGameSync),
+  // and applyPhaseChange's night branch.
   let deadActionActive = false;
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
   // M11: target of an in-flight maybe+lock pair. The pair is sent back-to-back
