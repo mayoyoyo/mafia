@@ -6,6 +6,7 @@ import {
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
   submitJokerHaunt, getJokerHauntTargets, assertInvariants, assertPhaseEdge,
+  toTargetInfo, projectGameOver,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
@@ -193,12 +194,7 @@ function broadcastPhaseChange(game: Game, opts: PhaseChangeOptions): void {
 function sendMafiaPrompts(game: Game): void {
   const aliveMafia = getAliveByRole(game, "mafia");
   const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
-  const mafiaTargets = aliveNonMafia.map((p) => ({
-    id: p.id,
-    username: p.username,
-    isAlive: true,
-    isAdmin: p.id === game.adminId,
-  }));
+  const mafiaTargets = aliveNonMafia.map((p) => toTargetInfo(p, game));
 
   for (const m of aliveMafia) {
     sendToUser(m.id, { type: "mafia_targets", players: mafiaTargets });
@@ -219,12 +215,7 @@ function sendMafiaPrompts(game: Game): void {
 function sendDoctorPrompts(game: Game): void {
   const aliveDoctor = getAliveByRole(game, "doctor");
   if (aliveDoctor.length > 0) {
-    const allAlive = getAlivePlayers(game).map((p) => ({
-      id: p.id,
-      username: p.username,
-      isAlive: true,
-      isAdmin: p.id === game.adminId,
-    }));
+    const allAlive = getAlivePlayers(game).map((p) => toTargetInfo(p, game));
     for (const d of aliveDoctor) {
       sendToUser(d.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
     }
@@ -242,12 +233,7 @@ function sendDetectivePrompts(game: Game): void {
   if (aliveDetective.length > 0) {
     const allAliveExceptSelf = getAlivePlayers(game)
       .filter((p) => p.role !== "detective")
-      .map((p) => ({
-        id: p.id,
-        username: p.username,
-        isAlive: true,
-        isAdmin: p.id === game.adminId,
-      }));
+      .map((p) => toTargetInfo(p, game));
     for (const d of aliveDetective) {
       sendToUser(d.id, { type: "detective_targets", players: allAliveExceptSelf });
     }
@@ -455,9 +441,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     // Dead player spectator view for all night sub-phases
     if (game.nightSubPhase === "mafia") {
       const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
-      const spectatorTargets = aliveNonMafia.map(p => ({
-        id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId,
-      }));
+      const spectatorTargets = aliveNonMafia.map(p => toTargetInfo(p, game));
       const status = getMafiaVoteStatus(game);
       nightAction = {
         locked: false,
@@ -517,7 +501,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       // Build targets list (non-mafia alive players)
       const targets = locked ? [] : getAlivePlayers(game)
         .filter(p => p.role !== "mafia")
-        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+        .map(p => toTargetInfo(p, game));
 
       const status = getMafiaVoteStatus(game);
 
@@ -548,7 +532,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       const locked = game.doctorTarget !== null;
       const targetName = locked ? (game.players.get(game.doctorTarget!)?.username ?? null) : null;
       const targets = locked ? [] : getAlivePlayers(game)
-        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+        .map(p => toTargetInfo(p, game));
 
       nightAction = {
         locked, targetName, targets,
@@ -574,7 +558,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       const targetName = locked ? (game.players.get(game.detectiveTarget!)?.username ?? null) : null;
       const targets = locked ? [] : getAlivePlayers(game)
         .filter(p => p.role !== "detective")
-        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+        .map(p => toTargetInfo(p, game));
 
       nightAction = {
         locked, targetName, targets,
@@ -615,13 +599,15 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
   let gameOver: Extract<ServerMessage, { type: "game_sync" }>["gameOver"] = null;
   if (game.phase === "game_over") {
     const winMessages: Record<string, string> = { town: "Citizens win!", mafia: "Mafia wins!", joker: "Joker wins!" };
-    gameOver = {
-      winner: game.winner!,
-      message: game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
-      forceEnded: game.forceEnded,
-      revealPlayers: getPlayerInfo(game, true),
-      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
-    };
+    // Pinned divergence vs the live game_over broadcasts (rejoin goldens):
+    // the sync reconstruction sends the CANONICAL win line, not the
+    // narrator's prose; it always carries forceEnded and names the reveal
+    // `revealPlayers`. Only the shared core comes from projectGameOver.
+    const { players: revealPlayers, ...core } = projectGameOver(
+      game,
+      game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
+    );
+    gameOver = { ...core, forceEnded: game.forceEnded, revealPlayers };
   }
 
   const userPrefs = getUserPrefs(userId);
@@ -841,7 +827,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       if (game.phase === "lobby") {
         if (client.userId === game.adminId) {
-          // Admin leaves lobby = end game for everyone
+          // Admin leaves lobby = end game for everyone.
+          // NOT projectGameOver: no game ever concluded here (game.winner is
+          // null in lobby) — winner "town" is forced, jokerJointWinner omitted.
           broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The host has left the lobby.", forceEnded: true, players: getPlayerInfo(game, true) });
           removeGame(game.code);
           for (const [, c] of clients) {
@@ -865,6 +853,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             messages: ["The host has left the game."],
             events: true,
           });
+          // NOT projectGameOver: this payload omits jokerJointWinner even
+          // though official-joker mode can set it mid-game (resolveVote) —
+          // pinned wire behavior, kept hand-assembled rather than arbitrated.
           broadcastToGame(game.code, {
             type: "game_over",
             winner: "town",
@@ -1182,12 +1173,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               events: true,
               loverDeathName: voteLoverDeathName,
             });
+            // Divergence kept visible: the live broadcast's message is the
+            // narrator's last line, NOT buildGameSync's canonical win line.
             broadcastToGame(game.code, {
               type: "game_over",
-              winner: game.winner!,
-              message: voteResult.messages[voteResult.messages.length - 1],
-              players: getPlayerInfo(game, true),
-              ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
+              ...projectGameOver(game, voteResult.messages[voteResult.messages.length - 1]),
             });
           } else if (game.phase === "night") {
             // Auto-transition to night after execution
@@ -1273,13 +1263,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         messages: ["Host has ended the game."],
         events: true,
       });
+      // winner comes from the projection: forceEndGame just set it to "town"
+      // (the L3 well-defined-winner rule). forceEnded: true stays per-site —
+      // the live win broadcasts omit it.
       broadcastToGame(game.code, {
         type: "game_over",
-        winner: "town",
-        message: "Host has ended the game.",
+        ...projectGameOver(game, "Host has ended the game."),
         forceEnded: true,
-        players: getPlayerInfo(game, true),
-        ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
       });
       // Room persists — do NOT removeGame or clear gameCode refs
       break;
@@ -1439,12 +1429,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
 
   // Send spectator update to dead players (exclude haunting joker)
   const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
-  const spectatorTargets = aliveNonMafia.map((p) => ({
-    id: p.id,
-    username: p.username,
-    isAlive: true,
-    isAdmin: p.id === game.adminId,
-  }));
+  const spectatorTargets = aliveNonMafia.map((p) => toTargetInfo(p, game));
   sendToDeadPlayers(game, {
     type: "spectator_mafia_update",
     voterTargets: status.voterTargets,
@@ -1546,12 +1531,11 @@ function resolveNightAndTransition(game: Game): void {
   });
 
   if (game.phase === "game_over") {
+    // Divergence kept visible: the live broadcast's message is the
+    // narrator's last line, NOT buildGameSync's canonical win line.
     broadcastToGame(game.code, {
       type: "game_over",
-      winner: game.winner!,
-      message: nightResult.messages[nightResult.messages.length - 1],
-      players: getPlayerInfo(game, true),
-      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
+      ...projectGameOver(game, nightResult.messages[nightResult.messages.length - 1]),
     });
   }
 }
@@ -1659,6 +1643,10 @@ setInterval(() => {
   for (const [code, game] of getAllGames()) {
     if (now - game.createdAt > TWO_HOURS) {
       clearNightTimer(code);
+      // NOT projectGameOver: the sweep also reaps games idling AT game_over
+      // (where winner may be "joker"/"mafia" and jokerJointWinner true) yet
+      // always reports winner "town" with no jokerJointWinner/forceEnded —
+      // pinned wire behavior, kept hand-assembled rather than arbitrated.
       broadcastToGame(code, {
         type: "game_over",
         winner: "town",

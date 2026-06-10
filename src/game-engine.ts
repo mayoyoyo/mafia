@@ -558,6 +558,58 @@ export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
   }));
 }
 
+// ── B5 (audit P6-lite): the two pure payload projections ────────────────
+//
+// Placement note: both live here (not a new module, not server.ts) because
+// the engine itself needs toTargetInfo (getJokerHauntTargets) and the
+// import direction only flows server → engine.
+
+/**
+ * The alive-target list entry — one projection for the literal that was
+ * rebuilt inline 8x in server.ts (mafia/doctor/detective prompts, the
+ * game_sync night reconstructions, the spectator mafia view) + 1x here.
+ *
+ * isAlive is HARDCODED true, deliberately: every call site filters to
+ * alive players before mapping, and all nine literals pinned
+ * `isAlive: true` rather than reading player.isAlive. Preserved as-is.
+ */
+export function toTargetInfo(player: Player, game: Game): PlayerInfo {
+  return {
+    id: player.id,
+    username: player.username,
+    isAlive: true,
+    isAdmin: player.id === game.adminId,
+  };
+}
+
+/**
+ * The shared core of the four game_over emitters (audit R11 — L1/L3 drift
+ * class): buildGameSync's gameOver branch, the vote-path and night-path
+ * live broadcasts, and end_game. Covers SHARED fields only:
+ *
+ *   - `message` is an explicit param — the sites diverge on it BY DESIGN
+ *     ("Citizens win!" canonical line in the sync reconstruction vs the
+ *     narrator's last message in the live broadcasts; goldens pin both).
+ *   - `forceEnded` stays per-site (sync always carries the boolean;
+ *     end_game hardcodes true; the live win broadcasts omit it).
+ *   - The leave_game and 2-hour-sweep broadcasts do NOT use this
+ *     projection: they force winner "town" on a game that may never have
+ *     concluded (game.winner null) and omit jokerJointWinner even though
+ *     official-joker mode can set it mid-game — pinned divergence, kept
+ *     hand-assembled at those sites.
+ */
+export function projectGameOver(
+  game: Game,
+  message: string,
+): { winner: "town" | "mafia" | "joker"; message: string; players: PlayerInfo[]; jokerJointWinner?: boolean } {
+  return {
+    winner: game.winner!,
+    message,
+    players: getPlayerInfo(game, true),
+    ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
+  };
+}
+
 export function getAlivePlayers(game: Game): Player[] {
   return Array.from(game.players.values()).filter((p) => p.isAlive);
 }
@@ -879,12 +931,7 @@ export function getJokerHauntTargets(game: Game): PlayerInfo[] {
   return game.jokerHauntVoters
     .map(id => game.players.get(id))
     .filter((p): p is Player => p !== undefined && p.isAlive)
-    .map(p => ({
-      id: p.id,
-      username: p.username,
-      isAlive: true,
-      isAdmin: p.id === game.adminId,
-    }));
+    .map(p => toTargetInfo(p, game));
 }
 
 // ── B3 (audit P2): the death pipeline ───────────────────────────────────
