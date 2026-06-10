@@ -116,6 +116,13 @@
   function wsSend(msg) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
+    } else {
+      // D9: frame silently dropped — surface it for debugging (no behavior change)
+      console.warn(
+        "[mafia] wsSend dropped frame (socket not OPEN):",
+        msg && msg.type,
+        "readyState=" + (ws ? ws.readyState : "none")
+      );
     }
   }
 
@@ -446,6 +453,11 @@
         myPlayerColor = msg.player_color;
         $("toggle-hide-mafia-tag").checked = hideMafiaTag;
         updatePlayerStatus();
+        break;
+
+      default:
+        // D9: unknown message type — surface frames the client silently ignores
+        console.warn("[mafia] unknown server message type:", msg.type, msg);
         break;
     }
   }

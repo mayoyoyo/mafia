@@ -8,6 +8,7 @@ import {
   submitJokerHaunt, getJokerHauntTargets, classifyNightDeath,
 } from "./game-engine";
 import { Narrator } from "./narrator";
+import { slog } from "./debug";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
 import path from "path";
 import fs from "fs";
@@ -84,15 +85,39 @@ function recordNarrator(game: Game, messages: string[]): void {
   for (const m of messages) game.narratorHistory.push(m);
 }
 
-// Night timer management for sequential sub-phases
-const nightTimers = new Map<string, Timer>();
+// Night timer management for sequential sub-phases.
+// B0d (audit D2): every arm/fire/clear/overwrite is slog'd ("night_timer")
+// so timer lifecycles are reconstructable from stdout.
+const nightTimers = new Map<string, { timer: Timer; kind: string; delay: number }>();
 
 function clearNightTimer(gameCode: string): void {
-  const timer = nightTimers.get(gameCode);
-  if (timer) {
-    clearTimeout(timer);
+  const entry = nightTimers.get(gameCode);
+  if (entry) {
+    clearTimeout(entry.timer);
     nightTimers.delete(gameCode);
+    slog("night_timer", { code: gameCode, kind: entry.kind, delay: entry.delay, event: "cleared" });
   }
+}
+
+/**
+ * Arm the (single) night timer for a game. Logs "armed"; logs "overwritten"
+ * for any live timer the set displaces (pre-existing semantics: the old
+ * timeout is NOT cancelled here — callers clearNightTimer first when they
+ * mean to cancel). The callback logs "fired" and drops the map entry before
+ * running, exactly as the inline callbacks did before B0d.
+ */
+function armNightTimer(game: Game, kind: string, delay: number, fn: () => void): void {
+  const existing = nightTimers.get(game.code);
+  if (existing) {
+    slog("night_timer", { code: game.code, kind: existing.kind, delay: existing.delay, event: "overwritten" });
+  }
+  const timer = setTimeout(() => {
+    nightTimers.delete(game.code);
+    slog("night_timer", { code: game.code, kind, delay, event: "fired" });
+    fn();
+  }, delay);
+  nightTimers.set(game.code, { timer, kind, delay });
+  slog("night_timer", { code: game.code, kind, delay, event: "armed" });
 }
 
 function sendMafiaPrompts(game: Game): void {
@@ -190,20 +215,16 @@ function handleSubPhaseAdvance(game: Game): void {
 
   if (result.nextPhase === "resolving") {
     // Small delay after last close cue before resolving
-    const timer = setTimeout(() => {
-      nightTimers.delete(game.code);
+    armNightTimer(game, "resolve", 1000, () => {
       if (!getGame(game.code)) return;
       resolveNightAndTransition(game);
-    }, 1000);
-    nightTimers.set(game.code, timer);
+    });
     return;
   }
 
   if (result.isFake) {
     // Fake sub-phase: enabled but dead role → open cue, random delay, close cue, then advance
-    const delay = 1500; // pause after close cue before open
-    const timer = setTimeout(() => {
-      nightTimers.delete(game.code);
+    armNightTimer(game, "fake_open", 1500 /* pause after close cue before open */, () => {
       if (!getGame(game.code)) return;
       broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
       // Notify dead players that this role is dead (exclude haunting joker)
@@ -220,8 +241,7 @@ function handleSubPhaseAdvance(game: Game): void {
       const u2 = Math.random();
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       const fakeDelay = Math.max(5000, Math.min(15000, Math.round(10000 + z * 2000)));
-      const fakeTimer = setTimeout(() => {
-        nightTimers.delete(game.code);
+      armNightTimer(game, "fake_advance", fakeDelay, () => {
         if (!getGame(game.code)) return;
         // Notify dead players that this fake sub-phase completed (role is dead, exclude haunting joker)
         if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
@@ -234,17 +254,13 @@ function handleSubPhaseAdvance(game: Game): void {
         }
         // Recurse to next sub-phase (sends close cue for this phase)
         handleSubPhaseAdvance(game);
-      }, fakeDelay);
-      nightTimers.set(game.code, fakeTimer);
-    }, delay);
-    nightTimers.set(game.code, timer);
+      });
+    });
     return;
   }
 
   // Real sub-phase: alive + enabled role → open cue + send prompts, wait for player action
-  const delay = 1500; // pause after close cue before open
-  const timer = setTimeout(() => {
-    nightTimers.delete(game.code);
+  armNightTimer(game, "subphase_open", 1500 /* pause after close cue before open */, () => {
     if (!getGame(game.code)) return;
 
     broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
@@ -254,8 +270,7 @@ function handleSubPhaseAdvance(game: Game): void {
     } else if (result.nextPhase === "detective") {
       sendDetectivePrompts(game);
     }
-  }, delay);
-  nightTimers.set(game.code, timer);
+  });
 }
 
 /** Start the night sequence: sound cues + mafia prompts + joker haunt if active */
@@ -572,6 +587,18 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 }
 
 function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
+  // B0d (audit D2): one structured line per inbound WS message
+  {
+    const g = client.gameCode ? getGame(client.gameCode) : undefined;
+    slog("ws_in", {
+      code: g?.code ?? null,
+      userId: client.userId ?? null,
+      type: msg.type,
+      phase: g?.phase ?? null,
+      subPhase: g?.nightSubPhase ?? null,
+    });
+  }
+
   switch (msg.type) {
     case "register": {
       if (!msg.username || msg.username.trim().length === 0) {

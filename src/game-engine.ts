@@ -1,6 +1,10 @@
 import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
+// B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
+// consolidates the `game.phase = ...` sites into one transition helper and
+// sweeps these logTransition calls into it.
+import { logTransition } from "./debug";
 
 const games = new Map<string, Game>();
 
@@ -331,6 +335,7 @@ export function startGame(game: Game): string[] | null {
   if (game.players.size < 3) return null;
 
   const actualMafiaCount = assignRoles(game);
+  logTransition(game, game.phase, "night", "start_game");
   game.phase = "night";
   game.nightSubPhase = "mafia";
   game.round = 1;
@@ -768,10 +773,12 @@ export function transitionToDay(game: Game): NightResult {
   const winner = checkWinCondition(game);
   if (winner) {
     game.winner = winner;
+    logTransition(game, game.phase, "game_over", "night_resolved");
     game.phase = "game_over";
     if (winner === "town") nightResult.messages.push(Narrator.townWin());
     else if (winner === "mafia") nightResult.messages.push(Narrator.mafiaWin());
   } else {
+    logTransition(game, game.phase, "day", "night_resolved");
     game.phase = "day";
   }
 
@@ -787,6 +794,7 @@ export function callVote(game: Game, adminId: number, targetId: number): boolean
 
   game.voteTarget = targetId;
   game.votes.clear();
+  logTransition(game, game.phase, "voting", "call_vote");
   game.phase = "voting";
   return true;
 }
@@ -880,11 +888,13 @@ export function resolveVote(game: Game): VoteResult | null {
         const winner = checkWinCondition(game);
         if (winner) {
           game.winner = winner;
+          logTransition(game, game.phase, "game_over", "vote_resolved");
           game.phase = "game_over";
           if (winner === "town") result.messages.push(Narrator.townWin());
           else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
         } else {
           // Auto-transition to night after execution
+          logTransition(game, game.phase, "night", "execution");
           game.phase = "night";
           game.round++;
           game.nightSubPhase = "mafia";
@@ -899,6 +909,7 @@ export function resolveVote(game: Game): VoteResult | null {
       } else {
         // House: instant game over, joker wins
         game.winner = "joker";
+        logTransition(game, game.phase, "game_over", "joker_win");
         game.phase = "game_over";
 
         const killResult = killPlayer(game, target.id);
@@ -948,11 +959,13 @@ export function resolveVote(game: Game): VoteResult | null {
   const winner = checkWinCondition(game);
   if (winner) {
     game.winner = winner;
+    logTransition(game, game.phase, "game_over", "vote_resolved");
     game.phase = "game_over";
     if (winner === "town") result.messages.push(Narrator.townWin());
     else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
   } else if (result.executed) {
     // Auto-transition to night after execution
+    logTransition(game, game.phase, "night", "execution");
     game.phase = "night";
     game.round++;
     game.nightSubPhase = "mafia";
@@ -964,6 +977,7 @@ export function resolveVote(game: Game): VoteResult | null {
     result.messages.push(Narrator.nightFalls());
   } else {
     // Spared — stay in day
+    logTransition(game, game.phase, "day", "spared");
     game.phase = "day";
   }
 
@@ -975,6 +989,7 @@ export function cancelVote(game: Game, adminId: number): boolean {
   if (adminId !== game.adminId) return false;
   game.voteTarget = null;
   game.votes.clear();
+  logTransition(game, game.phase, "day", "cancel_vote");
   game.phase = "day";
   return true;
 }
@@ -993,6 +1008,7 @@ export function forceDawn(game: Game): string[] {
   game.voteTarget = null;
   game.votes.clear();
   game.awaitingNarratorReady = false;
+  logTransition(game, game.phase, "day", "force_dawn");
   game.phase = "day";
 
   const messages = ["The host has forced dawn. No one was killed tonight."];
@@ -1003,6 +1019,7 @@ export function forceDawn(game: Game): string[] {
 export function endDay(game: Game): string[] {
   if (game.phase !== "day") return [];
 
+  logTransition(game, game.phase, "night", "end_day");
   game.phase = "night";
   game.round++;
   game.nightSubPhase = "mafia";
@@ -1033,6 +1050,7 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
 }
 
 export function forceEndGame(game: Game): void {
+  logTransition(game, game.phase, "game_over", "force_end");
   game.phase = "game_over";
   game.forceEnded = true;
   // L3: keep winner well-defined — consumers (buildGameSync, end_game
@@ -1055,6 +1073,7 @@ export function returnToLobby(game: Game): boolean {
   }
 
   // Reset game state but keep settings
+  logTransition(game, game.phase, "lobby", "return_to_lobby");
   game.phase = "lobby";
   game.round = 0;
   game.nightSubPhase = null;
@@ -1096,6 +1115,7 @@ export function restartGame(game: Game): string[] | null {
 
   // Reset game state
   game.createdAt = Date.now();
+  logTransition(game, game.phase, "lobby", "restart_game");
   game.phase = "lobby";
   game.round = 0;
   game.nightSubPhase = null;
