@@ -113,7 +113,7 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 ### Program B (`feat/engine-seams`)
 | Task | Scope | Commits | Notes |
 |---|---|---|---|
-| B0a | Golden WS sequence tests (band 18600+) | — | |
+| B0a | Golden WS sequence tests (band 18600+) | a890770, dfee338, 65f5fa0 | DONE. 5 golden games in tests/golden-sequences.test.ts (294 tests green). Fixed-deal seam (setFixedDeal + MAFIA_FIXED_DEAL env) pulled forward per P9. Reviewer-flagged golden gaps to fill as B3 prep: successful doctor save, game_over/win reveal, plain non-joker day execution + lover cascade. |
 | B0b | typecheck script + error burn-down | — | |
 | B0c | DATABASE_PATH isolation (e2e, rejoin) | — | |
 | B0d | Structured logging (3 choke points + client logs) | — | |
@@ -140,7 +140,8 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 | C9 | Final gate + APP_VERSION_STAGING bump | — | |
 
 ### New port bands claimed (append as used)
-- 18600+ — B0a goldens (planned)
+- 18600–18999 — B0a goldens games 1–3 (tests/golden-sequences.test.ts)
+- 19600–19999 — B0a goldens games 4–5 (same file; 19860–19999 spare)
 
 ### REMAINING
-All of B then all of C. Next action: user merges `fix/audit-findings` to staging (checklist step 1).
+B0b → B8, then all of C. B0a done at 65f5fa0 (294 tests, 15 baseline tsc errors unchanged). Next action: dispatch B0b (typecheck script + error burn-down).
