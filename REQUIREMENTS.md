@@ -14,7 +14,7 @@ A mobile-first Progressive Web App (PWA) for playing the party game Mafia. Optim
 - The admin configures the game before starting:
   - **Number of Mafia members** (adjustable)
   - **Toggle roles**: Doctor, Detective, Joker, Lovers (each on/off)
-- The admin can **save game configurations as named profiles** and load them later.
+- The admin's **last-used game settings are saved automatically** when a game starts and pre-applied the next time they create a game.
 - Players join the lobby by entering the room code. Up to 20 players.
 - The admin presses "Start Game" to begin. After that, the admin is treated as a regular player (except for admin-only controls: end game, call vote, end day, toggle anonymous voting).
 
@@ -25,7 +25,7 @@ A mobile-first Progressive Web App (PWA) for playing the party game Mafia. Optim
 | Mafia | Red | Mafia | Kills one player each night. Wins when Mafia >= living town members. |
 | Doctor | Green | Town | Each night, chooses one player to protect. If Mafia targets that player, they survive. |
 | Detective | Green | Town | Each night, investigates one player to learn if they are Mafia or not. |
-| Joker | Blue | Neutral | Wins individually if voted out (executed) during the day. If the Joker wins, both Town and Mafia lose. |
+| Joker | Blue | Neutral | Wins individually if voted out (executed) during the day. Official mode (default): the game continues and the Joker becomes a joint winner alongside the eventual winning team, with a one-time haunt of an execution voter the following night. House mode: the Joker's execution ends the game instantly and everyone else loses. |
 | Lover | (varies) | (varies) | Two players randomly paired as secret lovers. They don't know who the other lover is. If one dies (by any cause), the other dies too. A Lover can also be any other role simultaneously. |
 
 ## Game Flow
@@ -53,7 +53,7 @@ A mobile-first Progressive Web App (PWA) for playing the party game Mafia. Optim
    - **Anonymous vote**: only totals are shown.
    - **Named vote**: each player's name and vote are displayed to everyone.
    - If strictly more than 50% vote thumbs up, the nominated player is **executed**.
-   - If the executed player is the **Joker**, the Joker wins and the game ends (everyone else loses).
+   - If the executed player is the **Joker**, the Joker wins. In official mode (default) the game continues with the Joker as a joint winner (plus a one-time haunt of an execution voter the next night); in house mode the game ends instantly and everyone else loses.
 6. Admin ends the day → transition to next Night.
 
 ### Death
@@ -64,7 +64,7 @@ A mobile-first Progressive Web App (PWA) for playing the party game Mafia. Optim
 ### Win Conditions
 - **Town wins**: All Mafia members are dead.
 - **Mafia wins**: Living Mafia >= living non-Mafia (excluding Joker).
-- **Joker wins**: The Joker is executed during a day vote. Both Town and Mafia lose.
+- **Joker wins**: The Joker is executed during a day vote. Official mode (default): the game continues and the Joker joins the eventual winning team as a joint winner. House mode: the game ends instantly and everyone else loses.
 - **Admin can end the game** at any time (emergency stop).
 
 ## Narrator

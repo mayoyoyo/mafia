@@ -128,6 +128,56 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
   Object.assign(game.settings, settings);
 }
 
+// Keys handled by sanitizeSettings, grouped by validation strategy.
+const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableLovers", "soundEnabled"] as const;
+const modeKeys = ["doctorMode", "jokerMode"] as const;
+
+// Compile-time exhaustiveness guard: if a key is added to GameSettings in
+// types.ts but not handled in sanitizeSettings, the assignment below becomes
+// a type error (true is not assignable to false).
+type _Covered = "mafiaCount" | (typeof boolKeys)[number] | (typeof modeKeys)[number] | "narrationAccent";
+// compile error here means a GameSettings key is missing from sanitizeSettings
+const _exhaustive: Exclude<keyof GameSettings, _Covered> extends never ? true : false = true;
+void _exhaustive;
+
+/**
+ * Whitelist + coerce untrusted settings input (M6). Unknown keys are dropped;
+ * invalid values are dropped so callers fall back to existing/default values.
+ * Used for both client update_settings payloads and persisted last_settings_json.
+ */
+export function sanitizeSettings(input: unknown): Partial<GameSettings> {
+  const out: Partial<GameSettings> = {};
+  if (typeof input !== "object" || input === null) return out;
+  const raw = input as Record<string, unknown>;
+
+  // mafiaCount: positive integer, clamped to 1-6 (matches lobby UI range)
+  const mafiaCount = Number(raw.mafiaCount);
+  if (Number.isFinite(mafiaCount)) {
+    out.mafiaCount = Math.min(6, Math.max(1, Math.floor(mafiaCount)));
+  }
+
+  // Booleans: accept real booleans only
+  for (const key of boolKeys) {
+    const v = raw[key];
+    if (typeof v === "boolean") out[key] = v;
+  }
+
+  // Rule modes: must be a known mode string
+  for (const key of modeKeys) {
+    const v = raw[key];
+    if (v === "official" || v === "house") out[key] = v;
+  }
+
+  // Narration accent: accents are data-driven (narration.json), so validate
+  // shape only — non-empty short string
+  const accent = raw.narrationAccent;
+  if (typeof accent === "string" && accent.length > 0 && accent.length <= 32) {
+    out.narrationAccent = accent;
+  }
+
+  return out;
+}
+
 export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
   return Array.from(game.players.values()).map((p) => ({
     id: p.id,
@@ -152,7 +202,7 @@ function assignRoles(game: Game): number {
   const totalPlayers = playerIds.length;
 
   let mafiaCount = Math.min(settings.mafiaCount, Math.floor(totalPlayers / 3));
-  if (mafiaCount < 1) mafiaCount = 1;
+  if (!(mafiaCount >= 1)) mafiaCount = 1; // NaN-proof: also catches non-numeric settings
 
   let idx = 0;
 
@@ -607,19 +657,35 @@ export function resolveNight(game: Game): NightResult {
   return result;
 }
 
+// Classify a night death entry by its kill source, not array position.
+// resolveNight pushes the primary victim first, then their heartbroken lover,
+// both tagged with the same source ("mafia" or "joker_haunt"). At most one
+// mafia kill and one haunt kill resolve per night, so any entry preceded by
+// another entry with the same source is a lover-cascade death.
+export function classifyNightDeath(
+  killed: NightResult["killed"],
+  index: number
+): "kill" | "joker_haunt" | "lover_death" {
+  const entry = killed[index];
+  for (let i = 0; i < index; i++) {
+    if (killed[i].source === entry.source) return "lover_death";
+  }
+  return entry.source === "joker_haunt" ? "joker_haunt" : "kill";
+}
+
 export function transitionToDay(game: Game): NightResult {
   const nightResult = resolveNight(game);
 
   // Track events
-  if (nightResult.saved && nightResult.savedName) {
+  // In official doctor mode the save is anonymous; only push a named save event in house mode.
+  if (nightResult.saved && nightResult.savedName && game.settings.doctorMode === "house") {
     game.eventHistory.push({ round: game.round, type: "save", playerName: nightResult.savedName });
   }
-  for (const k of nightResult.killed) {
-    const isLoverDeath = k.player.isLover && nightResult.killed.length > 1 && k !== nightResult.killed[0];
+  for (let i = 0; i < nightResult.killed.length; i++) {
     game.eventHistory.push({
       round: game.round,
-      type: isLoverDeath ? "lover_death" : (k.source === "joker_haunt" ? "joker_haunt" : "kill"),
-      playerName: k.player.username,
+      type: classifyNightDeath(nightResult.killed, i),
+      playerName: nightResult.killed[i].player.username,
     });
   }
 
@@ -784,6 +850,10 @@ export function resolveVote(game: Game): VoteResult | null {
             game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
           }
         }
+
+        // Reset vote state (mirrors the official branch and the normal path)
+        game.voteTarget = null;
+        game.votes.clear();
         return result;
       }
     }
@@ -855,9 +925,11 @@ export function forceDawn(game: Game): string[] {
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.jokerHauntTarget = null;
+  game.jokerHauntVoters = []; // clear haunt voters after this night
   game.nightSubPhase = null;
   game.voteTarget = null;
   game.votes.clear();
+  game.awaitingNarratorReady = false;
   game.phase = "day";
 
   const messages = ["The host has forced dawn. No one was killed tonight."];
@@ -876,6 +948,8 @@ export function endDay(game: Game): string[] {
   game.doctorTarget = null;
   game.detectiveTarget = null;
   game.jokerHauntTarget = null;
+  game.jokerHauntVoters = []; // clear haunt voters after this night
+  game.awaitingNarratorReady = false;
 
   const messages = [Narrator.nightFalls()];
   game.pendingMessages = messages;
@@ -885,11 +959,12 @@ export function endDay(game: Game): string[] {
 export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null {
   const alive = getAlivePlayers(game);
   const aliveMafia = alive.filter((p) => p.role === "mafia");
+  // M8: a living joker counts toward NEITHER team (README spec), so the
+  // mafia-parity comparison excludes jokers from both sides.
   const aliveNonMafia = alive.filter((p) => p.role !== "mafia" && p.role !== "joker");
-  const aliveJoker = alive.filter((p) => p.role === "joker");
 
   if (aliveMafia.length === 0) return "town";
-  if (aliveMafia.length >= aliveNonMafia.length + aliveJoker.length) return "mafia";
+  if (aliveMafia.length >= aliveNonMafia.length) return "mafia";
 
   return null;
 }
@@ -897,6 +972,11 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
 export function forceEndGame(game: Game): void {
   game.phase = "game_over";
   game.forceEnded = true;
+  // L3: keep winner well-defined — consumers (buildGameSync, end_game
+  // broadcast) dereference it with `!`; "town" matches the live broadcast.
+  // The client's forceEnded branch shows a neutral end screen regardless.
+  game.winner = "town";
+  game.awaitingNarratorReady = false;
 }
 
 export function returnToLobby(game: Game): boolean {
@@ -936,6 +1016,7 @@ export function returnToLobby(game: Game): boolean {
   game.dayVoteCount = 0;
   game.narratorHistory = [];
   game.detectiveHistory = [];
+  game.awaitingNarratorReady = false;
 
   return true;
 }

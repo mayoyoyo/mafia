@@ -5,7 +5,7 @@ import {
   submitJokerHaunt, getJokerHauntTargets,
   checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote,
-  cancelVote, endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
+  cancelVote, endDay, forceDawn, checkWinCondition, getAlivePlayers, getAliveByRole,
   getPlayerInfo, forceEndGame, removeGame, restartGame, returnToLobby,
 } from "../src/game-engine";
 import type { Game, Player, NightSubPhase } from "../src/types";
@@ -199,6 +199,55 @@ describe("Doctor Official Mode", () => {
     expect(result.savedTargetId).toBeNull();
     removeGame(game.code);
   });
+
+  test("official mode: save event is NOT pushed to eventHistory (no leak)", () => {
+    const game = setupGame(5, { enableDoctor: true, doctorMode: "official" });
+    startGame(game);
+
+    const mafia = findPlayerByRole(game, "mafia");
+    const doctor = findPlayerByRole(game, "doctor");
+    const citizen = getCitizens(game)[0];
+
+    game.phase = "night";
+    game.nightSubPhase = "mafia";
+    lockTarget(game, mafia.id, citizen.id);
+    advanceNightSubPhase(game); // -> doctor
+    submitDoctorSave(game, doctor.id, citizen.id);
+
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    const result = transitionToDay(game);
+    expect(result.saved).toBe(true);
+    // Official mode: NO save event should appear in public eventHistory
+    const saveEvents = game.eventHistory.filter(e => e.type === "save");
+    expect(saveEvents).toHaveLength(0);
+    removeGame(game.code);
+  });
+
+  test("house mode: save event IS pushed to eventHistory with victim name", () => {
+    const game = setupGame(5, { enableDoctor: true, doctorMode: "house" });
+    startGame(game);
+
+    const mafia = findPlayerByRole(game, "mafia");
+    const doctor = findPlayerByRole(game, "doctor");
+    const citizen = getCitizens(game)[0];
+
+    game.phase = "night";
+    game.nightSubPhase = "mafia";
+    lockTarget(game, mafia.id, citizen.id);
+    advanceNightSubPhase(game); // -> doctor
+    submitDoctorSave(game, doctor.id, citizen.id);
+
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    const result = transitionToDay(game);
+    expect(result.saved).toBe(true);
+    // House mode: exactly one save event with the victim's name
+    const saveEvents = game.eventHistory.filter(e => e.type === "save");
+    expect(saveEvents).toHaveLength(1);
+    expect(saveEvents[0].playerName).toBe(citizen.username);
+    removeGame(game.code);
+  });
 });
 
 describe("Narrator - Doctor Official Messages", () => {
@@ -265,6 +314,26 @@ describe("Joker House Mode - Execution", () => {
     expect(result!.jokerWin).toBe(true);
     expect(game.winner).toBe("joker");
     expect(game.phase).toBe("game_over");
+    removeGame(game.code);
+  });
+
+  test("house mode: joker win clears voteTarget and votes at game_over (L9)", () => {
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house" });
+    startGame(game);
+    const joker = findPlayerByRole(game, "joker");
+
+    game.phase = "day";
+    callVote(game, game.adminId, joker.id);
+    for (const [, p] of game.players) {
+      if (p.isAlive && p.id !== joker.id) {
+        castVote(game, p.id, true);
+      }
+    }
+    resolveVote(game);
+
+    expect(game.phase).toBe("game_over");
+    expect(game.voteTarget).toBeNull();
+    expect(game.votes.size).toBe(0);
     removeGame(game.code);
   });
 });
@@ -796,6 +865,104 @@ describe("Joker Haunt - Night Resolution", () => {
     expect(hauntEvent!.playerName).toBe(game.players.get(hauntTargetId)!.username);
     removeGame(game.code);
   });
+
+  test("haunt victim who is a lover is classified as joker_haunt, not lover_death (M5)", () => {
+    const game = setupGame(8, {
+      enableJoker: true,
+      jokerMode: "official",
+      enableLovers: true,
+    });
+    startGame(game);
+    const joker = findPlayerByRole(game, "joker");
+    const mafia = findPlayerByRole(game, "mafia");
+
+    // Clear random lover assignment; we pick a deterministic pair below
+    for (const [, p] of game.players) { p.isLover = false; p.loverId = null; }
+
+    // Lynch the joker day 1 — everyone votes yes, so all become haunt targets
+    game.phase = "day";
+    callVote(game, game.adminId, joker.id);
+    for (const [, p] of game.players) {
+      if (p.isAlive && p.id !== joker.id) castVote(game, p.id, true);
+    }
+    resolveVote(game);
+    expect(game.phase).toBe("night"); // official mode: game continues
+
+    // Pick three distinct alive non-mafia players:
+    // A = mafia victim (not a lover), B = haunt victim (lover), L = B's partner
+    const candidates = Array.from(game.players.values()).filter(
+      (p) => p.isAlive && p.role !== "mafia"
+    );
+    const [a, b, l] = candidates;
+    b.isLover = true; b.loverId = l.id;
+    l.isLover = true; l.loverId = b.id;
+
+    // Joker haunts B (parallel action); mafia independently kills A
+    expect(submitJokerHaunt(game, joker.id, b.id)).toBe(true);
+    lockTarget(game, mafia.id, a.id);
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    transitionToDay(game);
+
+    // B (haunt victim) must be a joker_haunt event, NOT lover_death
+    const bEvents = game.eventHistory.filter((e) => e.playerName === b.username);
+    expect(bEvents.length).toBe(1);
+    expect(bEvents[0].type).toBe("joker_haunt");
+
+    // L (B's partner) died of heartbreak from B's death -> lover_death
+    const lEvents = game.eventHistory.filter((e) => e.playerName === l.username);
+    expect(lEvents.length).toBe(1);
+    expect(lEvents[0].type).toBe("lover_death");
+
+    // A (mafia victim) is a plain kill
+    const aEvents = game.eventHistory.filter((e) => e.playerName === a.username);
+    expect(aEvents.length).toBe(1);
+    expect(aEvents[0].type).toBe("kill");
+    removeGame(game.code);
+  });
+
+  test("forceDawn clears jokerHauntVoters so joker cannot haunt on later nights", () => {
+    const { game, joker } = setupHauntNight();
+
+    // After joker is lynched, game auto-enters night with jokerHauntVoters populated
+    expect(game.phase).toBe("night");
+    expect(game.jokerHauntVoters.length).toBeGreaterThan(0);
+
+    // Admin force-dawns the haunt night without resolving
+    forceDawn(game);
+    expect(game.phase).toBe("day");
+
+    // jokerHauntVoters must be cleared
+    expect(game.jokerHauntVoters).toEqual([]);
+
+    // Enter the next night via endDay
+    endDay(game);
+    expect(game.phase).toBe("night");
+
+    // jokerHauntVoters must still be empty after endDay
+    expect(game.jokerHauntVoters).toEqual([]);
+
+    // The dead joker must not be able to submit a haunt kill
+    const aliveCitizen = getCitizens(game)[0];
+    const haunted = submitJokerHaunt(game, joker.id, aliveCitizen.id);
+    expect(haunted).toBe(false);
+
+    removeGame(game.code);
+  });
+
+  test("endDay clears jokerHauntVoters", () => {
+    const game = setupGame(5, { enableJoker: true, jokerMode: "official" });
+    startGame(game);
+
+    game.phase = "day";
+    game.jokerHauntVoters = [2, 3, 4];
+
+    endDay(game);
+
+    expect(game.jokerHauntVoters).toEqual([]);
+
+    removeGame(game.code);
+  });
 });
 
 describe("Joker Official Mode - Lover Interaction", () => {
@@ -892,6 +1059,85 @@ describe("Joker Official Mode - Win Condition Integration", () => {
 
     expect(game.jokerJointWinner).toBe(true);
     // Joint winner flag should persist regardless of game outcome
+    removeGame(game.code);
+  });
+});
+
+// M8: README spec — a living Joker "does not count toward either team's numbers".
+// Mafia win = mafia equal or outnumber non-mafia alive, with the joker excluded
+// from BOTH sides of the comparison.
+describe("Joker Win Parity (M8) - living joker counts toward neither team", () => {
+  test("checkWinCondition: 1 mafia + 1 citizen + 1 joker alive -> mafia wins", () => {
+    // 4 players: 1 mafia, 1 joker, 2 citizens
+    const game = setupGame(4, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+
+    // Kill one citizen: 1 mafia vs 1 citizen, joker alive but counts for neither
+    getCitizens(game)[0].isAlive = false;
+
+    expect(checkWinCondition(game)).toBe("mafia");
+    removeGame(game.code);
+  });
+
+  test("night kill reaching parity with living joker ends game with mafia win", () => {
+    // Audit repro: 4 players {mafiaCount:1, enableJoker:true}
+    const game = setupGame(4, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+    const mafia = findPlayerByRole(game, "mafia");
+    const citizen = getCitizens(game)[0];
+
+    // Night 1: mafia kills a citizen -> 1 mafia, 1 citizen, 1 joker alive
+    lockTarget(game, mafia.id, citizen.id);
+    transitionToDay(game);
+
+    expect(game.winner).toBe("mafia");
+    expect(game.phase).toBe("game_over");
+    removeGame(game.code);
+  });
+
+  test("lynch reaching parity with living joker ends game with mafia win", () => {
+    // 5 players: 1 mafia, 1 joker, 3 citizens
+    const game = setupGame(5, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+    const mafia = findPlayerByRole(game, "mafia");
+
+    // Night 1: mafia kills a citizen -> 1 mafia, 2 citizens, 1 joker (continues)
+    lockTarget(game, mafia.id, getCitizens(game)[0].id);
+    transitionToDay(game);
+    expect(game.phase).toBe("day");
+
+    // Day: lynch another citizen -> 1 mafia, 1 citizen, 1 joker -> mafia parity
+    const target = getCitizens(game)[0];
+    callVote(game, game.adminId, target.id);
+    for (const p of getAlivePlayers(game)) castVote(game, p.id, true);
+    const result = resolveVote(game);
+
+    expect(result!.executed).toBe(true);
+    expect(game.winner).toBe("mafia");
+    expect(game.phase).toBe("game_over");
+    removeGame(game.code);
+  });
+
+  test("joker does not count toward mafia: 1 mafia + 2 citizens + 1 joker -> game continues", () => {
+    // 5 players: 1 mafia, 1 joker, 3 citizens
+    const game = setupGame(5, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+
+    // Kill one citizen: 1 mafia vs 2 citizens. If the joker counted for mafia
+    // it would be 2 vs 2 -> mafia win; README says the game continues.
+    getCitizens(game)[0].isAlive = false;
+
+    expect(checkWinCondition(game)).toBeNull();
+    removeGame(game.code);
+  });
+
+  test("town wins with a living joker once all mafia are dead", () => {
+    const game = setupGame(4, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+
+    findPlayerByRole(game, "mafia").isAlive = false;
+
+    expect(checkWinCondition(game)).toBe("town");
     removeGame(game.code);
   });
 });

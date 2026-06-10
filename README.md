@@ -19,7 +19,7 @@ A real-time multiplayer Mafia party game. Host a room, share the code, and play 
 |------|------|-------------|---------|
 | **Doctor** | Town | Protects one player from being killed | Cannot protect the same player two nights in a row. If they protect the Mafia's target, the kill is prevented. |
 | **Detective** | Town | Investigates one player to learn if they are Mafia | Result is revealed privately at dawn. Investigation still resolves even if the Detective is killed that night. |
-| **Joker** | Solo | None | Wins instantly if voted out during the day. The Joker's execution ends the game. Does not count toward either team's numbers. |
+| **Joker** | Solo | None | Wins if voted out during the day. **Official mode** (default): the game continues — the Joker becomes a joint winner alongside the eventual winning team, and on the night immediately after the lynch may haunt one player who voted for their execution (the Doctor can block this kill). **House mode**: the Joker's execution ends the game instantly. Does not count toward either team's numbers. |
 | **Lovers** | — | None | Two random players are paired. If one dies, the other dies of heartbreak. Lovers can be any role, including Mafia. |
 
 ### Multi-Mafia Deliberation
@@ -39,7 +39,7 @@ When there are 2+ Mafia, the night kill uses a card-based deliberation system:
 - Anonymous voting toggle (hides tallies and voter identities)
 - Dead player spectator mode during night
 - Auto-rejoin on disconnect
-- Save/load game setting presets
+- Automatic settings memory — last-used game settings are saved when a game starts and pre-applied on the next create
 
 ## Running Locally
 

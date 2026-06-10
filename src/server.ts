@@ -1,11 +1,11 @@
 import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings, getUserPrefs, updateUserPref } from "./db";
 import {
-  createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
+  createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings, sanitizeSettings,
   getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
-  submitJokerHaunt, getJokerHauntTargets,
+  submitJokerHaunt, getJokerHauntTargets, classifyNightDeath,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
@@ -535,6 +535,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       message: game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
       forceEnded: game.forceEnded,
       revealPlayers: getPlayerInfo(game, true),
+      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
     };
   }
 
@@ -557,8 +558,8 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     dayStartedAt: game.dayStartedAt,
     dayVoteCount: game.dayVoteCount,
     narratorHistory: game.narratorHistory,
-    detectiveHistory: game.detectiveHistory,
     eventHistory: game.eventHistory,
+    ...(rejoined.role === "detective" ? { detectiveHistory: game.detectiveHistory } : {}),
     ...(rejoined.role === "mafia" ? {
       mafiaTeam: Array.from(game.players.values())
         .filter(p => p.role === "mafia")
@@ -575,6 +576,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     case "register": {
       if (!msg.username || msg.username.trim().length === 0) {
         send(ws, { type: "error", message: "Username is required" });
+        return;
+      }
+      if (msg.username.trim().length > 32) {
+        send(ws, { type: "error", message: "Username must be 32 characters or fewer" });
         return;
       }
       if (!msg.passcode || !/^\d{4}$/.test(msg.passcode)) {
@@ -623,7 +628,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       let initialSettings: Partial<GameSettings> | undefined;
       const savedJson = getLastSettings(client.userId);
       if (savedJson) {
-        try { initialSettings = JSON.parse(savedJson); } catch {}
+        try { initialSettings = sanitizeSettings(JSON.parse(savedJson)); } catch {}
       }
       const game = createGame(client.userId, getUsernameFromClients(client.userId), initialSettings);
       client.gameCode = game.code;
@@ -660,6 +665,20 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           // If admin rejoins during awaiting state, re-send awaiting_ready
           if (game.awaitingNarratorReady && client.userId === game.adminId) {
             send(ws, { type: "awaiting_ready" });
+          }
+          // H4: mafia consensus locked but kill not yet confirmed — re-send
+          // mafia_confirm_ready so the rejoining mafia can slide-to-confirm
+          // (otherwise the night soft-locks waiting for a confirm the client
+          // no longer offers)
+          if (game.phase === "night" && game.nightSubPhase === "mafia"
+              && game.mafiaTarget !== null
+              && rejoined.isAlive && rejoined.role === "mafia") {
+            const confirmTarget = game.players.get(game.mafiaTarget);
+            send(ws, {
+              type: "mafia_confirm_ready",
+              targetName: confirmTarget ? confirmTarget.username : "target",
+              targetId: game.mafiaTarget,
+            });
           }
           // If dead joker with pending haunt during night, send haunt targets separately
           if (game.phase === "night" && game.nightSubPhase !== "resolving"
@@ -773,7 +792,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
       if (game.phase !== "lobby") return;
-      updateSettings(game, msg.settings);
+      updateSettings(game, sanitizeSettings(msg.settings));
       send(ws, { type: "settings_updated", settings: game.settings });
       broadcastLobbyUpdate(game);
       break;
@@ -827,6 +846,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
 
       const voteType = msg.voteType || "lock";
       const result = submitMafiaVote(game, client.userId, msg.targetId, voteType);
@@ -840,6 +860,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
 
       if (!removeMafiaVote(game, client.userId, msg.targetId)) break;
 
@@ -851,7 +872,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
       if (game.mafiaTarget === null) return;
+      const confirmer = game.players.get(client.userId);
+      if (!confirmer || confirmer.role !== "mafia" || !confirmer.isAlive) return;
 
       const aliveMafia = getAliveByRole(game, "mafia");
       for (const m of aliveMafia) {
@@ -875,6 +899,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.nightSubPhase !== "doctor") return;
+      if (game.awaitingNarratorReady) return;
 
       const saved = submitDoctorSave(game, client.userId, msg.targetId);
       if (saved) {
@@ -901,6 +926,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.nightSubPhase !== "detective") return;
+      if (game.awaitingNarratorReady) return;
 
       const result = submitDetectiveInvestigation(game, client.userId, msg.targetId);
       if (result) {
@@ -928,6 +954,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase === "resolving") return;
+      if (game.awaitingNarratorReady) return;
 
       const haunted = submitJokerHaunt(game, client.userId, msg.targetId);
       if (haunted) {
@@ -966,6 +993,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase !== "day") return;
       // Admin abstains - just stay in day phase, no vote happens
       recordNarrator(game, ["The admin has chosen to abstain from calling a vote today."]);
       broadcastToGame(game.code, {
@@ -1003,24 +1031,25 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const result = castVote(game, client.userId, msg.approve);
 
-      // Broadcast vote progress
-      broadcastToGame(game.code, {
-        type: "vote_update",
-        totalVotes: game.votes.size,
-        total: getAlivePlayers(game).length,
-      });
+      // Only broadcast vote progress when in voting phase and the vote was recorded
+      if (game.phase === "voting" && game.votes.has(client.userId)) {
+        broadcastToGame(game.code, {
+          type: "vote_update",
+          totalVotes: game.votes.size,
+          total: getAlivePlayers(game).length,
+        });
+      }
 
       if (result.allVoted) {
         const voteResult = resolveVote(game);
         if (voteResult) {
           recordNarrator(game, voteResult.messages);
 
+          // M12: never broadcast exact tallies — in small games they de-anonymize voters
           broadcastToGame(game.code, {
             type: "vote_result",
             targetName: voteResult.targetName,
             executed: voteResult.executed,
-            votesFor: voteResult.votesFor,
-            votesAgainst: voteResult.votesAgainst,
           });
 
           // Send joker win overlay only to the joker (official mode: game continues)
@@ -1135,6 +1164,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       const messages = endDay(game);
+      if (messages.length === 0) return;
       game.dayStartedAt = null;
       game.dayVoteCount = 0;
       recordNarrator(game, messages);
@@ -1152,6 +1182,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase === "game_over") return;
 
       clearNightTimer(game.code);
       forceEndGame(game);
@@ -1169,6 +1200,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         message: "Host has ended the game.",
         forceEnded: true,
         players: getPlayerInfo(game, true),
+        ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
       });
       // Room persists — do NOT removeGame or clear gameCode refs
       break;
@@ -1185,6 +1217,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Cannot return to lobby" });
         return;
       }
+      // After the success check: an errant return_to_lobby during an active
+      // night must NOT clear the legit pending timer (M2)
+      clearNightTimer(game.code);
       broadcastLobbyUpdate(game);
       break;
     }
@@ -1214,6 +1249,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Only the admin can restart the game" });
         return;
       }
+      clearNightTimer(game.code);
       const messages = restartGame(game);
       if (!messages) {
         send(ws, { type: "error", message: "Cannot restart game" });
@@ -1254,6 +1290,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase !== "night") return;
       if (!game.awaitingNarratorReady) return;
       game.awaitingNarratorReady = false;
       startNightSequence(game);
@@ -1407,7 +1444,7 @@ function resolveNightAndTransition(game: Game): void {
   let nightLoverDeathName: string | undefined;
   for (let i = 0; i < nightResult.killed.length; i++) {
     const k = nightResult.killed[i];
-    const isLoverDeath = i > 0 && k.player.isLover;
+    const isLoverDeath = classifyNightDeath(nightResult.killed, i) === "lover_death";
     if (isLoverDeath) nightLoverDeathName = k.player.username;
     sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
@@ -1428,6 +1465,7 @@ function resolveNightAndTransition(game: Game): void {
     round: game.round,
     messages: nightResult.messages,
     events: game.eventHistory,
+    saved: nightResult.saved,
     ...(nightLoverDeathName ? { loverDeathName: nightLoverDeathName } : {}),
   });
 

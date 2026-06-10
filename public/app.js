@@ -33,6 +33,8 @@
   let nightTransitionActive = false;
   let nightTransitionQueue = [];
   let executionTransitionActive = false;
+  let heartbreakTransitionActive = false;
+  let pendingGameOver = null; // game_over held while an overlay chain animates (L5)
   let nightNarrationActive = false;
   let nightNarrationQueue = [];
   let audioUnlocked = false;
@@ -89,8 +91,14 @@
     ws.onopen = () => {
       const saved = localStorage.getItem("mafia_user");
       if (saved) {
-        const data = JSON.parse(saved);
-        wsSend({ type: "login", username: data.username, passcode: data.passcode });
+        let data = null;
+        try { data = JSON.parse(saved); } catch {}
+        if (data && data.username) {
+          wsSend({ type: "login", username: data.username, passcode: data.passcode });
+        } else {
+          // Corrupt stored credentials — drop them and stay logged out (L6)
+          localStorage.removeItem("mafia_user");
+        }
       }
     };
 
@@ -156,6 +164,13 @@
     // During suspense, queue certain messages
     if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died" || msg.type === "joker_win_overlay")) {
       suspenseQueue.push(msg);
+      return;
+    }
+    // While a death/heartbreak/night overlay chain is animating, hold game_over
+    // so its reveal doesn't stomp the in-flight beats; it replays after the
+    // chain's final callback (applyPhaseChange) via flushPendingGameOver (L5)
+    if ((suspenseActive || executionTransitionActive || heartbreakTransitionActive || nightTransitionActive) && msg.type === "game_over") {
+      pendingGameOver = msg;
       return;
     }
     // During night/execution transition, queue sound_cues and night action prompts
@@ -260,6 +275,7 @@
         lastVoteResult = null;
         jokerJointWinner = false;
         previousPhase = null;
+        pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -335,14 +351,16 @@
 
       case "night_action_done":
         $("action-status").textContent = msg.message;
-        // If mafia and consensus was reached, collapse target list
+        // If mafia and consensus was reached, collapse target list.
+        // Rejoined mafia have empty myMafiaVotes; fall back to the confirm
+        // target restored by mafia_confirm_ready after game_sync.
         if (myRole === "mafia" && !nightActionLocked) {
           const lockVote = myMafiaVotes.find(v => v.voteType === "lock");
-          if (lockVote) {
+          if (lockVote || mafiaConfirmTarget) {
             nightActionLocked = true;
             hideSlideConfirm();
-            const lockTarget = mafiaTargetPlayers.find(p => p.id === lockVote.targetId);
-            const targetName = lockTarget ? lockTarget.username : "target";
+            const lockTarget = lockVote && mafiaTargetPlayers.find(p => p.id === lockVote.targetId);
+            const targetName = lockTarget ? lockTarget.username : (mafiaConfirmTarget || "target");
             $("action-targets").innerHTML = `<li class="selected">${escapeHtml(targetName)} \u2714</li>`;
           }
         }
@@ -413,6 +431,7 @@
         localStorage.removeItem("mafia_game_code");
         gameCode = null;
         isAdmin = false;
+        pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         $("narrator-messages").innerHTML = "";
         $("role-reveal").innerHTML = "";
         $("event-history-list").innerHTML = "";
@@ -466,7 +485,7 @@
     }
     dayVoteCount = msg.dayVoteCount;
     narratorTranscript = msg.narratorHistory;
-    detectiveHistory = msg.detectiveHistory;
+    detectiveHistory = msg.detectiveHistory || [];
     hasVoted = false;
     nightActionLocked = false;
     jokerHauntActive = false;
@@ -614,6 +633,14 @@
           nightActionLocked = true;
           if (myRole === "mafia") {
             $("mafia-vote-status").classList.remove("hidden");
+            // H4: locked during the mafia sub-phase means consensus was
+            // reached but the kill is NOT yet confirmed — the server
+            // re-sends mafia_confirm_ready right after game_sync. Leave
+            // the action unlocked so handleMafiaConfirmReady can restore
+            // the slide-to-confirm UI.
+            if (msg.nightSubPhase === "mafia") {
+              nightActionLocked = false;
+            }
           }
         } else if (na.targets.length > 0) {
           // Show target selection
@@ -745,7 +772,7 @@
 
   // Settings controls
   $("mafia-minus").addEventListener("click", () => {
-    const current = parseInt($("mafia-count").textContent);
+    const current = parseInt($("mafia-count").textContent) || 1;
     if (current > 1) {
       $("mafia-count").textContent = current - 1;
       wsSend({ type: "update_settings", settings: { mafiaCount: current - 1 } });
@@ -753,7 +780,7 @@
   });
 
   $("mafia-plus").addEventListener("click", () => {
-    const current = parseInt($("mafia-count").textContent);
+    const current = parseInt($("mafia-count").textContent) || 1;
     if (current < 6) {
       $("mafia-count").textContent = current + 1;
       wsSend({ type: "update_settings", settings: { mafiaCount: current + 1 } });
@@ -1428,6 +1455,16 @@
     updatePlayerStatus();
   }
 
+  // L5: a game_over that arrived mid-transition replays once the chain ends.
+  // If another transition chained on synchronously (execution → heartbreak →
+  // night), handleServerMessage simply re-holds it until the last one completes.
+  function flushPendingGameOver() {
+    if (!pendingGameOver) return;
+    const msg = pendingGameOver;
+    pendingGameOver = null;
+    handleServerMessage(msg);
+  }
+
   // ============================================================
   // EXECUTION TRANSITION (vote result → night)
   // ============================================================
@@ -1456,12 +1493,14 @@
         overlay.classList.remove("fade-out");
         text.style.color = "";
         executionTransitionActive = false;
+        // no flushPendingGameOver here — all call sites chain into heartbreak/night, whose terminals flush
         callback();
       }, 600);
     }, 2000);
   }
 
   function showHeartbreakTransition(loverName, callback) {
+    heartbreakTransitionActive = true;
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
 
@@ -1478,7 +1517,9 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        heartbreakTransitionActive = false;
         callback();
+        flushPendingGameOver();
       }, 600);
     }, 2000);
   }
@@ -1541,6 +1582,7 @@
           handleServerMessage(qMsg);
         }
         nightTransitionQueue = [];
+        flushPendingGameOver();
       }, 600);
     }, 3400);
   }
@@ -1552,7 +1594,9 @@
     // Check events for the current round to determine good/bad news
     const round = msg.round;
     const roundEvents = (msg.events || []).filter((e) => e.round === round);
-    const hasSave = roundEvents.some((e) => e.type === "save");
+    // Official doctor mode sends an anonymous `saved` flag (no named save event);
+    // house mode and older payloads still carry a named "save" event.
+    const hasSave = msg.saved === true || roundEvents.some((e) => e.type === "save");
     const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
     const killEvent = roundEvents.find((e) => e.type === "kill");
     const victimName = killEvent ? killEvent.playerName : "Someone";
@@ -1622,6 +1666,7 @@
         handleServerMessage(qMsg);
       }
       suspenseQueue = [];
+      flushPendingGameOver();
     }, 6300 + extraDelay);
   }
 
@@ -1775,6 +1820,19 @@
   let nightActionLocked = false; // true after doctor/detective confirm
   let jokerHauntActive = false; // true while dead joker is choosing haunt target
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
+  // M11: target of an in-flight maybe+lock pair. The pair is sent back-to-back
+  // (the WS stream is ordered, so nothing can interleave) and further taps are
+  // ignored until the server echoes a vote update — a duplicate "maybe" would
+  // toggle the vote off, and a second target's "lock" could diverge from the UI.
+  let pendingMafiaLockTarget = null;
+
+  function sendMafiaMaybeLock(targetId) {
+    if (pendingMafiaLockTarget !== null) return false;
+    pendingMafiaLockTarget = targetId;
+    wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+    wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+    return true;
+  }
 
   function showNightAction(title, players, actionType, disabledId) {
     // Allow joker_haunt even when dead (joker haunts from beyond the grave)
@@ -1792,6 +1850,7 @@
 
     if (actionType === "mafia_vote") {
       mafiaTargetPlayers = players;
+      pendingMafiaLockTarget = null; // fresh night render (M11)
       // Branch on single vs multi mafia
       if (mafiaTeam.length <= 1) {
         renderSingleMafiaTargets(list, players);
@@ -1843,13 +1902,11 @@
       li.addEventListener("click", () => {
         if (nightActionLocked) return;
         const targetId = parseInt(li.dataset.id);
+        // Atomic maybe+lock; further taps are no-ops so the UI can never
+        // highlight a different target than the one locked on the wire (M11)
+        if (!sendMafiaMaybeLock(targetId)) return;
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
-        // Send maybe then lock with small delay
-        wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-        setTimeout(() => {
-          wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-        }, 50);
       });
     });
   }
@@ -2033,10 +2090,7 @@
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
-                wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-                setTimeout(() => {
-                  wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-                }, 50);
+                sendMafiaMaybeLock(targetId); // atomic maybe+lock; no-op while in flight (M11)
               });
               actions.appendChild(lockBtn);
             }
@@ -2105,6 +2159,10 @@
 
     // For single mafia, don't re-render cards (consensus will trigger confirm)
     if (mafiaTeam.length <= 1) return;
+
+    // Server echoed vote state — cards re-render from truth below, so a new
+    // Lock In may be dispatched again (M11)
+    pendingMafiaLockTarget = null;
 
     // Re-render cards on the target list
     const list = $("action-targets");
@@ -3154,7 +3212,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.2_202603040319";
-  const APP_VERSION_STAGING = "staging.12_202603041734";
+  const APP_VERSION_STAGING = "staging.13_202606100404";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

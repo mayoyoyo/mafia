@@ -130,9 +130,9 @@ export type ServerMessage =
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
-  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string }
+  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
-  | { type: "mafia_confirm_ready"; targetName: string }
+  | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }
@@ -142,7 +142,7 @@ export type ServerMessage =
   | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number }
   | { type: "vote_update"; totalVotes: number; total: number }
-  | { type: "vote_result"; targetName: string; executed: boolean; votesFor: number; votesAgainst: number }
+  | { type: "vote_result"; targetName: string; executed: boolean }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
@@ -182,8 +182,8 @@ export type ServerMessage =
       dayVoteCount: number;
       // Narrator
       narratorHistory: string[];
-      // Detective
-      detectiveHistory: Array<{ round: number; targetName: string; isMafia: boolean }>;
+      // Detective (only present when the rejoining player is the detective)
+      detectiveHistory?: Array<{ round: number; targetName: string; isMafia: boolean }>;
       // Events
       eventHistory: GameEvent[];
       // Mafia team (only for mafia players)

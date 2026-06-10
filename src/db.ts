@@ -24,14 +24,9 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS saved_configs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      admin_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      settings_json TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (admin_id) REFERENCES users(id)
-    );
+    -- L10: saved_configs (named settings profiles) was never wired up; only
+    -- users.last_settings_json is live. Drop the dead table from old deployments.
+    DROP TABLE IF EXISTS saved_configs;
   `);
 
   // Migrations for player preferences
