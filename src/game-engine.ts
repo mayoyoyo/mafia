@@ -221,9 +221,13 @@ export function beginNight(game: Game, reason: string, opts: ResetNightOptions =
 /**
  * Whole-game reset back to the lobby (per-night scope + whole-game scope).
  * Replaces the formerly byte-duplicated returnToLobby/restartGame blocks.
- * Callers log their own transition (different reasons) BEFORE calling this.
+ * B4b (engine symmetry with beginNight): the →lobby transition log lives
+ * HERE — callers pass their reason instead of logging by hand. The log
+ * fires before any reset, so from/round are the pre-reset values, exactly
+ * as the callers' own logTransition lines were placed.
  */
-export function resetGameState(game: Game): void {
+export function resetGameState(game: Game, reason: string): void {
+  logTransition(game, game.phase, "lobby", reason);
   resetNightActions(game);
   for (const key of GAME_RESET_FIELDS) {
     GAME_RESETS[key](game);
@@ -385,6 +389,62 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
     }
   }
   return violations;
+}
+
+// ── B4b (audit D1): legal-edge table for the server's phase_change builds ──
+//
+// One row per from-phase; the sets are the `to` phases a phase_change
+// broadcast site can legitimately produce TODAY (derived from the 12 sites
+// broadcastPhaseChange in src/server.ts replaced — this documents reality,
+// it does not arbitrate it). Two non-edges are structural, not omissions:
+// "voting" is never a broadcast `to` (the wire enters voting via
+// vote_called) and neither is "lobby" (lobby re-entry is a lobby_update).
+const LEGAL_PHASE_EDGES: Record<Game["phase"], ReadonlySet<Game["phase"]>> = {
+  lobby: new Set([
+    "night",     // start_game (and restart_game from a lobby — fails <3 players, else dealt+night)
+    "game_over", // end_game has NO lobby guard: an admin end_game in lobby force-ends (odd-but-real)
+  ]),
+  night: new Set([
+    "day",       // force_dawn; night resolution (resolveNightAndTransition)
+    "night",     // restart_game mid-night — no phase guard (M2's enabler, audit D1)
+    "game_over", // night resolution hits a win; admin leaves; end_game
+  ]),
+  day: new Set([
+    "day",       // abstain_vote: the admin abstains and the day re-announces itself (self-edge)
+    "night",     // end_day; restart_game from day
+    "game_over", // admin leaves; end_game
+  ]),
+  voting: new Set([
+    "day",       // cancel_vote; spared vote (strictly->50% rule fails)
+    "night",     // execution auto-night; restart_game mid-vote
+    "game_over", // vote resolution hits a win; admin leaves; end_game
+  ]),
+  game_over: new Set([
+    "night",     // restart_game
+  ]),
+};
+
+/**
+ * B4b (audit D1): assert a phase_change broadcast rides a legal edge.
+ * Backs broadcastPhaseChange (src/server.ts) — the ONE phase_change assembly
+ * point. Rides B2's invariant mode (one mode system, audit D4 risk note):
+ * throw under bun test, log-and-continue in production — a thrown assert
+ * would change failure modes for M1/M3/M10-class admin messages. The slog
+ * line reuses the "invariant_violation" event so violation monitoring stays
+ * a single channel.
+ */
+export function assertPhaseEdge(game: Game, from: Game["phase"], to: Game["phase"]): void {
+  if (LEGAL_PHASE_EDGES[from].has(to)) return;
+  slog("invariant_violation", {
+    code: game.code,
+    at: "phase_change_broadcast",
+    violations: [`illegal_phase_edge:${from}->${to}`],
+    phase: game.phase,
+    round: game.round,
+  });
+  if (invariantMode === "throw") {
+    throw new Error(`Illegal phase edge [${game.code}] illegal_phase_edge:${from}->${to}`);
+  }
 }
 
 export function getGame(code: string): Game | undefined {
@@ -1365,8 +1425,7 @@ export function returnToLobby(game: Game): boolean {
   if (game.phase !== "game_over") return false;
 
   // Reset players + game state back to the lobby, keeping settings
-  logTransition(game, game.phase, "lobby", "return_to_lobby");
-  resetGameState(game);
+  resetGameState(game, "return_to_lobby");
 
   return true;
 }
@@ -1374,8 +1433,7 @@ export function returnToLobby(game: Game): boolean {
 export function restartGame(game: Game): string[] | null {
   // Reset players + game state, then start fresh with the same settings
   game.createdAt = Date.now();
-  logTransition(game, game.phase, "lobby", "restart_game");
-  resetGameState(game);
+  resetGameState(game, "restart_game");
 
   return startGame(game);
 }

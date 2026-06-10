@@ -37,7 +37,7 @@ import {
   createGame, addPlayer, updateSettings, startGame, removeGame, setFixedDeal,
   submitMafiaVote, submitJokerHaunt, advanceNightSubPhase, transitionToDay,
   callVote, castVote, resolveVote, forceDawn, forceEndGame, returnToLobby,
-  assertInvariants, setInvariantMode,
+  assertInvariants, setInvariantMode, assertPhaseEdge,
 } from "../src/game-engine";
 import type { Game, GameSettings, Role } from "../src/types";
 import { dumpGame } from "../src/debug";
@@ -336,5 +336,79 @@ describe("D4 assertInvariants — legitimate flows are violation-free", () => {
     expect(game.votes.size).toBe(2);
 
     expect(assertInvariants(game, AT)).toEqual([]);
+  });
+});
+
+// ── Part 4: B4b (audit D1) — phase-edge assertion for phase_change builds ──
+//
+// assertPhaseEdge(game, from, to) backs the server's single phase_change
+// assembly point (broadcastPhaseChange in src/server.ts). The legal-edge
+// table documents what the 12 broadcast sites actually do TODAY — including
+// the odd-but-real edges (day→day on abstain, voting→day on a spared vote,
+// any→night via restart_game, lobby→game_over via an unguarded end_game).
+// Same mode mechanism as assertInvariants: throw under bun test, one
+// slog("invariant_violation") line in production.
+
+describe("D1 assertPhaseEdge — legal-edge table for phase_change broadcasts", () => {
+  // Every edge a phase_change broadcast site can produce today. NB: "voting"
+  // and "lobby" are never broadcast as a phase_change `to` (voting enters via
+  // vote_called, lobby via lobby_update), so they appear only as `from`s.
+  const LEGAL: Array<[Game["phase"], Game["phase"]]> = [
+    ["lobby", "night"],       // start_game; restart_game from lobby
+    ["lobby", "game_over"],   // end_game (no lobby guard — odd-but-real)
+    ["night", "day"],         // force_dawn; night resolution
+    ["night", "night"],       // restart_game mid-night (M2's enabler)
+    ["night", "game_over"],   // night resolution win; admin leave; end_game
+    ["day", "day"],           // abstain_vote (self-edge)
+    ["day", "night"],         // end_day; restart_game from day
+    ["day", "game_over"],     // admin leave; end_game
+    ["voting", "day"],        // cancel_vote; spared vote
+    ["voting", "night"],      // execution auto-night; restart_game
+    ["voting", "game_over"],  // vote-resolved win; admin leave; end_game
+    ["game_over", "night"],   // restart_game
+  ];
+
+  const ALL_PHASES: Game["phase"][] = ["lobby", "night", "day", "voting", "game_over"];
+
+  test("every documented legal edge passes silently (test mode would throw)", () => {
+    const game = gameInDay();
+    for (const [from, to] of LEGAL) {
+      expect(() => assertPhaseEdge(game, from, to)).not.toThrow();
+    }
+  });
+
+  test("every undocumented edge throws in test mode (default under bun test)", () => {
+    const game = gameInDay();
+    const legalSet = new Set(LEGAL.map(([f, t]) => `${f}->${t}`));
+    for (const from of ALL_PHASES) {
+      for (const to of ALL_PHASES) {
+        if (legalSet.has(`${from}->${to}`)) continue;
+        expect(() => assertPhaseEdge(game, from, to))
+          .toThrow(new RegExp(`illegal_phase_edge:${from}->${to}`));
+      }
+    }
+  });
+
+  test("forced 'log' mode: illegal edge does not throw and slogs one invariant_violation line", () => {
+    const game = gameInDay();
+
+    const lines: string[] = [];
+    const realLog = console.log;
+    const prevMode = setInvariantMode("log");
+    try {
+      console.log = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
+      expect(() => assertPhaseEdge(game, "game_over", "day")).not.toThrow();
+    } finally {
+      console.log = realLog;
+      setInvariantMode(prevMode);
+    }
+
+    const events = lines
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter((e) => e && e.slog === "invariant_violation");
+    expect(events.length).toBe(1);
+    expect(events[0].code).toBe(game.code);
+    expect(events[0].at).toBe("phase_change_broadcast");
+    expect(events[0].violations).toEqual(["illegal_phase_edge:game_over->day"]);
   });
 });
