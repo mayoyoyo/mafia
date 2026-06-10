@@ -73,7 +73,6 @@ describe("toTargetInfo", () => {
 describe("projectGameOver", () => {
   test("shared core: winner from game.winner, message passthrough, full role reveal", () => {
     const g = makeGame(4);
-    g.phase = "game_over";
     g.winner = "mafia";
     g.players.get(2)!.role = "mafia";
     g.players.get(3)!.role = "citizen";
@@ -124,6 +123,28 @@ describe("projectGameOver", () => {
     g.jokerJointWinner = true;
     const proj = projectGameOver(g, "Citizens win!");
     expect(proj.jokerJointWinner).toBe(true);
+  });
+
+  test("winner 'joker' projects with jokerJointWinner riding along", () => {
+    // The joker win path (eliminated-joker / official-joker modes) is the
+    // third winner value; jokerJointWinner can accompany it.
+    const g = makeGame(4);
+    g.winner = "joker";
+    g.jokerJointWinner = true;
+    const proj = projectGameOver(g, "The Joker wins!");
+    expect(proj.winner).toBe("joker");
+    expect(proj.jokerJointWinner).toBe(true);
+    expect(proj.message).toBe("The Joker wins!");
+    expect(proj.players.length).toBe(4);
+  });
+
+  test("throws on a winner-null game — unconcluded games must hand-assemble", () => {
+    // No caller can hit this today (all four sites run at/after conclusion);
+    // the guard hardens against future misuse of the projection at the
+    // forced-"town" sites (lobby-leave, 2-hour sweep).
+    const g = makeGame(4);
+    expect(g.winner).toBeNull();
+    expect(() => projectGameOver(g, "boom")).toThrow(/no winner set/);
   });
 
   test("message divergence is honored verbatim — the projection never invents prose", () => {

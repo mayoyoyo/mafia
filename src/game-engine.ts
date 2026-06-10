@@ -592,18 +592,32 @@ export function toTargetInfo(player: Player, game: Game): PlayerInfo {
  *     narrator's last message in the live broadcasts; goldens pin both).
  *   - `forceEnded` stays per-site (sync always carries the boolean;
  *     end_game hardcodes true; the live win broadcasts omit it).
- *   - The leave_game and 2-hour-sweep broadcasts do NOT use this
- *     projection: they force winner "town" on a game that may never have
- *     concluded (game.winner null) and omit jokerJointWinner even though
- *     official-joker mode can set it mid-game — pinned divergence, kept
- *     hand-assembled at those sites.
+ *   - Three sites do NOT use this projection, in two classes:
+ *       (a) lobby-leave and the 2-hour sweep force winner "town" on a game
+ *           that may never have concluded (game.winner null in lobby and
+ *           mid-game; the sweep can even reap a finished game whose winner
+ *           is "joker"/"mafia") — the projection's game.winner read is
+ *           unusable there, and the guard below would throw on the null
+ *           cases.
+ *       (b) active-leave's only divergence is the jokerJointWinner
+ *           omission: forceEndGame has already set winner "town" at that
+ *           site, so the projection's winner would be wire-identical — kept
+ *           hand-assembled to pin the omission of jokerJointWinner, which
+ *           official-joker mode can set mid-game.
+ *     All three are pinned divergences, hand-assembled at their sites.
  */
 export function projectGameOver(
   game: Game,
   message: string,
 ): { winner: "town" | "mafia" | "joker"; message: string; players: PlayerInfo[]; jokerJointWinner?: boolean } {
+  if (game.winner === null) {
+    throw new Error(
+      `projectGameOver called on game ${game.code} with no winner set — ` +
+      `unconcluded games must hand-assemble their game_over payload (see docstring class (a))`
+    );
+  }
   return {
-    winner: game.winner!,
+    winner: game.winner,
     message,
     players: getPlayerInfo(game, true),
     ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
