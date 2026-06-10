@@ -196,7 +196,70 @@ export function getAliveByRole(game: Game, role: Role): Player[] {
   return getAlivePlayers(game).filter((p) => p.role === role);
 }
 
+// ── Test-only fixed-deal seam (audit D6, pulled forward per P9) ─────────────
+// When a FixedDeal is active, assignRoles() deals roles to players in JOIN
+// ORDER from deal.roles, pins the mafia art variant to 0, and pairs lovers
+// only as deal.lovers specifies (join-order indices). It is activated either
+// by setFixedDeal() (in-process engine tests) or the MAFIA_FIXED_DEAL env var
+// (JSON-encoded FixedDeal — for tests that spawn the server as a subprocess).
+// Production never sets either, so the random path in assignRoles below runs
+// unchanged when the seam is unused.
+export interface FixedDeal {
+  roles: Role[];             // role for the i-th player in join order
+  lovers?: [number, number]; // join-order indices of the lover pair
+}
+
+let fixedDeal: FixedDeal | null = process.env.MAFIA_FIXED_DEAL
+  ? (JSON.parse(process.env.MAFIA_FIXED_DEAL) as FixedDeal)
+  : null;
+
+export function setFixedDeal(deal: FixedDeal | null): void {
+  fixedDeal = deal;
+}
+
+function assignFixedRoles(game: Game, deal: FixedDeal): number {
+  const playerIds = Array.from(game.players.keys()); // join order
+  if (deal.roles.length !== playerIds.length) {
+    throw new Error(
+      `fixed deal has ${deal.roles.length} roles but game has ${playerIds.length} players`
+    );
+  }
+
+  let mafiaCount = 0;
+  for (let i = 0; i < playerIds.length; i++) {
+    game.players.get(playerIds[i])!.role = deal.roles[i];
+    if (deal.roles[i] === "mafia") mafiaCount++;
+  }
+
+  // Same variant scheme as the random path, with mafiaVariant pinned to 0
+  game.mafiaVariant = 0;
+  let citizenVariantIdx = 0;
+  for (const [, player] of game.players) {
+    if (player.role === "mafia") {
+      player.variant = game.mafiaVariant;
+    } else if (player.role === "citizen") {
+      player.variant = citizenVariantIdx % 8;
+      citizenVariantIdx++;
+    } else {
+      player.variant = 0;
+    }
+  }
+
+  if (deal.lovers) {
+    const a = game.players.get(playerIds[deal.lovers[0]])!;
+    const b = game.players.get(playerIds[deal.lovers[1]])!;
+    a.isLover = true;
+    a.loverId = b.id;
+    b.isLover = true;
+    b.loverId = a.id;
+  }
+
+  return mafiaCount;
+}
+
 function assignRoles(game: Game): number {
+  if (fixedDeal) return assignFixedRoles(game, fixedDeal);
+
   const playerIds = shuffle(Array.from(game.players.keys()));
   const { settings } = game;
   const totalPlayers = playerIds.length;
