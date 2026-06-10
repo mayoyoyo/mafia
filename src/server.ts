@@ -841,6 +841,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
 
       const voteType = msg.voteType || "lock";
       const result = submitMafiaVote(game, client.userId, msg.targetId, voteType);
@@ -854,6 +855,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
 
       if (!removeMafiaVote(game, client.userId, msg.targetId)) break;
 
@@ -865,7 +867,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase !== "mafia") return;
+      if (game.awaitingNarratorReady) return;
       if (game.mafiaTarget === null) return;
+      const confirmer = game.players.get(client.userId);
+      if (!confirmer || confirmer.role !== "mafia" || !confirmer.isAlive) return;
 
       const aliveMafia = getAliveByRole(game, "mafia");
       for (const m of aliveMafia) {
@@ -889,6 +894,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.nightSubPhase !== "doctor") return;
+      if (game.awaitingNarratorReady) return;
 
       const saved = submitDoctorSave(game, client.userId, msg.targetId);
       if (saved) {
@@ -915,6 +921,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.nightSubPhase !== "detective") return;
+      if (game.awaitingNarratorReady) return;
 
       const result = submitDetectiveInvestigation(game, client.userId, msg.targetId);
       if (result) {
@@ -942,6 +949,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || game.phase !== "night" || game.nightSubPhase === "resolving") return;
+      if (game.awaitingNarratorReady) return;
 
       const haunted = submitJokerHaunt(game, client.userId, msg.targetId);
       if (haunted) {
@@ -1273,6 +1281,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase !== "night") return;
       if (!game.awaitingNarratorReady) return;
       game.awaitingNarratorReady = false;
       startNightSequence(game);

@@ -4,7 +4,7 @@ import {
   submitMafiaVote, submitDoctorSave, submitDetectiveInvestigation,
   checkNightReady, transitionToDay, advanceNightSubPhase, callVote, castVote, resolveVote,
   cancelVote, endDay, checkWinCondition, getAlivePlayers, getAliveByRole,
-  getPlayerInfo, forceEndGame, removeGame, restartGame,
+  getPlayerInfo, forceDawn, forceEndGame, removeGame, restartGame, returnToLobby,
 } from "../src/game-engine";
 import type { Game } from "../src/types";
 
@@ -1001,6 +1001,56 @@ describe("Lover Death Broadcast", () => {
     // Only the mafia target dies, no heartbreak (lover already dead)
     expect(nightResult.killed.length).toBe(1);
     expect(nightResult.killed[0].player.id).toBe(loverA.id);
+    removeGame(game.code);
+  });
+});
+
+describe("awaitingNarratorReady cleared on forced transitions (L2)", () => {
+  test("forceDawn clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    expect(game.awaitingNarratorReady).toBe(true);
+
+    forceDawn(game);
+    expect(game.phase).toBe("day");
+    expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("endDay clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    forceDawn(game);
+    // Simulate a stale flag surviving into the day
+    game.awaitingNarratorReady = true;
+
+    endDay(game);
+    expect(game.phase).toBe("night");
+    expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("forceEndGame clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    expect(game.awaitingNarratorReady).toBe(true);
+
+    forceEndGame(game);
+    expect(game.phase).toBe("game_over");
+    expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("returnToLobby clears awaitingNarratorReady", () => {
+    const game = setupGame(4);
+    startGame(game);
+    forceEndGame(game);
+    // Simulate a stale flag surviving into game_over
+    game.awaitingNarratorReady = true;
+
+    expect(returnToLobby(game)).toBe(true);
+    expect(game.phase).toBe("lobby");
+    expect(game.awaitingNarratorReady).toBe(false);
     removeGame(game.code);
   });
 });

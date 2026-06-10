@@ -860,6 +860,7 @@ export function forceDawn(game: Game): string[] {
   game.nightSubPhase = null;
   game.voteTarget = null;
   game.votes.clear();
+  game.awaitingNarratorReady = false;
   game.phase = "day";
 
   const messages = ["The host has forced dawn. No one was killed tonight."];
@@ -879,6 +880,7 @@ export function endDay(game: Game): string[] {
   game.detectiveTarget = null;
   game.jokerHauntTarget = null;
   game.jokerHauntVoters = []; // clear haunt voters after this night
+  game.awaitingNarratorReady = false;
 
   const messages = [Narrator.nightFalls()];
   game.pendingMessages = messages;
@@ -900,6 +902,7 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
 export function forceEndGame(game: Game): void {
   game.phase = "game_over";
   game.forceEnded = true;
+  game.awaitingNarratorReady = false;
 }
 
 export function returnToLobby(game: Game): boolean {
@@ -939,6 +942,7 @@ export function returnToLobby(game: Game): boolean {
   game.dayVoteCount = 0;
   game.narratorHistory = [];
   game.detectiveHistory = [];
+  game.awaitingNarratorReady = false;
 
   return true;
 }
