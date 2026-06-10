@@ -115,7 +115,7 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 |---|---|---|---|
 | B0a | Golden WS sequence tests (band 18600+) | a890770, dfee338, 65f5fa0 | DONE. 5 golden games in tests/golden-sequences.test.ts (294 tests green). Fixed-deal seam (setFixedDeal + MAFIA_FIXED_DEAL env) pulled forward per P9. Reviewer-flagged golden gaps to fill as B3 prep: successful doctor save, game_over/win reveal, plain non-joker day execution + lover cascade. |
 | B0b | typecheck script + error burn-down | 8383ba3, 688e90c | DONE. `bun run typecheck` (bunx tsc --noEmit, typescript@^6.0.3 pinned) exits 0 with ZERO errors — gate for all later tasks is now zero errors, not zero-new. setPhase/setNightSubPhase helpers in doctor-joker-modes.test.ts. |
-| B0c | DATABASE_PATH isolation (e2e, rejoin) | — | |
+| B0c | DATABASE_PATH isolation (e2e, rejoin) | 65a412b, c34ab9b | DONE. Also closed residual db.test.ts in-process leak (env + top-level-await dynamic import). Full suite no longer touches repo-root mafia.db at all. |
 | B0d | Structured logging (3 choke points + client logs) | — | |
 | B1 | P1 reset seam + parity tests | — | |
 | B2 | D4 invariant asserts | — | |
@@ -144,4 +144,4 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 - 19600–19999 — B0a goldens games 4–5 (same file; 19860–19999 spare)
 
 ### REMAINING
-B0c → B8, then all of C. B0a+B0b done (294 tests, tsc zero errors). Next action: dispatch B0c (DATABASE_PATH isolation for e2e/rejoin tests).
+B0d → B8, then all of C. B0a–B0c done (294 tests, tsc zero errors, no repo-root DB writes). Next action: dispatch B0d (structured logging).
