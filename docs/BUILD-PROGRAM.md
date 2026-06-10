@@ -116,7 +116,7 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 | B0a | Golden WS sequence tests (band 18600+) | a890770, dfee338, 65f5fa0 | DONE. 5 golden games in tests/golden-sequences.test.ts (294 tests green). Fixed-deal seam (setFixedDeal + MAFIA_FIXED_DEAL env) pulled forward per P9. Reviewer-flagged golden gaps to fill as B3 prep: successful doctor save, game_over/win reveal, plain non-joker day execution + lover cascade. |
 | B0b | typecheck script + error burn-down | 8383ba3, 688e90c | DONE. `bun run typecheck` (bunx tsc --noEmit, typescript@^6.0.3 pinned) exits 0 with ZERO errors — gate for all later tasks is now zero errors, not zero-new. setPhase/setNightSubPhase helpers in doctor-joker-modes.test.ts. |
 | B0c | DATABASE_PATH isolation (e2e, rejoin) | 65a412b, c34ab9b | DONE. Also closed residual db.test.ts in-process leak (env + top-level-await dynamic import). Full suite no longer touches repo-root mafia.db at all. |
-| B0d | Structured logging (3 choke points + client logs) | — | |
+| B0d | Structured logging (3 choke points + client logs) | 383c769, 993e62a | DONE. src/debug.ts (slog/logTransition/dumpGame w/ keyof-Game exhaustiveness guard). armNightTimer wraps 4 timer sites; 16 engine game.phase= sites logged (B4 sweeps). Client default-warn + wsSend drop-warn. Band 20600-20999 (tests/structured-logging.test.ts). 301 tests. Known latent: timer overwrite never cancels old timeout (pre-existing, observable now, B4 candidate). |
 | B1 | P1 reset seam + parity tests | — | |
 | B2 | D4 invariant asserts | — | |
 | B3 | P2 death pipeline | — | |
@@ -144,4 +144,4 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 - 19600–19999 — B0a goldens games 4–5 (same file; 19860–19999 spare)
 
 ### REMAINING
-B0d → B8, then all of C. B0a–B0c done (294 tests, tsc zero errors, no repo-root DB writes). Next action: dispatch B0d (structured logging).
+B1 → B8, then all of C. B0 fully done at 993e62a (301 tests, tsc 0, goldens gating). Next action: dispatch B1 (P1 reset seam).
