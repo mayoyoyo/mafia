@@ -89,8 +89,14 @@
     ws.onopen = () => {
       const saved = localStorage.getItem("mafia_user");
       if (saved) {
-        const data = JSON.parse(saved);
-        wsSend({ type: "login", username: data.username, passcode: data.passcode });
+        let data = null;
+        try { data = JSON.parse(saved); } catch {}
+        if (data && data.username) {
+          wsSend({ type: "login", username: data.username, passcode: data.passcode });
+        } else {
+          // Corrupt stored credentials — drop them and stay logged out (L6)
+          localStorage.removeItem("mafia_user");
+        }
       }
     };
 
@@ -1785,6 +1791,19 @@
   let nightActionLocked = false; // true after doctor/detective confirm
   let jokerHauntActive = false; // true while dead joker is choosing haunt target
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
+  // M11: target of an in-flight maybe+lock pair. The pair is sent back-to-back
+  // (the WS stream is ordered, so nothing can interleave) and further taps are
+  // ignored until the server echoes a vote update — a duplicate "maybe" would
+  // toggle the vote off, and a second target's "lock" could diverge from the UI.
+  let pendingMafiaLockTarget = null;
+
+  function sendMafiaMaybeLock(targetId) {
+    if (pendingMafiaLockTarget !== null) return false;
+    pendingMafiaLockTarget = targetId;
+    wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
+    wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
+    return true;
+  }
 
   function showNightAction(title, players, actionType, disabledId) {
     // Allow joker_haunt even when dead (joker haunts from beyond the grave)
@@ -1802,6 +1821,7 @@
 
     if (actionType === "mafia_vote") {
       mafiaTargetPlayers = players;
+      pendingMafiaLockTarget = null; // fresh night render (M11)
       // Branch on single vs multi mafia
       if (mafiaTeam.length <= 1) {
         renderSingleMafiaTargets(list, players);
@@ -1853,13 +1873,11 @@
       li.addEventListener("click", () => {
         if (nightActionLocked) return;
         const targetId = parseInt(li.dataset.id);
+        // Atomic maybe+lock; further taps are no-ops so the UI can never
+        // highlight a different target than the one locked on the wire (M11)
+        if (!sendMafiaMaybeLock(targetId)) return;
         list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
         li.classList.add("selected");
-        // Send maybe then lock with small delay
-        wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-        setTimeout(() => {
-          wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-        }, 50);
       });
     });
   }
@@ -2043,10 +2061,7 @@
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
-                wsSend({ type: "mafia_vote", targetId, voteType: "maybe" });
-                setTimeout(() => {
-                  wsSend({ type: "mafia_vote", targetId, voteType: "lock" });
-                }, 50);
+                sendMafiaMaybeLock(targetId); // atomic maybe+lock; no-op while in flight (M11)
               });
               actions.appendChild(lockBtn);
             }
@@ -2115,6 +2130,10 @@
 
     // For single mafia, don't re-render cards (consensus will trigger confirm)
     if (mafiaTeam.length <= 1) return;
+
+    // Server echoed vote state — cards re-render from truth below, so a new
+    // Lock In may be dispatched again (M11)
+    pendingMafiaLockTarget = null;
 
     // Re-render cards on the target list
     const list = $("action-targets");
