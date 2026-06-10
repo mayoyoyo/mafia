@@ -162,7 +162,9 @@ function pick(arr: string[]): string {
 
 // Single-pass substitution: every placeholder in the template is replaced in
 // one scan, so substituted values (e.g. a player named "{tool}") are never
-// re-expanded. Unknown placeholders are left as-is.
+// re-expanded. Unknown placeholders are left as-is. The callback form also
+// keeps `$` replacement patterns in values (e.g. a player named "$&") literal
+// — do not switch to string-replacement semantics, which would interpret them.
 function fill(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
     Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match

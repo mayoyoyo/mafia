@@ -89,7 +89,14 @@ describe("Narrator template injection (M13)", () => {
     }
   });
 
-  test("normal names pass through unchanged across many trials", () => {
+  test('nightKill preserves a name containing replacement patterns like "$&"', () => {
+    for (let i = 0; i < 100; i++) {
+      expect(Narrator.nightKill("$&")).toContain("$&");
+      expect(Narrator.nightKill("Eve$'")).toContain("Eve$'");
+    }
+  });
+
+  test("normal names are still substituted across many trials", () => {
     for (let i = 0; i < 50; i++) {
       expect(Narrator.nightKill("Alice")).toContain("Alice");
       expect(Narrator.loverDeath("Eve", "Frank")).toContain("Eve");
