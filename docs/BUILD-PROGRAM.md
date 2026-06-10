@@ -122,7 +122,7 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 | B3 | P2 death pipeline | 9d3e52f, f41fcf8, 8287794, ea36e28 | DONE. Goldens 6-8 first (band 21600-21999), then pins, then rewrite: applyDeath single funnel (only isAlive=false writes in src/), notifyDeathTriggers no-op C-hook w/ re-entrancy contract doc, KillIntent fold (decision-table-verified vs parent), Death[] results, cause-keyed you_died both paths, classifyNightDeath deleted, GameEvent cause/source additive. 346 tests, goldens byte-unchanged. |
 | B4 | P5 concludeRound + D1 transition helper + gate pre-plumbing | 0f1822f, 44ce1e7, 09b1056, 7797e23 | DONE. concludeRound single epilogue (checkWinCondition = 1 call site, src-wide scan-pinned); pendingRevenge PendingRevenge|null null-pinned (NIGHT_RESETS + forceEndGame hand-clear + invariant); jokerHauntVoters invariant narrowed to jokerJointWinner. broadcastPhaseChange = ONLY phase_change assembly (12 sites), LEGAL_PHASE_EDGES asserts riding invariantMode, disagreements preserved; resetGameState(reason) fold-in. 365 tests. **C-CRITICAL sequencing note (doc-d in-source + HUNTER-DESIGN §4): trigger must QUEUE; set pendingRevenge only AFTER the caller reset boundary or it gets wiped.** |
 | B5 | P6-lite projections | 7f034e7, fa58d14 | DONE. toTargetInfo (9/9 literals) + projectGameOver(game, message) w/ winner guard; 4 of 7 game_over sites routed, 3 excluded w/ precise NOT-comments (2 divergence classes doc-d). tests/projections.test.ts (10). 375 tests. Backlog (user-visible pre-existing drift, NOT fixed): leave_game-active omits jokerJointWinner → joker loses reveal-screen trophy if host leaves vs End Game. |
-| B6 | P7-micro client hardening | — | |
+| B6 | P7-micro client hardening | dc5c13a, f293992 | DONE. deadActionActive (13-site rename; dead-guard !deadActionActive, both divergences proven unreachable); HOLD_GATE_PROMPTS base + per-gate deltas (L5 trap doc-d; suspense-gate advisory for C death-triggered prompts); frozen window.__holdGateLists test seam; tests/client-gates.test.ts (11, happy-dom). 386 tests. STAGING SMOKE for user post-merge: (1) official-mode joker game — execute joker, begin night: joker phone shows haunt prompt (not spectator panels), other dead players still see spectator views; (2) watch day→night + dawn: prompts only after overlay fade, death reveal at end of suspense beat. |
 | B7 | P8 cue typing | — | |
 | B8 | Final gate + APP_VERSION_STAGING bump | — | |
 
@@ -144,7 +144,7 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 - 19600–19999 — B0a goldens games 4–5 (same file; 19860–19999 spare)
 
 ### REMAINING
-B6 → B8, then all of C. B0+B1 fully done at a40cdb7 (314 tests / 0 fail across 20 files, `bun run typecheck` 0 errors, goldens + 10-player gating everything). Next action: B6 (P7-micro client hardening).
+B7 → B8, then all of C. B0+B1 fully done at a40cdb7 (314 tests / 0 fail across 20 files, `bun run typecheck` 0 errors, goldens + 10-player gating everything). Next action: B7 (P8 cue typing).
 
 Carry-over notes for the next orchestrator (from review records, session 1):
 - **B2**: B1 made "no other reset list" literally true — invariants can assert it. Brief invariant list applies; forceDawn's stale `detectiveResult` is PRE-EXISTING pinned behavior (whole-game scope, do not "fix" via invariant). dumpGame (src/debug.ts) + reset tables give B2 cheap field access; `satisfies Record<keyof Game,...>` pattern established in both.
