@@ -5,7 +5,7 @@ import {
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
-  submitJokerHaunt, getJokerHauntTargets, classifyNightDeath,
+  submitJokerHaunt, getJokerHauntTargets, classifyNightDeath, assertInvariants,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
@@ -120,6 +120,11 @@ function armNightTimer(game: Game, kind: string, delay: number, fn: () => void):
   const timer = setTimeout(() => {
     nightTimers.delete(game.code);
     slog("night_timer", { code: game.code, kind, delay, event: "fired" });
+    // B2 (audit D4): invariant sweep at the timer choke point, on the settled
+    // state the timer found. The fired entry was deleted above, so
+    // hasPendingNightTimer reflects any OTHER tracked timer (only possible
+    // via the documented displacement quirk).
+    assertInvariants(game, { at: `timer_fire:${kind}`, hasPendingNightTimer: nightTimers.has(game.code) });
     fn();
   }, delay);
   nightTimers.set(game.code, { timer, kind, delay });
@@ -603,6 +608,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       phase: g?.phase ?? null,
       subPhase: g?.nightSubPhase ?? null,
     });
+    // B2 (audit D4): invariant sweep at the message choke point, on the
+    // settled state this message found. The night-timer map lives in this
+    // module, so its tracked-slot state is passed in here.
+    if (g) {
+      assertInvariants(g, { at: `ws_in:${msg.type}`, hasPendingNightTimer: nightTimers.has(g.code) });
+    }
   }
 
   switch (msg.type) {

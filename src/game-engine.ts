@@ -4,7 +4,9 @@ import { Narrator } from "./narrator";
 // B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
 // consolidates the `game.phase = ...` sites into one transition helper and
 // sweeps these logTransition calls into it.
-import { logTransition } from "./debug";
+// B2 (audit D4): slog carries invariant_violation lines; dumpGame is the
+// JSON-safe field universe assertInvariants compares against.
+import { logTransition, slog, dumpGame } from "./debug";
 
 const games = new Map<string, Game>();
 
@@ -210,6 +212,143 @@ export function resetGameState(game: Game): void {
   for (const key of GAME_RESET_FIELDS) {
     GAME_RESETS[key](game);
   }
+}
+
+// ── B2 (audit D4): invariant assertions at the server choke points ──────────
+//
+// assertInvariants(game, ctx) is called by server.ts at the two instrumented
+// choke points: handleMessage entry and the armNightTimer fired callback.
+// Both call sites see SETTLED state (before any handler/timer work runs), so
+// every check below is against a guarantee the code makes between messages.
+//
+// Mode (resolved once at import):
+//   "throw" — test runs. `bun test` sets NODE_ENV=test (verified), and the
+//             WS suites spawn servers with { ...process.env }, so the whole
+//             suite — in-process AND spawned — fails loudly on a violation.
+//   "log"   — production. One slog("invariant_violation") line, processing
+//             continues: a thrown assert would change failure modes for the
+//             M1/M3/M10-class admin messages (audit D4 risk note), and an
+//             over-strict invariant must produce log noise, not breakage.
+
+export type InvariantMode = "throw" | "log";
+
+let invariantMode: InvariantMode = process.env.NODE_ENV === "test" ? "throw" : "log";
+
+/** Test seam: force a mode; returns the previous mode so callers restore it. */
+export function setInvariantMode(mode: InvariantMode): InvariantMode {
+  const previous = invariantMode;
+  invariantMode = mode;
+  return previous;
+}
+
+export interface InvariantContext {
+  /** Choke-point label for the log line, e.g. "ws_in:cast_vote" or "timer_fire:resolve". */
+  at: string;
+  /**
+   * Whether this game's (single, tracked) night-timer slot is occupied. The
+   * timer map lives in server.ts, so the caller passes it in; engine-level
+   * callers omit it and the timer invariant is skipped.
+   */
+  hasPendingNightTimer?: boolean;
+}
+
+/**
+ * The night-scope "resting" snapshot: what every NIGHT_RESETS field looks
+ * like immediately after resetNightActions. Computed by actually running the
+ * reset table on a shield copy of the game, so the expected values share a
+ * single source of truth with the resets themselves — no second hand-written
+ * field/value list. The shield swaps in fresh Maps for the two fields whose
+ * reset fns mutate in place (.clear()); every other table entry reassigns,
+ * so the live game is never touched.
+ */
+function nightRestingSnapshot(game: Game): Record<string, unknown> {
+  const shield: Game = { ...game, mafiaVotes: new Map(), votes: new Map() };
+  resetNightActions(shield);
+  return dumpGame(shield);
+}
+
+/**
+ * Check every stateable invariant (audit D4) against a settled Game; returns
+ * the violation list. On violations: always slog("invariant_violation"), and
+ * additionally throw in "throw" mode (tests).
+ */
+export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
+  const violations: string[] = [];
+  const snapshot = dumpGame(game);
+
+  // Invariant: outside night, every per-night field — the list is DERIVED
+  // from B1's NIGHT_RESETS classification, never restated — sits at its
+  // post-reset value. Phase allowances, each matching a positive guarantee
+  // pinned in tests:
+  //   voting    — voteTarget/votes ARE the live ballot (callVote/castVote);
+  //   game_over — jokerHauntVoters stay populated when the official-joker
+  //               execution itself ends the game (resolveVote captures them
+  //               under { preserveHauntVoters } and no later reset boundary
+  //               runs; pinned in tests/reset-seam.test.ts);
+  //             — a force-ended game (forceEndGame) freezes ALL in-flight
+  //               night/vote state where it stood: its only night-scope
+  //               guarantee is awaitingNarratorReady=false (the L2 fix), so
+  //               that is the only field still checked when forceEnded.
+  if (game.phase !== "night") {
+    const resting = nightRestingSnapshot(game);
+    const skip = new Set<keyof Game>();
+    if (game.phase === "voting") {
+      skip.add("voteTarget");
+      skip.add("votes");
+    }
+    if (game.phase === "game_over") {
+      skip.add("jokerHauntVoters");
+      if (game.forceEnded) {
+        for (const field of NIGHT_RESET_FIELDS) {
+          if (field !== "awaitingNarratorReady") skip.add(field);
+        }
+      }
+    }
+    for (const field of NIGHT_RESET_FIELDS) {
+      if (skip.has(field)) continue;
+      if (JSON.stringify(snapshot[field]) !== JSON.stringify(resting[field])) {
+        violations.push(`night_scope_dirty:${field}`);
+      }
+    }
+  }
+
+  // Invariant (L3 class): winner is well-defined at game_over — consumers
+  // (buildGameSync, the end_game broadcast) dereference it with `!`.
+  if (game.phase === "game_over" && game.winner === null) {
+    violations.push("winner_null_at_game_over");
+  }
+
+  // Invariant (M2 class): the TRACKED night-timer slot is empty outside
+  // night — every transition out of night calls clearNightTimer. Honest
+  // scope: armNightTimer's set-over-a-live-timer never cancels the displaced
+  // timeout (pre-existing quirk, B4's concern), and a displaced timer is
+  // invisible to the map — absence of UNTRACKED timers is not guaranteed
+  // anywhere, so it is deliberately not asserted here.
+  if (ctx.hasPendingNightTimer && game.phase !== "night") {
+    violations.push(`pending_night_timer_outside_night:${game.phase}`);
+  }
+
+  if (violations.length > 0) {
+    // Compact summary: the night-scope fields the invariants are about plus
+    // phase/winner bookkeeping — full dumpGame (players, histories) is too
+    // big for one log line.
+    const nightState: Record<string, unknown> = {};
+    for (const field of NIGHT_RESET_FIELDS) nightState[field] = snapshot[field];
+    slog("invariant_violation", {
+      code: game.code,
+      at: ctx.at,
+      violations,
+      phase: game.phase,
+      round: game.round,
+      winner: game.winner,
+      forceEnded: game.forceEnded,
+      night: nightState,
+    });
+    if (invariantMode === "throw") {
+      throw new Error(`Invariant violation [${game.code}] at ${ctx.at}: ${violations.join(", ")}`);
+    }
+  }
+  return violations;
 }
 
 export function getGame(code: string): Game | undefined {
