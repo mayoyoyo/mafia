@@ -1,6 +1,6 @@
 import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings, getUserPrefs, updateUserPref } from "./db";
 import {
-  createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings,
+  createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings, sanitizeSettings,
   getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
@@ -577,6 +577,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Username is required" });
         return;
       }
+      if (msg.username.trim().length > 32) {
+        send(ws, { type: "error", message: "Username must be 32 characters or fewer" });
+        return;
+      }
       if (!msg.passcode || !/^\d{4}$/.test(msg.passcode)) {
         send(ws, { type: "error", message: "Passcode must be exactly 4 digits" });
         return;
@@ -623,7 +627,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       let initialSettings: Partial<GameSettings> | undefined;
       const savedJson = getLastSettings(client.userId);
       if (savedJson) {
-        try { initialSettings = JSON.parse(savedJson); } catch {}
+        try { initialSettings = sanitizeSettings(JSON.parse(savedJson)); } catch {}
       }
       const game = createGame(client.userId, getUsernameFromClients(client.userId), initialSettings);
       client.gameCode = game.code;
@@ -787,7 +791,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
       if (game.phase !== "lobby") return;
-      updateSettings(game, msg.settings);
+      updateSettings(game, sanitizeSettings(msg.settings));
       send(ws, { type: "settings_updated", settings: game.settings });
       broadcastLobbyUpdate(game);
       break;

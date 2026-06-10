@@ -72,6 +72,22 @@ describe("Role Assignment", () => {
     removeGame(game.code);
   });
 
+  test("non-numeric mafiaCount still produces at least 1 mafia (M6a)", () => {
+    const game = setupGame(6, { mafiaCount: "abc" as any });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    expect(mafia.length).toBeGreaterThanOrEqual(1);
+    removeGame(game.code);
+  });
+
+  test("null mafiaCount still produces at least 1 mafia (M6a)", () => {
+    const game = setupGame(6, { mafiaCount: null as any });
+    startGame(game);
+    const mafia = getAliveByRole(game, "mafia");
+    expect(mafia.length).toBeGreaterThanOrEqual(1);
+    removeGame(game.code);
+  });
+
   test("assigns doctor when enabled", () => {
     const game = setupGame(5, { enableDoctor: true });
     startGame(game);

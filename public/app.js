@@ -753,7 +753,7 @@
 
   // Settings controls
   $("mafia-minus").addEventListener("click", () => {
-    const current = parseInt($("mafia-count").textContent);
+    const current = parseInt($("mafia-count").textContent) || 1;
     if (current > 1) {
       $("mafia-count").textContent = current - 1;
       wsSend({ type: "update_settings", settings: { mafiaCount: current - 1 } });
@@ -761,7 +761,7 @@
   });
 
   $("mafia-plus").addEventListener("click", () => {
-    const current = parseInt($("mafia-count").textContent);
+    const current = parseInt($("mafia-count").textContent) || 1;
     if (current < 6) {
       $("mafia-count").textContent = current + 1;
       wsSend({ type: "update_settings", settings: { mafiaCount: current + 1 } });

@@ -128,6 +128,46 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
   Object.assign(game.settings, settings);
 }
 
+/**
+ * Whitelist + coerce untrusted settings input (M6). Unknown keys are dropped;
+ * invalid values are dropped so callers fall back to existing/default values.
+ * Used for both client update_settings payloads and persisted last_settings_json.
+ */
+export function sanitizeSettings(input: unknown): Partial<GameSettings> {
+  const out: Partial<GameSettings> = {};
+  if (typeof input !== "object" || input === null) return out;
+  const raw = input as Record<string, unknown>;
+
+  // mafiaCount: positive integer, clamped to 1-6 (matches lobby UI range)
+  const mafiaCount = Number(raw.mafiaCount);
+  if (Number.isFinite(mafiaCount)) {
+    out.mafiaCount = Math.min(6, Math.max(1, Math.floor(mafiaCount)));
+  }
+
+  // Booleans: accept real booleans only
+  const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableLovers", "soundEnabled"] as const;
+  for (const key of boolKeys) {
+    const v = raw[key];
+    if (typeof v === "boolean") out[key] = v;
+  }
+
+  // Rule modes: must be a known mode string
+  const modeKeys = ["doctorMode", "jokerMode"] as const;
+  for (const key of modeKeys) {
+    const v = raw[key];
+    if (v === "official" || v === "house") out[key] = v;
+  }
+
+  // Narration accent: accents are data-driven (narration.json), so validate
+  // shape only — non-empty short string
+  const accent = raw.narrationAccent;
+  if (typeof accent === "string" && accent.length > 0 && accent.length <= 32) {
+    out.narrationAccent = accent;
+  }
+
+  return out;
+}
+
 export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
   return Array.from(game.players.values()).map((p) => ({
     id: p.id,
@@ -152,7 +192,7 @@ function assignRoles(game: Game): number {
   const totalPlayers = playerIds.length;
 
   let mafiaCount = Math.min(settings.mafiaCount, Math.floor(totalPlayers / 3));
-  if (mafiaCount < 1) mafiaCount = 1;
+  if (!(mafiaCount >= 1)) mafiaCount = 1; // NaN-proof: also catches non-numeric settings
 
   let idx = 0;
 
