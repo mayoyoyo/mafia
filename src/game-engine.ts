@@ -959,11 +959,12 @@ export function endDay(game: Game): string[] {
 export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null {
   const alive = getAlivePlayers(game);
   const aliveMafia = alive.filter((p) => p.role === "mafia");
+  // M8: a living joker counts toward NEITHER team (README spec), so the
+  // mafia-parity comparison excludes jokers from both sides.
   const aliveNonMafia = alive.filter((p) => p.role !== "mafia" && p.role !== "joker");
-  const aliveJoker = alive.filter((p) => p.role === "joker");
 
   if (aliveMafia.length === 0) return "town";
-  if (aliveMafia.length >= aliveNonMafia.length + aliveJoker.length) return "mafia";
+  if (aliveMafia.length >= aliveNonMafia.length) return "mafia";
 
   return null;
 }

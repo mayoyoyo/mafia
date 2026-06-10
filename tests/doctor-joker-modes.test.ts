@@ -1063,6 +1063,85 @@ describe("Joker Official Mode - Win Condition Integration", () => {
   });
 });
 
+// M8: README spec — a living Joker "does not count toward either team's numbers".
+// Mafia win = mafia equal or outnumber non-mafia alive, with the joker excluded
+// from BOTH sides of the comparison.
+describe("Joker Win Parity (M8) - living joker counts toward neither team", () => {
+  test("checkWinCondition: 1 mafia + 1 citizen + 1 joker alive -> mafia wins", () => {
+    // 4 players: 1 mafia, 1 joker, 2 citizens
+    const game = setupGame(4, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+
+    // Kill one citizen: 1 mafia vs 1 citizen, joker alive but counts for neither
+    getCitizens(game)[0].isAlive = false;
+
+    expect(checkWinCondition(game)).toBe("mafia");
+    removeGame(game.code);
+  });
+
+  test("night kill reaching parity with living joker ends game with mafia win", () => {
+    // Audit repro: 4 players {mafiaCount:1, enableJoker:true}
+    const game = setupGame(4, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+    const mafia = findPlayerByRole(game, "mafia");
+    const citizen = getCitizens(game)[0];
+
+    // Night 1: mafia kills a citizen -> 1 mafia, 1 citizen, 1 joker alive
+    lockTarget(game, mafia.id, citizen.id);
+    transitionToDay(game);
+
+    expect(game.winner).toBe("mafia");
+    expect(game.phase).toBe("game_over");
+    removeGame(game.code);
+  });
+
+  test("lynch reaching parity with living joker ends game with mafia win", () => {
+    // 5 players: 1 mafia, 1 joker, 3 citizens
+    const game = setupGame(5, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+    const mafia = findPlayerByRole(game, "mafia");
+
+    // Night 1: mafia kills a citizen -> 1 mafia, 2 citizens, 1 joker (continues)
+    lockTarget(game, mafia.id, getCitizens(game)[0].id);
+    transitionToDay(game);
+    expect(game.phase).toBe("day");
+
+    // Day: lynch another citizen -> 1 mafia, 1 citizen, 1 joker -> mafia parity
+    const target = getCitizens(game)[0];
+    callVote(game, game.adminId, target.id);
+    for (const p of getAlivePlayers(game)) castVote(game, p.id, true);
+    const result = resolveVote(game);
+
+    expect(result!.executed).toBe(true);
+    expect(game.winner).toBe("mafia");
+    expect(game.phase).toBe("game_over");
+    removeGame(game.code);
+  });
+
+  test("joker does not count toward mafia: 1 mafia + 2 citizens + 1 joker -> game continues", () => {
+    // 5 players: 1 mafia, 1 joker, 3 citizens
+    const game = setupGame(5, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+
+    // Kill one citizen: 1 mafia vs 2 citizens. If the joker counted for mafia
+    // it would be 2 vs 2 -> mafia win; README says the game continues.
+    getCitizens(game)[0].isAlive = false;
+
+    expect(checkWinCondition(game)).toBeNull();
+    removeGame(game.code);
+  });
+
+  test("town wins with a living joker once all mafia are dead", () => {
+    const game = setupGame(4, { mafiaCount: 1, enableJoker: true });
+    startGame(game);
+
+    findPlayerByRole(game, "mafia").isAlive = false;
+
+    expect(checkWinCondition(game)).toBe("town");
+    removeGame(game.code);
+  });
+});
+
 describe("Joker Official Mode - Restart/Return to Lobby Reset", () => {
   test("restartGame resets joker fields", () => {
     const game = setupGame(5, { enableJoker: true, jokerMode: "official" });
