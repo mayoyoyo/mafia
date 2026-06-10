@@ -39,6 +39,23 @@ export const DEFAULT_SETTINGS: GameSettings = {
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 
+// ── B3 (audit P2): source-carrying death records ────────────────────────
+// Every death in the game flows through the applyDeath funnel as one of
+// these; (source, cause) is the single derivation input for the public
+// event label (deriveDeathEventType in game-engine.ts).
+export type KillSource = "mafia" | "joker_haunt" | "execution";
+export type DeathCause = "direct" | "lover_cascade";
+export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death";
+
+export interface Death {
+  player: Player;
+  source: KillSource;
+  cause: DeathCause;
+  message: string;
+  /** Derived from (source, cause) in exactly one place (deriveDeathEventType). */
+  eventType: DeathEventType;
+}
+
 export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
@@ -151,7 +168,7 @@ export type ServerMessage =
   | { type: "awaiting_ready" }
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
-  | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null; kills?: Array<{ name: string; source: "mafia" | "joker_haunt" }> }
+  | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null; kills?: Array<{ name: string; source: KillSource }> }
   | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "resolving"; isRoleAlive: boolean }
   | { type: "spectator_night_complete"; phase: string; targetName: string | null; alive: boolean }
   | { type: "spectator_joker_deliberating" }
@@ -240,6 +257,11 @@ export interface GameEvent {
   type: "kill" | "save" | "execution" | "lover_death" | "spared" | "joker_haunt";
   playerName: string;
   detail?: string;
+  // B3 (audit P2): additive wire fields, present on death events only. The
+  // client's label maps can collapse onto these later (deferred graft) —
+  // until then they are ignored by the client and by the golden summarizer.
+  cause?: DeathCause;
+  source?: KillSource;
 }
 
 export interface WSClient {

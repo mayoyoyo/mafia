@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
 // B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
@@ -799,23 +799,82 @@ export function getJokerHauntTargets(game: Game): PlayerInfo[] {
     }));
 }
 
-function killPlayer(game: Game, playerId: number): { killed: Player; loverKilled: Player | null } | null {
+// ── B3 (audit P2): the death pipeline ───────────────────────────────────
+//
+// applyDeath is the SINGLE death funnel: the only place in the engine that
+// flips `isAlive = false`. It performs the lover cascade itself (a cascade
+// can never bypass the funnel's bookkeeping), derives the public event label
+// from (source, cause) in exactly one place, pushes eventHistory, and hands
+// every Death to notifyDeathTriggers — the one hook point death-triggered
+// roles (Hunter, Program C) attach to.
+
+/** The (source, cause) → public event label table. The ONLY derivation site. */
+export function deriveDeathEventType(source: KillSource, cause: DeathCause): DeathEventType {
+  if (cause === "lover_cascade") return "lover_death";
+  switch (source) {
+    case "mafia": return "kill";
+    case "joker_haunt": return "joker_haunt";
+    case "execution": return "execution";
+  }
+}
+
+// Test seam (pattern: setFixedDeal): lets engine tests observe every Death
+// that flows through the funnel. Production never sets it.
+let deathTriggerSpy: ((game: Game, death: Death) => void) | null = null;
+export function setDeathTriggerSpy(fn: ((game: Game, death: Death) => void) | null): void {
+  deathTriggerSpy = fn;
+}
+
+/**
+ * The single death-trigger hook point (audit P2). A NO-OP in Program B;
+ * Program C hangs the Hunter revenge gate here. Called exactly once per
+ * Death — every source (night kill, haunt, execution) and every cause
+ * (direct or lover cascade) — from inside applyDeath.
+ */
+export function notifyDeathTriggers(game: Game, death: Death): void {
+  deathTriggerSpy?.(game, death);
+}
+
+/**
+ * Kill `playerId` from `source` with the caller-supplied narration line,
+ * cascading to a living lover (heartbreak). Returns the Death records in
+ * kill order: direct death first, then the cascade. Returns [] if the
+ * target is missing or already dead. Pushes one eventHistory entry (with
+ * the additive wire cause/source) and fires notifyDeathTriggers per Death.
+ */
+export function applyDeath(game: Game, playerId: number, source: KillSource, message: string): Death[] {
   const player = game.players.get(playerId);
-  if (!player || !player.isAlive) return null;
+  if (!player || !player.isAlive) return [];
 
   player.isAlive = false;
-  let loverKilled: Player | null = null;
+  const deaths: Death[] = [{
+    player, source, cause: "direct", message,
+    eventType: deriveDeathEventType(source, "direct"),
+  }];
 
-  // Check lover
+  // Lover cascade — INSIDE the funnel, so heartbreak deaths get the same
+  // bookkeeping (event, trigger) as every other death. Non-recursive: the
+  // partner's own lover link points back at the already-dead player.
   if (player.isLover && player.loverId !== null) {
     const lover = game.players.get(player.loverId);
     if (lover && lover.isAlive) {
       lover.isAlive = false;
-      loverKilled = lover;
+      deaths.push({
+        player: lover, source, cause: "lover_cascade",
+        message: Narrator.loverDeath(lover.username, player.username),
+        eventType: deriveDeathEventType(source, "lover_cascade"),
+      });
     }
   }
 
-  return { killed: player, loverKilled };
+  for (const d of deaths) {
+    game.eventHistory.push({
+      round: game.round, type: d.eventType, playerName: d.player.username,
+      cause: d.cause, source: d.source,
+    });
+    notifyDeathTriggers(game, d);
+  }
+  return deaths;
 }
 
 export function checkNightReady(game: Game): boolean {
@@ -896,10 +955,18 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
 
 export interface NightResult {
   messages: string[];
-  killed: Array<{ player: Player; message: string; source: "mafia" | "joker_haunt" }>;
+  killed: Death[];
   saved: boolean;
   savedName: string | null;
   savedTargetId: number | null; // for official doctor mode: private notification
+}
+
+/** One pending kill for resolveNight's fold, in resolution order. */
+export interface KillIntent {
+  targetId: number;
+  source: KillSource;
+  /** Narration for a landed kill — called only when the kill actually lands. */
+  deathMessage: (victim: Player) => string;
 }
 
 // DESIGN: Night actions resolve simultaneously. If mafia kills the doctor or detective,
@@ -908,86 +975,66 @@ export interface NightResult {
 export function resolveNight(game: Game): NightResult {
   const result: NightResult = { messages: [], killed: [], saved: false, savedName: null, savedTargetId: null };
 
-  if (game.mafiaTarget === null && game.jokerHauntTarget === null) return result;
-
-  // Resolve mafia kill
+  // Build tonight's kill intents in resolution order. Order is observable
+  // behavior: the mafia kill resolves before the joker haunt (golden #2).
+  const intents: KillIntent[] = [];
   if (game.mafiaTarget !== null) {
-    const targetId = game.mafiaTarget;
-
-    // Check if doctor saved the mafia target
-    if (game.doctorTarget === targetId) {
-      const savedPlayer = game.players.get(targetId)!;
-      result.saved = true;
-      result.savedName = savedPlayer.username;
-      result.savedTargetId = targetId;
-      if (game.settings.doctorMode === "official") {
-        result.messages.push(Narrator.doctorSaveOfficial());
-      } else {
-        result.messages.push(Narrator.doctorSave(savedPlayer.username));
-      }
-    } else {
-      const killResult = killPlayer(game, targetId);
-      if (killResult) {
-        const deathMsg = Narrator.nightKill(killResult.killed.username);
-        result.messages.push(deathMsg);
-        result.killed.push({ player: killResult.killed, message: deathMsg, source: "mafia" });
-
-        if (killResult.loverKilled) {
-          const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-          result.messages.push(loverMsg);
-          result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "mafia" });
-        }
-      }
-    }
+    intents.push({
+      targetId: game.mafiaTarget, source: "mafia",
+      deathMessage: (v) => Narrator.nightKill(v.username),
+    });
   }
-
-  // Resolve joker haunt kill (official joker mode)
   if (game.jokerHauntTarget !== null) {
-    const hauntTargetId = game.jokerHauntTarget;
-    const hauntTarget = game.players.get(hauntTargetId);
+    // Official joker mode only: the haunt target is set exclusively by
+    // resolveVote's official branch.
+    intents.push({
+      targetId: game.jokerHauntTarget, source: "joker_haunt",
+      deathMessage: (v) => Narrator.jokerHauntKill(v.username),
+    });
+  }
+  if (intents.length === 0) return result;
 
-    if (hauntTarget) {
-      // Doctor save only blocks one source. If mafia also targeted this player
-      // and the doctor saved them from mafia, the joker haunt still kills.
-      const doctorSavedFromMafia = game.doctorTarget === hauntTargetId && game.mafiaTarget === hauntTargetId;
-      const doctorSavedFromHaunt = game.doctorTarget === hauntTargetId && game.mafiaTarget !== hauntTargetId;
+  // Event presentation: the (house-mode) save event precedes tonight's kill
+  // events in eventHistory regardless of which intent the save blocked —
+  // even when a kill resolves chronologically first. Remember the insertion
+  // point; applyDeath appends the kill events behind it.
+  const eventsMark = game.eventHistory.length;
 
-      if (doctorSavedFromHaunt) {
-        // Doctor blocks the haunt (mafia targeted someone else or nobody)
-        if (hauntTarget.isAlive) {
-          result.saved = true;
-          result.savedName = hauntTarget.username;
-          result.savedTargetId = hauntTargetId;
-          if (game.settings.doctorMode === "official") {
-            if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
-              result.messages.push(Narrator.doctorSaveOfficial());
-            }
-          } else {
-            if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
-              result.messages.push(Narrator.doctorSave(hauntTarget.username));
-            }
-          }
+  // Fold the intents against the single doctor save. Semantics (pinned by
+  // goldens #2/#6 and tests/death-pipeline.test.ts): ONE save blocks ONE
+  // source — the first intent in order that targets the doctor's pick
+  // consumes the save; a later intent on the same target kills anyway. A
+  // target already dead from an earlier intent (or its cascade) is skipped.
+  let saveUsed = false;
+  for (const intent of intents) {
+    const target = game.players.get(intent.targetId);
+    if (!target) continue;
+
+    if (!saveUsed && game.doctorTarget === intent.targetId) {
+      saveUsed = true;
+      if (target.isAlive) {
+        result.saved = true;
+        result.savedName = target.username;
+        result.savedTargetId = intent.targetId;
+        if (game.settings.doctorMode === "official") {
+          // Official: anonymous narration, no public save event.
+          result.messages.push(Narrator.doctorSaveOfficial());
+        } else {
+          result.messages.push(Narrator.doctorSave(target.username));
+          game.eventHistory.splice(eventsMark, 0, { round: game.round, type: "save", playerName: target.username });
         }
-      } else {
-        // No doctor save for haunt (either doctor saved from mafia, or doctor targeted elsewhere)
-        // Kill if still alive
-        if (hauntTarget.isAlive) {
-          const killResult = killPlayer(game, hauntTargetId);
-          if (killResult) {
-            const deathMsg = Narrator.jokerHauntKill(killResult.killed.username);
-            result.messages.push(deathMsg);
-            result.killed.push({ player: killResult.killed, message: deathMsg, source: "joker_haunt" });
-
-            if (killResult.loverKilled) {
-              const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-              result.messages.push(loverMsg);
-              result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "joker_haunt" });
-            }
-          }
-        }
-        // If target already dead (killed by mafia above), haunt has no additional effect
+      }
+      // Save matched a target already dead this night (e.g. a lover cascade
+      // victim): the save is spent with no effect — matches the pre-B3
+      // haunt-block behavior.
+    } else if (target.isAlive) {
+      const deaths = applyDeath(game, intent.targetId, intent.source, intent.deathMessage(target));
+      for (const d of deaths) {
+        result.messages.push(d.message);
+        result.killed.push(d);
       }
     }
+    // already dead and not saved: no additional effect
   }
 
   if (result.killed.length === 0 && !result.saved) {
@@ -997,37 +1044,11 @@ export function resolveNight(game: Game): NightResult {
   return result;
 }
 
-// Classify a night death entry by its kill source, not array position.
-// resolveNight pushes the primary victim first, then their heartbroken lover,
-// both tagged with the same source ("mafia" or "joker_haunt"). At most one
-// mafia kill and one haunt kill resolve per night, so any entry preceded by
-// another entry with the same source is a lover-cascade death.
-export function classifyNightDeath(
-  killed: NightResult["killed"],
-  index: number
-): "kill" | "joker_haunt" | "lover_death" {
-  const entry = killed[index];
-  for (let i = 0; i < index; i++) {
-    if (killed[i].source === entry.source) return "lover_death";
-  }
-  return entry.source === "joker_haunt" ? "joker_haunt" : "kill";
-}
-
 export function transitionToDay(game: Game): NightResult {
+  // Event tracking lives in the death pipeline now: applyDeath pushes the
+  // kill/lover_death/joker_haunt events, resolveNight inserts the house-mode
+  // save event ahead of them.
   const nightResult = resolveNight(game);
-
-  // Track events
-  // In official doctor mode the save is anonymous; only push a named save event in house mode.
-  if (nightResult.saved && nightResult.savedName && game.settings.doctorMode === "house") {
-    game.eventHistory.push({ round: game.round, type: "save", playerName: nightResult.savedName });
-  }
-  for (let i = 0; i < nightResult.killed.length; i++) {
-    game.eventHistory.push({
-      round: game.round,
-      type: classifyNightDeath(nightResult.killed, i),
-      playerName: nightResult.killed[i].player.username,
-    });
-  }
 
   // Reset night state — carve-out: capture tonight's save target BEFORE the
   // reset (the doctor may not repeat it tomorrow).
@@ -1086,7 +1107,7 @@ export interface VoteResult {
   votesFor: number;
   votesAgainst: number;
   messages: string[];
-  killed: Array<{ player: Player; message: string }>;
+  killed: Death[];
   jokerWin: boolean;
 }
 
@@ -1132,17 +1153,11 @@ export function resolveVote(game: Game): VoteResult | null {
           if (approve) game.jokerHauntVoters.push(voterId);
         }
 
-        const killResult = killPlayer(game, target.id);
-        if (killResult) {
-          game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
-          result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
-
-          if (killResult.loverKilled) {
-            const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-            result.messages.push(loverMsg);
-            result.killed.push({ player: killResult.loverKilled, message: loverMsg });
-            game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
-          }
+        // jokerWin narration was already pushed to messages above; only the
+        // cascade adds a public line here.
+        for (const d of applyDeath(game, target.id, "execution", Narrator.jokerWin(target.username))) {
+          if (d.cause === "lover_cascade") result.messages.push(d.message);
+          result.killed.push(d);
         }
 
         // Reset vote+night state — carve-out: the FOR-voters captured above
@@ -1172,17 +1187,11 @@ export function resolveVote(game: Game): VoteResult | null {
         logTransition(game, game.phase, "game_over", "joker_win");
         game.phase = "game_over";
 
-        const killResult = killPlayer(game, target.id);
-        if (killResult) {
-          game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
-          result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
-
-          if (killResult.loverKilled) {
-            const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-            result.messages.push(loverMsg);
-            result.killed.push({ player: killResult.loverKilled, message: loverMsg });
-            game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
-          }
+        // jokerWin narration was already pushed to messages above; only the
+        // cascade adds a public line here (mirrors the official branch).
+        for (const d of applyDeath(game, target.id, "execution", Narrator.jokerWin(target.username))) {
+          if (d.cause === "lover_cascade") result.messages.push(d.message);
+          result.killed.push(d);
         }
 
         // Reset vote+night state (mirrors the official branch and the normal path)
@@ -1191,19 +1200,9 @@ export function resolveVote(game: Game): VoteResult | null {
       }
     }
 
-    const killResult = killPlayer(game, target.id);
-    if (killResult) {
-      const execMsg = Narrator.execution(killResult.killed.username);
-      result.messages.push(execMsg);
-      result.killed.push({ player: killResult.killed, message: execMsg });
-      game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
-
-      if (killResult.loverKilled) {
-        const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-        result.messages.push(loverMsg);
-        result.killed.push({ player: killResult.loverKilled, message: loverMsg });
-        game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
-      }
+    for (const d of applyDeath(game, target.id, "execution", Narrator.execution(target.username))) {
+      result.messages.push(d.message);
+      result.killed.push(d);
     }
   } else {
     result.messages.push(Narrator.executionSpared(target.username));

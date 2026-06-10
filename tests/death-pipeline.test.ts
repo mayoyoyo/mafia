@@ -1,12 +1,13 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, afterEach } from "bun:test";
 import {
   createGame, addPlayer, updateSettings, startGame,
   submitMafiaVote, submitDoctorSave, submitJokerHaunt,
   advanceNightSubPhase, transitionToDay,
   callVote, castVote, resolveVote,
-  getAliveByRole, removeGame,
+  getAliveByRole, getAlivePlayers, removeGame,
+  applyDeath, deriveDeathEventType, setDeathTriggerSpy,
 } from "../src/game-engine";
-import type { Game, GamePhase, Player, NightSubPhase, GameSettings } from "../src/types";
+import type { Game, GamePhase, Player, NightSubPhase, GameSettings, Death } from "../src/types";
 
 /**
  * B3 — P2 death pipeline tests.
@@ -31,6 +32,12 @@ import type { Game, GamePhase, Player, NightSubPhase, GameSettings } from "../sr
  *   5. doctor save consumed by the MAFIA source → a haunt on the same
  *      target still kills (one save blocks ONE source), with saved=true and
  *      the victim dead in the same result.
+ *
+ * Part 2 (new structure, post-rewrite): the applyDeath funnel itself —
+ * cascade-cannot-bypass, the (source, cause) → eventType derivation table,
+ * notifyDeathTriggers firing once per Death with the right record (via the
+ * setDeathTriggerSpy seam), Death-typed result arrays, and the additive
+ * cause/source wire fields on GameEvent.
  */
 
 // ── helpers (per-file copies; R30 consolidation is out of B3 scope) ──────
@@ -293,6 +300,233 @@ describe("B3 pins — one save blocks one source (resolveNight fold semantics)",
       ["save", x.username],
       ["joker_haunt", x.username],
     ]);
+    removeGame(game.code);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// Part 2 — the new structure (B3 rewrite)
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("B3 — deriveDeathEventType derivation table", () => {
+  test("every (source, cause) combination maps to exactly the pre-B3 label", () => {
+    // direct deaths keep their source label
+    expect(deriveDeathEventType("mafia", "direct")).toBe("kill");
+    expect(deriveDeathEventType("joker_haunt", "direct")).toBe("joker_haunt");
+    expect(deriveDeathEventType("execution", "direct")).toBe("execution");
+    // every cascade is a lover_death regardless of source
+    expect(deriveDeathEventType("mafia", "lover_cascade")).toBe("lover_death");
+    expect(deriveDeathEventType("joker_haunt", "lover_cascade")).toBe("lover_death");
+    expect(deriveDeathEventType("execution", "lover_cascade")).toBe("lover_death");
+  });
+});
+
+describe("B3 — applyDeath funnel", () => {
+  afterEach(() => setDeathTriggerSpy(null));
+
+  test("non-lover: one Death, one event with additive cause/source, dead flag set", () => {
+    const game = setupGame(5);
+    startGame(game);
+    const victim = getAlivePlayers(game)[1];
+
+    const deaths = applyDeath(game, victim.id, "mafia", "the narration line");
+
+    expect(deaths.length).toBe(1);
+    expect(deaths[0].player).toBe(victim);
+    expect(deaths[0].source).toBe("mafia");
+    expect(deaths[0].cause).toBe("direct");
+    expect(deaths[0].eventType).toBe("kill");
+    expect(deaths[0].message).toBe("the narration line");
+    expect(victim.isAlive).toBe(false);
+
+    const ev = game.eventHistory[game.eventHistory.length - 1];
+    expect(ev.type).toBe("kill");
+    expect(ev.playerName).toBe(victim.username);
+    expect(ev.cause).toBe("direct");
+    expect(ev.source).toBe("mafia");
+    removeGame(game.code);
+  });
+
+  test("already dead or unknown target: no Deaths, no events, no triggers", () => {
+    const game = setupGame(5);
+    startGame(game);
+    const victim = getAlivePlayers(game)[1];
+    applyDeath(game, victim.id, "mafia", "first");
+
+    const calls: Death[] = [];
+    setDeathTriggerSpy((_g, d) => calls.push(d));
+    const before = game.eventHistory.length;
+
+    expect(applyDeath(game, victim.id, "execution", "second")).toEqual([]);
+    expect(applyDeath(game, 9999, "mafia", "ghost")).toEqual([]);
+    expect(game.eventHistory.length).toBe(before);
+    expect(calls).toEqual([]);
+    removeGame(game.code);
+  });
+
+  test("cascade cannot bypass the funnel: lover kill yields two fully-booked Deaths", () => {
+    const game = setupGame(6);
+    startGame(game);
+    const [a, b] = getAlivePlayers(game).filter(p => p.id !== game.adminId);
+    makeLovers(a, b);
+
+    const calls: Death[] = [];
+    setDeathTriggerSpy((_g, d) => calls.push(d));
+    const eventsBefore = game.eventHistory.length;
+
+    const deaths = applyDeath(game, a.id, "joker_haunt", "haunt line");
+
+    // direct death first, cascade second — same source, distinct causes
+    expect(deaths.map(d => [d.player.id, d.source, d.cause, d.eventType])).toEqual([
+      [a.id, "joker_haunt", "direct", "joker_haunt"],
+      [b.id, "joker_haunt", "lover_cascade", "lover_death"],
+    ]);
+    expect(a.isAlive).toBe(false);
+    expect(b.isAlive).toBe(false);
+    expect(deaths[1].message.length).toBeGreaterThan(0); // heartbreak narration generated in the funnel
+
+    // the bypass class is dead: the cascade gets the SAME bookkeeping —
+    // its own event entry and its own trigger call
+    expect(game.eventHistory.length).toBe(eventsBefore + 2);
+    expect(game.eventHistory.slice(-2).map(e => [e.type, e.playerName, e.cause, e.source])).toEqual([
+      ["joker_haunt", a.username, "direct", "joker_haunt"],
+      ["lover_death", b.username, "lover_cascade", "joker_haunt"],
+    ]);
+    expect(calls).toEqual(deaths);
+    removeGame(game.code);
+  });
+});
+
+describe("B3 — notifyDeathTriggers: once per Death, with the right Death", () => {
+  afterEach(() => setDeathTriggerSpy(null));
+
+  test("night path: mafia-lover cascade + haunt kill = three trigger calls in kill order", () => {
+    const game = setupGame(8, { enableJoker: true, jokerMode: "official", enableLovers: true });
+    startGame(game);
+    clearLovers(game);
+    const mafia = findPlayerByRole(game, "mafia");
+    const { joker } = executeJoker(game);
+    const [a, l, b] = getCitizens(game);
+    makeLovers(a, l);
+
+    expect(submitJokerHaunt(game, joker.id, b.id)).toBe(true);
+    lockTarget(game, mafia.id, a.id);
+    advanceToResolving(game);
+
+    const calls: Death[] = [];
+    setDeathTriggerSpy((g, d) => { expect(g).toBe(game); calls.push(d); });
+    const result = transitionToDay(game);
+
+    // exactly one call per death, with the exact Death records the result carries
+    expect(calls.length).toBe(3);
+    expect(calls).toEqual(result.killed);
+    expect(calls.map(d => [d.player.id, d.source, d.cause])).toEqual([
+      [a.id, "mafia", "direct"],
+      [l.id, "mafia", "lover_cascade"],
+      [b.id, "joker_haunt", "direct"],
+    ]);
+    removeGame(game.code);
+  });
+
+  test("vote path: official-joker execution of a lover = two trigger calls", () => {
+    const game = setupGame(8, { enableJoker: true, jokerMode: "official", enableLovers: true });
+    startGame(game);
+    clearLovers(game);
+    const joker = findPlayerByRole(game, "joker");
+    const partner = getCitizens(game)[0];
+    makeLovers(joker, partner);
+
+    setPhase(game, "day");
+    callVote(game, game.adminId, joker.id);
+    for (const [, p] of game.players) {
+      if (p.isAlive && p.id !== joker.id) castVote(game, p.id, true);
+    }
+
+    const calls: Death[] = [];
+    setDeathTriggerSpy((_g, d) => calls.push(d));
+    const result = resolveVote(game)!;
+
+    expect(calls.length).toBe(2);
+    expect(calls).toEqual(result.killed);
+    expect(calls.map(d => [d.player.id, d.source, d.cause])).toEqual([
+      [joker.id, "execution", "direct"],
+      [partner.id, "execution", "lover_cascade"],
+    ]);
+    removeGame(game.code);
+  });
+
+  test("saved night: no deaths, no trigger calls", () => {
+    const game = setupGame(5, { enableDoctor: true });
+    startGame(game);
+    const mafia = findPlayerByRole(game, "mafia");
+    const doctor = findPlayerByRole(game, "doctor");
+    const target = getCitizens(game)[0];
+
+    setPhase(game, "night");
+    game.nightSubPhase = "mafia";
+    lockTarget(game, mafia.id, target.id);
+    advanceNightSubPhase(game); // -> doctor
+    expect(submitDoctorSave(game, doctor.id, target.id)).toBe(true);
+    advanceToResolving(game);
+
+    const calls: Death[] = [];
+    setDeathTriggerSpy((_g, d) => calls.push(d));
+    const result = transitionToDay(game);
+
+    expect(result.saved).toBe(true);
+    expect(result.killed).toEqual([]);
+    expect(calls).toEqual([]);
+    removeGame(game.code);
+  });
+});
+
+describe("B3 — Death-typed results and additive wire fields", () => {
+  test("VoteResult.killed carries cause/eventType; non-death events carry no cause/source", () => {
+    const game = setupGame(6, { enableLovers: true });
+    startGame(game);
+    clearLovers(game);
+    const [a, b] = getCitizens(game);
+    makeLovers(a, b);
+
+    setPhase(game, "day");
+    callVote(game, game.adminId, a.id);
+    for (const [, p] of game.players) {
+      if (p.isAlive && p.id !== a.id) castVote(game, p.id, true);
+    }
+    const result = resolveVote(game)!;
+
+    expect(result.killed.map(k => [k.cause, k.eventType])).toEqual([
+      ["direct", "execution"],
+      ["lover_cascade", "lover_death"],
+    ]);
+
+    // death events carry the additive fields...
+    const execEvent = game.eventHistory.find(e => e.type === "execution")!;
+    expect([execEvent.cause, execEvent.source]).toEqual(["direct", "execution"]);
+    const loverEvent = game.eventHistory.find(e => e.type === "lover_death")!;
+    expect([loverEvent.cause, loverEvent.source]).toEqual(["lover_cascade", "execution"]);
+    removeGame(game.code);
+  });
+
+  test("house-mode save event carries no cause/source (not a death)", () => {
+    const game = setupGame(5, { enableDoctor: true, doctorMode: "house" });
+    startGame(game);
+    const mafia = findPlayerByRole(game, "mafia");
+    const doctor = findPlayerByRole(game, "doctor");
+    const target = getCitizens(game)[0];
+
+    setPhase(game, "night");
+    game.nightSubPhase = "mafia";
+    lockTarget(game, mafia.id, target.id);
+    advanceNightSubPhase(game); // -> doctor
+    expect(submitDoctorSave(game, doctor.id, target.id)).toBe(true);
+    advanceToResolving(game);
+    transitionToDay(game);
+
+    const saveEvent = game.eventHistory.find(e => e.type === "save")!;
+    expect(saveEvent.playerName).toBe(target.username);
+    expect(saveEvent.cause).toBeUndefined();
+    expect(saveEvent.source).toBeUndefined();
     removeGame(game.code);
   });
 });

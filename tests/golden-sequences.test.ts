@@ -76,6 +76,8 @@ import { unlinkSync } from "node:fs";
  * game #1 18600-18729, game #2 18730-18859, game #3 18860-18999, game #4
  * 19600-19729, game #5 19730-19859 (19860-19999 spare), game #6
  * 21600-21729, game #7 21730-21859, game #8 21860-21999.
+ *
+ * Regeneration knob: GOLDEN_DUMP=1 bun test tests/golden-sequences.test.ts — prints each game's actual per-seat sequences as JSON for comparison/regeneration.
  */
 
 import { createGame, addPlayer, startGame, removeGame, setFixedDeal } from "../src/game-engine";

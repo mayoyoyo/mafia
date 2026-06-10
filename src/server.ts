@@ -5,7 +5,7 @@ import {
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
-  submitJokerHaunt, getJokerHauntTargets, classifyNightDeath, assertInvariants,
+  submitJokerHaunt, getJokerHauntTargets, assertInvariants,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
@@ -1109,9 +1109,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           }
 
           let voteLoverDeathName: string | undefined;
-          for (let i = 0; i < voteResult.killed.length; i++) {
-            const k = voteResult.killed[i];
-            const isLoverDeath = i > 0 && k.player.isLover;
+          for (const k of voteResult.killed) {
+            // B3: keyed on the Death's cause, not array position — revenge
+            // deaths joining vote kill lists (Program C) keep correct labels.
+            const isLoverDeath = k.cause === "lover_cascade";
             if (isLoverDeath) voteLoverDeathName = k.player.username;
             sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
             broadcastToGame(game.code, {
@@ -1487,9 +1488,9 @@ function resolveNightAndTransition(game: Game): void {
 
   // Notify killed players
   let nightLoverDeathName: string | undefined;
-  for (let i = 0; i < nightResult.killed.length; i++) {
-    const k = nightResult.killed[i];
-    const isLoverDeath = classifyNightDeath(nightResult.killed, i) === "lover_death";
+  for (const k of nightResult.killed) {
+    // B3: keyed on the Death's cause (absorbs classifyNightDeath)
+    const isLoverDeath = k.cause === "lover_cascade";
     if (isLoverDeath) nightLoverDeathName = k.player.username;
     sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
