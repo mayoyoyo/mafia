@@ -17,7 +17,7 @@ import { unlinkSync } from "node:fs";
  * seats carry mafiaTeam; only the detective sees detective_result), and an
  * explicit leak scan over the raw inboxes backs the goldens up.
  *
- * Golden games (all five):
+ * Golden games (all eight):
  *   #1 "full night with all roles enabled" — lobby → fixed deal → night 1 in
  *      which every enabled role acts (mafia consensus kill, doctor save
  *      elsewhere, detective investigation) → dawn → day. (Joker and lovers
@@ -40,6 +40,27 @@ import { unlinkSync } from "node:fs";
  *      night 1 behind the admin's Begin Night gate, and plays on (the
  *      revived victim is back on the mafia target list, gets no spectator
  *      stream, and a different player dies).
+ *   #6 "doctor save → plain execution → night lover cascade → town win"
+ *      (B3-prep) — night 1: mafia kill blocked by the doctor (saved=true,
+ *      doctor_save_private) → day 1: ordinary vote execution of a non-joker
+ *      non-lover → night 2: mafia kills a lover, the partner cascades
+ *      (classifyNightDeath ordering/labeling) → day 2: vote executes the
+ *      last mafia → town win, vote-path game_over with full role reveal.
+ *   #7 "vote-path lover cascade → mafia win at dawn" (B3-prep) — day 1:
+ *      the vote executes a lover, the partner cascades (resolveVote's
+ *      positional isLoverDeath labeling) → night 2: the mafia kill reaches
+ *      parity → NIGHT-path game_over (resolveNightAndTransition's distinct
+ *      game_over emission: sound_cue day + phase_change phase=game_over
+ *      before the game_over broadcast).
+ *   #8 "HOUSE-mode joker execution → instant joker win" (B3-prep) — the
+ *      vote executes the joker (house mode): the game ends AT VOTE
+ *      RESOLUTION — no joker_win_overlay, no haunt night, the joker's
+ *      lover cascades through the house-joker kill block, and game_over
+ *      winner=joker lands immediately. NB: house mode takes NO distinct
+ *      night-resolution path — jokerHauntVoters/jokerHauntTarget are only
+ *      ever set in resolveVote's OFFICIAL branch, so resolveNight's haunt
+ *      block is unreachable in house mode; the wire-observable house/
+ *      official difference lives entirely at vote resolution, pinned here.
  *
  * Each golden game runs against its OWN server subprocess (own port, own
  * /tmp database, own MAFIA_FIXED_DEAL env) — the fixed-deal seam is
@@ -49,11 +70,12 @@ import { unlinkSync } from "node:fs";
  * lists (public/app.js:165/172/177/182) depend on it. These goldens gate
  * every subsequent refactor step in Program B.
  *
- * Port bands: 18600-18999 AND 19600-19999 are claimed by this file (taken
- * elsewhere: 4567, 5567, 6567, 7600, 8600, 9600, 10600, 11600, 12600;
- * 13600-17600 reserved). Sub-bands: game #1 18600-18729, game #2
- * 18730-18859, game #3 18860-18999, game #4 19600-19729, game #5
- * 19730-19859 (19860-19999 spare).
+ * Port bands: 18600-18999, 19600-19999 AND 21600-21999 are claimed by this
+ * file (taken elsewhere: 4567, 5567, 6567, 7600, 8600, 9600, 10600, 11600,
+ * 12600; 13600-17600 reserved; 20600-20999 structured-logging). Sub-bands:
+ * game #1 18600-18729, game #2 18730-18859, game #3 18860-18999, game #4
+ * 19600-19729, game #5 19730-19859 (19860-19999 spare), game #6
+ * 21600-21729, game #7 21730-21859, game #8 21860-21999.
  */
 
 import { createGame, addPlayer, startGame, removeGame, setFixedDeal } from "../src/game-engine";
@@ -65,6 +87,9 @@ const PORT_GAME_2 = 18730 + Math.floor(Math.random() * 130); // 18730-18859
 const PORT_GAME_3 = 18860 + Math.floor(Math.random() * 140); // 18860-18999
 const PORT_GAME_4 = 19600 + Math.floor(Math.random() * 130); // 19600-19729
 const PORT_GAME_5 = 19730 + Math.floor(Math.random() * 130); // 19730-19859
+const PORT_GAME_6 = 21600 + Math.floor(Math.random() * 130); // 21600-21729
+const PORT_GAME_7 = 21730 + Math.floor(Math.random() * 130); // 21730-21859
+const PORT_GAME_8 = 21860 + Math.floor(Math.random() * 140); // 21860-21999
 
 // ── Per-game server subprocess ──────────────────────────────────────────
 
@@ -269,10 +294,14 @@ function makeSummarizer(players: GoldenPlayer[]) {
       }
       case "phase_change": {
         const saved = m.saved !== undefined ? ` saved=${m.saved}` : "";
+        // loverDeathName rides on the phase_change that follows a lover
+        // cascade (night path: classifyNightDeath; vote path: positional
+        // isLoverDeath) — part of the cause-labeling surface B3 rewrites.
+        const lover = m.loverDeathName !== undefined ? ` lover=${seatName(m.loverDeathName)}` : "";
         const ev = m.events
           ? ` events=[${m.events.map((e: any) => `${e.type}:${seatName(e.playerName)}@r${e.round}`).join(",")}]`
           : "";
-        return `phase_change phase=${m.phase} round=${m.round}${saved}${ev}`;
+        return `phase_change phase=${m.phase} round=${m.round}${saved}${lover}${ev}`;
       }
       case "awaiting_ready": return "awaiting_ready";
       case "sound_cue": return `sound_cue ${m.sound}`;
@@ -297,6 +326,8 @@ function makeSummarizer(players: GoldenPlayer[]) {
       }
       case "spectator_night_complete":
         return `spectator_night_complete phase=${m.phase} target=${m.targetName == null ? "-" : seatName(m.targetName)} alive=${m.alive}`;
+      case "spectator_night_phase":
+        return `spectator_night_phase ${m.subPhase} roleAlive=${m.isRoleAlive}`;
       case "spectator_joker_deliberating": return "spectator_joker_deliberating";
       case "spectator_joker_resolved": return `spectator_joker_resolved target=${seatName(m.targetName)}`;
       case "joker_haunt_targets": return `joker_haunt_targets ${seats(m.players)}`;
@@ -307,6 +338,15 @@ function makeSummarizer(players: GoldenPlayer[]) {
       case "vote_result": return `vote_result target=${seatName(m.targetName)} executed=${m.executed}`;
       case "you_died": return `you_died loverDeath=${m.isLoverDeath === true}`;
       case "player_died": return `player_died ${seatId(m.playerId)}`;
+      case "game_over": {
+        // The win reveal: every player's role/lover link goes public here
+        // (scanSecrecy exempts game_over from the role-leak scan for exactly
+        // this reason). The narrator `message` is volatile prose — dropped.
+        const reveal = (m.players ?? []).map((p: any) =>
+          `${seatId(p.id)}=${p.role}${p.isAlive ? "" : "(dead)"}${p.isLover ? `+lover:${p.loverId == null ? "?" : seatId(p.loverId)}` : ""}`
+        ).join(",");
+        return `game_over winner=${m.winner}${m.jokerJointWinner ? " jointJoker" : ""}${m.forceEnded ? " forceEnded" : ""} players=[${reveal}]`;
+      }
       default: return m.type; // strays show up verbatim in the golden diff
     }
   };
@@ -1710,6 +1750,1007 @@ describe("golden game #5: restart_game → identical re-deal, playable game", ()
         `${p.seat} post-restart day phase_change`)));
 
     await assertGoldens(players, GOLDEN_GAME_5, FIXED_DEAL_5);
+  }, 60000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Golden game #6 (B3-prep): doctor save → plain execution → night lover
+// cascade → town win (vote-path game_over)
+// ═══════════════════════════════════════════════════════════════════════
+
+// The deal for golden game #6, by JOIN ORDER (P0 = admin):
+//   P0 citizen · P1 mafia (day-2 execution → town win) · P2 doctor ·
+//   P3 citizen (lover, night-2 mafia victim) · P4 citizen (lover, cascades) ·
+//   P5 citizen (night-1 save target, day-1 plain execution)
+const FIXED_DEAL_6: FixedDeal = {
+  roles: ["citizen", "mafia", "doctor", "citizen", "citizen", "citizen"],
+  lovers: [3, 4],
+};
+
+const GAME_SETTINGS_6 = {
+  mafiaCount: 1,
+  enableDoctor: true,
+  enableDetective: false,
+  enableJoker: false,
+  enableLovers: true,
+  doctorMode: "official",
+  jokerMode: "official",
+};
+
+// Script: night 1 — mafia kill on P5 BLOCKED by the doctor's save on P5
+// (saved=true day, doctor_save_private to P5, nobody dies, and in official
+// doctor mode no `save` event enters the history) → day 1: ordinary vote
+// executes P5 (citizen, non-lover, non-joker; 4 yes / 2 no) → auto-night 2:
+// mafia kills lover P3, partner P4 cascades (night path: primary victim
+// first, then the lover, same source; the partner's you_died carries
+// isLoverDeath and the day phase_change carries loverDeathName), doctor's
+// save on P0 misses → day 2: vote executes the last mafia P1 → TOWN WIN at
+// vote resolution: phase_change phase=game_over (no day sound cue on the
+// vote path) + game_over winner=town with the full role/lover reveal.
+const GOLDEN_GAME_6: Record<string, string[]> = {
+  // P0 — admin, citizen. Saved night-1 dawn shows saved=true with EMPTY
+  // events (official doctor mode logs no save event); night-2 dawn carries
+  // lover=P4 and the kill+lover_death pair; the day-2 vote ends the game on
+  // the VOTE path: phase_change phase=game_over (no day sound cue) then the
+  // game_over reveal.
+  P0: [
+    "registered",
+    "game_created",
+    "lobby_update players=[P0]",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "settings_updated",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=false variant=0",
+    "phase_change phase=night round=1",
+    "awaiting_ready",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=true events=[]",
+    "vote_called target=P5",
+    "vote_update 1/6",
+    "vote_update 2/6",
+    "vote_update 3/6",
+    "vote_update 4/6",
+    "vote_update 5/6",
+    "vote_update 6/6",
+    "vote_result target=P5 executed=true",
+    "player_died P5",
+    "phase_change phase=night round=2 events=[execution:P5@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "player_died P3",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "vote_called target=P1",
+    "vote_update 1/3",
+    "vote_update 2/3",
+    "vote_update 3/3",
+    "vote_result target=P1 executed=true",
+    "player_died P1",
+    "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
+    "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
+  ],
+  // P1 — mafia. Night-1 kill on P5 silently blocked by the doctor (the mafia
+  // see only the public saved=true day). Executed day 2 → their you_died
+  // arrives between vote_result and their own player_died.
+  P1: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=mafia lover=false variant=0 mafiaTeam=[P1]",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P2,P3,P4,P5]",
+    "mafia_vote_update votes={P1:[P5/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P5",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=true events=[]",
+    "vote_called target=P5",
+    "vote_update 1/6",
+    "vote_update 2/6",
+    "vote_update 3/6",
+    "vote_update 4/6",
+    "vote_update 5/6",
+    "vote_update 6/6",
+    "vote_result target=P5 executed=true",
+    "player_died P5",
+    "phase_change phase=night round=2 events=[execution:P5@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P2,P3,P4]",
+    "mafia_vote_update votes={P1:[P3/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P3/lock]} locked=P3 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P3",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "player_died P3",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "vote_called target=P1",
+    "vote_update 1/3",
+    "vote_update 2/3",
+    "vote_update 3/3",
+    "vote_result target=P1 executed=true",
+    "you_died loverDeath=false",
+    "player_died P1",
+    "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
+    "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
+  ],
+  // P2 — doctor. Night-2 prompt carries last=P5 (the night-1 save target,
+  // dead by then) — lastDoctorTarget propagation pinned over the wire.
+  P2: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=doctor lover=false variant=0",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "doctor_targets [P0,P1,P2,P3,P4,P5] last=-",
+    "night_action_done",
+    "sound_cue doctor_close",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=true events=[]",
+    "vote_called target=P5",
+    "vote_update 1/6",
+    "vote_update 2/6",
+    "vote_update 3/6",
+    "vote_update 4/6",
+    "vote_update 5/6",
+    "vote_update 6/6",
+    "vote_result target=P5 executed=true",
+    "player_died P5",
+    "phase_change phase=night round=2 events=[execution:P5@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "doctor_targets [P0,P1,P2,P3,P4] last=P5",
+    "night_action_done",
+    "sound_cue doctor_close",
+    "player_died P3",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "vote_called target=P1",
+    "vote_update 1/3",
+    "vote_update 2/3",
+    "vote_update 3/3",
+    "vote_result target=P1 executed=true",
+    "player_died P1",
+    "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
+    "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
+  ],
+  // P3 — citizen, lover, the night-2 PRIMARY mafia victim: dead by send time,
+  // so the spectator kill panel precedes their you_died (loverDeath=false —
+  // primary kill, not a cascade), then both player_died broadcasts.
+  P3: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=true variant=1",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=true events=[]",
+    "vote_called target=P5",
+    "vote_update 1/6",
+    "vote_update 2/6",
+    "vote_update 3/6",
+    "vote_update 4/6",
+    "vote_update 5/6",
+    "vote_update 6/6",
+    "vote_result target=P5 executed=true",
+    "player_died P5",
+    "phase_change phase=night round=2 events=[execution:P5@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "spectator_kill_confirmed kills=[P3/mafia,P4/mafia] doctor=not_saved",
+    "you_died loverDeath=false",
+    "player_died P3",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "vote_called target=P1",
+    "vote_update 1/3",
+    "vote_update 2/3",
+    "vote_update 3/3",
+    "vote_result target=P1 executed=true",
+    "player_died P1",
+    "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
+    "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
+  ],
+  // P4 — citizen, lover, the night-2 CASCADE death: sees partner P3's
+  // player_died FIRST, then their own you_died with loverDeath=true (night
+  // path: classifyNightDeath labels the second same-source entry).
+  P4: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=true variant=2",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=true events=[]",
+    "vote_called target=P5",
+    "vote_update 1/6",
+    "vote_update 2/6",
+    "vote_update 3/6",
+    "vote_update 4/6",
+    "vote_update 5/6",
+    "vote_update 6/6",
+    "vote_result target=P5 executed=true",
+    "player_died P5",
+    "phase_change phase=night round=2 events=[execution:P5@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "spectator_kill_confirmed kills=[P3/mafia,P4/mafia] doctor=not_saved",
+    "player_died P3",
+    "you_died loverDeath=true",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "vote_called target=P1",
+    "vote_update 1/3",
+    "vote_update 2/3",
+    "vote_update 3/3",
+    "vote_result target=P1 executed=true",
+    "player_died P1",
+    "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
+    "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
+  ],
+  // P5 — citizen. Night 1: the only seat to get doctor_save_private (official
+  // doctor mode, before the day cue). Executed day 1 (plain execution),
+  // then the full dead-spectator stream of night 2: live mafia votes, the
+  // doctor sub-phase (spectator_night_phase) and the doctor's pick.
+  P5: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=false variant=3",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "sound_cue doctor_close",
+    "doctor_save_private",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=true events=[]",
+    "vote_called target=P5",
+    "vote_update 1/6",
+    "vote_update 2/6",
+    "vote_update 3/6",
+    "vote_update 4/6",
+    "vote_update 5/6",
+    "vote_update 6/6",
+    "vote_result target=P5 executed=true",
+    "you_died loverDeath=false",
+    "player_died P5",
+    "phase_change phase=night round=2 events=[execution:P5@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "spectator_mafia_update votes={} locked=- objected={} mafiaAlive=1 targets=[P0,P2,P3,P4]",
+    "spectator_mafia_update votes={P1:[P3/maybe]} locked=- objected={} mafiaAlive=1 targets=[P0,P2,P3,P4]",
+    "spectator_mafia_update votes={P1:[P3/lock]} locked=P3 objected={} mafiaAlive=1 targets=[P0,P2,P3,P4]",
+    "spectator_night_complete phase=mafia target=P3 alive=true",
+    "sound_cue mafia_close",
+    "sound_cue doctor_open",
+    "spectator_night_phase doctor roleAlive=true",
+    "spectator_night_complete phase=doctor target=P0 alive=true",
+    "sound_cue doctor_close",
+    "spectator_kill_confirmed kills=[P3/mafia,P4/mafia] doctor=not_saved",
+    "player_died P3",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "vote_called target=P1",
+    "vote_update 1/3",
+    "vote_update 2/3",
+    "vote_update 3/3",
+    "vote_result target=P1 executed=true",
+    "player_died P1",
+    "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
+    "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
+  ],
+};
+
+describe("golden game #6: doctor save, plain execution, night lover cascade, town win", () => {
+  let srv: GoldenServer | null = null;
+  beforeAll(async () => { srv = await spawnGoldenServer(PORT_GAME_6, FIXED_DEAL_6); });
+  afterAll(() => stopGoldenServer(srv));
+
+  test("every client's full ordered message sequence matches its golden", async () => {
+    const players = await setupGoldenGame(srv!.wsUrl, "g6", FIXED_DEAL_6, GAME_SETTINGS_6);
+    const [p0, p1, p2, p3, p4, p5] = players;
+
+    // ── Night 1: mafia kill on P5, doctor saves P5 → save succeeds ──────
+    const mafiaTargetsPromise = waitFor(p1.ws, "mafia_targets", 8000);
+    send(p0.ws, { type: "narrator_ready" });
+    await mafiaTargetsPromise;
+    await mafiaSoloKill(p1, p5);
+
+    await waitFor(p2.ws, "doctor_targets", 10000);
+    const doctorDonePromise = waitFor(p2.ws, "night_action_done", 6000);
+    const savePrivatePromise = waitFor(p5.ws, "doctor_save_private", 12000);
+    send(p2.ws, { type: "doctor_save", targetId: p5.userId });
+    await doctorDonePromise;
+
+    await Promise.all(players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 12000,
+        `${p.seat} day-1 phase_change`)));
+    await savePrivatePromise; // already delivered before the day phase_change
+
+    // ── Day 1: plain execution of P5 (4 yes / 2 no) ─────────────────────
+    const voteCalledPromise = waitFor(p0.ws, "vote_called", 6000);
+    send(p0.ws, { type: "call_vote", targetId: p5.userId });
+    await voteCalledPromise;
+    await castAndSee(p0, true);
+    await castAndSee(p1, true);
+    await castAndSee(p2, true);
+    await castAndSee(p3, true);
+    await castAndSee(p4, false);
+    const night2Promises = players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "night" && m.round === 2, 8000,
+        `${p.seat} night-2 phase_change`));
+    const mafiaTargets2Promise = waitFor(p1.ws, "mafia_targets", 8000);
+    await castAndSee(p5, false);
+    await Promise.all([...night2Promises, mafiaTargets2Promise]);
+
+    // ── Night 2: mafia kills lover P3 → P4 cascades; doctor save misses ─
+    await mafiaSoloKill(p1, p3);
+    await waitFor(p2.ws, "doctor_targets", 10000);
+    const doctorDone2Promise = waitFor(p2.ws, "night_action_done", 6000);
+    send(p2.ws, { type: "doctor_save", targetId: p0.userId });
+    await doctorDone2Promise;
+
+    await Promise.all(players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day" && m.round === 2, 12000,
+        `${p.seat} day-2 phase_change`)));
+
+    // ── Day 2: vote executes the last mafia P1 → town win, game over ────
+    const voteCalled2Promise = waitFor(p0.ws, "vote_called", 6000);
+    send(p0.ws, { type: "call_vote", targetId: p1.userId });
+    await voteCalled2Promise;
+    await castAndSee(p0, true);
+    await castAndSee(p1, false);
+    const gameOverPromises = players.map(p => waitFor(p.ws, "game_over", 8000));
+    await castAndSee(p2, true);
+    await Promise.all(gameOverPromises);
+
+    await assertGoldens(players, GOLDEN_GAME_6, FIXED_DEAL_6);
+  }, 60000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Golden game #7 (B3-prep): vote-path lover cascade → mafia win at dawn
+// (night-path game_over)
+// ═══════════════════════════════════════════════════════════════════════
+
+// The deal for golden game #7, by JOIN ORDER (P0 = admin):
+//   P0 citizen · P1 mafia (wins) · P2 citizen (lover, day-1 execution) ·
+//   P3 citizen (lover, cascades) · P4 citizen (night-1 victim) · P5 citizen
+//   (night-2 victim → mafia parity)
+const FIXED_DEAL_7: FixedDeal = {
+  roles: ["citizen", "mafia", "citizen", "citizen", "citizen", "citizen"],
+  lovers: [2, 3],
+};
+
+const GAME_SETTINGS_7 = {
+  mafiaCount: 1,
+  enableDoctor: false,
+  enableDetective: false,
+  enableJoker: false,
+  enableLovers: true,
+  doctorMode: "official",
+  jokerMode: "official",
+};
+
+// Script: night 1 — mafia kills P4 → day 1: the vote executes lover P2
+// (3 yes / 2 no) and partner P3 cascades — VOTE path: resolveVote pushes
+// the target then the lover, and the server labels with the positional
+// `isLoverDeath = i > 0 && k.player.isLover` (exactly what B3 replaces);
+// the night-2 phase_change carries loverDeathName → night 2: mafia kills
+// P5, reaching 1-vs-1 parity → MAFIA WIN at NIGHT resolution — the
+// night-path game_over emission (distinct from game #6's vote path): the
+// dawn still plays out sound_cue day + phase_change phase=game_over
+// (saved=false) BEFORE the game_over broadcast, and the dead spectators'
+// kill panel precedes it all.
+const GOLDEN_GAME_7: Record<string, string[]> = {
+  // P0 — admin, citizen. Day-1 vote executes lover P2 → P3 cascades: both
+  // player_died in push order, the night-2 phase_change carries lover=P3.
+  // The night-2 dawn ends the game on the NIGHT path: sound_cue day +
+  // phase_change phase=game_over saved=false, THEN the game_over reveal.
+  P0: [
+    "registered",
+    "game_created",
+    "lobby_update players=[P0]",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "settings_updated",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=false variant=0",
+    "phase_change phase=night round=1",
+    "awaiting_ready",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/5",
+    "vote_update 2/5",
+    "vote_update 3/5",
+    "vote_update 4/5",
+    "vote_update 5/5",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P5",
+    "sound_cue day",
+    "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
+    "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
+  ],
+  // P1 — mafia, the winner. Night-2 target list is down to [P0,P5] (the
+  // cascade removed both lovers).
+  P1: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=mafia lover=false variant=0 mafiaTeam=[P1]",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P2,P3,P4,P5]",
+    "mafia_vote_update votes={P1:[P4/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P4/lock]} locked=P4 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P4",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/5",
+    "vote_update 2/5",
+    "vote_update 3/5",
+    "vote_update 4/5",
+    "vote_update 5/5",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P5]",
+    "mafia_vote_update votes={P1:[P5/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P5",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "player_died P5",
+    "sound_cue day",
+    "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
+    "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
+  ],
+  // P2 — citizen, lover, the day-1 execution target: you_died with
+  // loverDeath=false (vote target, not a cascade) between vote_result and
+  // their own player_died; then the dead-spectator stream of night 2.
+  P2: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=true variant=1",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/5",
+    "vote_update 2/5",
+    "vote_update 3/5",
+    "vote_update 4/5",
+    "vote_update 5/5",
+    "vote_result target=P2 executed=true",
+    "you_died loverDeath=false",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "spectator_mafia_update votes={} locked=- objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_mafia_update votes={P1:[P5/maybe]} locked=- objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_mafia_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_night_complete phase=mafia target=P5 alive=true",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
+    "player_died P5",
+    "sound_cue day",
+    "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
+    "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
+  ],
+  // P3 — citizen, lover, the VOTE-path cascade death: sees partner P2's
+  // player_died first, then their own you_died with loverDeath=true
+  // (resolveVote's positional isLoverDeath labeling).
+  P3: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=true variant=2",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/5",
+    "vote_update 2/5",
+    "vote_update 3/5",
+    "vote_update 4/5",
+    "vote_update 5/5",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "you_died loverDeath=true",
+    "player_died P3",
+    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "spectator_mafia_update votes={} locked=- objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_mafia_update votes={P1:[P5/maybe]} locked=- objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_mafia_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_night_complete phase=mafia target=P5 alive=true",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
+    "player_died P5",
+    "sound_cue day",
+    "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
+    "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
+  ],
+  // P4 — citizen, the night-1 victim; plain dead-spectator stream after.
+  P4: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=false variant=3",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P4/mafia] doctor=-",
+    "you_died loverDeath=false",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/5",
+    "vote_update 2/5",
+    "vote_update 3/5",
+    "vote_update 4/5",
+    "vote_update 5/5",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "spectator_mafia_update votes={} locked=- objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_mafia_update votes={P1:[P5/maybe]} locked=- objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_mafia_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1 targets=[P0,P5]",
+    "spectator_night_complete phase=mafia target=P5 alive=true",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
+    "player_died P5",
+    "sound_cue day",
+    "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
+    "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
+  ],
+  // P5 — citizen, the night-2 victim whose death hands mafia parity: the
+  // spectator kill panel, you_died, player_died, then the night-path
+  // game_over pair.
+  P5: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "lobby_update players=[P0,P1,P2,P3,P4,P5]",
+    "game_started role=citizen lover=false variant=4",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/5",
+    "vote_update 2/5",
+    "vote_update 3/5",
+    "vote_update 4/5",
+    "vote_update 5/5",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
+    "you_died loverDeath=false",
+    "player_died P5",
+    "sound_cue day",
+    "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
+    "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
+  ],
+};
+
+describe("golden game #7: vote-path lover cascade, mafia win at dawn", () => {
+  let srv: GoldenServer | null = null;
+  beforeAll(async () => { srv = await spawnGoldenServer(PORT_GAME_7, FIXED_DEAL_7); });
+  afterAll(() => stopGoldenServer(srv));
+
+  test("every client's full ordered message sequence matches its golden", async () => {
+    const players = await setupGoldenGame(srv!.wsUrl, "g7", FIXED_DEAL_7, GAME_SETTINGS_7);
+    const [p0, p1, p2, p3, p4, p5] = players;
+
+    // ── Night 1: solo mafia kills P4 ────────────────────────────────────
+    const mafiaTargetsPromise = waitFor(p1.ws, "mafia_targets", 8000);
+    send(p0.ws, { type: "narrator_ready" });
+    await mafiaTargetsPromise;
+    await mafiaSoloKill(p1, p4);
+
+    await Promise.all(players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 12000,
+        `${p.seat} day-1 phase_change`)));
+
+    // ── Day 1: vote executes lover P2 → partner P3 cascades ─────────────
+    const voteCalledPromise = waitFor(p0.ws, "vote_called", 6000);
+    send(p0.ws, { type: "call_vote", targetId: p2.userId });
+    await voteCalledPromise;
+    await castAndSee(p0, true);
+    await castAndSee(p1, true);
+    await castAndSee(p2, false);
+    await castAndSee(p3, false);
+    const night2Promises = players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "night" && m.round === 2, 8000,
+        `${p.seat} night-2 phase_change`));
+    const mafiaTargets2Promise = waitFor(p1.ws, "mafia_targets", 8000);
+    await castAndSee(p5, true);
+    await Promise.all([...night2Promises, mafiaTargets2Promise]);
+
+    // ── Night 2: mafia kills P5 → 1-vs-1 parity → mafia win at dawn ─────
+    const gameOverPromises = players.map(p => waitFor(p.ws, "game_over", 12000));
+    await mafiaSoloKill(p1, p5);
+    await Promise.all(gameOverPromises);
+
+    await assertGoldens(players, GOLDEN_GAME_7, FIXED_DEAL_7);
+  }, 60000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Golden game #8 (B3-prep): HOUSE-mode joker execution → instant joker win
+// ═══════════════════════════════════════════════════════════════════════
+
+// The deal for golden game #8, by JOIN ORDER (P0 = admin):
+//   P0 citizen · P1 mafia · P2 joker (lover, executed) · P3 citizen (lover,
+//   cascades) · P4 citizen (night-1 victim)
+const FIXED_DEAL_8: FixedDeal = {
+  roles: ["citizen", "mafia", "joker", "citizen", "citizen"],
+  lovers: [2, 3],
+};
+
+const GAME_SETTINGS_8 = {
+  mafiaCount: 1,
+  enableDoctor: false,
+  enableDetective: false,
+  enableJoker: true,
+  enableLovers: true,
+  doctorMode: "official",
+  jokerMode: "house", // HOUSE: execution → instant game over, joker wins
+};
+
+// Script: night 1 — mafia kills P4 → day 1: the vote executes the joker P2
+// (3 yes / 1 no). HOUSE mode: the game ends AT VOTE RESOLUTION — winner is
+// set to "joker" before the kill lands, there is NO joker_win_overlay
+// (official-only) and NO haunt night, and the joker's lover P3 cascades
+// through the house-joker kill block (positional isLoverDeath labeling,
+// loverDeathName on the game_over phase_change). game_over winner=joker
+// carries the full reveal with NO jokerJointWinner flag (joint-winner is
+// official-mode only). NB: even though the joker death leaves mafia at
+// 1-vs-1 parity, no mafia-win check runs — the house branch returns with
+// winner=joker directly (current behavior, pinned).
+const GOLDEN_GAME_8: Record<string, string[]> = {
+  // P0 — admin, citizen. The day-1 vote ends the game instantly (house
+  // joker): vote_result → both deaths → phase_change phase=game_over
+  // round=1 with lover=P3 → game_over winner=joker (NO jokerJointWinner).
+  P0: [
+    "registered",
+    "game_created",
+    "lobby_update players=[P0]",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "settings_updated",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=0",
+    "phase_change phase=night round=1",
+    "awaiting_ready",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/4",
+    "vote_update 2/4",
+    "vote_update 3/4",
+    "vote_update 4/4",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
+  ],
+  // P1 — mafia. Loses to the instant joker win despite 1-vs-1 parity (the
+  // house branch sets winner=joker without a mafia-parity check).
+  P1: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1]",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=mafia lover=false variant=0 mafiaTeam=[P1]",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "mafia_targets [P0,P2,P3,P4]",
+    "mafia_vote_update votes={P1:[P4/maybe]} locked=- objected={} mafiaAlive=1",
+    "mafia_vote_update votes={P1:[P4/lock]} locked=P4 objected={} mafiaAlive=1",
+    "mafia_confirm_ready target=P4",
+    "night_action_done",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/4",
+    "vote_update 2/4",
+    "vote_update 3/4",
+    "vote_update 4/4",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
+  ],
+  // P2 — joker, lover, executed. HOUSE mode: NO joker_win_overlay (that is
+  // official-mode-only), no haunt night — just you_died (loverDeath=false)
+  // and the immediate game_over.
+  P2: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2]",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=joker lover=true variant=0",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/4",
+    "vote_update 2/4",
+    "vote_update 3/4",
+    "vote_update 4/4",
+    "vote_result target=P2 executed=true",
+    "you_died loverDeath=false",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
+  ],
+  // P3 — citizen, lover of the joker: cascades through the HOUSE-joker kill
+  // block — partner's player_died first, then you_died loverDeath=true.
+  P3: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=true variant=1",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/4",
+    "vote_update 2/4",
+    "vote_update 3/4",
+    "vote_update 4/4",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "you_died loverDeath=true",
+    "player_died P3",
+    "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
+  ],
+  // P4 — citizen, the night-1 victim; dead spectator for the vote.
+  P4: [
+    "registered",
+    "game_joined isAdmin=false",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "lobby_update players=[P0,P1,P2,P3,P4]",
+    "game_started role=citizen lover=false variant=2",
+    "phase_change phase=night round=1",
+    "sound_cue night",
+    "sound_cue everyone_close",
+    "sound_cue mafia_open",
+    "sound_cue mafia_close",
+    "spectator_kill_confirmed kills=[P4/mafia] doctor=-",
+    "you_died loverDeath=false",
+    "player_died P4",
+    "sound_cue day",
+    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "vote_called target=P2",
+    "vote_update 1/4",
+    "vote_update 2/4",
+    "vote_update 3/4",
+    "vote_update 4/4",
+    "vote_result target=P2 executed=true",
+    "player_died P2",
+    "player_died P3",
+    "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
+  ],
+};
+
+describe("golden game #8: house-mode joker execution → instant joker win", () => {
+  let srv: GoldenServer | null = null;
+  beforeAll(async () => { srv = await spawnGoldenServer(PORT_GAME_8, FIXED_DEAL_8); });
+  afterAll(() => stopGoldenServer(srv));
+
+  test("every client's full ordered message sequence matches its golden", async () => {
+    const players = await setupGoldenGame(srv!.wsUrl, "g8", FIXED_DEAL_8, GAME_SETTINGS_8);
+    const [p0, p1, p2, p3, p4] = players;
+
+    // ── Night 1: solo mafia kills P4 ────────────────────────────────────
+    const mafiaTargetsPromise = waitFor(p1.ws, "mafia_targets", 8000);
+    send(p0.ws, { type: "narrator_ready" });
+    await mafiaTargetsPromise;
+    await mafiaSoloKill(p1, p4);
+
+    await Promise.all(players.map(p =>
+      waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 12000,
+        `${p.seat} day-1 phase_change`)));
+
+    // ── Day 1: vote executes the joker P2 (house mode → instant end) ────
+    const voteCalledPromise = waitFor(p0.ws, "vote_called", 6000);
+    send(p0.ws, { type: "call_vote", targetId: p2.userId });
+    await voteCalledPromise;
+    await castAndSee(p0, true);
+    await castAndSee(p1, true);
+    await castAndSee(p2, false);
+    const gameOverPromises = players.map(p => waitFor(p.ws, "game_over", 8000));
+    await castAndSee(p3, true);
+    await Promise.all(gameOverPromises);
+
+    await assertGoldens(players, GOLDEN_GAME_8, FIXED_DEAL_8);
   }, 60000);
 });
 
