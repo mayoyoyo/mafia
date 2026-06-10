@@ -77,6 +77,15 @@ describe("B0d: dumpGame serializer", () => {
     }
   });
 
+  test("dump keys exactly mirror Game keys (runtime twin of the satisfies guard)", () => {
+    const game = buildNightGame();
+    try {
+      expect(Object.keys(dumpGame(game)).sort()).toEqual(Object.keys(game).sort());
+    } finally {
+      removeGame(game.code);
+    }
+  });
+
   test("snapshot contains no Map/Set/function values anywhere", () => {
     const game = buildNightGame();
     try {
@@ -111,12 +120,19 @@ const FIXED_DEAL: FixedDeal = { roles: ["mafia", "citizen", "citizen", "citizen"
 
 let serverProc: ReturnType<typeof Bun.spawn> | null = null;
 let stdoutBuf = "";
+let stderrBuf = "";
 
-function startStdoutReader(stream: ReadableStream<Uint8Array>): void {
+function startStreamReader(stream: ReadableStream<Uint8Array>, append: (s: string) => void): void {
   const dec = new TextDecoder();
   (async () => {
-    for await (const chunk of stream) stdoutBuf += dec.decode(chunk, { stream: true });
+    for await (const chunk of stream) append(dec.decode(chunk, { stream: true }));
   })();
+}
+
+/** Last ~2KB of the server's stderr, for diagnosing crashed/wedged servers. */
+function stderrTail(): string {
+  const tail = stderrBuf.slice(-2000).trim();
+  return tail ? `\n--- server stderr (tail) ---\n${tail}` : " (server stderr empty)";
 }
 
 /** Parsed structured log lines seen so far on the server's stdout. */
@@ -135,7 +151,7 @@ async function waitForLog(pred: (e: any) => boolean, label: string, timeout = 60
     if (hit) return hit;
     await Bun.sleep(100);
   }
-  throw new Error(`Timeout waiting for slog line: ${label}`);
+  throw new Error(`Timeout waiting for slog line: ${label}${stderrTail()}`);
 }
 
 function waitFor(ws: WebSocket, type: string, timeout = 6000): Promise<any> {
@@ -187,9 +203,10 @@ beforeAll(async () => {
       MAFIA_FIXED_DEAL: JSON.stringify(FIXED_DEAL),
     },
     cwd: import.meta.dir + "/..",
-    stdout: "pipe", stderr: "ignore",
+    stdout: "pipe", stderr: "pipe",
   });
-  startStdoutReader(serverProc.stdout as ReadableStream<Uint8Array>);
+  startStreamReader(serverProc.stdout as ReadableStream<Uint8Array>, (s) => { stdoutBuf += s; });
+  startStreamReader(serverProc.stderr as ReadableStream<Uint8Array>, (s) => { stderrBuf += s; });
   for (let i = 0; i < 30; i++) {
     try {
       const ws = new WebSocket(WS_URL);
@@ -200,7 +217,7 @@ beforeAll(async () => {
       return;
     } catch { await Bun.sleep(200); }
   }
-  throw new Error("Server failed to start");
+  throw new Error(`Server failed to start${stderrTail()}`);
 });
 
 afterAll(() => {

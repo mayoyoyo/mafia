@@ -105,6 +105,12 @@ function clearNightTimer(gameCode: string): void {
  * timeout is NOT cancelled here — callers clearNightTimer first when they
  * mean to cancel). The callback logs "fired" and drops the map entry before
  * running, exactly as the inline callbacks did before B0d.
+ *
+ * Log-reader note: because a displaced timer keeps ticking, a "fired" event
+ * that follows an "overwritten" belongs to the DISPLACED timer (its kind is
+ * the OLD kind) — and its callback deletes the map entry now occupied by the
+ * NEW timer. Don't misread it as the new timer firing. This documents the
+ * pre-existing behavior only; fixing it is B4's concern.
  */
 function armNightTimer(game: Game, kind: string, delay: number, fn: () => void): void {
   const existing = nightTimers.get(game.code);
