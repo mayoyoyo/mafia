@@ -5,7 +5,7 @@ import {
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
-  submitJokerHaunt, getJokerHauntTargets,
+  submitJokerHaunt, getJokerHauntTargets, classifyNightDeath,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
@@ -1443,7 +1443,7 @@ function resolveNightAndTransition(game: Game): void {
   let nightLoverDeathName: string | undefined;
   for (let i = 0; i < nightResult.killed.length; i++) {
     const k = nightResult.killed[i];
-    const isLoverDeath = i > 0 && k.player.isLover;
+    const isLoverDeath = classifyNightDeath(nightResult.killed, i) === "lover_death";
     if (isLoverDeath) nightLoverDeathName = k.player.username;
     sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {

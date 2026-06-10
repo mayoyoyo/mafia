@@ -657,6 +657,22 @@ export function resolveNight(game: Game): NightResult {
   return result;
 }
 
+// Classify a night death entry by its kill source, not array position.
+// resolveNight pushes the primary victim first, then their heartbroken lover,
+// both tagged with the same source ("mafia" or "joker_haunt"). At most one
+// mafia kill and one haunt kill resolve per night, so any entry preceded by
+// another entry with the same source is a lover-cascade death.
+export function classifyNightDeath(
+  killed: NightResult["killed"],
+  index: number
+): "kill" | "joker_haunt" | "lover_death" {
+  const entry = killed[index];
+  for (let i = 0; i < index; i++) {
+    if (killed[i].source === entry.source) return "lover_death";
+  }
+  return entry.source === "joker_haunt" ? "joker_haunt" : "kill";
+}
+
 export function transitionToDay(game: Game): NightResult {
   const nightResult = resolveNight(game);
 
@@ -665,12 +681,11 @@ export function transitionToDay(game: Game): NightResult {
   if (nightResult.saved && nightResult.savedName && game.settings.doctorMode === "house") {
     game.eventHistory.push({ round: game.round, type: "save", playerName: nightResult.savedName });
   }
-  for (const k of nightResult.killed) {
-    const isLoverDeath = k.player.isLover && nightResult.killed.length > 1 && k !== nightResult.killed[0];
+  for (let i = 0; i < nightResult.killed.length; i++) {
     game.eventHistory.push({
       round: game.round,
-      type: isLoverDeath ? "lover_death" : (k.source === "joker_haunt" ? "joker_haunt" : "kill"),
-      playerName: k.player.username,
+      type: classifyNightDeath(nightResult.killed, i),
+      playerName: nightResult.killed[i].player.username,
     });
   }
 
@@ -835,6 +850,10 @@ export function resolveVote(game: Game): VoteResult | null {
             game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
           }
         }
+
+        // Reset vote state (mirrors the official branch and the normal path)
+        game.voteTarget = null;
+        game.votes.clear();
         return result;
       }
     }

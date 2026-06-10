@@ -316,6 +316,26 @@ describe("Joker House Mode - Execution", () => {
     expect(game.phase).toBe("game_over");
     removeGame(game.code);
   });
+
+  test("house mode: joker win clears voteTarget and votes at game_over (L9)", () => {
+    const game = setupGame(5, { enableJoker: true, jokerMode: "house" });
+    startGame(game);
+    const joker = findPlayerByRole(game, "joker");
+
+    game.phase = "day";
+    callVote(game, game.adminId, joker.id);
+    for (const [, p] of game.players) {
+      if (p.isAlive && p.id !== joker.id) {
+        castVote(game, p.id, true);
+      }
+    }
+    resolveVote(game);
+
+    expect(game.phase).toBe("game_over");
+    expect(game.voteTarget).toBeNull();
+    expect(game.votes.size).toBe(0);
+    removeGame(game.code);
+  });
 });
 
 describe("Joker Official Mode - Execution & Game Continues", () => {
@@ -843,6 +863,61 @@ describe("Joker Haunt - Night Resolution", () => {
     const hauntEvent = game.eventHistory.find(e => e.type === "joker_haunt");
     expect(hauntEvent).not.toBeUndefined();
     expect(hauntEvent!.playerName).toBe(game.players.get(hauntTargetId)!.username);
+    removeGame(game.code);
+  });
+
+  test("haunt victim who is a lover is classified as joker_haunt, not lover_death (M5)", () => {
+    const game = setupGame(8, {
+      enableJoker: true,
+      jokerMode: "official",
+      enableLovers: true,
+    });
+    startGame(game);
+    const joker = findPlayerByRole(game, "joker");
+    const mafia = findPlayerByRole(game, "mafia");
+
+    // Clear random lover assignment; we pick a deterministic pair below
+    for (const [, p] of game.players) { p.isLover = false; p.loverId = null; }
+
+    // Lynch the joker day 1 — everyone votes yes, so all become haunt targets
+    game.phase = "day";
+    callVote(game, game.adminId, joker.id);
+    for (const [, p] of game.players) {
+      if (p.isAlive && p.id !== joker.id) castVote(game, p.id, true);
+    }
+    resolveVote(game);
+    expect(game.phase).toBe("night"); // official mode: game continues
+
+    // Pick three distinct alive non-mafia players:
+    // A = mafia victim (not a lover), B = haunt victim (lover), L = B's partner
+    const candidates = Array.from(game.players.values()).filter(
+      (p) => p.isAlive && p.role !== "mafia"
+    );
+    const [a, b, l] = candidates;
+    b.isLover = true; b.loverId = l.id;
+    l.isLover = true; l.loverId = b.id;
+
+    // Joker haunts B (parallel action); mafia independently kills A
+    expect(submitJokerHaunt(game, joker.id, b.id)).toBe(true);
+    lockTarget(game, mafia.id, a.id);
+    while (game.nightSubPhase !== "resolving") advanceNightSubPhase(game);
+
+    transitionToDay(game);
+
+    // B (haunt victim) must be a joker_haunt event, NOT lover_death
+    const bEvents = game.eventHistory.filter((e) => e.playerName === b.username);
+    expect(bEvents.length).toBe(1);
+    expect(bEvents[0].type).toBe("joker_haunt");
+
+    // L (B's partner) died of heartbreak from B's death -> lover_death
+    const lEvents = game.eventHistory.filter((e) => e.playerName === l.username);
+    expect(lEvents.length).toBe(1);
+    expect(lEvents[0].type).toBe("lover_death");
+
+    // A (mafia victim) is a plain kill
+    const aEvents = game.eventHistory.filter((e) => e.playerName === a.username);
+    expect(aEvents.length).toBe(1);
+    expect(aEvents[0].type).toBe("kill");
     removeGame(game.code);
   });
 
