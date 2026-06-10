@@ -275,6 +275,7 @@
         lastVoteResult = null;
         jokerJointWinner = false;
         previousPhase = null;
+        pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -430,6 +431,7 @@
         localStorage.removeItem("mafia_game_code");
         gameCode = null;
         isAdmin = false;
+        pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         $("narrator-messages").innerHTML = "";
         $("role-reveal").innerHTML = "";
         $("event-history-list").innerHTML = "";
@@ -1491,6 +1493,7 @@
         overlay.classList.remove("fade-out");
         text.style.color = "";
         executionTransitionActive = false;
+        // no flushPendingGameOver here — all call sites chain into heartbreak/night, whose terminals flush
         callback();
       }, 600);
     }, 2000);

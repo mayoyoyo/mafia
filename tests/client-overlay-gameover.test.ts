@@ -186,3 +186,58 @@ describe("L5: game_over queues behind active overlay transitions", () => {
     expect($("gameover-title").textContent).toBe("Citizens Win!");
   });
 });
+
+describe("L5 follow-up: held game_over is discarded when the game context ends", () => {
+  // Starts a heartbreak beat and parks a game_over behind it, so the chain
+  // terminal's flushPendingGameOver fires ~2.6s (scaled) later.
+  function holdGameOverBehindHeartbreak(round: number) {
+    startGameAsCitizen();
+    serverSays({ type: "phase_change", phase: "night", round, messages: [] });
+    serverSays({ type: "player_died", playerId: 3, playerName: "Alice", message: "Alice was killed in the night." });
+    serverSays({ type: "player_died", playerId: 2, playerName: "Bob", message: "Bob died of heartbreak." });
+    serverSays({
+      type: "phase_change",
+      phase: "game_over",
+      round,
+      messages: ["The Mafia wins!"],
+      events: [],
+      loverDeathName: "Bob",
+    });
+    expect($("suspense-text").textContent).toBe("\u{1F494} Bob died of heartbreak.");
+    serverSays({
+      type: "game_over",
+      winner: "mafia",
+      message: "The Mafia wins!",
+      players: REVEAL_PLAYERS,
+    });
+    // Held — the beat is still on screen.
+    expect($("suspense-text").textContent).toBe("\u{1F494} Bob died of heartbreak.");
+  }
+
+  test("room_closed mid-chain: stale game_over must not stomp the menu", async () => {
+    holdGameOverBehindHeartbreak(4);
+
+    // Admin closes the room while the heartbreak beat is animating.
+    serverSays({ type: "room_closed" });
+    expect($("screen-menu").classList.contains("active")).toBe(true);
+
+    // Drain the chain terminal plus the would-be game-over reveal.
+    await Bun.sleep(ms(11000));
+
+    expect($("screen-menu").classList.contains("active")).toBe(true);
+    expect($("screen-gameover").classList.contains("active")).toBe(false);
+  });
+
+  test("game_started (restart) mid-chain: stale game_over must not stomp the new game", async () => {
+    holdGameOverBehindHeartbreak(5);
+
+    // The room restarts while the heartbreak beat is animating.
+    startGameAsCitizen();
+    expect($("screen-game").classList.contains("active")).toBe(true);
+
+    await Bun.sleep(ms(11000));
+
+    expect($("screen-game").classList.contains("active")).toBe(true);
+    expect($("screen-gameover").classList.contains("active")).toBe(false);
+  });
+});

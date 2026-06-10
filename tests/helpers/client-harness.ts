@@ -71,7 +71,14 @@ let loaded: ClientHarness | null = null;
 const realWebSocket = (globalThis as any).WebSocket;
 
 export function loadClientApp(opts: LoadClientAppOptions = {}): ClientHarness {
-  if (loaded) return loaded;
+  if (loaded) {
+    // Options only take effect at load time; silently returning here would
+    // make a caller believe (e.g.) its timeScale is active when it isn't.
+    if (Object.keys(opts).length > 0) {
+      throw new Error("loadClientApp: already loaded, options would be ignored — call unloadClientApp() first");
+    }
+    return loaded;
+  }
 
   GlobalRegistrator.register({ url: "http://localhost:3000/" });
 
