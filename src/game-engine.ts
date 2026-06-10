@@ -830,6 +830,15 @@ export function setDeathTriggerSpy(fn: ((game: Game, death: Death) => void) | nu
  * Program C hangs the Hunter revenge gate here. Called exactly once per
  * Death — every source (night kill, haunt, execution) and every cause
  * (direct or lover cascade) — from inside applyDeath.
+ *
+ * Re-entrancy contract: this hook fires INSIDE applyDeath's bookkeeping
+ * loop — implementations must OBSERVE AND QUEUE; do NOT call applyDeath
+ * re-entrantly. A re-entrant kill would (a) interleave the revenge events
+ * between a direct death's and its cascade's eventHistory entries, and
+ * (b) drop the revenge Deaths on the floor — they never reach the outer
+ * caller's result.killed, so the victim would get no you_died and no
+ * player_died broadcast. Revenge kills must enter the funnel via their
+ * own intent/path after the triggering resolution completes.
  */
 export function notifyDeathTriggers(game: Game, death: Death): void {
   deathTriggerSpy?.(game, death);
@@ -1026,7 +1035,11 @@ export function resolveNight(game: Game): NightResult {
       }
       // Save matched a target already dead this night (e.g. a lover cascade
       // victim): the save is spent with no effect — matches the pre-B3
-      // haunt-block behavior.
+      // haunt-block behavior. NB: spending the save on a corpse is
+      // unobservable today — the haunt is always the LAST intent, so no
+      // later intent exists for the spent save to miss — but it becomes a
+      // real semantic choice (spent-on-corpse vs. still-armed) the moment
+      // more intents join the fold (Program C).
     } else if (target.isAlive) {
       const deaths = applyDeath(game, intent.targetId, intent.source, intent.deathMessage(target));
       for (const d of deaths) {

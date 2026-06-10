@@ -254,7 +254,9 @@ export interface PlayerInfo {
 
 export interface GameEvent {
   round: number;
-  type: "kill" | "save" | "execution" | "lover_death" | "spared" | "joker_haunt";
+  // Structurally DeathEventType plus the two non-death labels — the death
+  // labels are reused, not re-listed (compile-time identical union).
+  type: DeathEventType | "save" | "spared";
   playerName: string;
   detail?: string;
   // B3 (audit P2): additive wire fields, present on death events only. The

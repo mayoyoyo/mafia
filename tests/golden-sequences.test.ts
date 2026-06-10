@@ -44,11 +44,11 @@ import { unlinkSync } from "node:fs";
  *      (B3-prep) — night 1: mafia kill blocked by the doctor (saved=true,
  *      doctor_save_private) → day 1: ordinary vote execution of a non-joker
  *      non-lover → night 2: mafia kills a lover, the partner cascades
- *      (classifyNightDeath ordering/labeling) → day 2: vote executes the
+ *      (ordering/labeling keyed on Death.cause) → day 2: vote executes the
  *      last mafia → town win, vote-path game_over with full role reveal.
  *   #7 "vote-path lover cascade → mafia win at dawn" (B3-prep) — day 1:
- *      the vote executes a lover, the partner cascades (resolveVote's
- *      positional isLoverDeath labeling) → night 2: the mafia kill reaches
+ *      the vote executes a lover, the partner cascades (isLoverDeath keyed
+ *      on Death.cause) → night 2: the mafia kill reaches
  *      parity → NIGHT-path game_over (resolveNightAndTransition's distinct
  *      game_over emission: sound_cue day + phase_change phase=game_over
  *      before the game_over broadcast).
@@ -297,8 +297,8 @@ function makeSummarizer(players: GoldenPlayer[]) {
       case "phase_change": {
         const saved = m.saved !== undefined ? ` saved=${m.saved}` : "";
         // loverDeathName rides on the phase_change that follows a lover
-        // cascade (night path: classifyNightDeath; vote path: positional
-        // isLoverDeath) — part of the cause-labeling surface B3 rewrites.
+        // cascade — both paths (night and vote) key it on the Death's
+        // cause === "lover_cascade" (B3's cause-keyed labeling surface).
         const lover = m.loverDeathName !== undefined ? ` lover=${seatName(m.loverDeathName)}` : "";
         const ev = m.events
           ? ` events=[${m.events.map((e: any) => `${e.type}:${seatName(e.playerName)}@r${e.round}`).join(",")}]`
@@ -2014,7 +2014,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
   ],
   // P4 — citizen, lover, the night-2 CASCADE death: sees partner P3's
   // player_died FIRST, then their own you_died with loverDeath=true (night
-  // path: classifyNightDeath labels the second same-source entry).
+  // path: labeled by the Death's cause === "lover_cascade").
   P4: [
     "registered",
     "game_joined isAdmin=false",
@@ -2213,9 +2213,9 @@ const GAME_SETTINGS_7 = {
 };
 
 // Script: night 1 — mafia kills P4 → day 1: the vote executes lover P2
-// (3 yes / 2 no) and partner P3 cascades — VOTE path: resolveVote pushes
-// the target then the lover, and the server labels with the positional
-// `isLoverDeath = i > 0 && k.player.isLover` (exactly what B3 replaces);
+// (3 yes / 2 no) and partner P3 cascades — VOTE path: applyDeath returns
+// the target's Death then the cascade's, and the server labels by keying
+// on each Death's cause (cause === "lover_cascade" → isLoverDeath);
 // the night-2 phase_change carries loverDeathName → night 2: mafia kills
 // P5, reaching 1-vs-1 parity → MAFIA WIN at NIGHT resolution — the
 // night-path game_over emission (distinct from game #6's vote path): the
@@ -2363,7 +2363,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
   ],
   // P3 — citizen, lover, the VOTE-path cascade death: sees partner P2's
   // player_died first, then their own you_died with loverDeath=true
-  // (resolveVote's positional isLoverDeath labeling).
+  // (labeled by the Death's cause === "lover_cascade").
   P3: [
     "registered",
     "game_joined isAdmin=false",
@@ -2556,8 +2556,9 @@ const GAME_SETTINGS_8 = {
 // (3 yes / 1 no). HOUSE mode: the game ends AT VOTE RESOLUTION — winner is
 // set to "joker" before the kill lands, there is NO joker_win_overlay
 // (official-only) and NO haunt night, and the joker's lover P3 cascades
-// through the house-joker kill block (positional isLoverDeath labeling,
-// loverDeathName on the game_over phase_change). game_over winner=joker
+// through the house-joker kill block (Death.cause-keyed isLoverDeath
+// labeling, loverDeathName on the game_over phase_change). game_over
+// winner=joker
 // carries the full reveal with NO jokerJointWinner flag (joint-winner is
 // official-mode only). NB: even though the joker death leaves mafia at
 // 1-vs-1 parity, no mafia-win check runs — the house branch returns with
