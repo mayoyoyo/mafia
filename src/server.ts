@@ -1212,6 +1212,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Cannot return to lobby" });
         return;
       }
+      // After the success check: an errant return_to_lobby during an active
+      // night must NOT clear the legit pending timer (M2)
+      clearNightTimer(game.code);
       broadcastLobbyUpdate(game);
       break;
     }
@@ -1241,6 +1244,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Only the admin can restart the game" });
         return;
       }
+      clearNightTimer(game.code);
       const messages = restartGame(game);
       if (!messages) {
         send(ws, { type: "error", message: "Cannot restart game" });

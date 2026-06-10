@@ -1,12 +1,14 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 
 /**
- * Night-action guard tests (T6 audit findings: M4, M7, L2).
+ * Night-action guard tests (T6 audit findings: M4, M7, L2; T7: M2).
  *
  * M4 — confirm_mafia_kill must verify the sender is an alive mafia member.
  * M7 — night actions must be rejected while awaitingNarratorReady is set
  *      (the "Begin Night" gate).
  * L2 — narrator_ready must be a no-op outside the night phase.
+ * M2 — restart_game / return_to_lobby must clear pending night timers so
+ *      orphaned callbacks cannot fire into the restarted game / lobby.
  *
  * Port range: 9600-10599 (e2e: 4567+, rejoin: 5567+, save-signal: 6567+,
  * handler-guards: 7600+, ten-player: 8600+)
@@ -253,4 +255,106 @@ describe("L2: narrator_ready guard (no-op outside night phase)", () => {
 
     for (const p of players) p.ws.close();
   }, 15000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// M2 — restart_game / return_to_lobby must clear pending night timers
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("M2: stale night timers cleared on restart_game / return_to_lobby", () => {
+  test("restart_game while the resolving timer is armed must not leak a phase_change{day} into the new game", async () => {
+    // 4 players (1 mafia, 3 citizens): confirm_mafia_kill arms the 1000ms
+    // resolving timer; restarting inside that window must cancel it.
+    const { players } = await setupAndStart(4);
+
+    const admin = players[0];
+    const mafia = players.find(p => p.role === "mafia")!;
+    const killTarget = players.find(p => p.role === "citizen" && p.userId !== admin.userId)!;
+
+    // Mafia locks + confirms — this arms the 1000ms resolving timer
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitFor(mafia.ws, "night_action_done"); // server processed confirm → timer armed
+
+    // Admin restarts immediately, well inside the 1000ms window
+    const restartedPromises = players.map(p => waitFor(p.ws, "game_started"));
+    const nightPromise = waitFor(admin.ws, "phase_change");
+    send(admin.ws, { type: "restart_game" });
+    const restarted = await Promise.all(restartedPromises);
+    const night = await nightPromise;
+    expect(night.phase).toBe("night");
+    expect(night.round).toBe(1);
+
+    // The orphaned timer (if not cleared) fires ~1s after confirm and
+    // force-transitions the FRESH night to day round 1 with nothing resolved.
+    const msgs = await collectFor(admin.ws, 2500);
+    expect(msgs.filter(m => m.type === "phase_change" && m.phase === "day").length).toBe(0);
+    expect(msgs.filter(m => m.type === "game_over").length).toBe(0);
+
+    // Regression: the restarted game is fully playable
+    const newMafiaIdx = restarted.findIndex(r => r.role === "mafia");
+    const newMafia = players[newMafiaIdx];
+    const newTarget = players[restarted.findIndex(r => r.role === "citizen")];
+    send(admin.ws, { type: "narrator_ready" });
+    await Bun.sleep(200);
+    send(newMafia.ws, { type: "mafia_vote", targetId: newTarget.userId, voteType: "maybe" });
+    await waitFor(newMafia.ws, "mafia_vote_update");
+
+    for (const p of players) p.ws.close();
+  }, 15000);
+
+  test("return_to_lobby: rejected during an armed night (timer survives), clears cleanly from game_over (no stale messages in lobby)", async () => {
+    // NOTE: the engine guards returnToLobby to phase === "game_over", and every
+    // route to game_over either clears the night timer or consumes it — so a
+    // pending timer at game_over is unreachable today. This test pins:
+    //   (a) an errant return_to_lobby during an armed night is rejected and
+    //       must NOT clear the legit pending timer (the night still resolves) —
+    //       i.e. the clear belongs AFTER the returnToLobby success check;
+    //   (b) the game_over → lobby path is clean: no stray phase_change /
+    //       night artifacts arrive in the lobby, and a fresh game starts.
+    const { players } = await setupAndStart(4);
+
+    const admin = players[0];
+    const mafia = players.find(p => p.role === "mafia")!;
+    const killTarget = players.find(p => p.role === "citizen" && p.userId !== admin.userId)!;
+
+    // Arm the 1000ms resolving timer
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: killTarget.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitFor(mafia.ws, "night_action_done");
+
+    // (a) Errant return_to_lobby during the armed night: rejected, and the
+    // pending timer must survive — the night resolves to day ~1s later.
+    send(admin.ws, { type: "return_to_lobby" });
+    const err = await waitFor(admin.ws, "error");
+    expect(err.message).toBe("Cannot return to lobby");
+    const day = await waitFor(admin.ws, "phase_change", 5000);
+    expect(day.phase).toBe("day");
+
+    // Reach game_over, then return to lobby for real
+    send(admin.ws, { type: "end_game" });
+    await waitFor(admin.ws, "game_over");
+    send(admin.ws, { type: "return_to_lobby" });
+    await waitFor(admin.ws, "lobby_update");
+
+    // (b) Nothing stale fires into the lobby
+    const lobbyMsgs = await collectFor(admin.ws, 2000);
+    expect(lobbyMsgs.filter(m => m.type === "phase_change").length).toBe(0);
+    expect(lobbyMsgs.filter(m => m.type === "game_over").length).toBe(0);
+    expect(lobbyMsgs.filter(m => m.type === "sound_cue").length).toBe(0);
+    expect(lobbyMsgs.filter(m => m.type === "mafia_targets").length).toBe(0);
+
+    // Fresh game starts cleanly from the lobby
+    const startedPromises = players.map(p => waitFor(p.ws, "game_started"));
+    send(admin.ws, { type: "start_game" });
+    await Promise.all(startedPromises);
+
+    for (const p of players) p.ws.close();
+  }, 20000);
 });
