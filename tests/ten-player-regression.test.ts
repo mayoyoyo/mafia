@@ -59,6 +59,11 @@ const violations: string[] = [];
 let gameOverAllowed = false; // flipped just before the final lynch votes
 
 const MAFIA_ONLY_TYPES = new Set(["mafia_targets", "mafia_vote_update", "mafia_confirm_ready"]);
+// src/server.ts sends these prompts only to the alive role-holder (dead
+// players/spectators get spectator_night_phase instead), so any other
+// recipient is a routing leak.
+const DOCTOR_ONLY_TYPES = new Set(["doctor_targets"]);
+const DETECTIVE_ONLY_TYPES = new Set(["detective_targets"]);
 
 function deepHasKey(node: any, key: string): boolean {
   if (Array.isArray(node)) return node.some((v) => deepHasKey(v, key));
@@ -104,6 +109,12 @@ function checkMessage(p: TestPlayer, m: any): void {
   }
   if (MAFIA_ONLY_TYPES.has(m.type) && p.role !== "mafia") {
     violations.push(`${tag}: mafia-only message sent to non-mafia client`);
+  }
+  if (DOCTOR_ONLY_TYPES.has(m.type) && p.role !== "doctor") {
+    violations.push(`${tag}: doctor-only message sent to non-doctor client`);
+  }
+  if (DETECTIVE_ONLY_TYPES.has(m.type) && p.role !== "detective") {
+    violations.push(`${tag}: detective-only message sent to non-detective client`);
   }
   if (m.type !== "game_over") {
     findRoleLeaks(m, p, tag);
@@ -204,6 +215,8 @@ afterAll(() => {
 
 // ── Game drivers ───────────────────────────────────────────────────────
 
+// NOTE: single-test file by design — module-level state (players, dead,
+// violations, gameOverAllowed) is never reset between tests.
 const dead = new Set<number>();
 const alive = () => players.filter((p) => !dead.has(p.userId));
 
@@ -354,6 +367,8 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
       },
     });
     await waitSince(admin, sm, (m) => m.type === "settings_updated", "settings_updated");
+    // settings_updated goes only to the admin socket; brief pause lets the
+    // follow-up lobby_update broadcast settle on the other 9 clients.
     await Bun.sleep(100);
 
     // ── Start: roles are random — discover each client's own role ──
@@ -361,7 +376,7 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
     send(admin.ws, { type: "start_game" });
     const started = await Promise.all(players.map((p, i) =>
       waitSince(p, startMarks[i], (m) => m.type === "game_started", "game_started")));
-    players.forEach((p, i) => { p.role = started[i].role; });
+    // p.role was already set by each recorder from its own game_started (authoritative).
 
     await Promise.all(players.map((p, i) =>
       waitSince(p, startMarks[i],
@@ -394,6 +409,11 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
     expect(townTargets.length).toBeGreaterThanOrEqual(2);
     const [victimSaved, victimKilled] = townTargets;
 
+    // If the admin drew mafia, lynch the admin's mafia LAST so the admin is
+    // alive for every call_vote except the final one — keeping the gate's
+    // coverage identical across random role draws.
+    const lynchOrder = admin === mafias[0] ? [mafias[1], mafias[0]] : mafias;
+
     // ── Night 1 (admin gates the first night via narrator_ready) ───
     const mafiaPromptMarks = mafias.map((m) => m.inbox.length);
     send(admin.ws, { type: "narrator_ready" });
@@ -410,7 +430,7 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
       killTarget: victimSaved,
       doctorSave: victimSaved,
       doctor, detective,
-      detectiveTarget: mafias[0],
+      detectiveTarget: lynchOrder[0],
       expectVictimDies: false,
     });
     expect(night1.detRes.isMafia).toBe(true);
@@ -425,12 +445,12 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
     assertNoViolations("end of night 1");
 
     // ── Day 1: lynch mafia #1 ───────────────────────────────────────
-    await runLynch(admin, mafias[0], false);
+    await runLynch(admin, lynchOrder[0], false);
     assertNoViolations("end of day 1");
 
     // ── Night 2: remaining mafia kills a citizen; the kill lands ───
     const night2 = await runNight({
-      mafiaAlive: [mafias[1]],
+      mafiaAlive: [lynchOrder[1]],
       killTarget: victimKilled,
       doctorSave: doctor,           // self-save; differs from last night's target
       doctor, detective,
@@ -450,7 +470,7 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
     }
 
     // ── Day 2: lynch mafia #2 → 0 mafia alive → natural town win ───
-    const overs = (await runLynch(admin, mafias[1], true))!;
+    const overs = (await runLynch(admin, lynchOrder[1], true))!;
     for (const over of overs) {
       expect(over.winner).toBe("town");
       expect(over.forceEnded).toBeFalsy();
@@ -480,7 +500,7 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
     }
 
     // Alive lists consistent: every client saw the same deaths in the same order
-    const expectedDeaths = [mafias[0].userId, victimKilled.userId, mafias[1].userId];
+    const expectedDeaths = [lynchOrder[0].userId, victimKilled.userId, lynchOrder[1].userId];
     for (const p of players) {
       const deaths = p.inbox.filter((m) => m.type === "player_died").map((m) => m.playerId);
       expect(deaths).toEqual(expectedDeaths);
