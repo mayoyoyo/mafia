@@ -132,7 +132,7 @@ export type ServerMessage =
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
-  | { type: "mafia_confirm_ready"; targetName: string }
+  | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
   | { type: "mafia_targets"; players: PlayerInfo[] }
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }
