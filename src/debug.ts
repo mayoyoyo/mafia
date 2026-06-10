@@ -71,5 +71,8 @@ export function dumpGame(game: Game): Record<string, unknown> {
     detectiveHistory: game.detectiveHistory.map((e) => ({ ...e })),
     nightSubPhase: game.nightSubPhase,
     awaitingNarratorReady: game.awaitingNarratorReady,
+    pendingRevenge: game.pendingRevenge
+      ? { hunterId: game.pendingRevenge.hunterId, resume: { ...game.pendingRevenge.resume } }
+      : null,
   } satisfies Record<keyof Game, unknown>;
 }

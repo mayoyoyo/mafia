@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
 // B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
@@ -77,6 +77,7 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     detectiveHistory: [],
     nightSubPhase: null,
     awaitingNarratorReady: false,
+    pendingRevenge: null,
   };
 
   games.set(code, game);
@@ -116,6 +117,14 @@ const NIGHT_RESETS = {
   voteTarget: (g: Game) => { g.voteTarget = null; },
   votes: (g: Game) => { g.votes.clear(); },
   awaitingNarratorReady: (g: Game) => { g.awaitingNarratorReady = false; },
+  // B4a (Hunter pre-plumbing): the revenge gate clears at every forced
+  // transition (HUNTER-DESIGN §6 L2 row) — per-night scope reaches all of
+  // them (forceDawn/endDay/cancelVote via resetNightActions, lobby resets
+  // via resetGameState; forceEndGame clears by hand like
+  // awaitingNarratorReady). Null-pinned until Program C sets it. Resets by
+  // REASSIGNMENT — no fresh-copy line needed in nightRestingSnapshot's
+  // shield (see the FUTURE-BINDING note there).
+  pendingRevenge: (g: Game) => { g.pendingRevenge = null; },
 } as const;
 
 const GAME_RESETS = {
@@ -289,14 +298,18 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
   // post-reset value. Phase allowances, each matching a positive guarantee
   // pinned in tests:
   //   voting    — voteTarget/votes ARE the live ballot (callVote/castVote);
-  //   game_over — jokerHauntVoters stay populated when the official-joker
-  //               execution itself ends the game (resolveVote captures them
-  //               under { preserveHauntVoters } and no later reset boundary
-  //               runs; pinned in tests/reset-seam.test.ts);
+  //   game_over — jokerHauntVoters stay populated ONLY when the official-
+  //               joker execution itself ends the game: that branch is the
+  //               sole writer of jokerHauntVoters AND sets jokerJointWinner
+  //               in the same block, and every other route to game_over
+  //               passes a no-preserve reset boundary first (narrowed from
+  //               an unconditional game_over allowance in B4a; pinned in
+  //               tests/reset-seam.test.ts + tests/invariants.test.ts);
   //             — a force-ended game (forceEndGame) freezes ALL in-flight
   //               night/vote state where it stood: its only night-scope
-  //               guarantee is awaitingNarratorReady=false (the L2 fix), so
-  //               that is the only field still checked when forceEnded.
+  //               guarantees are awaitingNarratorReady=false (the L2 fix)
+  //               and pendingRevenge=null (both cleared by hand there), so
+  //               those are the only fields still checked when forceEnded.
   if (game.phase !== "night") {
     const resting = nightRestingSnapshot(game);
     const skip = new Set<keyof Game>();
@@ -305,10 +318,10 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
       skip.add("votes");
     }
     if (game.phase === "game_over") {
-      skip.add("jokerHauntVoters");
+      if (game.jokerJointWinner) skip.add("jokerHauntVoters");
       if (game.forceEnded) {
         for (const field of NIGHT_RESET_FIELDS) {
-          if (field !== "awaitingNarratorReady") skip.add(field);
+          if (field !== "awaitingNarratorReady" && field !== "pendingRevenge") skip.add(field);
         }
       }
     }
@@ -324,6 +337,14 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
   // (buildGameSync, the end_game broadcast) dereference it with `!`.
   if (game.phase === "game_over" && game.winner === null) {
     violations.push("winner_null_at_game_over");
+  }
+
+  // Invariant (B4a pre-plumbing): pendingRevenge is NULL ALWAYS — nothing
+  // sets it until Program C's Hunter lands. C relaxes this to the
+  // phase-scoped form (HUNTER-DESIGN §4: non-null ⇒ phase ∈ {night,voting},
+  // votes empty, voteTarget null, winner null).
+  if (game.pendingRevenge !== null) {
+    violations.push("pending_revenge_nonnull");
   }
 
   // Invariant (M2 class): the TRACKED night-timer slot is empty outside
@@ -1057,6 +1078,56 @@ export function resolveNight(game: Game): NightResult {
   return result;
 }
 
+// ── B4a (audit P5): the single round epilogue ───────────────────────────
+//
+// concludeRound is the ONE win-check/auto-transition tail, formerly
+// triplicated across transitionToDay and both resolveVote execution
+// branches (the official-joker early-return re-implemented it). Contract:
+//   - Callers run their own resets BEFORE calling (vote/night state is
+//     already clean when the epilogue runs — HUNTER-DESIGN §4 relies on
+//     exactly this ordering while the gate is open).
+//   - `messages` receives any narrator line the epilogue emits (the win
+//     line, or beginNight's night-falls line) — nothing else is touched.
+//   - checkWinCondition has NO other call site in src/ (pinned by
+//     tests/conclude-round.test.ts); the M8 joker-parity rule therefore
+//     has exactly one place to live.
+//   - Transition-log reasons are derived from the entry phase, preserving
+//     the pre-B4a lines: from "night" this is a dawn resolution
+//     ("night_resolved"), from anywhere else a vote resolution
+//     ("vote_resolved" / "spared"); the auto-night logs "execution" via
+//     beginNight as before.
+
+/**
+ * Win check + game-over/auto-night/day transition for a resolved round.
+ * First line is the Hunter gate (Program C): a pending revenge defers BOTH
+ * the win check and the transition; submitHunterRevenge clears the gate and
+ * resumes by re-calling this with game.pendingRevenge.resume. Null-pinned
+ * in Program B — nothing opens the gate until the Hunter lands.
+ */
+export function concludeRound(game: Game, messages: string[], opts: ConcludeRoundOptions): void {
+  if (game.pendingRevenge) return; // C's resume path: submitHunterRevenge → concludeRound(resume)
+
+  const fromNight = game.phase === "night";
+
+  const winner = checkWinCondition(game);
+  if (winner) {
+    game.winner = winner;
+    logTransition(game, game.phase, "game_over", fromNight ? "night_resolved" : "vote_resolved");
+    game.phase = "game_over";
+    if (winner === "town") messages.push(Narrator.townWin());
+    else if (winner === "mafia") messages.push(Narrator.mafiaWin());
+  } else if (opts.autoNight) {
+    // Auto-transition to night after an execution. beginNight re-runs the
+    // per-night reset, so { preserveHauntVoters } MUST match the caller's
+    // own resetNightActions flags (official-joker carve-out — a mismatch
+    // would wipe the haunt voters; the haunt-parity test covers it).
+    messages.push(beginNight(game, "execution", { preserveHauntVoters: opts.preserveHauntVoters }));
+  } else {
+    logTransition(game, game.phase, "day", fromNight ? "night_resolved" : "spared");
+    game.phase = "day";
+  }
+}
+
 export function transitionToDay(game: Game): NightResult {
   // Event tracking lives in the death pipeline now: applyDeath pushes the
   // kill/lover_death/joker_haunt events, resolveNight inserts the house-mode
@@ -1068,18 +1139,8 @@ export function transitionToDay(game: Game): NightResult {
   game.lastDoctorTarget = game.doctorTarget;
   resetNightActions(game);
 
-  // Check win conditions
-  const winner = checkWinCondition(game);
-  if (winner) {
-    game.winner = winner;
-    logTransition(game, game.phase, "game_over", "night_resolved");
-    game.phase = "game_over";
-    if (winner === "town") nightResult.messages.push(Narrator.townWin());
-    else if (winner === "mafia") nightResult.messages.push(Narrator.mafiaWin());
-  } else {
-    logTransition(game, game.phase, "day", "night_resolved");
-    game.phase = "day";
-  }
+  // Win check + transition to day/game_over (the dawn epilogue shape).
+  concludeRound(game, nightResult.messages, { autoNight: false });
 
   game.pendingMessages = nightResult.messages;
   return nightResult;
@@ -1175,24 +1236,13 @@ export function resolveVote(game: Game): VoteResult | null {
 
         // Reset vote+night state — carve-out: the FOR-voters captured above
         // must survive into the haunt night. NOTE: the { preserveHauntVoters }
-        // flag MUST match the beginNight call below — a mismatch would wipe
-        // the haunt voters (the haunt-parity test covers it).
+        // flag MUST match the concludeRound options below — a mismatch would
+        // wipe the haunt voters (the haunt-parity test covers it).
         resetNightActions(game, { preserveHauntVoters: true });
 
-        // Check win condition after joker death (+ possible lover death)
-        const winner = checkWinCondition(game);
-        if (winner) {
-          game.winner = winner;
-          logTransition(game, game.phase, "game_over", "vote_resolved");
-          game.phase = "game_over";
-          if (winner === "town") result.messages.push(Narrator.townWin());
-          else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
-        } else {
-          // Auto-transition to the haunt night after execution. NOTE: the
-          // { preserveHauntVoters } flag MUST match the resetNightActions
-          // call above (see the comment there).
-          result.messages.push(beginNight(game, "execution", { preserveHauntVoters: true }));
-        }
+        // Win check + game_over/haunt-night transition (the official-joker
+        // epilogue shape — same single epilogue, carve-out forwarded).
+        concludeRound(game, result.messages, { autoNight: true, preserveHauntVoters: true });
         return result;
       } else {
         // House: instant game over, joker wins
@@ -1223,27 +1273,13 @@ export function resolveVote(game: Game): VoteResult | null {
   }
 
   // Reset vote+night state. NOTE: the default (no-preserve) flags MUST match
-  // the beginNight call below — see the official-joker branch above for the
-  // flagged pair.
+  // the concludeRound options below — see the official-joker branch above
+  // for the flagged pair.
   resetNightActions(game);
 
-  // Check win condition
-  const winner = checkWinCondition(game);
-  if (winner) {
-    game.winner = winner;
-    logTransition(game, game.phase, "game_over", "vote_resolved");
-    game.phase = "game_over";
-    if (winner === "town") result.messages.push(Narrator.townWin());
-    else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
-  } else if (result.executed) {
-    // Auto-transition to night after execution. NOTE: the default
-    // (no-preserve) flags MUST match the resetNightActions call above.
-    result.messages.push(beginNight(game, "execution"));
-  } else {
-    // Spared — stay in day
-    logTransition(game, game.phase, "day", "spared");
-    game.phase = "day";
-  }
+  // Win check + game_over/auto-night/spared-day transition (the normal vote
+  // epilogue shape: executed → auto-night, spared → stay in day).
+  concludeRound(game, result.messages, { autoNight: result.executed });
 
   return result;
 }
@@ -1303,6 +1339,12 @@ export function forceEndGame(game: Game): void {
   // The client's forceEnded branch shows a neutral end screen regardless.
   game.winner = "town";
   game.awaitingNarratorReady = false;
+  // B4a: forceEndGame is the one forced transition NO reset table reaches
+  // (it freezes in-flight state instead of resetting), so the revenge gate
+  // is cleared by hand here, exactly like awaitingNarratorReady (the L2
+  // pattern; HUNTER-DESIGN §6 lists end_game among the gate-clearing
+  // transitions). No-op while null-pinned in Program B.
+  game.pendingRevenge = null;
 }
 
 export function returnToLobby(game: Game): boolean {

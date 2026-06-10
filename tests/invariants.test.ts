@@ -20,11 +20,15 @@ import { describe, test, expect, afterEach } from "bun:test";
  * Invariant formulations under test (what the code actually guarantees):
  *   - outside night, every NIGHT_RESETS-classified field is at its
  *     post-reset value, EXCEPT: voteTarget/votes during voting (live
- *     ballot); jokerHauntVoters at game_over (official-joker execution that
- *     ends the game keeps them — pinned in reset-seam.test.ts); and ALL
- *     fields but awaitingNarratorReady when forceEnded (forceEndGame
- *     freezes in-flight state where it stood).
+ *     ballot); jokerHauntVoters at game_over ONLY under jokerJointWinner
+ *     (the official-joker execution that ends the game keeps them — pinned
+ *     in reset-seam.test.ts; narrowed from an unconditional game_over
+ *     allowance in B4a); and ALL fields but awaitingNarratorReady when
+ *     forceEnded (forceEndGame freezes in-flight state where it stood).
  *   - winner non-null at game_over (L3).
+ *   - pendingRevenge null ALWAYS (B4a pre-plumbing: null-pinned for all of
+ *     Program B; Program C relaxes this to the phase-scoped form in
+ *     HUNTER-DESIGN §4).
  *   - the TRACKED night-timer slot (caller-provided) empty outside night.
  */
 
@@ -131,6 +135,27 @@ describe("D4 assertInvariants — violations throw in test mode", () => {
     const game = gameAtNaturalGameOver();
     game.winner = null;
     expect(() => assertInvariants(game, AT)).toThrow(/winner_null_at_game_over/);
+  });
+
+  test("pendingRevenge non-null DURING night (B4a: null-pinned in Program B, even where night-scope checks are skipped)", () => {
+    const game = makeGame(["mafia", "citizen", "citizen"]);
+    expect(game.phase).toBe("night");
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
+    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_nonnull/);
+  });
+
+  test("pendingRevenge non-null in day phase (caught by BOTH the explicit pin and the night-scope table)", () => {
+    const game = gameInDay();
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: true, preserveHauntVoters: true } };
+    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_nonnull/);
+    expect(() => assertInvariants(game, AT)).toThrow(/night_scope_dirty:pendingRevenge/);
+  });
+
+  test("jokerHauntVoters populated at a NON-joker game_over (B4a narrowing: the allowance requires jokerJointWinner)", () => {
+    const game = gameAtNaturalGameOver();
+    expect(game.jokerJointWinner).toBe(false);
+    game.jokerHauntVoters = [2];
+    expect(() => assertInvariants(game, AT)).toThrow(/night_scope_dirty:jokerHauntVoters/);
   });
 
   test("tracked night timer pending outside night (M2 class)", () => {

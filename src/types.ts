@@ -58,6 +58,32 @@ export interface Death {
 
 export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
 
+// ── B4a (audit P5): the round epilogue + Hunter revenge gate ────────────
+/**
+ * Options for concludeRound (game-engine.ts), the single win-check/
+ * auto-transition epilogue. Doubles as the resume payload stored on
+ * PendingRevenge — when the Hunter gate defers an epilogue, these are the
+ * exact options the resume re-enters concludeRound with (HUNTER-DESIGN §3.1).
+ */
+export interface ConcludeRoundOptions {
+  /** true when the flow is an execution → night auto-transition (resolveVote). */
+  autoNight: boolean;
+  /** Official-joker-lynch carve-out only: the haunt night must keep the captured voters. */
+  preserveHauntVoters?: boolean;
+}
+
+/**
+ * The Hunter revenge gate (HUNTER-DESIGN §3.1) — PLAIN DATA, never a
+ * server-held closure (closure-held gate state is un-rejoinable; audit D3).
+ * NULL-PINNED for all of Program B: nothing sets it until Program C's
+ * Hunter lands (notifyDeathTriggers opens it; submitHunterRevenge clears it
+ * and resumes concludeRound with `resume`). assertInvariants pins null.
+ */
+export interface PendingRevenge {
+  hunterId: number;
+  resume: ConcludeRoundOptions;
+}
+
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
 
 export interface MafiaVoteEntry {
@@ -106,6 +132,8 @@ export interface Game {
   nightSubPhase: NightSubPhase | null;
   // Begin Night gate (game start / restart only)
   awaitingNarratorReady: boolean;
+  // Hunter revenge gate (B4a pre-plumbing): ALWAYS null in Program B.
+  pendingRevenge: PendingRevenge | null;
 }
 
 // WebSocket message types

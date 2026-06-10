@@ -61,6 +61,10 @@ const NIGHT_KEYS = [
   "voteTarget",
   "votes",
   "awaitingNarratorReady",
+  // B4a (Hunter pre-plumbing): the revenge gate clears at every forced
+  // transition (HUNTER-DESIGN §6 L2 row) — per-night scope covers all of
+  // them via resetNightActions; null-pinned until Program C sets it.
+  "pendingRevenge",
 ] as const;
 
 const GAME_KEYS = [
@@ -162,6 +166,7 @@ function dirtyNightFields(game: Game, skip: string[] = []): void {
     voteTarget: () => { game.voteTarget = 998; },
     votes: () => game.votes.set(999, true),
     awaitingNarratorReady: () => { game.awaitingNarratorReady = true; },
+    pendingRevenge: () => { game.pendingRevenge = { hunterId: 998, resume: { autoNight: false } }; },
   };
   for (const key of NIGHT_KEYS) {
     if (!skip.includes(key)) dirty[key]();
