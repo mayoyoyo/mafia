@@ -8,7 +8,7 @@ import {
   cancelVote, endDay, forceDawn, checkWinCondition, getAlivePlayers, getAliveByRole,
   getPlayerInfo, forceEndGame, removeGame, restartGame, returnToLobby,
 } from "../src/game-engine";
-import type { Game, Player, NightSubPhase } from "../src/types";
+import type { Game, GamePhase, Player, NightSubPhase } from "../src/types";
 import { Narrator } from "../src/narrator";
 
 function setupGame(playerCount: number, settings?: Partial<import("../src/types").GameSettings>): Game {
@@ -18,6 +18,18 @@ function setupGame(playerCount: number, settings?: Partial<import("../src/types"
   }
   if (settings) updateSettings(game, settings);
   return game;
+}
+
+// Typed phase setters: assigning a string literal directly (e.g. `game.phase = "day"`)
+// narrows the property to that literal for the rest of the test, so later checks
+// against phases the engine mutated (through calls tsc can't track) become type
+// errors (TS2367/TS2769). Routing assignments through these keeps the declared union.
+function setPhase(game: Game, phase: GamePhase): void {
+  game.phase = phase;
+}
+
+function setNightSubPhase(game: Game, sub: NightSubPhase): void {
+  game.nightSubPhase = sub;
 }
 
 function lockTarget(game: Game, mafiaId: number, targetId: number) {
@@ -90,8 +102,8 @@ describe("Doctor Official Mode", () => {
     const doctor = findPlayerByRole(game, "doctor");
     const citizen = getCitizens(game)[0];
 
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     lockTarget(game, mafia.id, citizen.id);
     advanceNightSubPhase(game); // -> doctor
     submitDoctorSave(game, doctor.id, citizen.id);
@@ -117,8 +129,8 @@ describe("Doctor Official Mode", () => {
     const doctor = findPlayerByRole(game, "doctor");
     const citizen = getCitizens(game)[0];
 
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     lockTarget(game, mafia.id, citizen.id);
     advanceNightSubPhase(game); // -> doctor
     submitDoctorSave(game, doctor.id, citizen.id);
@@ -143,8 +155,8 @@ describe("Doctor Official Mode", () => {
     const doctor = findPlayerByRole(game, "doctor");
     const citizen = getCitizens(game)[0];
 
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     lockTarget(game, mafia.id, citizen.id);
     advanceNightSubPhase(game);
     submitDoctorSave(game, doctor.id, citizen.id);
@@ -164,8 +176,8 @@ describe("Doctor Official Mode", () => {
     const doctor = findPlayerByRole(game, "doctor");
     const citizen = getCitizens(game)[0];
 
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     lockTarget(game, mafia.id, citizen.id);
     advanceNightSubPhase(game);
     submitDoctorSave(game, doctor.id, citizen.id);
@@ -185,8 +197,8 @@ describe("Doctor Official Mode", () => {
     const doctor = findPlayerByRole(game, "doctor");
     const citizens = getCitizens(game);
 
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     lockTarget(game, mafia.id, citizens[0].id);
     advanceNightSubPhase(game);
     // Doctor saves someone else
@@ -208,8 +220,8 @@ describe("Doctor Official Mode", () => {
     const doctor = findPlayerByRole(game, "doctor");
     const citizen = getCitizens(game)[0];
 
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     lockTarget(game, mafia.id, citizen.id);
     advanceNightSubPhase(game); // -> doctor
     submitDoctorSave(game, doctor.id, citizen.id);
@@ -232,8 +244,8 @@ describe("Doctor Official Mode", () => {
     const doctor = findPlayerByRole(game, "doctor");
     const citizen = getCitizens(game)[0];
 
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     lockTarget(game, mafia.id, citizen.id);
     advanceNightSubPhase(game); // -> doctor
     submitDoctorSave(game, doctor.id, citizen.id);
@@ -300,7 +312,7 @@ describe("Joker House Mode - Execution", () => {
     const joker = findPlayerByRole(game, "joker");
 
     // Simulate a day vote to execute the joker
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     // All alive players vote yes
     for (const [, p] of game.players) {
@@ -322,7 +334,7 @@ describe("Joker House Mode - Execution", () => {
     startGame(game);
     const joker = findPlayerByRole(game, "joker");
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -344,7 +356,7 @@ describe("Joker Official Mode - Execution & Game Continues", () => {
     startGame(game);
     const joker = findPlayerByRole(game, "joker");
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -367,7 +379,7 @@ describe("Joker Official Mode - Execution & Game Continues", () => {
     startGame(game);
     const joker = findPlayerByRole(game, "joker");
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -385,7 +397,7 @@ describe("Joker Official Mode - Execution & Game Continues", () => {
     startGame(game);
     const joker = findPlayerByRole(game, "joker");
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
 
     const yesVoters: number[] = [];
@@ -418,7 +430,7 @@ describe("Joker Official Mode - Execution & Game Continues", () => {
     const joker = findPlayerByRole(game, "joker");
     const startRound = game.round;
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -444,7 +456,7 @@ describe("Joker Haunt - submitJokerHaunt", () => {
     const joker = findPlayerByRole(game, "joker");
 
     // Execute joker in a vote
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     const voters: number[] = [];
     for (const [, p] of game.players) {
@@ -476,7 +488,7 @@ describe("Joker Haunt - submitJokerHaunt", () => {
     const joker = findPlayerByRole(game, "joker");
 
     // Execute joker
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     const voters: number[] = [];
     for (const [, p] of game.players) {
@@ -529,8 +541,8 @@ describe("Joker Haunt - submitJokerHaunt", () => {
     const joker = findPlayerByRole(game, "joker");
 
     // Don't execute joker, just set up night manually
-    game.phase = "night";
-    game.nightSubPhase = "mafia";
+    setPhase(game, "night");
+    setNightSubPhase(game, "mafia");
     game.jokerHauntVoters = [2, 3, 4];
 
     const result = submitJokerHaunt(game, joker.id, 2);
@@ -554,7 +566,7 @@ describe("Joker Haunt - getJokerHauntTargets", () => {
     startGame(game);
     const joker = findPlayerByRole(game, "joker");
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -577,7 +589,7 @@ describe("Joker Haunt - getJokerHauntTargets", () => {
     startGame(game);
     const joker = findPlayerByRole(game, "joker");
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     const voters: number[] = [];
     for (const [, p] of game.players) {
@@ -611,7 +623,7 @@ describe("Joker Haunt - Parallel Action (no sub-phase)", () => {
     const joker = findPlayerByRole(game, "joker");
 
     // Execute joker
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -653,7 +665,7 @@ describe("Joker Haunt - Night Resolution", () => {
     const mafia = findPlayerByRole(game, "mafia");
 
     // Execute joker
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     const voters: number[] = [];
     for (const [, p] of game.players) {
@@ -880,7 +892,7 @@ describe("Joker Haunt - Night Resolution", () => {
     for (const [, p] of game.players) { p.isLover = false; p.loverId = null; }
 
     // Lynch the joker day 1 — everyone votes yes, so all become haunt targets
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) castVote(game, p.id, true);
@@ -954,7 +966,7 @@ describe("Joker Haunt - Night Resolution", () => {
     const game = setupGame(5, { enableJoker: true, jokerMode: "official" });
     startGame(game);
 
-    game.phase = "day";
+    setPhase(game, "day");
     game.jokerHauntVoters = [2, 3, 4];
 
     endDay(game);
@@ -988,7 +1000,7 @@ describe("Joker Official Mode - Lover Interaction", () => {
     const loverId = joker.loverId!;
     const lover = game.players.get(loverId)!;
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -1025,7 +1037,7 @@ describe("Joker Official Mode - Win Condition Integration", () => {
     loverCitizen.isLover = true;
     loverCitizen.loverId = joker.id;
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -1048,7 +1060,7 @@ describe("Joker Official Mode - Win Condition Integration", () => {
     startGame(game);
     const joker = findPlayerByRole(game, "joker");
 
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     for (const [, p] of game.players) {
       if (p.isAlive && p.id !== joker.id) {
@@ -1164,7 +1176,7 @@ describe("Joker Official Mode - Restart/Return to Lobby Reset", () => {
     game.jokerJointWinner = true;
     game.jokerHauntVoters = [2, 3, 4];
     game.jokerHauntTarget = 2;
-    game.phase = "game_over"; // returnToLobby requires game_over phase
+    setPhase(game, "game_over"); // returnToLobby requires game_over phase
 
     returnToLobby(game);
 
@@ -1180,7 +1192,7 @@ describe("Night Resolution - No Kill Edge Cases", () => {
     const game = setupGame(5, { enableJoker: true, jokerMode: "official" });
     startGame(game);
 
-    game.phase = "night";
+    setPhase(game, "night");
     game.mafiaTarget = null;
     game.jokerHauntTarget = null;
 
@@ -1231,7 +1243,7 @@ describe("Doctor Official + Joker Haunt Combined", () => {
     const doctor = getAliveByRole(game, "doctor")[0];
 
     // Execute joker
-    game.phase = "day";
+    setPhase(game, "day");
     callVote(game, game.adminId, joker.id);
     const voters: number[] = [];
     for (const [, p] of game.players) {

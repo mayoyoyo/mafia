@@ -855,7 +855,7 @@ describe("advanceNightSubPhase", () => {
     const game = setupNightGame(4);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     transitionToDay(game);
     expect(game.nightSubPhase).toBeNull();
     removeGame(game.code);
@@ -865,7 +865,7 @@ describe("advanceNightSubPhase", () => {
     const game = setupNightGame(4);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     transitionToDay(game);
     endDay(game);
     expect(game.nightSubPhase).toBe("mafia");
