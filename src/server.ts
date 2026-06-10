@@ -121,9 +121,10 @@ function armNightTimer(game: Game, kind: string, delay: number, fn: () => void):
     nightTimers.delete(game.code);
     slog("night_timer", { code: game.code, kind, delay, event: "fired" });
     // B2 (audit D4): invariant sweep at the timer choke point, on the settled
-    // state the timer found. The fired entry was deleted above, so
-    // hasPendingNightTimer reflects any OTHER tracked timer (only possible
-    // via the documented displacement quirk).
+    // state the timer found. nightTimers.has(code) is ALWAYS false here today:
+    // the delete just above runs synchronously, and under the displacement
+    // quirk a stale timer's delete removes the NEWER entry too. Kept so the
+    // assert shape matches ws_in; B4 revisits the displacement quirk.
     assertInvariants(game, { at: `timer_fire:${kind}`, hasPendingNightTimer: nightTimers.has(game.code) });
     fn();
   }, delay);

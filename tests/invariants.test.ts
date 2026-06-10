@@ -35,6 +35,7 @@ import {
   assertInvariants, setInvariantMode,
 } from "../src/game-engine";
 import type { Game, GameSettings, Role } from "../src/types";
+import { dumpGame } from "../src/debug";
 
 // ── Helpers (reset-seam.test.ts patterns) ───────────────────────────────────
 
@@ -275,6 +276,26 @@ describe("D4 assertInvariants — legitimate flows are violation-free", () => {
     expect(game.mafiaTarget).toBe(3); // frozen, not reset
 
     expect(assertInvariants(game, AT)).toEqual([]);
+  });
+
+  test("non-perturbation: assertInvariants leaves the live game byte-identical (shield-copy tripwire)", () => {
+    // Guards the nightRestingSnapshot shield (game-engine.ts): any in-place
+    // reset fn missing a fresh-copy line there would mutate the LIVE game
+    // through the shallow spread — here, scrubbing the populated ballot.
+    // A voting-phase game with a real callVote/castVote ballot is the
+    // sensitive case: votes is one of the Maps reset via .clear().
+    const game = gameInDay();
+    expect(callVote(game, 1, 5)).toBe(true);
+    castVote(game, 1, true);
+    castVote(game, 2, false);
+    castVote(game, 3, true);
+    expect(game.phase).toBe("voting");
+    expect(game.votes.size).toBe(3);
+
+    const before = JSON.stringify(dumpGame(game));
+    expect(assertInvariants(game, { at: "non-perturbation", hasPendingNightTimer: false })).toEqual([]);
+    const after = JSON.stringify(dumpGame(game));
+    expect(after).toBe(before);
   });
 
   test("force-ended carve-out: end_game mid-voting freezes the live ballot — no violation", () => {

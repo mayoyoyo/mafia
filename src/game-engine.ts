@@ -260,6 +260,14 @@ export interface InvariantContext {
  * field/value list. The shield swaps in fresh Maps for the two fields whose
  * reset fns mutate in place (.clear()); every other table entry reassigns,
  * so the live game is never touched.
+ *
+ * FUTURE-BINDING: any new NIGHT_RESETS entry whose reset fn mutates IN PLACE
+ * (.clear(), .length = 0, splice, delete-key, ...) MUST get a fresh-copy line
+ * in this shield. Miss it and the reset fn reaches THROUGH the shallow spread
+ * into the live game at every choke point — and in prod log-mode the check
+ * silently scrubs the live field on every message, masking the very bug it
+ * exists to catch. The non-perturbation test in tests/invariants.test.ts
+ * (byte-identical dumpGame before/after assertInvariants) is the tripwire.
  */
 function nightRestingSnapshot(game: Game): Record<string, unknown> {
   const shield: Game = { ...game, mafiaVotes: new Map(), votes: new Map() };
