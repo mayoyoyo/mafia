@@ -33,6 +33,8 @@
   let nightTransitionActive = false;
   let nightTransitionQueue = [];
   let executionTransitionActive = false;
+  let heartbreakTransitionActive = false;
+  let pendingGameOver = null; // game_over held while an overlay chain animates (L5)
   let nightNarrationActive = false;
   let nightNarrationQueue = [];
   let audioUnlocked = false;
@@ -162,6 +164,13 @@
     // During suspense, queue certain messages
     if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died" || msg.type === "joker_win_overlay")) {
       suspenseQueue.push(msg);
+      return;
+    }
+    // While a death/heartbreak/night overlay chain is animating, hold game_over
+    // so its reveal doesn't stomp the in-flight beats; it replays after the
+    // chain's final callback (applyPhaseChange) via flushPendingGameOver (L5)
+    if ((suspenseActive || executionTransitionActive || heartbreakTransitionActive || nightTransitionActive) && msg.type === "game_over") {
+      pendingGameOver = msg;
       return;
     }
     // During night/execution transition, queue sound_cues and night action prompts
@@ -341,14 +350,16 @@
 
       case "night_action_done":
         $("action-status").textContent = msg.message;
-        // If mafia and consensus was reached, collapse target list
+        // If mafia and consensus was reached, collapse target list.
+        // Rejoined mafia have empty myMafiaVotes; fall back to the confirm
+        // target restored by mafia_confirm_ready after game_sync.
         if (myRole === "mafia" && !nightActionLocked) {
           const lockVote = myMafiaVotes.find(v => v.voteType === "lock");
-          if (lockVote) {
+          if (lockVote || mafiaConfirmTarget) {
             nightActionLocked = true;
             hideSlideConfirm();
-            const lockTarget = mafiaTargetPlayers.find(p => p.id === lockVote.targetId);
-            const targetName = lockTarget ? lockTarget.username : "target";
+            const lockTarget = lockVote && mafiaTargetPlayers.find(p => p.id === lockVote.targetId);
+            const targetName = lockTarget ? lockTarget.username : (mafiaConfirmTarget || "target");
             $("action-targets").innerHTML = `<li class="selected">${escapeHtml(targetName)} \u2714</li>`;
           }
         }
@@ -1442,6 +1453,16 @@
     updatePlayerStatus();
   }
 
+  // L5: a game_over that arrived mid-transition replays once the chain ends.
+  // If another transition chained on synchronously (execution → heartbreak →
+  // night), handleServerMessage simply re-holds it until the last one completes.
+  function flushPendingGameOver() {
+    if (!pendingGameOver) return;
+    const msg = pendingGameOver;
+    pendingGameOver = null;
+    handleServerMessage(msg);
+  }
+
   // ============================================================
   // EXECUTION TRANSITION (vote result → night)
   // ============================================================
@@ -1476,6 +1497,7 @@
   }
 
   function showHeartbreakTransition(loverName, callback) {
+    heartbreakTransitionActive = true;
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
 
@@ -1492,7 +1514,9 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        heartbreakTransitionActive = false;
         callback();
+        flushPendingGameOver();
       }, 600);
     }, 2000);
   }
@@ -1555,6 +1579,7 @@
           handleServerMessage(qMsg);
         }
         nightTransitionQueue = [];
+        flushPendingGameOver();
       }, 600);
     }, 3400);
   }
@@ -1638,6 +1663,7 @@
         handleServerMessage(qMsg);
       }
       suspenseQueue = [];
+      flushPendingGameOver();
     }, 6300 + extraDelay);
   }
 

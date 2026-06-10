@@ -192,6 +192,46 @@ describe("M11: multi-mafia auto Lock In (partial-lock card)", () => {
   });
 });
 
+describe("rejoined mafia: teammate confirms the kill", () => {
+  test("slide-confirm hides even though the rejoiner has no local vote state", () => {
+    // Rejoin mid-night during the mafia sub-phase with consensus reached:
+    // game_sync leaves myMafiaVotes empty and (H4) the action unlocked.
+    serverSays({ type: "logged_in", userId: 1, username: "Mafioso" });
+    serverSays({ type: "game_joined", code: "ABCD", isAdmin: false });
+    serverSays({
+      type: "game_sync",
+      code: "ABCD",
+      players: [
+        { id: 1, username: "Mafioso", isAlive: true },
+        { id: 2, username: "Vito", isAlive: true },
+        { id: 3, username: "Bob", isAlive: true },
+      ],
+      role: "mafia",
+      isLover: false,
+      variant: 0,
+      mafiaTeam: ["Mafioso", "Vito"],
+      isDead: false,
+      phase: "night",
+      nightSubPhase: "mafia",
+      round: 1,
+      dayVoteCount: 0,
+      narratorHistory: [],
+      detectiveHistory: [],
+      eventHistory: [],
+      nightAction: { locked: true, targetName: "Bob", targets: [], voterTargets: {} },
+    });
+    // Server re-sends the consensus state right after game_sync (H4).
+    serverSays({ type: "mafia_confirm_ready", targetName: "Bob" });
+    expect(document.getElementById("slide-confirm").classList.contains("hidden")).toBe(false);
+
+    // Teammate slides to confirm — all mafia get night_action_done.
+    serverSays({ type: "night_action_done", message: "The Mafia has chosen their victim." });
+
+    expect(document.getElementById("slide-confirm").classList.contains("hidden")).toBe(true);
+    expect(document.getElementById("action-targets").textContent).toContain("Bob ✔");
+  });
+});
+
 describe("L6: corrupt mafia_user localStorage", () => {
   test("corrupt JSON does not throw on connect, removes the bad key, sends no login", () => {
     localStorage.setItem("mafia_user", "{definitely not json");

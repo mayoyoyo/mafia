@@ -54,10 +54,23 @@ export interface ClientHarness {
   $: (id: string) => any;
 }
 
+export interface LoadClientAppOptions {
+  /**
+   * Multiply every setTimeout delay app.js schedules (e.g. 0.05 compresses
+   * the multi-second overlay chains into tens of milliseconds). app.js calls
+   * resolve `setTimeout` through the with(window) scope on every invocation,
+   * so wrapping window.setTimeout here covers all of its timers. Timer order
+   * is preserved (delays scale uniformly, minimum 1ms). unloadClientApp's
+   * GlobalRegistrator.unregister() discards the wrapper with the rest of the
+   * happy-dom globals.
+   */
+  timeScale?: number;
+}
+
 let loaded: ClientHarness | null = null;
 const realWebSocket = (globalThis as any).WebSocket;
 
-export function loadClientApp(): ClientHarness {
+export function loadClientApp(opts: LoadClientAppOptions = {}): ClientHarness {
   if (loaded) return loaded;
 
   GlobalRegistrator.register({ url: "http://localhost:3000/" });
@@ -90,6 +103,15 @@ export function loadClientApp(): ClientHarness {
 
   // app.js fetches /narration.json at init; keep the harness offline.
   (window as any).fetch = () => new Promise(() => {});
+
+  // Compress app.js timers so overlay-chain tests don't sleep wall-clock
+  // seconds. Installed before app.js evaluates; see LoadClientAppOptions.
+  if (opts.timeScale !== undefined) {
+    const scale = opts.timeScale;
+    const realSetTimeout = window.setTimeout.bind(window);
+    (window as any).setTimeout = (fn: any, delay?: number, ...args: any[]) =>
+      realSetTimeout(fn, Math.max(1, Math.round((delay || 0) * scale)), ...args);
+  }
 
   // Evaluate classic scripts with bare identifiers resolving against window,
   // matching browser script semantics (pixel-art.js attaches window globals
