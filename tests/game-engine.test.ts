@@ -728,6 +728,9 @@ describe("Room Lifecycle", () => {
 
     expect(game.phase).toBe("game_over");
     expect(game.forceEnded).toBe(true);
+    // L3: winner must be well-defined (consumers dereference it with !);
+    // "town" matches the live end_game broadcast
+    expect(game.winner).toBe("town");
     // Game should still be in the map
     expect(getGame(code)).toBeDefined();
     removeGame(game.code);

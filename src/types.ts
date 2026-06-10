@@ -142,7 +142,7 @@ export type ServerMessage =
   | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number }
   | { type: "vote_update"; totalVotes: number; total: number }
-  | { type: "vote_result"; targetName: string; executed: boolean; votesFor: number; votesAgainst: number }
+  | { type: "vote_result"; targetName: string; executed: boolean }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }

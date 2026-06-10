@@ -535,6 +535,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       message: game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
       forceEnded: game.forceEnded,
       revealPlayers: getPlayerInfo(game, true),
+      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
     };
   }
 
@@ -1044,12 +1045,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         if (voteResult) {
           recordNarrator(game, voteResult.messages);
 
+          // M12: never broadcast exact tallies — in small games they de-anonymize voters
           broadcastToGame(game.code, {
             type: "vote_result",
             targetName: voteResult.targetName,
             executed: voteResult.executed,
-            votesFor: voteResult.votesFor,
-            votesAgainst: voteResult.votesAgainst,
           });
 
           // Send joker win overlay only to the joker (official mode: game continues)
@@ -1200,6 +1200,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         message: "Host has ended the game.",
         forceEnded: true,
         players: getPlayerInfo(game, true),
+        ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
       });
       // Room persists — do NOT removeGame or clear gameCode refs
       break;

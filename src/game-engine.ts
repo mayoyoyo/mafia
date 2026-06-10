@@ -972,6 +972,10 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
 export function forceEndGame(game: Game): void {
   game.phase = "game_over";
   game.forceEnded = true;
+  // L3: keep winner well-defined — consumers (buildGameSync, end_game
+  // broadcast) dereference it with `!`; "town" matches the live broadcast.
+  // The client's forceEnded branch shows a neutral end screen regardless.
+  game.winner = "town";
   game.awaitingNarratorReady = false;
 }
 

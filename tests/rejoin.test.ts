@@ -505,6 +505,9 @@ describe("Rejoin during game_over", () => {
 
     expect(sync.phase).toBe("game_over");
     expect(sync.gameOver).not.toBeNull();
+    // L3: force-ended games must report a well-defined winner ("town"),
+    // matching the live end_game broadcast — never null
+    expect(sync.gameOver.winner).toBe("town");
     expect(sync.gameOver.forceEnded).toBe(true);
     expect(sync.gameOver.message).toBe("Host has ended the game.");
     expect(sync.gameOver.revealPlayers.length).toBe(4);
@@ -560,6 +563,57 @@ describe("Rejoin during game_over", () => {
 
     for (const p of players) p.ws.close();
   }, 20000);
+
+  test("jokerJointWinner is preserved in game_sync on rejoin (official mode)", async () => {
+    // 5 players: 1 mafia, 1 joker, 3 citizens (joker guaranteed when enabled)
+    const { code, players } = await setupAndStart(5, { enableJoker: true, jokerMode: "official" });
+
+    const admin = players[0];
+    const mafia = players.find(p => p.role === "mafia")!;
+    const joker = players.find(p => p.role === "joker")!;
+    const citizens = players.filter(p => p.role === "citizen");
+
+    // Night 1: mafia kills a non-admin citizen
+    const firstVictim = citizens.find(p => p.userId !== admin.userId)!;
+    send(mafia.ws, { type: "mafia_vote", targetId: firstVictim.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: firstVictim.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    await waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "day");
+    await Bun.sleep(200);
+
+    // Day 1: lynch the joker — official mode sets jokerJointWinner, game continues
+    send(admin.ws, { type: "call_vote", targetId: joker.userId });
+    await waitFor(admin.ws, "vote_called");
+    const nightPromise = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night");
+    const aliveDay1 = players.filter(p => p.userId !== firstVictim.userId);
+    for (const p of aliveDay1) send(p.ws, { type: "cast_vote", approve: true });
+    await nightPromise;
+    await Bun.sleep(200);
+
+    // Night 2: mafia kills another citizen → 1 mafia vs 1 citizen → mafia wins
+    const secondVictim = citizens.find(p => p.userId !== firstVictim.userId)!;
+    send(mafia.ws, { type: "mafia_vote", targetId: secondVictim.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: secondVictim.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    const liveOver = await waitFor(mafia.ws, "game_over");
+    // Sanity: the live broadcast carries the joint-win trophy
+    expect(liveOver.winner).toBe("mafia");
+    expect(liveOver.jokerJointWinner).toBe(true);
+    await Bun.sleep(100);
+
+    // L1: rejoin must carry the trophy too (game_sync.gameOver.jokerJointWinner)
+    const sync = await rejoin(mafia, code);
+    expect(sync.phase).toBe("game_over");
+    expect(sync.gameOver).not.toBeNull();
+    expect(sync.gameOver.winner).toBe("mafia");
+    expect(sync.gameOver.jokerJointWinner).toBe(true);
+
+    for (const p of players) p.ws.close();
+  }, 25000);
 });
 
 describe("Rejoin atomicity", () => {

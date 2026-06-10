@@ -31,7 +31,6 @@ import { unlinkSync } from "node:fs";
  * (winner town, not forceEnded), reveal roles match discovered roles.
  *
  * Intentionally NOT asserted (behaviors scheduled to change in later tasks):
- *   - votesFor/votesAgainst tallies in vote_result (payload will change)
  *   - mafia-parity win math involving a living joker (M8)
  *   - rejection of night actions during the narrator-ready gate
  *
@@ -290,8 +289,8 @@ async function runNight(opts: {
 
 /**
  * Drive a day lynch: admin calls a vote, every alive player approves.
- * Verifies vote_called, vote_result (target/executed only — tallies are
- * scheduled to change, so votesFor/votesAgainst are deliberately ignored),
+ * Verifies vote_called, vote_result (target/executed only — M12 removed
+ * votesFor/votesAgainst from the broadcast, and we assert their absence),
  * and player_died on every client. Non-final lynches must auto-transition
  * to night; the final one must produce game_over winner "town".
  */
@@ -312,6 +311,9 @@ async function runLynch(admin: TestPlayer, target: TestPlayer, final: boolean) {
   for (const r of results) {
     expect(r.targetName).toBe(target.username);
     expect(r.executed).toBe(true);
+    // M12: exact tallies must never reach clients (de-anonymizes voters)
+    expect("votesFor" in r).toBe(false);
+    expect("votesAgainst" in r).toBe(false);
   }
 
   await Promise.all(players.map((p, i) =>
