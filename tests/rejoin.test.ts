@@ -975,6 +975,57 @@ describe("Rejoin during sequential night sub-phases", () => {
   }, 20000);
 });
 
+describe("Rejoin after mafia lock but before confirm (H4)", () => {
+  test("rejoining mafia receives mafia_confirm_ready and can confirm the kill", async () => {
+    const { code, players } = await setupAndStart(4);
+
+    const mafia = players.find(p => p.role === "mafia")!;
+    const citizens = players.filter(p => p.role === "citizen");
+    const target = citizens[0];
+
+    // Reach unanimous lock consensus, but do NOT send confirm_mafia_kill
+    send(mafia.ws, { type: "mafia_vote", targetId: target.userId, voteType: "maybe" });
+    await waitFor(mafia.ws, "mafia_vote_update");
+    send(mafia.ws, { type: "mafia_vote", targetId: target.userId, voteType: "lock" });
+    await waitFor(mafia.ws, "mafia_confirm_ready");
+
+    // Disconnect WITHOUT confirming
+    mafia.ws.close();
+    await Bun.sleep(100);
+
+    // Reconnect, login, and rejoin the game
+    const fresh = await login(mafia.username, mafia.passcode);
+    mafia.ws = fresh.ws;
+
+    const syncPromise = waitFor(mafia.ws, "game_sync");
+    const confirmReadyPromise = waitFor(mafia.ws, "mafia_confirm_ready", 3000);
+    send(mafia.ws, { type: "join_game", code });
+
+    const sync = await syncPromise;
+    expect(sync.phase).toBe("night");
+    expect(sync.nightSubPhase).toBe("mafia");
+    expect(sync.nightAction).not.toBeNull();
+    expect(sync.nightAction.locked).toBe(true);
+    expect(sync.nightAction.targetName).toBe(target.username);
+
+    // The fix: server must re-send mafia_confirm_ready so the rejoined
+    // mafia can still slide-to-confirm (pre-fix this times out and the
+    // night soft-locks).
+    const confirmReady = await confirmReadyPromise;
+    expect(confirmReady.targetName).toBe(target.username);
+    expect(confirmReady.targetId).toBe(target.userId);
+
+    // Continue the flow: confirm the kill from the rejoined socket and
+    // verify the night advances to day (no doctor/detective enabled).
+    const phasePromise = waitFor(mafia.ws, "phase_change", 4000);
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    const phase = await phasePromise;
+    expect(phase.phase).toBe("day");
+
+    for (const p of players) p.ws.close();
+  }, 20000);
+});
+
 describe("detectiveHistory privacy in game_sync (H3)", () => {
   /**
    * Helper: set up a 6-player game with detective + doctor enabled, run through

@@ -614,6 +614,14 @@
           nightActionLocked = true;
           if (myRole === "mafia") {
             $("mafia-vote-status").classList.remove("hidden");
+            // H4: locked during the mafia sub-phase means consensus was
+            // reached but the kill is NOT yet confirmed — the server
+            // re-sends mafia_confirm_ready right after game_sync. Leave
+            // the action unlocked so handleMafiaConfirmReady can restore
+            // the slide-to-confirm UI.
+            if (msg.nightSubPhase === "mafia") {
+              nightActionLocked = false;
+            }
           }
         } else if (na.targets.length > 0) {
           // Show target selection

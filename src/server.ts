@@ -661,6 +661,20 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           if (game.awaitingNarratorReady && client.userId === game.adminId) {
             send(ws, { type: "awaiting_ready" });
           }
+          // H4: mafia consensus locked but kill not yet confirmed — re-send
+          // mafia_confirm_ready so the rejoining mafia can slide-to-confirm
+          // (otherwise the night soft-locks waiting for a confirm the client
+          // no longer offers)
+          if (game.phase === "night" && game.nightSubPhase === "mafia"
+              && game.mafiaTarget !== null
+              && rejoined.isAlive && rejoined.role === "mafia") {
+            const confirmTarget = game.players.get(game.mafiaTarget);
+            send(ws, {
+              type: "mafia_confirm_ready",
+              targetName: confirmTarget ? confirmTarget.username : "target",
+              targetId: game.mafiaTarget,
+            });
+          }
           // If dead joker with pending haunt during night, send haunt targets separately
           if (game.phase === "night" && game.nightSubPhase !== "resolving"
               && !rejoined.isAlive && rejoined.role === "joker"
