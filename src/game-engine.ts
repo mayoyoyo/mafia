@@ -124,6 +124,13 @@ const NIGHT_RESETS = {
   // awaitingNarratorReady). Null-pinned until Program C sets it. Resets by
   // REASSIGNMENT — no fresh-copy line needed in nightRestingSnapshot's
   // shield (see the FUTURE-BINDING note there).
+  // SEQUENCING TRAP (Program C): notifyDeathTriggers fires inside applyDeath,
+  // which runs BEFORE the caller's resetNightActions in all three flows
+  // (transitionToDay, both resolveVote execution branches) — a gate opened at
+  // trigger time is WIPED by this very line before concludeRound's gate check
+  // runs. C must queue from the hook (the OBSERVE-AND-QUEUE re-entrancy
+  // contract on notifyDeathTriggers) and open the gate AFTER the caller's
+  // reset boundary — or add a preserve carve-out here.
   pendingRevenge: (g: Game) => { g.pendingRevenge = null; },
 } as const;
 
@@ -1103,6 +1110,13 @@ export function resolveNight(game: Game): NightResult {
  * the win check and the transition; submitHunterRevenge clears the gate and
  * resumes by re-calling this with game.pendingRevenge.resume. Null-pinned
  * in Program B — nothing opens the gate until the Hunter lands.
+ *
+ * SEQUENCING TRAP (Program C): notifyDeathTriggers fires inside applyDeath,
+ * and the caller's resetNightActions — which WIPES pendingRevenge — runs
+ * between applyDeath and this gate check in all three flows. A gate opened
+ * inside the trigger hook is gone before this line sees it: queue from the
+ * hook (the OBSERVE-AND-QUEUE contract on notifyDeathTriggers) and open the
+ * gate AFTER the reset boundary, or carve out a preserve in NIGHT_RESETS.
  */
 export function concludeRound(game: Game, messages: string[], opts: ConcludeRoundOptions): void {
   if (game.pendingRevenge) return; // C's resume path: submitHunterRevenge → concludeRound(resume)

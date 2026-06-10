@@ -1092,6 +1092,22 @@ describe("awaitingNarratorReady cleared on forced transitions (L2)", () => {
     removeGame(game.code);
   });
 
+  test("forceEndGame clears pendingRevenge (the hand-clear line, by hand like awaitingNarratorReady)", () => {
+    const game = setupGame(4);
+    startGame(game);
+    // Nothing in Program B production code opens the gate — hand-open it to
+    // pin that forceEndGame's hand-clear actually fires (forceEndGame is the
+    // one forced transition no reset table reaches). This line becomes
+    // load-bearing the moment Program C relaxes the always-null invariant to
+    // the phase-scoped form (HUNTER-DESIGN §4).
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
+
+    forceEndGame(game);
+    expect(game.phase).toBe("game_over");
+    expect(game.pendingRevenge).toBeNull();
+    removeGame(game.code);
+  });
+
   test("returnToLobby clears awaitingNarratorReady", () => {
     const game = setupGame(4);
     startGame(game);

@@ -23,8 +23,9 @@ import { describe, test, expect, afterEach } from "bun:test";
  *     ballot); jokerHauntVoters at game_over ONLY under jokerJointWinner
  *     (the official-joker execution that ends the game keeps them — pinned
  *     in reset-seam.test.ts; narrowed from an unconditional game_over
- *     allowance in B4a); and ALL fields but awaitingNarratorReady when
- *     forceEnded (forceEndGame freezes in-flight state where it stood).
+ *     allowance in B4a); and ALL fields but awaitingNarratorReady and
+ *     pendingRevenge when forceEnded (forceEndGame freezes in-flight state
+ *     where it stood, clearing only those two by hand).
  *   - winner non-null at game_over (L3).
  *   - pendingRevenge null ALWAYS (B4a pre-plumbing: null-pinned for all of
  *     Program B; Program C relaxes this to the phase-scoped form in

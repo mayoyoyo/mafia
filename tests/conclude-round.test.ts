@@ -1,4 +1,5 @@
 import { describe, test, expect, afterEach } from "bun:test";
+import { readdir } from "node:fs/promises";
 
 /**
  * B4a (audit P5) — concludeRound: the SINGLE win-check/auto-transition
@@ -239,16 +240,28 @@ describe("B4a — production flows produce the same end states (single epilogue)
 
 describe("B4a — checkWinCondition single call site (structural pin)", () => {
   test("the only src/ call site is inside concludeRound", async () => {
-    const engine = await Bun.file(new URL("../src/game-engine.ts", import.meta.url)).text();
-    const server = await Bun.file(new URL("../src/server.ts", import.meta.url)).text();
+    // Scan EVERY src/*.ts file (readdir, not a hand list) so a new module
+    // that calls checkWinCondition breaks this pin instead of dodging it.
+    const srcDir = new URL("../src/", import.meta.url);
+    const files = (await readdir(srcDir)).filter((f) => f.endsWith(".ts"));
+    expect(files).toContain("game-engine.ts");
 
-    // Every mention in game-engine.ts: the export, the definition, and the
-    // single call inside concludeRound.
+    // No module other than game-engine.ts may even MENTION it (imports and
+    // aliases included).
+    const offenders: string[] = [];
+    let engine = "";
+    for (const f of files) {
+      const text = await Bun.file(new URL(f, srcDir)).text();
+      if (f === "game-engine.ts") engine = text;
+      else if (text.includes("checkWinCondition")) offenders.push(f);
+    }
+    expect(offenders).toEqual([]);
+
+    // Both mentions in game-engine.ts: the exported definition (export and
+    // definition are ONE line) and the single call inside concludeRound.
     const calls = engine.match(/checkWinCondition\(/g) ?? [];
     const definitions = engine.match(/function checkWinCondition\(/g) ?? [];
     expect(definitions.length).toBe(1);
     expect(calls.length - definitions.length).toBe(1); // exactly one call site
-
-    expect(server.includes("checkWinCondition")).toBe(false);
   });
 });
