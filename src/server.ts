@@ -149,6 +149,7 @@ function armNightTimer(game: Game, kind: string, delay: number, fn: () => void):
 // clearNightTimer keeps its own "cleared" event).
 interface PhaseChangeOptions {
   /** game.phase BEFORE the engine transition ran (callers capture it). */
+  // Footgun: a post-transition capture (`from: game.phase` AFTER the engine call) self-passes on legal self-edges (night→night, day→day); capture BEFORE.
   from: Game["phase"];
   messages: string[];
   /** Include `events: game.eventHistory` in the payload. */
@@ -165,6 +166,7 @@ interface PhaseChangeOptions {
    * clear must not start. force_dawn/restart_game keep their clear AT THE
    * SITE instead: it precedes a fallible engine call and must run even on
    * the failure path, which never reaches this helper.
+   * Accepted delta: at the two clearTimer:true sites the clear now runs AFTER the engine call (was before) — benign because forceEndGame is synchronous and touches no timers.
    */
   clearTimer?: boolean;
 }
@@ -181,6 +183,7 @@ function broadcastPhaseChange(game: Game, opts: PhaseChangeOptions): void {
     phase: game.phase,
     round: game.round,
     messages: opts.messages,
+    // New options need a matching spread line below + a golden pinning their presence — a forgotten spread silently drops the field (tsc can't catch optional omissions).
     ...(opts.events ? { events: game.eventHistory } : {}),
     ...(opts.saved !== undefined ? { saved: opts.saved } : {}),
     ...(opts.loverDeathName ? { loverDeathName: opts.loverDeathName } : {}),
