@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, afterEach } from "bun:test";
 
 /**
  * B1 (audit P1) — reset-seam tests: reset parity + field-scope coverage.
@@ -39,7 +39,7 @@ import { describe, test, expect } from "bun:test";
 import {
   createGame, addPlayer, updateSettings, startGame, removeGame, setFixedDeal,
   submitMafiaVote, submitDoctorSave, submitDetectiveInvestigation, submitJokerHaunt,
-  advanceNightSubPhase, transitionToDay, callVote, castVote, resolveVote,
+  advanceNightSubPhase, transitionToDay, callVote, castVote, resolveVote, cancelVote,
   forceDawn, endDay, returnToLobby, restartGame,
   resetNightActions, NIGHT_RESET_FIELDS, GAME_RESET_FIELDS, PERSISTENT_GAME_FIELDS,
 } from "../src/game-engine";
@@ -92,9 +92,17 @@ const PERSISTENT_KEYS = [
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+// Games created via makeGame are removed here, not at the end of each test,
+// so a failing assertion can't leak registry entries.
+const liveGames: string[] = [];
+afterEach(() => {
+  for (const code of liveGames.splice(0)) removeGame(code);
+});
+
 /** Deal `roles` to players 1..n in join order (player 1 = admin). */
 function makeGame(roles: Role[], settings?: Partial<GameSettings>): Game {
   const game = createGame(1, "Admin");
+  liveGames.push(game.code);
   for (let i = 2; i <= roles.length; i++) addPlayer(game, i, `Player${i}`);
   if (settings) updateSettings(game, settings);
   setFixedDeal({ roles });
@@ -190,7 +198,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expectNightParity(game);
     // Carve-out 1: tonight's save target survives the reset.
     expect(game.lastDoctorTarget).toBe(4);
-    removeGame(game.code);
   });
 
   test("resolveVote official-joker execution: auto-night preserves haunt voters (carve-out), resets the rest; voters then work and clear at dawn", () => {
@@ -233,7 +240,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expect(game.phase).toBe("game_over"); // 1 mafia vs 1 town: mafia parity
     expect(game.winner).toBe("mafia");
     expectNightParity(game);
-    removeGame(game.code);
   });
 
   test("resolveVote official-joker execution into game_over: voters stay populated (pinned current behavior)", () => {
@@ -260,7 +266,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     // Vote state itself is cleared in every resolveVote outcome.
     expect(game.voteTarget).toBeNull();
     expect(game.votes.size).toBe(0);
-    removeGame(game.code);
   });
 
   test("resolveVote normal execution: auto-night resets every per-night field (including jokerHauntVoters)", () => {
@@ -282,7 +287,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expect(game.phase).toBe("night"); // 1 mafia vs 3 town: auto-night
     expect(game.round).toBe(2);
     expectNightParity(game, { nightSubPhase: "mafia" });
-    removeGame(game.code);
   });
 
   test("resolveVote spared: stays in day, per-night fields reset", () => {
@@ -303,7 +307,22 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expect(result!.executed).toBe(false);
     expect(game.phase).toBe("day");
     expectNightParity(game);
-    removeGame(game.code);
+  });
+
+  test("cancelVote: ballot abort goes through the reset seam — per-night fields back at parity", () => {
+    const game = makeGame(["mafia", "citizen", "citizen", "citizen"]);
+    game.awaitingNarratorReady = false;
+    forceDawn(game);
+    expect(game.phase).toBe("day");
+
+    expect(callVote(game, 1, 4)).toBe(true);
+    castVote(game, 1, true);
+    castVote(game, 2, false);
+    dirtyNightFields(game, ["voteTarget", "votes"]);
+
+    expect(cancelVote(game, 1)).toBe(true);
+    expect(game.phase).toBe("day");
+    expectNightParity(game);
   });
 
   test("forceDawn: every per-night field reset; lastDoctorTarget left untouched (no capture)", () => {
@@ -318,7 +337,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expectNightParity(game);
     // forceDawn discards the pending doctorTarget WITHOUT capturing it.
     expect(game.lastDoctorTarget).toBe(3);
-    removeGame(game.code);
   });
 
   test("endDay: every per-night field reset (vote state included)", () => {
@@ -334,7 +352,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expect(game.phase).toBe("night");
     expect(game.round).toBe(2);
     expectNightParity(game, { nightSubPhase: "mafia" });
-    removeGame(game.code);
   });
 
   test("returnToLobby: every resettable field back at its createGame value; persistent fields untouched", () => {
@@ -381,7 +398,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expect(game.createdAt).toBe(createdAt);
     expect(game.mafiaVariant).toBe(3);
     expect(game.adminId).toBe(1);
-    removeGame(game.code);
   });
 
   test("restartGame: whole-game reset (haunt voters included) then a fresh night 1; createdAt refreshed", () => {
@@ -455,7 +471,6 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expect(game.players.get(1)!.role).toBe("mafia");
     expect(game.players.get(2)!.role).toBe("joker");
     expect(game.players.get(3)!.role).toBe("citizen");
-    removeGame(game.code);
   });
 });
 
@@ -472,7 +487,6 @@ describe("P1 resetNightActions — preserveHauntVoters carve-out", () => {
 
     resetNightActions(game);
     expectNightParity(game);
-    removeGame(game.code);
   });
 });
 

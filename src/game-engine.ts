@@ -999,7 +999,9 @@ export function resolveVote(game: Game): VoteResult | null {
         }
 
         // Reset vote+night state — carve-out: the FOR-voters captured above
-        // must survive into the haunt night.
+        // must survive into the haunt night. NOTE: the { preserveHauntVoters }
+        // flag MUST match the beginNight call below — a mismatch would wipe
+        // the haunt voters (the haunt-parity test covers it).
         resetNightActions(game, { preserveHauntVoters: true });
 
         // Check win condition after joker death (+ possible lover death)
@@ -1011,7 +1013,9 @@ export function resolveVote(game: Game): VoteResult | null {
           if (winner === "town") result.messages.push(Narrator.townWin());
           else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
         } else {
-          // Auto-transition to the haunt night after execution
+          // Auto-transition to the haunt night after execution. NOTE: the
+          // { preserveHauntVoters } flag MUST match the resetNightActions
+          // call above (see the comment there).
           result.messages.push(beginNight(game, "execution", { preserveHauntVoters: true }));
         }
         return result;
@@ -1059,7 +1063,9 @@ export function resolveVote(game: Game): VoteResult | null {
     game.eventHistory.push({ round: game.round, type: "spared", playerName: target.username });
   }
 
-  // Reset vote+night state
+  // Reset vote+night state. NOTE: the default (no-preserve) flags MUST match
+  // the beginNight call below — see the official-joker branch above for the
+  // flagged pair.
   resetNightActions(game);
 
   // Check win condition
@@ -1071,7 +1077,8 @@ export function resolveVote(game: Game): VoteResult | null {
     if (winner === "town") result.messages.push(Narrator.townWin());
     else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
   } else if (result.executed) {
-    // Auto-transition to night after execution
+    // Auto-transition to night after execution. NOTE: the default
+    // (no-preserve) flags MUST match the resetNightActions call above.
     result.messages.push(beginNight(game, "execution"));
   } else {
     // Spared — stay in day
@@ -1085,8 +1092,9 @@ export function resolveVote(game: Game): VoteResult | null {
 export function cancelVote(game: Game, adminId: number): boolean {
   if (game.phase !== "voting") return false;
   if (adminId !== game.adminId) return false;
-  game.voteTarget = null;
-  game.votes.clear();
+  // ballot abort: phase guard means night fields are already clear — keeps
+  // the single-reset-list rule
+  resetNightActions(game);
   logTransition(game, game.phase, "day", "cancel_vote");
   game.phase = "day";
   return true;
