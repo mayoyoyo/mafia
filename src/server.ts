@@ -980,6 +980,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase !== "day") return;
       // Admin abstains - just stay in day phase, no vote happens
       recordNarrator(game, ["The admin has chosen to abstain from calling a vote today."]);
       broadcastToGame(game.code, {
@@ -1017,12 +1018,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const result = castVote(game, client.userId, msg.approve);
 
-      // Broadcast vote progress
-      broadcastToGame(game.code, {
-        type: "vote_update",
-        totalVotes: game.votes.size,
-        total: getAlivePlayers(game).length,
-      });
+      // Only broadcast vote progress when in voting phase and the vote was recorded
+      if (game.phase === "voting" && game.votes.has(client.userId)) {
+        broadcastToGame(game.code, {
+          type: "vote_update",
+          totalVotes: game.votes.size,
+          total: getAlivePlayers(game).length,
+        });
+      }
 
       if (result.allVoted) {
         const voteResult = resolveVote(game);
@@ -1149,6 +1152,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       const messages = endDay(game);
+      if (messages.length === 0) return;
       game.dayStartedAt = null;
       game.dayVoteCount = 0;
       recordNarrator(game, messages);
@@ -1166,6 +1170,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
+      if (game.phase === "game_over") return;
 
       clearNightTimer(game.code);
       forceEndGame(game);
