@@ -87,6 +87,12 @@ async function driveInstall(sb: Sandbox): Promise<void> {
   await waited;
 }
 
+async function driveActivate(sb: Sandbox): Promise<void> {
+  let waited: Promise<unknown> = Promise.resolve();
+  sb.listeners.get("activate")!({ waitUntil: (p: Promise<unknown>) => { waited = p; } });
+  await waited;
+}
+
 async function driveFetch(sb: Sandbox, path: string): Promise<Response> {
   let responded!: Promise<Response>;
   sb.listeners.get("fetch")!({
@@ -122,11 +128,52 @@ describe("sw.js precache list (L11)", () => {
     expect(sb.addAllCalls[0].filter((u) => u.endsWith(".png"))).toEqual([]);
   });
 
-  test("CACHE_NAME is bumped past mafia-v2 so existing clients reinstall", async () => {
+  test("CACHE_NAME is mafia-v{N} with N > 2 so existing clients reinstall", async () => {
     const sb = loadSw(() => Promise.resolve(new Response("ok")));
     await driveInstall(sb);
     expect(sb.openedNames.length).toBe(1);
-    expect(sb.openedNames[0]).not.toBe("mafia-v2");
+    const match = sb.openedNames[0].match(/^mafia-v(\d+)$/);
+    expect(match, `CACHE_NAME "${sb.openedNames[0]}" does not match mafia-v{N}`).not.toBeNull();
+    expect(Number(match![1])).toBeGreaterThan(2);
+  });
+
+  test("every same-origin static reference in index.html is precached", async () => {
+    const sb = loadSw(() => Promise.resolve(new Response("ok")));
+    await driveInstall(sb);
+    const precached = new Set(sb.addAllCalls[0]);
+
+    // References index.html makes at runtime that the SW intentionally does
+    // NOT precache. Currently empty — add entries here (with a reason) if
+    // index.html ever gains a legitimately runtime-only reference.
+    const RUNTIME_ONLY: string[] = [];
+
+    const html = readFileSync(join(PUBLIC_DIR, "index.html"), "utf8");
+    const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
+      .map((m) => m[1])
+      .filter((url) => url.startsWith("/") && !url.startsWith("//"))
+      .filter((url) => !RUNTIME_ONLY.includes(url));
+
+    // Sanity: the parser must actually find the known static references.
+    expect(refs).toContain("/app.js");
+    expect(refs).toContain("/app.css");
+
+    for (const ref of refs) {
+      expect(precached.has(ref), `index.html references "${ref}" but it is not in ASSETS (L11 drift)`).toBe(true);
+    }
+  });
+});
+
+describe("sw.js activate handler (L11)", () => {
+  test("activate deletes stale caches (mafia-v2) and keeps the current one", async () => {
+    const sb = loadSw(() => Promise.resolve(new Response("ok")));
+    await driveInstall(sb);
+    const current = sb.openedNames[0];
+    sb.stores.set("mafia-v2", new Map([["/app.js", new Response("stale shell")]]));
+
+    await driveActivate(sb);
+
+    expect(sb.stores.has("mafia-v2"), "stale mafia-v2 cache was not deleted on activate").toBe(false);
+    expect(sb.stores.has(current), "current cache must survive activate").toBe(true);
   });
 });
 
