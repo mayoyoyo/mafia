@@ -1,4 +1,8 @@
 import { describe, test, expect, beforeAll } from "bun:test";
+import { Database } from "bun:sqlite";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings } from "../src/db";
 
 describe("Database", () => {
@@ -59,5 +63,40 @@ describe("Database", () => {
     const userId = createUser(name, "6666")!;
     const result = getLastSettings(userId);
     expect(result).toBeNull();
+  });
+
+  test("saved_configs table does not exist after init (L10)", () => {
+    const d = getDb();
+    const row = d
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'saved_configs'")
+      .get();
+    expect(row).toBeNull();
+  });
+
+  test("init drops a pre-existing saved_configs table (L10)", () => {
+    const tmpPath = path.join(os.tmpdir(), `mafia-db-test-${Date.now()}-${process.pid}.db`);
+    // Seed a DB file containing the legacy table (simulates a deployed volume)
+    const seed = new Database(tmpPath, { create: true });
+    seed.exec("CREATE TABLE saved_configs (id INTEGER PRIMARY KEY)");
+    seed.close();
+
+    // src/db caches DATABASE_PATH at import, so run the real init path in a subprocess
+    const proc = Bun.spawnSync({
+      cmd: ["bun", "-e", 'import { getDb } from "./src/db"; getDb();'],
+      cwd: path.join(import.meta.dir, ".."),
+      env: { ...process.env, DATABASE_PATH: tmpPath },
+    });
+    expect(proc.exitCode).toBe(0);
+
+    const check = new Database(tmpPath);
+    const row = check
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'saved_configs'")
+      .get();
+    check.close();
+    expect(row).toBeNull();
+
+    for (const suffix of ["", "-wal", "-shm"]) {
+      fs.rmSync(tmpPath + suffix, { force: true });
+    }
   });
 });

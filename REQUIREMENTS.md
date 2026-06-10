@@ -14,7 +14,7 @@ A mobile-first Progressive Web App (PWA) for playing the party game Mafia. Optim
 - The admin configures the game before starting:
   - **Number of Mafia members** (adjustable)
   - **Toggle roles**: Doctor, Detective, Joker, Lovers (each on/off)
-- The admin can **save game configurations as named profiles** and load them later.
+- The admin's **last-used game settings are saved automatically** when a game starts and pre-applied the next time they create a game.
 - Players join the lobby by entering the room code. Up to 20 players.
 - The admin presses "Start Game" to begin. After that, the admin is treated as a regular player (except for admin-only controls: end game, call vote, end day, toggle anonymous voting).
 
