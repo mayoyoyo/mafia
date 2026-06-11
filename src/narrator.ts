@@ -143,8 +143,13 @@ const MAFIA_WIN_MESSAGES = [
   "The citizens look around and realize they're outnumbered. The Mafia claims victory and immediately raises HOA fees!",
 ];
 
-// C2a stubs — single variant each; task C6 expands these to 3–5 house-style
-// variants (engine tests match loosely — position/name — never exact prose).
+// C2a/C3a stubs — single variant each; task C6 expands these to 3–5
+// house-style variants (engine tests match loosely — position/name — never
+// exact prose).
+const HUNTER_REVEAL_MESSAGES = [
+  "{name} was the Hunter! With their dying breath, they raise their weapon — the whole town holds its breath...",
+];
+
 const HUNTER_REVENGE_KILL_MESSAGES = [
   "{name} falls to the Hunter's final shot. Even death couldn't stop that trigger finger.",
 ];
@@ -230,6 +235,9 @@ export const Narrator = {
       lastWords: pick(LAST_WORDS),
       food: pick(FOODS),
     });
+  },
+  hunterReveal(name: string): string {
+    return fill(pick(HUNTER_REVEAL_MESSAGES), { name });
   },
   hunterRevengeKill(name: string): string {
     return fill(pick(HUNTER_REVENGE_KILL_MESSAGES), { name });

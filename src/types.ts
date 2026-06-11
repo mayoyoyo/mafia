@@ -183,6 +183,10 @@ export type ClientMessage =
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
   | { type: "joker_haunt"; targetId: number }
+  // C3a (HUNTER-DESIGN §3.2): revenge resolution — hunter only; null = decline
+  | { type: "hunter_revenge"; targetId: number | null }
+  // C3a: admin only (rights retained dead or alive); resolves as decline
+  | { type: "force_skip_revenge" }
   | { type: "call_vote"; targetId: number }
   | { type: "abstain_vote" }
   | { type: "cancel_vote" }
@@ -215,6 +219,10 @@ export type ServerMessage =
   | { type: "detective_targets"; players: PlayerInfo[] }
   | { type: "detective_result"; targetName: string; isMafia: boolean }
   | { type: "joker_haunt_targets"; players: PlayerInfo[] }
+  // C3a (HUNTER-DESIGN §3.3): to the hunter when the gate opens (re-sent on rejoin — C4)
+  | { type: "hunter_revenge_targets"; players: PlayerInfo[] }
+  // C3a: broadcast to the whole room when the gate opens — this IS the public reveal
+  | { type: "hunter_revenge_pending"; hunterName: string }
   | { type: "joker_win_overlay"; jokerName: string }
   | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number }
