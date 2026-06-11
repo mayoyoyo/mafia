@@ -42,6 +42,8 @@ interface HunterServer {
   proc: ReturnType<typeof Bun.spawn>;
   wsUrl: string;
   dbPath: string;
+  /** Accumulated server stdout (slog JSON lines) — pattern: structured-logging.test.ts. */
+  logs: () => string;
 }
 
 async function spawnServer(port: number, label: string, extraEnv: Record<string, string> = {}): Promise<HunterServer> {
@@ -56,8 +58,19 @@ async function spawnServer(port: number, label: string, extraEnv: Record<string,
       ...extraEnv,
     },
     cwd: import.meta.dir + "/..",
-    stdout: "ignore", stderr: "ignore",
+    stdout: "pipe", stderr: "ignore",
   });
+  // Stdout capture (structured-logging.test.ts pattern): the WS wire cannot
+  // distinguish a CLEARED revenge timer from an ORPHANED one (an orphan
+  // fires into the gate-null guard and no-ops) — only the server's own
+  // "revenge_timer" slog lifecycle can, so the E9 pin reads it from here.
+  let stdoutBuf = "";
+  const dec = new TextDecoder();
+  (async () => {
+    for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
+      stdoutBuf += dec.decode(chunk, { stream: true });
+    }
+  })().catch(() => {});
   for (let i = 0; i < 30; i++) {
     try {
       const ws = new WebSocket(wsUrl);
@@ -65,7 +78,7 @@ async function spawnServer(port: number, label: string, extraEnv: Record<string,
         ws.onopen = () => { ws.close(); ok(); };
         ws.onerror = () => fail();
       });
-      return { proc, wsUrl, dbPath };
+      return { proc, wsUrl, dbPath, logs: () => stdoutBuf };
     } catch { await Bun.sleep(200); }
   }
   try { proc.kill(); } catch {}
@@ -239,6 +252,21 @@ async function killHunterAndAwaitGate(game: HunterGame): Promise<any> {
 
 function closeAll(game: HunterGame) {
   for (const p of game.players) { try { p.ws.close(); } catch {} }
+}
+
+/**
+ * THIS game's revenge-timer lifecycle ("armed"/"cleared"/"fired"/
+ * "overwritten"), in server stdout order — parsed from the slog
+ * "revenge_timer" lines, filtered by game code (other games on the same
+ * server keep their own lifecycles out of the assertion).
+ */
+function revengeTimerEvents(srv: HunterServer, code: string): string[] {
+  return srv.logs()
+    .split("\n")
+    .filter((l) => l.startsWith("{"))
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter((e) => e && e.slog === "revenge_timer" && e.code === code)
+    .map((e) => e.event as string);
 }
 
 function indexOfMsg(inbox: any[], pred: (m: any) => boolean, from = 0): number {
@@ -519,6 +547,16 @@ describe("E9: revenge timer isolation; force_dawn while gated", () => {
     await assertSilence(admin.ws,
       ["phase_change", "player_died", "you_died", "game_over", "hunter_revenge_pending", "sound_cue"],
       SHORT_REVENGE_MS + 700);
+
+    // CLEARED vs ORPHANED, proven at the slog layer (C3a spec-review
+    // follow-up): the silence window above is BLIND to an orphaned timer —
+    // force_dawn already wiped pendingRevenge, so an uncleared timer fires
+    // into the gate-null guard and no-ops with zero wire traffic. The
+    // server's own "revenge_timer" lifecycle log is the observable that
+    // distinguishes the two: exactly armed -> cleared for this game, and
+    // NEVER "fired" (we are already past the would-be expiry). Dropping
+    // force_dawn's clearRevengeTimer turns this into ["armed", "fired"].
+    expect(revengeTimerEvents(serverB!, game.code)).toEqual(["armed", "cleared"]);
 
     // Night timers never collided with the revenge slot: night 2 arms its
     // own sub-phase timers (resolve timer included) and a plain dawn lands.

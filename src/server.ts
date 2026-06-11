@@ -10,7 +10,7 @@ import {
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
-import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
+import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game, PendingRevenge } from "./types";
 import { subPhaseCue } from "./types";
 import path from "path";
 import fs from "fs";
@@ -178,16 +178,20 @@ function armRevengeTimer(game: Game): void {
   if (existing) {
     // Unreachable today (one gate per game, cleared on every resolution and
     // forced transition) — logged for the same reconstructability as
-    // armNightTimer's overwrite line.
+    // armNightTimer's overwrite line. The displaced timer is clearTimeout'd
+    // so it can never fire stale (armNightTimer's leak quirk is pinned
+    // pre-existing behavior, deliberately NOT copied here).
+    clearTimeout(existing.timer);
     slog("revenge_timer", { code: game.code, kind: "revenge", delay: existing.delay, event: "overwritten" });
   }
   const delay = REVENGE_TIMEOUT_MS;
   const timer = setTimeout(() => {
     revengeTimers.delete(game.code);
     slog("revenge_timer", { code: game.code, kind: "revenge", delay, event: "fired" });
-    if (!getGame(game.code)) return; // game was removed
+    if (getGame(game.code) !== game) return; // game removed — or the 4-char code reused by a NEW game; identity (not existence) keeps a stale closure inert
     assertInvariants(game, { at: "timer_fire:revenge", hasPendingNightTimer: nightTimers.has(game.code) });
     if (!game.pendingRevenge) return; // gate already resolved/cleared
+    // Boolean deliberately dropped (false = engine rejection, gate stays open — see resolveRevenge doc); C3b consumes it.
     resolveRevenge(game, game.pendingRevenge.hunterId, null);
   }, delay);
   revengeTimers.set(game.code, { timer, delay });
@@ -420,9 +424,10 @@ function startNightSequence(game: Game): void {
  * and arm the revenge timeout. The deferred day cue / phase_change happen
  * in resolveRevenge once the gate clears. Also re-entered by resolveRevenge
  * itself when a revenge cascade re-opens the gate (C2a post-condition).
+ * Callers pass the open gate itself, making the "gate is open" precondition
+ * structural (no non-null assertion to go stale).
  */
-function openRevengeGate(game: Game): void {
-  const gate = game.pendingRevenge!;
+function openRevengeGate(game: Game, gate: PendingRevenge): void {
   const hunter = game.players.get(gate.hunterId);
   const hunterName = hunter?.username ?? "The Hunter";
   recordNarrator(game, [Narrator.hunterReveal(hunterName)]);
@@ -473,7 +478,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
   // before submitHunterRevenge returns. Re-prompt instead of closing.
   // (Unreachable under today's single-Hunter deal; contract-mandated.)
   if (game.pendingRevenge) {
-    openRevengeGate(game);
+    openRevengeGate(game, game.pendingRevenge);
     return true;
   }
 
@@ -1258,6 +1263,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       // the wire — a malformed/missing targetId must not read as a decline.
       const targetId = msg.targetId;
       if (targetId !== null && typeof targetId !== "number") return;
+      // Boolean deliberately dropped (false = engine rejection, gate stays open — see resolveRevenge doc); C3b consumes it.
       resolveRevenge(game, client.userId, targetId);
       break;
     }
@@ -1270,6 +1276,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || !game.pendingRevenge) return;
       if (client.userId !== game.adminId) return;
+      // Boolean deliberately dropped (false = engine rejection, gate stays open — see resolveRevenge doc); C3b consumes it.
       resolveRevenge(game, game.pendingRevenge.hunterId, null);
       break;
     }
@@ -1762,7 +1769,7 @@ function resolveNightAndTransition(game: Game): void {
   // no gate, the tail below is byte-identical to the pre-C3a dawn (pinned
   // by the golden message-sequence tests).
   if (game.pendingRevenge) {
-    openRevengeGate(game);
+    openRevengeGate(game, game.pendingRevenge);
     return;
   }
 
