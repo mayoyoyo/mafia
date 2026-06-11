@@ -39,13 +39,19 @@ D0 runs now (new files only). Before D1: verify `git log origin/staging --onelin
 
 **Files:** Modify `public/app.css` (head: @font-face + `:root`; throughout: component classes), `public/index.html` (preload hints), `public/sw.js` (cache list), `public/app.js` (only if a hardcoded color string lives there — audit found PLAYER_COLORS at app.js:55–60, leave PLAYER_COLORS as-is this task).
 
-- [ ] `@font-face` block at top of app.css (×8, one per file):
+- [ ] `@font-face` block at top of app.css — exact files shipped by D0 (6): `silkscreen-400.woff2`, `silkscreen-700.woff2` (static), `libre-franklin-var.woff2` + `libre-franklin-var-italic.woff2` (VARIABLE — one declaration each with a weight range), `ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`:
 ```css
 @font-face {
   font-family: 'Silkscreen';
   src: url('/fonts/silkscreen-700.woff2') format('woff2');
   font-weight: 700; font-style: normal; font-display: swap;
 }
+@font-face {
+  font-family: 'Libre Franklin';
+  src: url('/fonts/libre-franklin-var.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+/* italic variant: same pattern with libre-franklin-var-italic.woff2 + font-style: italic */
 ```
 - [ ] Font stacks: `html, body { font-family: 'Libre Franklin', 'Helvetica Neue', sans-serif; }`; utility classes `.disp { font-family: 'Silkscreen', monospace; }`, `.mono { font-family: 'IBM Plex Mono', monospace; }`. Apply `.disp` treatment to: logo h1, role-name, dead-text, gameover h1, phase-indicator, btn text, section labels, card-back-label. Apply mono to: room code, timers, version/copyright, lock chips.
 - [ ] Token swap in `:root` (names stay, values change — spec §3.2 table is the source of truth):
@@ -179,7 +185,7 @@ function getCosmeticAvatar(name) { // pre-reveal: role-agnostic profession art
 
 | Task | Scope | Commits | Notes |
 |---|---|---|---|
-| D0 | Spec + mockup + fonts (pre-merge) | | IN PROGRESS (session 2026-06-11) |
+| D0 | Spec + mockup + fonts (pre-merge) | b2c3a81 (docs+mockup), fonts commit follows | DONE 2026-06-11. 6 latin woff2 (Silkscreen 400/700 static; Libre Franklin variable wght 100-900 normal+italic; Plex Mono 400/500) + OFL.txt, all wOF2-verified. @font-face NOT wired (app.css is C's until merge). |
 | D1 | Fonts wired + tokens + chrome + texture | | gated on C merge + rebase |
 | D2 | Phase ambience | | |
 | D3 | Pixel iconography | | |
