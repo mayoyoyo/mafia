@@ -1,13 +1,29 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { Database } from "bun:sqlite";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings } from "../src/db";
+
+// D7/B0c: src/db reads DATABASE_PATH once at module load (src/db.ts:4) and
+// falls back to the repo-root mafia.db when unset. Static imports are hoisted
+// ahead of any top-level statements, so the env var must be set here and
+// src/db loaded via dynamic import below — otherwise this suite writes the
+// dev database.
+const TEST_DB_PATH = path.join(os.tmpdir(), `mafia-db-test-unit-${Date.now()}-${process.pid}.db`);
+process.env.DATABASE_PATH = TEST_DB_PATH;
+
+const { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings } =
+  await import("../src/db");
 
 describe("Database", () => {
   beforeAll(() => {
     getDb(); // Initialize
+  });
+
+  afterAll(() => {
+    for (const suffix of ["", "-wal", "-shm"]) {
+      fs.rmSync(TEST_DB_PATH + suffix, { force: true });
+    }
   });
 
   test("creates a user", () => {

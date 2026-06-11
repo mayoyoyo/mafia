@@ -5,10 +5,13 @@ import {
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
-  submitJokerHaunt, getJokerHauntTargets, classifyNightDeath,
+  submitJokerHaunt, getJokerHauntTargets, assertInvariants, assertPhaseEdge,
+  toTargetInfo, projectGameOver,
 } from "./game-engine";
 import { Narrator } from "./narrator";
+import { slog } from "./debug";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
+import { subPhaseCue } from "./types";
 import path from "path";
 import fs from "fs";
 
@@ -84,26 +87,115 @@ function recordNarrator(game: Game, messages: string[]): void {
   for (const m of messages) game.narratorHistory.push(m);
 }
 
-// Night timer management for sequential sub-phases
-const nightTimers = new Map<string, Timer>();
+// Night timer management for sequential sub-phases.
+// B0d (audit D2): every arm/fire/clear/overwrite is slog'd ("night_timer")
+// so timer lifecycles are reconstructable from stdout.
+const nightTimers = new Map<string, { timer: Timer; kind: string; delay: number }>();
 
 function clearNightTimer(gameCode: string): void {
-  const timer = nightTimers.get(gameCode);
-  if (timer) {
-    clearTimeout(timer);
+  const entry = nightTimers.get(gameCode);
+  if (entry) {
+    clearTimeout(entry.timer);
     nightTimers.delete(gameCode);
+    slog("night_timer", { code: gameCode, kind: entry.kind, delay: entry.delay, event: "cleared" });
   }
+}
+
+/**
+ * Arm the (single) night timer for a game. Logs "armed"; logs "overwritten"
+ * for any live timer the set displaces (pre-existing semantics: the old
+ * timeout is NOT cancelled here — callers clearNightTimer first when they
+ * mean to cancel). The callback logs "fired" and drops the map entry before
+ * running, exactly as the inline callbacks did before B0d.
+ *
+ * Log-reader note: because a displaced timer keeps ticking, a "fired" event
+ * that follows an "overwritten" belongs to the DISPLACED timer (its kind is
+ * the OLD kind) — and its callback deletes the map entry now occupied by the
+ * NEW timer. Don't misread it as the new timer firing. This documents the
+ * pre-existing behavior only; fixing it is B4's concern.
+ */
+function armNightTimer(game: Game, kind: string, delay: number, fn: () => void): void {
+  const existing = nightTimers.get(game.code);
+  if (existing) {
+    slog("night_timer", { code: game.code, kind: existing.kind, delay: existing.delay, event: "overwritten" });
+  }
+  const timer = setTimeout(() => {
+    nightTimers.delete(game.code);
+    slog("night_timer", { code: game.code, kind, delay, event: "fired" });
+    // B2 (audit D4): invariant sweep at the timer choke point, on the settled
+    // state the timer found. nightTimers.has(code) is ALWAYS false here today:
+    // the delete just above runs synchronously, and under the displacement
+    // quirk a stale timer's delete removes the NEWER entry too. Kept so the
+    // assert shape matches ws_in; B4 revisits the displacement quirk.
+    assertInvariants(game, { at: `timer_fire:${kind}`, hasPendingNightTimer: nightTimers.has(game.code) });
+    fn();
+  }, delay);
+  nightTimers.set(game.code, { timer, kind, delay });
+  slog("night_timer", { code: game.code, kind, delay, event: "armed" });
+}
+
+// ── B4b (audit D1): the ONE phase_change assembly point ─────────────────────
+//
+// Every phase_change broadcast is built here: one uniform structure, one
+// edge assertion (assertPhaseEdge — log in prod, throw under bun test), one
+// optional clearNightTimer hook. The per-site payload DISAGREEMENTS are
+// deliberate and PINNED by the golden message-sequence tests: some sites
+// include `events`, only the two dawn paths emit the day sound cue, only
+// night resolution carries `saved`, only the lover-cascade paths carry
+// `loverDeathName`. Each call site DECLARES its current shape through the
+// options — the helper unifies the assembly, NOT the payloads.
+//
+// Logging: the engine's logTransition (B0d) already slogs every transition
+// at the game.phase= write sites; this helper adds no routine slog line (the
+// only line it can emit is assertPhaseEdge's violation, and clearTimer's
+// clearNightTimer keeps its own "cleared" event).
+interface PhaseChangeOptions {
+  /** game.phase BEFORE the engine transition ran (callers capture it). */
+  // Footgun: a post-transition capture (`from: game.phase` AFTER the engine call) self-passes on legal self-edges (night→night, day→day); capture BEFORE.
+  from: Game["phase"];
+  messages: string[];
+  /** Include `events: game.eventHistory` in the payload. */
+  events?: boolean;
+  /** Include `saved` (night resolution only — always present there, even when false). */
+  saved?: boolean;
+  /** Include `loverDeathName` when a lover cascaded (truthy check, exactly as the sites had). */
+  loverDeathName?: string;
+  /** Broadcast the "day" sound cue immediately before (force_dawn + night resolution only). */
+  dayCue?: boolean;
+  /**
+   * Clear this game's tracked night timer first. ONLY for sites that cleared
+   * today (the leave_game/end_game force-end paths) — sites that did not
+   * clear must not start. force_dawn/restart_game keep their clear AT THE
+   * SITE instead: it precedes a fallible engine call and must run even on
+   * the failure path, which never reaches this helper.
+   * Accepted delta: at the two clearTimer:true sites the clear now runs AFTER the engine call (was before) — benign because forceEndGame is synchronous and touches no timers.
+   */
+  clearTimer?: boolean;
+}
+
+function broadcastPhaseChange(game: Game, opts: PhaseChangeOptions): void {
+  if (opts.clearTimer) clearNightTimer(game.code);
+  // The broadcast phase is read from game.phase AT BUILD TIME, so the
+  // M1/M3 class — a phase_change the engine never made — is structurally
+  // impossible, and the from→to edge is checked against the legal table.
+  assertPhaseEdge(game, opts.from, game.phase);
+  if (opts.dayCue) broadcastToGame(game.code, { type: "sound_cue", sound: "day" });
+  broadcastToGame(game.code, {
+    type: "phase_change",
+    phase: game.phase,
+    round: game.round,
+    messages: opts.messages,
+    // New options need a matching spread line below + a golden pinning their presence — a forgotten spread silently drops the field (tsc can't catch optional omissions).
+    ...(opts.events ? { events: game.eventHistory } : {}),
+    ...(opts.saved !== undefined ? { saved: opts.saved } : {}),
+    ...(opts.loverDeathName ? { loverDeathName: opts.loverDeathName } : {}),
+  });
 }
 
 function sendMafiaPrompts(game: Game): void {
   const aliveMafia = getAliveByRole(game, "mafia");
   const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
-  const mafiaTargets = aliveNonMafia.map((p) => ({
-    id: p.id,
-    username: p.username,
-    isAlive: true,
-    isAdmin: p.id === game.adminId,
-  }));
+  const mafiaTargets = aliveNonMafia.map((p) => toTargetInfo(p, game));
 
   for (const m of aliveMafia) {
     sendToUser(m.id, { type: "mafia_targets", players: mafiaTargets });
@@ -124,12 +216,7 @@ function sendMafiaPrompts(game: Game): void {
 function sendDoctorPrompts(game: Game): void {
   const aliveDoctor = getAliveByRole(game, "doctor");
   if (aliveDoctor.length > 0) {
-    const allAlive = getAlivePlayers(game).map((p) => ({
-      id: p.id,
-      username: p.username,
-      isAlive: true,
-      isAdmin: p.id === game.adminId,
-    }));
+    const allAlive = getAlivePlayers(game).map((p) => toTargetInfo(p, game));
     for (const d of aliveDoctor) {
       sendToUser(d.id, { type: "doctor_targets", players: allAlive, lastDoctorTarget: game.lastDoctorTarget });
     }
@@ -147,12 +234,7 @@ function sendDetectivePrompts(game: Game): void {
   if (aliveDetective.length > 0) {
     const allAliveExceptSelf = getAlivePlayers(game)
       .filter((p) => p.role !== "detective")
-      .map((p) => ({
-        id: p.id,
-        username: p.username,
-        isAlive: true,
-        isAdmin: p.id === game.adminId,
-      }));
+      .map((p) => toTargetInfo(p, game));
     for (const d of aliveDetective) {
       sendToUser(d.id, { type: "detective_targets", players: allAliveExceptSelf });
     }
@@ -183,29 +265,30 @@ function handleSubPhaseAdvance(game: Game): void {
   // Send close cue for the current sub-phase
   const closingPhase = game.nightSubPhase;
   if (closingPhase && closingPhase !== "resolving") {
-    broadcastToGame(game.code, { type: "sound_cue", sound: `${closingPhase}_close` as any });
+    broadcastToGame(game.code, { type: "sound_cue", sound: subPhaseCue(closingPhase, "close") });
   }
 
   const result = advanceNightSubPhase(game);
 
   if (result.nextPhase === "resolving") {
     // Small delay after last close cue before resolving
-    const timer = setTimeout(() => {
-      nightTimers.delete(game.code);
+    armNightTimer(game, "resolve", 1000, () => {
       if (!getGame(game.code)) return;
       resolveNightAndTransition(game);
-    }, 1000);
-    nightTimers.set(game.code, timer);
+    });
     return;
   }
 
+  // Past the resolving early-return, nextPhase is a cue-emitting sub-phase.
+  // Captured as a const (B7) so the narrowing survives into the timer
+  // closures below — TS re-widens property accesses across function bounds.
+  const nextPhase = result.nextPhase;
+
   if (result.isFake) {
     // Fake sub-phase: enabled but dead role → open cue, random delay, close cue, then advance
-    const delay = 1500; // pause after close cue before open
-    const timer = setTimeout(() => {
-      nightTimers.delete(game.code);
+    armNightTimer(game, "fake_open", 1500 /* pause after close cue before open */, () => {
       if (!getGame(game.code)) return;
-      broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+      broadcastToGame(game.code, { type: "sound_cue", sound: subPhaseCue(nextPhase, "open") });
       // Notify dead players that this role is dead (exclude haunting joker)
       if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
         sendToDeadPlayers(game, {
@@ -220,8 +303,7 @@ function handleSubPhaseAdvance(game: Game): void {
       const u2 = Math.random();
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       const fakeDelay = Math.max(5000, Math.min(15000, Math.round(10000 + z * 2000)));
-      const fakeTimer = setTimeout(() => {
-        nightTimers.delete(game.code);
+      armNightTimer(game, "fake_advance", fakeDelay, () => {
         if (!getGame(game.code)) return;
         // Notify dead players that this fake sub-phase completed (role is dead, exclude haunting joker)
         if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
@@ -234,28 +316,23 @@ function handleSubPhaseAdvance(game: Game): void {
         }
         // Recurse to next sub-phase (sends close cue for this phase)
         handleSubPhaseAdvance(game);
-      }, fakeDelay);
-      nightTimers.set(game.code, fakeTimer);
-    }, delay);
-    nightTimers.set(game.code, timer);
+      });
+    });
     return;
   }
 
   // Real sub-phase: alive + enabled role → open cue + send prompts, wait for player action
-  const delay = 1500; // pause after close cue before open
-  const timer = setTimeout(() => {
-    nightTimers.delete(game.code);
+  armNightTimer(game, "subphase_open", 1500 /* pause after close cue before open */, () => {
     if (!getGame(game.code)) return;
 
-    broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+    broadcastToGame(game.code, { type: "sound_cue", sound: subPhaseCue(nextPhase, "open") });
 
     if (result.nextPhase === "doctor") {
       sendDoctorPrompts(game);
     } else if (result.nextPhase === "detective") {
       sendDetectivePrompts(game);
     }
-  }, delay);
-  nightTimers.set(game.code, timer);
+  });
 }
 
 /** Start the night sequence: sound cues + mafia prompts + joker haunt if active */
@@ -370,9 +447,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     // Dead player spectator view for all night sub-phases
     if (game.nightSubPhase === "mafia") {
       const aliveNonMafia = getAlivePlayers(game).filter(p => p.role !== "mafia");
-      const spectatorTargets = aliveNonMafia.map(p => ({
-        id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId,
-      }));
+      const spectatorTargets = aliveNonMafia.map(p => toTargetInfo(p, game));
       const status = getMafiaVoteStatus(game);
       nightAction = {
         locked: false,
@@ -432,7 +507,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       // Build targets list (non-mafia alive players)
       const targets = locked ? [] : getAlivePlayers(game)
         .filter(p => p.role !== "mafia")
-        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+        .map(p => toTargetInfo(p, game));
 
       const status = getMafiaVoteStatus(game);
 
@@ -463,7 +538,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       const locked = game.doctorTarget !== null;
       const targetName = locked ? (game.players.get(game.doctorTarget!)?.username ?? null) : null;
       const targets = locked ? [] : getAlivePlayers(game)
-        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+        .map(p => toTargetInfo(p, game));
 
       nightAction = {
         locked, targetName, targets,
@@ -489,7 +564,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       const targetName = locked ? (game.players.get(game.detectiveTarget!)?.username ?? null) : null;
       const targets = locked ? [] : getAlivePlayers(game)
         .filter(p => p.role !== "detective")
-        .map(p => ({ id: p.id, username: p.username, isAlive: true, isAdmin: p.id === game.adminId }));
+        .map(p => toTargetInfo(p, game));
 
       nightAction = {
         locked, targetName, targets,
@@ -530,13 +605,15 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
   let gameOver: Extract<ServerMessage, { type: "game_sync" }>["gameOver"] = null;
   if (game.phase === "game_over") {
     const winMessages: Record<string, string> = { town: "Citizens win!", mafia: "Mafia wins!", joker: "Joker wins!" };
-    gameOver = {
-      winner: game.winner!,
-      message: game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
-      forceEnded: game.forceEnded,
-      revealPlayers: getPlayerInfo(game, true),
-      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
-    };
+    // Pinned divergence vs the live game_over broadcasts (rejoin goldens):
+    // the sync reconstruction sends the CANONICAL win line, not the
+    // narrator's prose; it always carries forceEnded and names the reveal
+    // `revealPlayers`. Only the shared core comes from projectGameOver.
+    const { players: revealPlayers, ...core } = projectGameOver(
+      game,
+      game.forceEnded ? "Host has ended the game." : winMessages[game.winner!],
+    );
+    gameOver = { ...core, forceEnded: game.forceEnded, revealPlayers };
   }
 
   const userPrefs = getUserPrefs(userId);
@@ -572,6 +649,24 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 }
 
 function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
+  // B0d (audit D2): one structured line per inbound WS message
+  {
+    const g = client.gameCode ? getGame(client.gameCode) : undefined;
+    slog("ws_in", {
+      code: g?.code ?? null,
+      userId: client.userId ?? null,
+      type: msg.type,
+      phase: g?.phase ?? null,
+      subPhase: g?.nightSubPhase ?? null,
+    });
+    // B2 (audit D4): invariant sweep at the message choke point, on the
+    // settled state this message found. The night-timer map lives in this
+    // module, so its tracked-slot state is passed in here.
+    if (g) {
+      assertInvariants(g, { at: `ws_in:${msg.type}`, hasPendingNightTimer: nightTimers.has(g.code) });
+    }
+  }
+
   switch (msg.type) {
     case "register": {
       if (!msg.username || msg.username.trim().length === 0) {
@@ -738,7 +833,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       if (game.phase === "lobby") {
         if (client.userId === game.adminId) {
-          // Admin leaves lobby = end game for everyone
+          // Admin leaves lobby = end game for everyone.
+          // NOT projectGameOver: no game ever concluded here (game.winner is
+          // null in lobby) — winner "town" is forced, jokerJointWinner omitted.
           broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The host has left the lobby.", forceEnded: true, players: getPlayerInfo(game, true) });
           removeGame(game.code);
           for (const [, c] of clients) {
@@ -754,15 +851,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         // Active game (night/day/voting)
         if (client.userId === game.adminId) {
           // Admin leaves active game = force end (room persists at game_over)
-          clearNightTimer(game.code);
+          const from = game.phase;
           forceEndGame(game);
-          broadcastToGame(game.code, {
-            type: "phase_change",
-            phase: "game_over",
-            round: game.round,
+          broadcastPhaseChange(game, {
+            from,
+            clearTimer: true,
             messages: ["The host has left the game."],
-            events: game.eventHistory,
+            events: true,
           });
+          // NOT projectGameOver: this payload omits jokerJointWinner even
+          // though official-joker mode can set it mid-game (resolveVote) —
+          // pinned wire behavior, kept hand-assembled rather than arbitrated.
           broadcastToGame(game.code, {
             type: "game_over",
             winner: "town",
@@ -805,6 +904,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Only the admin can start the game" });
         return;
       }
+      const from = game.phase;
       const messages = startGame(game);
       if (!messages) {
         send(ws, { type: "error", message: "Need at least 3 players to start" });
@@ -830,12 +930,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
 
       // Send night phase
-      broadcastToGame(game.code, {
-        type: "phase_change",
-        phase: "night",
-        round: game.round,
-        messages,
-      });
+      broadcastPhaseChange(game, { from, messages });
 
       // Gate night narration behind "Begin Night" button
       send(ws, { type: "awaiting_ready" });
@@ -996,10 +1091,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (game.phase !== "day") return;
       // Admin abstains - just stay in day phase, no vote happens
       recordNarrator(game, ["The admin has chosen to abstain from calling a vote today."]);
-      broadcastToGame(game.code, {
-        type: "phase_change",
-        phase: "day",
-        round: game.round,
+      broadcastPhaseChange(game, {
+        from: game.phase, // no engine transition on abstain: the day→day self-edge
         messages: ["The admin has chosen to abstain from calling a vote today."],
       });
       break;
@@ -1010,15 +1103,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
+      const from = game.phase;
       if (cancelVote(game, client.userId)) {
         game.dayStartedAt = Date.now();
         recordNarrator(game, ["The vote has been cancelled by the admin."]);
-        broadcastToGame(game.code, {
-          type: "phase_change",
-          phase: "day",
-          round: game.round,
+        broadcastPhaseChange(game, {
+          from,
           messages: ["The vote has been cancelled by the admin."],
-          events: game.eventHistory,
+          events: true,
         });
       }
       break;
@@ -1041,6 +1133,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
 
       if (result.allVoted) {
+        const from = game.phase;
         const voteResult = resolveVote(game);
         if (voteResult) {
           recordNarrator(game, voteResult.messages);
@@ -1064,9 +1157,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           }
 
           let voteLoverDeathName: string | undefined;
-          for (let i = 0; i < voteResult.killed.length; i++) {
-            const k = voteResult.killed[i];
-            const isLoverDeath = i > 0 && k.player.isLover;
+          for (const k of voteResult.killed) {
+            // B3: keyed on the Death's cause, not array position — revenge
+            // deaths joining vote kill lists (Program C) keep correct labels.
+            const isLoverDeath = k.cause === "lover_cascade";
             if (isLoverDeath) voteLoverDeathName = k.player.username;
             sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
             broadcastToGame(game.code, {
@@ -1079,44 +1173,33 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
           if (game.phase === "game_over") {
             game.dayStartedAt = null;
-            broadcastToGame(game.code, {
-              type: "phase_change",
-              phase: game.phase,
-              round: game.round,
+            broadcastPhaseChange(game, {
+              from,
               messages: voteResult.messages,
-              events: game.eventHistory,
-              ...(voteLoverDeathName ? { loverDeathName: voteLoverDeathName } : {}),
+              events: true,
+              loverDeathName: voteLoverDeathName,
             });
+            // Divergence kept visible: the live broadcast's message is the
+            // narrator's last line, NOT buildGameSync's canonical win line.
             broadcastToGame(game.code, {
               type: "game_over",
-              winner: game.winner!,
-              message: voteResult.messages[voteResult.messages.length - 1],
-              players: getPlayerInfo(game, true),
-              ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
+              ...projectGameOver(game, voteResult.messages[voteResult.messages.length - 1]),
             });
           } else if (game.phase === "night") {
             // Auto-transition to night after execution
             game.dayStartedAt = null;
             game.dayVoteCount = 0;
-            broadcastToGame(game.code, {
-              type: "phase_change",
-              phase: "night",
-              round: game.round,
+            broadcastPhaseChange(game, {
+              from,
               messages: voteResult.messages,
-              events: game.eventHistory,
-              ...(voteLoverDeathName ? { loverDeathName: voteLoverDeathName } : {}),
+              events: true,
+              loverDeathName: voteLoverDeathName,
             });
             startNightSequence(game);
           } else {
             // Spared — stay in day
             game.dayStartedAt = Date.now();
-            broadcastToGame(game.code, {
-              type: "phase_change",
-              phase: game.phase,
-              round: game.round,
-              messages: [],
-              events: game.eventHistory,
-            });
+            broadcastPhaseChange(game, { from, messages: [], events: true });
           }
         }
       }
@@ -1128,7 +1211,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
+      // Timer clear stays AT THE SITE (not the helper's clearTimer option):
+      // today it runs even when forceDawn rejects (non-night), and that
+      // failure path returns before the helper. Pre-existing semantics.
       clearNightTimer(game.code);
+      const from = game.phase;
       const messages = forceDawn(game);
       if (messages.length === 0) return;
       game.dayStartedAt = Date.now();
@@ -1147,14 +1234,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         game.detectiveResult = null;
       }
 
-      broadcastToGame(game.code, { type: "sound_cue", sound: "day" });
-      broadcastToGame(game.code, {
-        type: "phase_change",
-        phase: "day",
-        round: game.round,
-        messages,
-        events: game.eventHistory,
-      });
+      broadcastPhaseChange(game, { from, messages, events: true, dayCue: true });
       break;
     }
 
@@ -1163,17 +1243,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
 
+      const from = game.phase;
       const messages = endDay(game);
       if (messages.length === 0) return;
       game.dayStartedAt = null;
       game.dayVoteCount = 0;
       recordNarrator(game, messages);
-      broadcastToGame(game.code, {
-        type: "phase_change",
-        phase: "night",
-        round: game.round,
-        messages,
-      });
+      broadcastPhaseChange(game, { from, messages });
       startNightSequence(game);
       break;
     }
@@ -1184,23 +1260,22 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
       if (game.phase === "game_over") return;
 
-      clearNightTimer(game.code);
+      const from = game.phase;
       forceEndGame(game);
       recordNarrator(game, ["Host has ended the game."]);
-      broadcastToGame(game.code, {
-        type: "phase_change",
-        phase: "game_over",
-        round: game.round,
+      broadcastPhaseChange(game, {
+        from,
+        clearTimer: true,
         messages: ["Host has ended the game."],
-        events: game.eventHistory,
+        events: true,
       });
+      // winner comes from the projection: forceEndGame just set it to "town"
+      // (the L3 well-defined-winner rule). forceEnded: true stays per-site —
+      // the live win broadcasts omit it.
       broadcastToGame(game.code, {
         type: "game_over",
-        winner: "town",
-        message: "Host has ended the game.",
+        ...projectGameOver(game, "Host has ended the game."),
         forceEnded: true,
-        players: getPlayerInfo(game, true),
-        ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
       });
       // Room persists — do NOT removeGame or clear gameCode refs
       break;
@@ -1249,7 +1324,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Only the admin can restart the game" });
         return;
       }
+      // Timer clear stays AT THE SITE (not the helper's clearTimer option):
+      // today it runs even when restartGame fails (<3 players), and that
+      // failure path returns before the helper. Pre-existing semantics —
+      // restartGame has no phase guard (M2's enabler, audit D1).
       clearNightTimer(game.code);
+      const from = game.phase;
       const messages = restartGame(game);
       if (!messages) {
         send(ws, { type: "error", message: "Cannot restart game" });
@@ -1274,12 +1354,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
 
       // Send night phase
-      broadcastToGame(game.code, {
-        type: "phase_change",
-        phase: "night",
-        round: game.round,
-        messages,
-      });
+      broadcastPhaseChange(game, { from, messages });
 
       // Gate night narration behind "Begin Night" button
       send(ws, { type: "awaiting_ready" });
@@ -1360,12 +1435,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
 
   // Send spectator update to dead players (exclude haunting joker)
   const aliveNonMafia = getAlivePlayers(game).filter((p) => p.role !== "mafia");
-  const spectatorTargets = aliveNonMafia.map((p) => ({
-    id: p.id,
-    username: p.username,
-    isAlive: true,
-    isAdmin: p.id === game.adminId,
-  }));
+  const spectatorTargets = aliveNonMafia.map((p) => toTargetInfo(p, game));
   sendToDeadPlayers(game, {
     type: "spectator_mafia_update",
     voterTargets: status.voterTargets,
@@ -1389,6 +1459,7 @@ function resolveNightAndTransition(game: Game): void {
   if (!getGame(game.code)) return; // game was removed (e.g., admin left)
   // Capture haunting joker id before transitionToDay clears jokerHauntVoters
   const hauntingJokerId = getHauntingJokerId(game);
+  const from = game.phase;
   const nightResult = transitionToDay(game);
   recordNarrator(game, nightResult.messages);
 
@@ -1442,9 +1513,9 @@ function resolveNightAndTransition(game: Game): void {
 
   // Notify killed players
   let nightLoverDeathName: string | undefined;
-  for (let i = 0; i < nightResult.killed.length; i++) {
-    const k = nightResult.killed[i];
-    const isLoverDeath = classifyNightDeath(nightResult.killed, i) === "lover_death";
+  for (const k of nightResult.killed) {
+    // B3: keyed on the Death's cause (absorbs classifyNightDeath)
+    const isLoverDeath = k.cause === "lover_cascade";
     if (isLoverDeath) nightLoverDeathName = k.player.username;
     sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
@@ -1455,27 +1526,22 @@ function resolveNightAndTransition(game: Game): void {
     });
   }
 
-  // Sound cue for day
-  broadcastToGame(game.code, { type: "sound_cue", sound: "day" });
-
-  // Phase change
-  broadcastToGame(game.code, {
-    type: "phase_change",
-    phase: game.phase,
-    round: game.round,
+  // Day sound cue + phase change (night → day, or night → game_over on a win)
+  broadcastPhaseChange(game, {
+    from,
     messages: nightResult.messages,
-    events: game.eventHistory,
+    events: true,
     saved: nightResult.saved,
-    ...(nightLoverDeathName ? { loverDeathName: nightLoverDeathName } : {}),
+    loverDeathName: nightLoverDeathName,
+    dayCue: true,
   });
 
   if (game.phase === "game_over") {
+    // Divergence kept visible: the live broadcast's message is the
+    // narrator's last line, NOT buildGameSync's canonical win line.
     broadcastToGame(game.code, {
       type: "game_over",
-      winner: game.winner!,
-      message: nightResult.messages[nightResult.messages.length - 1],
-      players: getPlayerInfo(game, true),
-      ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
+      ...projectGameOver(game, nightResult.messages[nightResult.messages.length - 1]),
     });
   }
 }
@@ -1583,6 +1649,10 @@ setInterval(() => {
   for (const [code, game] of getAllGames()) {
     if (now - game.createdAt > TWO_HOURS) {
       clearNightTimer(code);
+      // NOT projectGameOver: the sweep also reaps games idling AT game_over
+      // (where winner may be "joker"/"mafia" and jokerJointWinner true) yet
+      // always reports winner "town" with no jokerJointWinner/forceEnded —
+      // pinned wire behavior, kept hand-assembled rather than arbitrated.
       broadcastToGame(code, {
         type: "game_over",
         winner: "town",

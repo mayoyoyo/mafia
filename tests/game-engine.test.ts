@@ -855,7 +855,7 @@ describe("advanceNightSubPhase", () => {
     const game = setupNightGame(4);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     transitionToDay(game);
     expect(game.nightSubPhase).toBeNull();
     removeGame(game.code);
@@ -865,7 +865,7 @@ describe("advanceNightSubPhase", () => {
     const game = setupNightGame(4);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     transitionToDay(game);
     endDay(game);
     expect(game.nightSubPhase).toBe("mafia");
@@ -1089,6 +1089,22 @@ describe("awaitingNarratorReady cleared on forced transitions (L2)", () => {
     forceEndGame(game);
     expect(game.phase).toBe("game_over");
     expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("forceEndGame clears pendingRevenge (the hand-clear line, by hand like awaitingNarratorReady)", () => {
+    const game = setupGame(4);
+    startGame(game);
+    // Nothing in Program B production code opens the gate — hand-open it to
+    // pin that forceEndGame's hand-clear actually fires (forceEndGame is the
+    // one forced transition no reset table reaches). This line becomes
+    // load-bearing the moment Program C relaxes the always-null invariant to
+    // the phase-scoped form (HUNTER-DESIGN §4).
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
+
+    forceEndGame(game);
+    expect(game.phase).toBe("game_over");
+    expect(game.pendingRevenge).toBeNull();
     removeGame(game.code);
   });
 

@@ -1,6 +1,12 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
+// B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
+// consolidates the `game.phase = ...` sites into one transition helper and
+// sweeps these logTransition calls into it.
+// B2 (audit D4): slog carries invariant_violation lines; dumpGame is the
+// JSON-safe field universe assertInvariants compares against.
+import { logTransition, slog, dumpGame } from "./debug";
 
 const games = new Map<string, Game>();
 
@@ -71,10 +77,374 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     detectiveHistory: [],
     nightSubPhase: null,
     awaitingNarratorReady: false,
+    pendingRevenge: null,
   };
 
   games.set(code, game);
   return game;
+}
+
+// ── P1 reset seam: ONE field table, two reset scopes ────────────────────────
+//
+// Every mutable Game field is classified in EXACTLY ONE of:
+//   NIGHT_RESETS      — per-night scope: cleared by resetNightActions() at
+//                       every night/vote boundary (all seven former lists);
+//   GAME_RESETS       — whole-game scope: additionally cleared by
+//                       resetGameState() when returning to the lobby;
+//   PERSISTENT_FIELDS — never bulk-reset (each entry says why).
+//
+// Structural rule (audit P1): a new Game field gets ONE line in one of these
+// tables — no other reset list may exist. The compile-time guards below make
+// an unclassified (or doubly-classified) field a type error; the field-scope
+// coverage test in tests/reset-seam.test.ts enforces the same at runtime via
+// dumpGame's key universe.
+//
+// Two deliberate carve-outs (the entire subtlety — see audit §1.3 P1):
+//   1. transitionToDay assigns lastDoctorTarget = doctorTarget BEFORE calling
+//      resetNightActions (the doctor may not repeat tonight's save tomorrow);
+//      forceDawn deliberately does NOT capture it (the night never resolved).
+//   2. The official-joker execution passes { preserveHauntVoters: true } so
+//      the voters captured in resolveVote survive into the haunt night.
+
+const NIGHT_RESETS = {
+  mafiaVotes: (g: Game) => { g.mafiaVotes.clear(); },
+  mafiaTarget: (g: Game) => { g.mafiaTarget = null; },
+  doctorTarget: (g: Game) => { g.doctorTarget = null; },
+  detectiveTarget: (g: Game) => { g.detectiveTarget = null; },
+  jokerHauntTarget: (g: Game) => { g.jokerHauntTarget = null; },
+  jokerHauntVoters: (g: Game) => { g.jokerHauntVoters = []; },
+  nightSubPhase: (g: Game) => { g.nightSubPhase = null; },
+  voteTarget: (g: Game) => { g.voteTarget = null; },
+  votes: (g: Game) => { g.votes.clear(); },
+  awaitingNarratorReady: (g: Game) => { g.awaitingNarratorReady = false; },
+  // B4a (Hunter pre-plumbing): the revenge gate clears at every forced
+  // transition (HUNTER-DESIGN §6 L2 row) — per-night scope reaches all of
+  // them (forceDawn/endDay/cancelVote via resetNightActions, lobby resets
+  // via resetGameState; forceEndGame clears by hand like
+  // awaitingNarratorReady). Null-pinned until Program C sets it. Resets by
+  // REASSIGNMENT — no fresh-copy line needed in nightRestingSnapshot's
+  // shield (see the FUTURE-BINDING note there).
+  // SEQUENCING TRAP (Program C): notifyDeathTriggers fires inside applyDeath,
+  // which runs BEFORE the caller's resetNightActions in all three flows
+  // (transitionToDay, both resolveVote execution branches) — a gate opened at
+  // trigger time is WIPED by this very line before concludeRound's gate check
+  // runs. C must queue from the hook (the OBSERVE-AND-QUEUE re-entrancy
+  // contract on notifyDeathTriggers) and open the gate AFTER the caller's
+  // reset boundary — or add a preserve carve-out here.
+  pendingRevenge: (g: Game) => { g.pendingRevenge = null; },
+} as const;
+
+const GAME_RESETS = {
+  phase: (g: Game) => { g.phase = "lobby"; },
+  round: (g: Game) => { g.round = 0; },
+  players: (g: Game) => {
+    for (const [, player] of g.players) {
+      player.role = null;
+      player.isAlive = true;
+      player.isLover = false;
+      player.loverId = null;
+      player.variant = 0;
+    }
+  },
+  lastDoctorTarget: (g: Game) => { g.lastDoctorTarget = null; },
+  jokerJointWinner: (g: Game) => { g.jokerJointWinner = false; },
+  nightKill: (g: Game) => { g.nightKill = null; },
+  doctorSaved: (g: Game) => { g.doctorSaved = false; },
+  detectiveResult: (g: Game) => { g.detectiveResult = null; },
+  winner: (g: Game) => { g.winner = null; },
+  forceEnded: (g: Game) => { g.forceEnded = false; },
+  pendingMessages: (g: Game) => { g.pendingMessages = []; },
+  eventHistory: (g: Game) => { g.eventHistory = []; },
+  dayStartedAt: (g: Game) => { g.dayStartedAt = null; },
+  dayVoteCount: (g: Game) => { g.dayVoteCount = 0; },
+  narratorHistory: (g: Game) => { g.narratorHistory = []; },
+  detectiveHistory: (g: Game) => { g.detectiveHistory = []; },
+} as const;
+
+const PERSISTENT_FIELDS = [
+  "code",        // room identity
+  "adminId",     // room identity
+  "createdAt",   // refreshed explicitly by restartGame, kept by returnToLobby
+  "settings",    // deliberately kept across games
+  "mafiaVariant", // overwritten by assignRoles on every deal
+] as const satisfies readonly (keyof Game)[];
+
+// Exported for the field-scope coverage test (tests/reset-seam.test.ts).
+export const NIGHT_RESET_FIELDS = Object.keys(NIGHT_RESETS) as (keyof typeof NIGHT_RESETS)[];
+export const GAME_RESET_FIELDS = Object.keys(GAME_RESETS) as (keyof typeof GAME_RESETS)[];
+export const PERSISTENT_GAME_FIELDS: readonly (keyof Game)[] = PERSISTENT_FIELDS;
+
+// Compile-time guards: every Game key classified in exactly one scope.
+type _ClassifiedKey = keyof typeof NIGHT_RESETS | keyof typeof GAME_RESETS | (typeof PERSISTENT_FIELDS)[number];
+// compile error here means a Game field is missing from all three reset scopes
+const _everyGameFieldClassified: Exclude<keyof Game, _ClassifiedKey> extends never ? true : false = true;
+void _everyGameFieldClassified;
+// compile error here means a classified key does not exist on Game
+const _noPhantomFields: Exclude<_ClassifiedKey, keyof Game> extends never ? true : false = true;
+void _noPhantomFields;
+// compile error here means a Game field appears in more than one scope
+type _ScopeOverlap =
+  | (keyof typeof NIGHT_RESETS & keyof typeof GAME_RESETS)
+  | (keyof typeof NIGHT_RESETS & (typeof PERSISTENT_FIELDS)[number])
+  | (keyof typeof GAME_RESETS & (typeof PERSISTENT_FIELDS)[number]);
+const _scopesDisjoint: _ScopeOverlap extends never ? true : false = true;
+void _scopesDisjoint;
+
+export interface ResetNightOptions {
+  /** Official-joker carve-out: keep the captured voters for the haunt night. */
+  preserveHauntVoters?: boolean;
+}
+
+/** Clear every per-night field (night actions + day-vote state) from the table. */
+export function resetNightActions(game: Game, opts: ResetNightOptions = {}): void {
+  for (const key of NIGHT_RESET_FIELDS) {
+    if (key === "jokerHauntVoters" && opts.preserveHauntVoters) continue;
+    NIGHT_RESETS[key](game);
+  }
+}
+
+/**
+ * Enter the night phase: transition log + phase/round/sub-phase bookkeeping +
+ * per-night reset. Returns the narrator's night-falls line for the caller to
+ * place in its message flow. Used by startGame, endDay, and both resolveVote
+ * auto-night paths.
+ */
+export function beginNight(game: Game, reason: string, opts: ResetNightOptions = {}): string {
+  logTransition(game, game.phase, "night", reason);
+  game.phase = "night";
+  game.round++;
+  resetNightActions(game, opts);
+  game.nightSubPhase = "mafia";
+  return Narrator.nightFalls();
+}
+
+/**
+ * Whole-game reset back to the lobby (per-night scope + whole-game scope).
+ * Replaces the formerly byte-duplicated returnToLobby/restartGame blocks.
+ * B4b (engine symmetry with beginNight): the →lobby transition log lives
+ * HERE — callers pass their reason instead of logging by hand. The log
+ * fires before any reset, so from/round are the pre-reset values, exactly
+ * as the callers' own logTransition lines were placed.
+ */
+export function resetGameState(game: Game, reason: string): void {
+  logTransition(game, game.phase, "lobby", reason);
+  resetNightActions(game);
+  for (const key of GAME_RESET_FIELDS) {
+    GAME_RESETS[key](game);
+  }
+}
+
+// ── B2 (audit D4): invariant assertions at the server choke points ──────────
+//
+// assertInvariants(game, ctx) is called by server.ts at the two instrumented
+// choke points: handleMessage entry and the armNightTimer fired callback.
+// Both call sites see SETTLED state (before any handler/timer work runs), so
+// every check below is against a guarantee the code makes between messages.
+//
+// Mode (resolved once at import):
+//   "throw" — test runs. `bun test` sets NODE_ENV=test (verified), and the
+//             WS suites spawn servers with { ...process.env }, so the whole
+//             suite — in-process AND spawned — fails loudly on a violation.
+//   "log"   — production. One slog("invariant_violation") line, processing
+//             continues: a thrown assert would change failure modes for the
+//             M1/M3/M10-class admin messages (audit D4 risk note), and an
+//             over-strict invariant must produce log noise, not breakage.
+
+export type InvariantMode = "throw" | "log";
+
+let invariantMode: InvariantMode = process.env.NODE_ENV === "test" ? "throw" : "log";
+
+/** Test seam: force a mode; returns the previous mode so callers restore it. */
+export function setInvariantMode(mode: InvariantMode): InvariantMode {
+  const previous = invariantMode;
+  invariantMode = mode;
+  return previous;
+}
+
+export interface InvariantContext {
+  /** Choke-point label for the log line, e.g. "ws_in:cast_vote" or "timer_fire:resolve". */
+  at: string;
+  /**
+   * Whether this game's (single, tracked) night-timer slot is occupied. The
+   * timer map lives in server.ts, so the caller passes it in; engine-level
+   * callers omit it and the timer invariant is skipped.
+   */
+  hasPendingNightTimer?: boolean;
+}
+
+/**
+ * The night-scope "resting" snapshot: what every NIGHT_RESETS field looks
+ * like immediately after resetNightActions. Computed by actually running the
+ * reset table on a shield copy of the game, so the expected values share a
+ * single source of truth with the resets themselves — no second hand-written
+ * field/value list. The shield swaps in fresh Maps for the two fields whose
+ * reset fns mutate in place (.clear()); every other table entry reassigns,
+ * so the live game is never touched.
+ *
+ * FUTURE-BINDING: any new NIGHT_RESETS entry whose reset fn mutates IN PLACE
+ * (.clear(), .length = 0, splice, delete-key, ...) MUST get a fresh-copy line
+ * in this shield. Miss it and the reset fn reaches THROUGH the shallow spread
+ * into the live game at every choke point — and in prod log-mode the check
+ * silently scrubs the live field on every message, masking the very bug it
+ * exists to catch. The non-perturbation test in tests/invariants.test.ts
+ * (byte-identical dumpGame before/after assertInvariants) is the tripwire.
+ */
+function nightRestingSnapshot(game: Game): Record<string, unknown> {
+  const shield: Game = { ...game, mafiaVotes: new Map(), votes: new Map() };
+  resetNightActions(shield);
+  return dumpGame(shield);
+}
+
+/**
+ * Check every stateable invariant (audit D4) against a settled Game; returns
+ * the violation list. On violations: always slog("invariant_violation"), and
+ * additionally throw in "throw" mode (tests).
+ */
+export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
+  const violations: string[] = [];
+  const snapshot = dumpGame(game);
+
+  // Invariant: outside night, every per-night field — the list is DERIVED
+  // from B1's NIGHT_RESETS classification, never restated — sits at its
+  // post-reset value. Phase allowances, each matching a positive guarantee
+  // pinned in tests:
+  //   voting    — voteTarget/votes ARE the live ballot (callVote/castVote);
+  //   game_over — jokerHauntVoters stay populated ONLY when the official-
+  //               joker execution itself ends the game: that branch is the
+  //               sole writer of jokerHauntVoters AND sets jokerJointWinner
+  //               in the same block, and every other route to game_over
+  //               passes a no-preserve reset boundary first (narrowed from
+  //               an unconditional game_over allowance in B4a; pinned in
+  //               tests/reset-seam.test.ts + tests/invariants.test.ts);
+  //             — a force-ended game (forceEndGame) freezes ALL in-flight
+  //               night/vote state where it stood: its only night-scope
+  //               guarantees are awaitingNarratorReady=false (the L2 fix)
+  //               and pendingRevenge=null (both cleared by hand there), so
+  //               those are the only fields still checked when forceEnded.
+  if (game.phase !== "night") {
+    const resting = nightRestingSnapshot(game);
+    const skip = new Set<keyof Game>();
+    if (game.phase === "voting") {
+      skip.add("voteTarget");
+      skip.add("votes");
+    }
+    if (game.phase === "game_over") {
+      if (game.jokerJointWinner) skip.add("jokerHauntVoters");
+      if (game.forceEnded) {
+        for (const field of NIGHT_RESET_FIELDS) {
+          if (field !== "awaitingNarratorReady" && field !== "pendingRevenge") skip.add(field);
+        }
+      }
+    }
+    for (const field of NIGHT_RESET_FIELDS) {
+      if (skip.has(field)) continue;
+      if (JSON.stringify(snapshot[field]) !== JSON.stringify(resting[field])) {
+        violations.push(`night_scope_dirty:${field}`);
+      }
+    }
+  }
+
+  // Invariant (L3 class): winner is well-defined at game_over — consumers
+  // (buildGameSync, the end_game broadcast) dereference it with `!`.
+  if (game.phase === "game_over" && game.winner === null) {
+    violations.push("winner_null_at_game_over");
+  }
+
+  // Invariant (B4a pre-plumbing): pendingRevenge is NULL ALWAYS — nothing
+  // sets it until Program C's Hunter lands. C relaxes this to the
+  // phase-scoped form (HUNTER-DESIGN §4: non-null ⇒ phase ∈ {night,voting},
+  // votes empty, voteTarget null, winner null).
+  if (game.pendingRevenge !== null) {
+    violations.push("pending_revenge_nonnull");
+  }
+
+  // Invariant (M2 class): the TRACKED night-timer slot is empty outside
+  // night — every transition out of night calls clearNightTimer. Honest
+  // scope: armNightTimer's set-over-a-live-timer never cancels the displaced
+  // timeout (pre-existing quirk, B4's concern), and a displaced timer is
+  // invisible to the map — absence of UNTRACKED timers is not guaranteed
+  // anywhere, so it is deliberately not asserted here.
+  if (ctx.hasPendingNightTimer && game.phase !== "night") {
+    violations.push(`pending_night_timer_outside_night:${game.phase}`);
+  }
+
+  if (violations.length > 0) {
+    // Compact summary: the night-scope fields the invariants are about plus
+    // phase/winner bookkeeping — full dumpGame (players, histories) is too
+    // big for one log line.
+    const nightState: Record<string, unknown> = {};
+    for (const field of NIGHT_RESET_FIELDS) nightState[field] = snapshot[field];
+    slog("invariant_violation", {
+      code: game.code,
+      at: ctx.at,
+      violations,
+      phase: game.phase,
+      round: game.round,
+      winner: game.winner,
+      forceEnded: game.forceEnded,
+      night: nightState,
+    });
+    if (invariantMode === "throw") {
+      throw new Error(`Invariant violation [${game.code}] at ${ctx.at}: ${violations.join(", ")}`);
+    }
+  }
+  return violations;
+}
+
+// ── B4b (audit D1): legal-edge table for the server's phase_change builds ──
+//
+// One row per from-phase; the sets are the `to` phases a phase_change
+// broadcast site can legitimately produce TODAY (derived from the 12 sites
+// broadcastPhaseChange in src/server.ts replaced — this documents reality,
+// it does not arbitrate it). Two non-edges are structural, not omissions:
+// "voting" is never a broadcast `to` (the wire enters voting via
+// vote_called) and neither is "lobby" (lobby re-entry is a lobby_update).
+const LEGAL_PHASE_EDGES: Record<Game["phase"], ReadonlySet<Game["phase"]>> = {
+  lobby: new Set([
+    "night",     // start_game (and restart_game from a lobby — fails <3 players, else dealt+night)
+    "game_over", // end_game has NO lobby guard: an admin end_game in lobby force-ends (odd-but-real)
+  ]),
+  night: new Set([
+    "day",       // force_dawn; night resolution (resolveNightAndTransition)
+    "night",     // restart_game mid-night — no phase guard (M2's enabler, audit D1)
+    "game_over", // night resolution hits a win; admin leaves; end_game
+  ]),
+  day: new Set([
+    "day",       // abstain_vote: the admin abstains and the day re-announces itself (self-edge)
+    "night",     // end_day; restart_game from day
+    "game_over", // admin leaves; end_game
+  ]),
+  voting: new Set([
+    "day",       // cancel_vote; spared vote (strictly->50% rule fails)
+    "night",     // execution auto-night; restart_game mid-vote
+    "game_over", // vote resolution hits a win; admin leaves; end_game
+  ]),
+  game_over: new Set([
+    "night",     // restart_game
+  ]),
+};
+
+/**
+ * B4b (audit D1): assert a phase_change broadcast rides a legal edge.
+ * Backs broadcastPhaseChange (src/server.ts) — the ONE phase_change assembly
+ * point. Rides B2's invariant mode (one mode system, audit D4 risk note):
+ * throw under bun test, log-and-continue in production — a thrown assert
+ * would change failure modes for M1/M3/M10-class admin messages. The slog
+ * line reuses the "invariant_violation" event so violation monitoring stays
+ * a single channel.
+ */
+export function assertPhaseEdge(game: Game, from: Game["phase"], to: Game["phase"]): void {
+  if (LEGAL_PHASE_EDGES[from].has(to)) return;
+  slog("invariant_violation", {
+    code: game.code,
+    at: "phase_change_broadcast",
+    violations: [`illegal_phase_edge:${from}->${to}`],
+    phase: game.phase,
+    round: game.round,
+  });
+  if (invariantMode === "throw") {
+    throw new Error(`Illegal phase edge [${game.code}] illegal_phase_edge:${from}->${to}`);
+  }
 }
 
 export function getGame(code: string): Game | undefined {
@@ -188,6 +558,72 @@ export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
   }));
 }
 
+// ── B5 (audit P6-lite): the two pure payload projections ────────────────
+//
+// Placement note: both live here (not a new module, not server.ts) because
+// the engine itself needs toTargetInfo (getJokerHauntTargets) and the
+// import direction only flows server → engine.
+
+/**
+ * The alive-target list entry — one projection for the literal that was
+ * rebuilt inline 8x in server.ts (mafia/doctor/detective prompts, the
+ * game_sync night reconstructions, the spectator mafia view) + 1x here.
+ *
+ * isAlive is HARDCODED true, deliberately: every call site filters to
+ * alive players before mapping, and all nine literals pinned
+ * `isAlive: true` rather than reading player.isAlive. Preserved as-is.
+ */
+export function toTargetInfo(player: Player, game: Game): PlayerInfo {
+  return {
+    id: player.id,
+    username: player.username,
+    isAlive: true,
+    isAdmin: player.id === game.adminId,
+  };
+}
+
+/**
+ * The shared core of the four game_over emitters (audit R11 — L1/L3 drift
+ * class): buildGameSync's gameOver branch, the vote-path and night-path
+ * live broadcasts, and end_game. Covers SHARED fields only:
+ *
+ *   - `message` is an explicit param — the sites diverge on it BY DESIGN
+ *     ("Citizens win!" canonical line in the sync reconstruction vs the
+ *     narrator's last message in the live broadcasts; goldens pin both).
+ *   - `forceEnded` stays per-site (sync always carries the boolean;
+ *     end_game hardcodes true; the live win broadcasts omit it).
+ *   - Three sites do NOT use this projection, in two classes:
+ *       (a) lobby-leave and the 2-hour sweep force winner "town" on a game
+ *           that may never have concluded (game.winner null in lobby and
+ *           mid-game; the sweep can even reap a finished game whose winner
+ *           is "joker"/"mafia") — the projection's game.winner read is
+ *           unusable there, and the guard below would throw on the null
+ *           cases.
+ *       (b) active-leave's only divergence is the jokerJointWinner
+ *           omission: forceEndGame has already set winner "town" at that
+ *           site, so the projection's winner would be wire-identical — kept
+ *           hand-assembled to pin the omission of jokerJointWinner, which
+ *           official-joker mode can set mid-game.
+ *     All three are pinned divergences, hand-assembled at their sites.
+ */
+export function projectGameOver(
+  game: Game,
+  message: string,
+): { winner: "town" | "mafia" | "joker"; message: string; players: PlayerInfo[]; jokerJointWinner?: boolean } {
+  if (game.winner === null) {
+    throw new Error(
+      `projectGameOver called on game ${game.code} with no winner set — ` +
+      `unconcluded games must hand-assemble their game_over payload (see docstring class (a))`
+    );
+  }
+  return {
+    winner: game.winner,
+    message,
+    players: getPlayerInfo(game, true),
+    ...(game.jokerJointWinner ? { jokerJointWinner: true } : {}),
+  };
+}
+
 export function getAlivePlayers(game: Game): Player[] {
   return Array.from(game.players.values()).filter((p) => p.isAlive);
 }
@@ -196,7 +632,70 @@ export function getAliveByRole(game: Game, role: Role): Player[] {
   return getAlivePlayers(game).filter((p) => p.role === role);
 }
 
+// ── Test-only fixed-deal seam (audit D6, pulled forward per P9) ─────────────
+// When a FixedDeal is active, assignRoles() deals roles to players in JOIN
+// ORDER from deal.roles, pins the mafia art variant to 0, and pairs lovers
+// only as deal.lovers specifies (join-order indices). It is activated either
+// by setFixedDeal() (in-process engine tests) or the MAFIA_FIXED_DEAL env var
+// (JSON-encoded FixedDeal — for tests that spawn the server as a subprocess).
+// Production never sets either, so the random path in assignRoles below runs
+// unchanged when the seam is unused.
+export interface FixedDeal {
+  roles: Role[];             // role for the i-th player in join order
+  lovers?: [number, number]; // join-order indices of the lover pair
+}
+
+let fixedDeal: FixedDeal | null = process.env.MAFIA_FIXED_DEAL
+  ? (JSON.parse(process.env.MAFIA_FIXED_DEAL) as FixedDeal)
+  : null;
+
+export function setFixedDeal(deal: FixedDeal | null): void {
+  fixedDeal = deal;
+}
+
+function assignFixedRoles(game: Game, deal: FixedDeal): number {
+  const playerIds = Array.from(game.players.keys()); // join order
+  if (deal.roles.length !== playerIds.length) {
+    throw new Error(
+      `fixed deal has ${deal.roles.length} roles but game has ${playerIds.length} players`
+    );
+  }
+
+  let mafiaCount = 0;
+  for (let i = 0; i < playerIds.length; i++) {
+    game.players.get(playerIds[i])!.role = deal.roles[i];
+    if (deal.roles[i] === "mafia") mafiaCount++;
+  }
+
+  // Same variant scheme as the random path, with mafiaVariant pinned to 0
+  game.mafiaVariant = 0;
+  let citizenVariantIdx = 0;
+  for (const [, player] of game.players) {
+    if (player.role === "mafia") {
+      player.variant = game.mafiaVariant;
+    } else if (player.role === "citizen") {
+      player.variant = citizenVariantIdx % 8;
+      citizenVariantIdx++;
+    } else {
+      player.variant = 0;
+    }
+  }
+
+  if (deal.lovers) {
+    const a = game.players.get(playerIds[deal.lovers[0]])!;
+    const b = game.players.get(playerIds[deal.lovers[1]])!;
+    a.isLover = true;
+    a.loverId = b.id;
+    b.isLover = true;
+    b.loverId = a.id;
+  }
+
+  return mafiaCount;
+}
+
 function assignRoles(game: Game): number {
+  if (fixedDeal) return assignFixedRoles(game, fixedDeal);
+
   const playerIds = shuffle(Array.from(game.players.keys()));
   const { settings } = game;
   const totalPlayers = playerIds.length;
@@ -268,21 +767,16 @@ export function startGame(game: Game): string[] | null {
   if (game.players.size < 3) return null;
 
   const actualMafiaCount = assignRoles(game);
-  game.phase = "night";
-  game.nightSubPhase = "mafia";
-  game.round = 1;
-  game.dayStartedAt = null;
-  game.dayVoteCount = 0;
-  game.narratorHistory = [];
-  game.detectiveHistory = [];
-
-  game.awaitingNarratorReady = true;
+  // Lobby state is always fresh (createGame or resetGameState), so beginNight's
+  // round++ yields round 1 and the whole-game fields need no re-clearing here.
+  const nightMessage = beginNight(game, "start_game");
+  game.awaitingNarratorReady = true; // Begin Night gate: narrator confirms before night actions run
 
   const messages: string[] = [];
   if (actualMafiaCount < game.settings.mafiaCount) {
     messages.push(`Mafia count reduced from ${game.settings.mafiaCount} to ${actualMafiaCount} for balance (max 1/3 of players).`);
   }
-  messages.push(Narrator.nightFalls());
+  messages.push(nightMessage);
   game.pendingMessages = messages;
   return messages;
 }
@@ -451,31 +945,94 @@ export function getJokerHauntTargets(game: Game): PlayerInfo[] {
   return game.jokerHauntVoters
     .map(id => game.players.get(id))
     .filter((p): p is Player => p !== undefined && p.isAlive)
-    .map(p => ({
-      id: p.id,
-      username: p.username,
-      isAlive: true,
-      isAdmin: p.id === game.adminId,
-    }));
+    .map(p => toTargetInfo(p, game));
 }
 
-function killPlayer(game: Game, playerId: number): { killed: Player; loverKilled: Player | null } | null {
+// ── B3 (audit P2): the death pipeline ───────────────────────────────────
+//
+// applyDeath is the SINGLE death funnel: the only place in the engine that
+// flips `isAlive = false`. It performs the lover cascade itself (a cascade
+// can never bypass the funnel's bookkeeping), derives the public event label
+// from (source, cause) in exactly one place, pushes eventHistory, and hands
+// every Death to notifyDeathTriggers — the one hook point death-triggered
+// roles (Hunter, Program C) attach to.
+
+/** The (source, cause) → public event label table. The ONLY derivation site. */
+export function deriveDeathEventType(source: KillSource, cause: DeathCause): DeathEventType {
+  if (cause === "lover_cascade") return "lover_death";
+  switch (source) {
+    case "mafia": return "kill";
+    case "joker_haunt": return "joker_haunt";
+    case "execution": return "execution";
+  }
+}
+
+// Test seam (pattern: setFixedDeal): lets engine tests observe every Death
+// that flows through the funnel. Production never sets it.
+let deathTriggerSpy: ((game: Game, death: Death) => void) | null = null;
+export function setDeathTriggerSpy(fn: ((game: Game, death: Death) => void) | null): void {
+  deathTriggerSpy = fn;
+}
+
+/**
+ * The single death-trigger hook point (audit P2). A NO-OP in Program B;
+ * Program C hangs the Hunter revenge gate here. Called exactly once per
+ * Death — every source (night kill, haunt, execution) and every cause
+ * (direct or lover cascade) — from inside applyDeath.
+ *
+ * Re-entrancy contract: this hook fires INSIDE applyDeath's bookkeeping
+ * loop — implementations must OBSERVE AND QUEUE; do NOT call applyDeath
+ * re-entrantly. A re-entrant kill would (a) interleave the revenge events
+ * between a direct death's and its cascade's eventHistory entries, and
+ * (b) drop the revenge Deaths on the floor — they never reach the outer
+ * caller's result.killed, so the victim would get no you_died and no
+ * player_died broadcast. Revenge kills must enter the funnel via their
+ * own intent/path after the triggering resolution completes.
+ */
+export function notifyDeathTriggers(game: Game, death: Death): void {
+  deathTriggerSpy?.(game, death);
+}
+
+/**
+ * Kill `playerId` from `source` with the caller-supplied narration line,
+ * cascading to a living lover (heartbreak). Returns the Death records in
+ * kill order: direct death first, then the cascade. Returns [] if the
+ * target is missing or already dead. Pushes one eventHistory entry (with
+ * the additive wire cause/source) and fires notifyDeathTriggers per Death.
+ */
+export function applyDeath(game: Game, playerId: number, source: KillSource, message: string): Death[] {
   const player = game.players.get(playerId);
-  if (!player || !player.isAlive) return null;
+  if (!player || !player.isAlive) return [];
 
   player.isAlive = false;
-  let loverKilled: Player | null = null;
+  const deaths: Death[] = [{
+    player, source, cause: "direct", message,
+    eventType: deriveDeathEventType(source, "direct"),
+  }];
 
-  // Check lover
+  // Lover cascade — INSIDE the funnel, so heartbreak deaths get the same
+  // bookkeeping (event, trigger) as every other death. Non-recursive: the
+  // partner's own lover link points back at the already-dead player.
   if (player.isLover && player.loverId !== null) {
     const lover = game.players.get(player.loverId);
     if (lover && lover.isAlive) {
       lover.isAlive = false;
-      loverKilled = lover;
+      deaths.push({
+        player: lover, source, cause: "lover_cascade",
+        message: Narrator.loverDeath(lover.username, player.username),
+        eventType: deriveDeathEventType(source, "lover_cascade"),
+      });
     }
   }
 
-  return { killed: player, loverKilled };
+  for (const d of deaths) {
+    game.eventHistory.push({
+      round: game.round, type: d.eventType, playerName: d.player.username,
+      cause: d.cause, source: d.source,
+    });
+    notifyDeathTriggers(game, d);
+  }
+  return deaths;
 }
 
 export function checkNightReady(game: Game): boolean {
@@ -556,10 +1113,18 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
 
 export interface NightResult {
   messages: string[];
-  killed: Array<{ player: Player; message: string; source: "mafia" | "joker_haunt" }>;
+  killed: Death[];
   saved: boolean;
   savedName: string | null;
   savedTargetId: number | null; // for official doctor mode: private notification
+}
+
+/** One pending kill for resolveNight's fold, in resolution order. */
+export interface KillIntent {
+  targetId: number;
+  source: KillSource;
+  /** Narration for a landed kill — called only when the kill actually lands. */
+  deathMessage: (victim: Player) => string;
 }
 
 // DESIGN: Night actions resolve simultaneously. If mafia kills the doctor or detective,
@@ -568,86 +1133,70 @@ export interface NightResult {
 export function resolveNight(game: Game): NightResult {
   const result: NightResult = { messages: [], killed: [], saved: false, savedName: null, savedTargetId: null };
 
-  if (game.mafiaTarget === null && game.jokerHauntTarget === null) return result;
-
-  // Resolve mafia kill
+  // Build tonight's kill intents in resolution order. Order is observable
+  // behavior: the mafia kill resolves before the joker haunt (golden #2).
+  const intents: KillIntent[] = [];
   if (game.mafiaTarget !== null) {
-    const targetId = game.mafiaTarget;
-
-    // Check if doctor saved the mafia target
-    if (game.doctorTarget === targetId) {
-      const savedPlayer = game.players.get(targetId)!;
-      result.saved = true;
-      result.savedName = savedPlayer.username;
-      result.savedTargetId = targetId;
-      if (game.settings.doctorMode === "official") {
-        result.messages.push(Narrator.doctorSaveOfficial());
-      } else {
-        result.messages.push(Narrator.doctorSave(savedPlayer.username));
-      }
-    } else {
-      const killResult = killPlayer(game, targetId);
-      if (killResult) {
-        const deathMsg = Narrator.nightKill(killResult.killed.username);
-        result.messages.push(deathMsg);
-        result.killed.push({ player: killResult.killed, message: deathMsg, source: "mafia" });
-
-        if (killResult.loverKilled) {
-          const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-          result.messages.push(loverMsg);
-          result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "mafia" });
-        }
-      }
-    }
+    intents.push({
+      targetId: game.mafiaTarget, source: "mafia",
+      deathMessage: (v) => Narrator.nightKill(v.username),
+    });
   }
-
-  // Resolve joker haunt kill (official joker mode)
   if (game.jokerHauntTarget !== null) {
-    const hauntTargetId = game.jokerHauntTarget;
-    const hauntTarget = game.players.get(hauntTargetId);
+    // Official joker mode only: the haunt target is set exclusively by
+    // resolveVote's official branch.
+    intents.push({
+      targetId: game.jokerHauntTarget, source: "joker_haunt",
+      deathMessage: (v) => Narrator.jokerHauntKill(v.username),
+    });
+  }
+  if (intents.length === 0) return result;
 
-    if (hauntTarget) {
-      // Doctor save only blocks one source. If mafia also targeted this player
-      // and the doctor saved them from mafia, the joker haunt still kills.
-      const doctorSavedFromMafia = game.doctorTarget === hauntTargetId && game.mafiaTarget === hauntTargetId;
-      const doctorSavedFromHaunt = game.doctorTarget === hauntTargetId && game.mafiaTarget !== hauntTargetId;
+  // Event presentation: the (house-mode) save event precedes tonight's kill
+  // events in eventHistory regardless of which intent the save blocked —
+  // even when a kill resolves chronologically first. Remember the insertion
+  // point; applyDeath appends the kill events behind it.
+  const eventsMark = game.eventHistory.length;
 
-      if (doctorSavedFromHaunt) {
-        // Doctor blocks the haunt (mafia targeted someone else or nobody)
-        if (hauntTarget.isAlive) {
-          result.saved = true;
-          result.savedName = hauntTarget.username;
-          result.savedTargetId = hauntTargetId;
-          if (game.settings.doctorMode === "official") {
-            if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
-              result.messages.push(Narrator.doctorSaveOfficial());
-            }
-          } else {
-            if (game.mafiaTarget === null || game.doctorTarget !== game.mafiaTarget) {
-              result.messages.push(Narrator.doctorSave(hauntTarget.username));
-            }
-          }
+  // Fold the intents against the single doctor save. Semantics (pinned by
+  // goldens #2/#6 and tests/death-pipeline.test.ts): ONE save blocks ONE
+  // source — the first intent in order that targets the doctor's pick
+  // consumes the save; a later intent on the same target kills anyway. A
+  // target already dead from an earlier intent (or its cascade) is skipped.
+  let saveUsed = false;
+  for (const intent of intents) {
+    const target = game.players.get(intent.targetId);
+    if (!target) continue;
+
+    if (!saveUsed && game.doctorTarget === intent.targetId) {
+      saveUsed = true;
+      if (target.isAlive) {
+        result.saved = true;
+        result.savedName = target.username;
+        result.savedTargetId = intent.targetId;
+        if (game.settings.doctorMode === "official") {
+          // Official: anonymous narration, no public save event.
+          result.messages.push(Narrator.doctorSaveOfficial());
+        } else {
+          result.messages.push(Narrator.doctorSave(target.username));
+          game.eventHistory.splice(eventsMark, 0, { round: game.round, type: "save", playerName: target.username });
         }
-      } else {
-        // No doctor save for haunt (either doctor saved from mafia, or doctor targeted elsewhere)
-        // Kill if still alive
-        if (hauntTarget.isAlive) {
-          const killResult = killPlayer(game, hauntTargetId);
-          if (killResult) {
-            const deathMsg = Narrator.jokerHauntKill(killResult.killed.username);
-            result.messages.push(deathMsg);
-            result.killed.push({ player: killResult.killed, message: deathMsg, source: "joker_haunt" });
-
-            if (killResult.loverKilled) {
-              const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-              result.messages.push(loverMsg);
-              result.killed.push({ player: killResult.loverKilled, message: loverMsg, source: "joker_haunt" });
-            }
-          }
-        }
-        // If target already dead (killed by mafia above), haunt has no additional effect
+      }
+      // Save matched a target already dead this night (e.g. a lover cascade
+      // victim): the save is spent with no effect — matches the pre-B3
+      // haunt-block behavior. NB: spending the save on a corpse is
+      // unobservable today — the haunt is always the LAST intent, so no
+      // later intent exists for the spent save to miss — but it becomes a
+      // real semantic choice (spent-on-corpse vs. still-armed) the moment
+      // more intents join the fold (Program C).
+    } else if (target.isAlive) {
+      const deaths = applyDeath(game, intent.targetId, intent.source, intent.deathMessage(target));
+      for (const d of deaths) {
+        result.messages.push(d.message);
+        result.killed.push(d);
       }
     }
+    // already dead and not saved: no additional effect
   }
 
   if (result.killed.length === 0 && !result.saved) {
@@ -657,60 +1206,76 @@ export function resolveNight(game: Game): NightResult {
   return result;
 }
 
-// Classify a night death entry by its kill source, not array position.
-// resolveNight pushes the primary victim first, then their heartbroken lover,
-// both tagged with the same source ("mafia" or "joker_haunt"). At most one
-// mafia kill and one haunt kill resolve per night, so any entry preceded by
-// another entry with the same source is a lover-cascade death.
-export function classifyNightDeath(
-  killed: NightResult["killed"],
-  index: number
-): "kill" | "joker_haunt" | "lover_death" {
-  const entry = killed[index];
-  for (let i = 0; i < index; i++) {
-    if (killed[i].source === entry.source) return "lover_death";
-  }
-  return entry.source === "joker_haunt" ? "joker_haunt" : "kill";
-}
+// ── B4a (audit P5): the single round epilogue ───────────────────────────
+//
+// concludeRound is the ONE win-check/auto-transition tail, formerly
+// triplicated across transitionToDay and both resolveVote execution
+// branches (the official-joker early-return re-implemented it). Contract:
+//   - Callers run their own resets BEFORE calling (vote/night state is
+//     already clean when the epilogue runs — HUNTER-DESIGN §4 relies on
+//     exactly this ordering while the gate is open).
+//   - `messages` receives any narrator line the epilogue emits (the win
+//     line, or beginNight's night-falls line) — nothing else is touched.
+//   - checkWinCondition has NO other call site in src/ (pinned by
+//     tests/conclude-round.test.ts); the M8 joker-parity rule therefore
+//     has exactly one place to live.
+//   - Transition-log reasons are derived from the entry phase, preserving
+//     the pre-B4a lines: from "night" this is a dawn resolution
+//     ("night_resolved"), from anywhere else a vote resolution
+//     ("vote_resolved" / "spared"); the auto-night logs "execution" via
+//     beginNight as before.
 
-export function transitionToDay(game: Game): NightResult {
-  const nightResult = resolveNight(game);
+/**
+ * Win check + game-over/auto-night/day transition for a resolved round.
+ * First line is the Hunter gate (Program C): a pending revenge defers BOTH
+ * the win check and the transition; submitHunterRevenge clears the gate and
+ * resumes by re-calling this with game.pendingRevenge.resume. Null-pinned
+ * in Program B — nothing opens the gate until the Hunter lands.
+ *
+ * SEQUENCING TRAP (Program C): notifyDeathTriggers fires inside applyDeath,
+ * and the caller's resetNightActions — which WIPES pendingRevenge — runs
+ * between applyDeath and this gate check in all three flows. A gate opened
+ * inside the trigger hook is gone before this line sees it: queue from the
+ * hook (the OBSERVE-AND-QUEUE contract on notifyDeathTriggers) and open the
+ * gate AFTER the reset boundary, or carve out a preserve in NIGHT_RESETS.
+ */
+export function concludeRound(game: Game, messages: string[], opts: ConcludeRoundOptions): void {
+  if (game.pendingRevenge) return; // C's resume path: submitHunterRevenge → concludeRound(resume)
 
-  // Track events
-  // In official doctor mode the save is anonymous; only push a named save event in house mode.
-  if (nightResult.saved && nightResult.savedName && game.settings.doctorMode === "house") {
-    game.eventHistory.push({ round: game.round, type: "save", playerName: nightResult.savedName });
-  }
-  for (let i = 0; i < nightResult.killed.length; i++) {
-    game.eventHistory.push({
-      round: game.round,
-      type: classifyNightDeath(nightResult.killed, i),
-      playerName: nightResult.killed[i].player.username,
-    });
-  }
+  const fromNight = game.phase === "night";
 
-  // Reset night state
-  game.lastDoctorTarget = game.doctorTarget;
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = []; // clear haunt voters after this night
-  game.nightSubPhase = null;
-  game.voteTarget = null;
-  game.votes.clear();
-
-  // Check win conditions
   const winner = checkWinCondition(game);
   if (winner) {
     game.winner = winner;
+    logTransition(game, game.phase, "game_over", fromNight ? "night_resolved" : "vote_resolved");
     game.phase = "game_over";
-    if (winner === "town") nightResult.messages.push(Narrator.townWin());
-    else if (winner === "mafia") nightResult.messages.push(Narrator.mafiaWin());
+    if (winner === "town") messages.push(Narrator.townWin());
+    else if (winner === "mafia") messages.push(Narrator.mafiaWin());
+  } else if (opts.autoNight) {
+    // Auto-transition to night after an execution. beginNight re-runs the
+    // per-night reset, so { preserveHauntVoters } MUST match the caller's
+    // own resetNightActions flags (official-joker carve-out — a mismatch
+    // would wipe the haunt voters; the haunt-parity test covers it).
+    messages.push(beginNight(game, "execution", { preserveHauntVoters: opts.preserveHauntVoters }));
   } else {
+    logTransition(game, game.phase, "day", fromNight ? "night_resolved" : "spared");
     game.phase = "day";
   }
+}
+
+export function transitionToDay(game: Game): NightResult {
+  // Event tracking lives in the death pipeline now: applyDeath pushes the
+  // kill/lover_death/joker_haunt events, resolveNight inserts the house-mode
+  // save event ahead of them.
+  const nightResult = resolveNight(game);
+
+  // Reset night state — carve-out: capture tonight's save target BEFORE the
+  // reset (the doctor may not repeat it tomorrow).
+  game.lastDoctorTarget = game.doctorTarget;
+  resetNightActions(game);
+
+  // Win check + transition to day/game_over (the dawn epilogue shape).
+  concludeRound(game, nightResult.messages, { autoNight: false });
 
   game.pendingMessages = nightResult.messages;
   return nightResult;
@@ -724,6 +1289,7 @@ export function callVote(game: Game, adminId: number, targetId: number): boolean
 
   game.voteTarget = targetId;
   game.votes.clear();
+  logTransition(game, game.phase, "voting", "call_vote");
   game.phase = "voting";
   return true;
 }
@@ -750,7 +1316,7 @@ export interface VoteResult {
   votesFor: number;
   votesAgainst: number;
   messages: string[];
-  killed: Array<{ player: Player; message: string }>;
+  killed: Death[];
   jokerWin: boolean;
 }
 
@@ -796,113 +1362,59 @@ export function resolveVote(game: Game): VoteResult | null {
           if (approve) game.jokerHauntVoters.push(voterId);
         }
 
-        const killResult = killPlayer(game, target.id);
-        if (killResult) {
-          game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
-          result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
-
-          if (killResult.loverKilled) {
-            const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-            result.messages.push(loverMsg);
-            result.killed.push({ player: killResult.loverKilled, message: loverMsg });
-            game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
-          }
+        // jokerWin narration was already pushed to messages above; only the
+        // cascade adds a public line here.
+        for (const d of applyDeath(game, target.id, "execution", Narrator.jokerWin(target.username))) {
+          if (d.cause === "lover_cascade") result.messages.push(d.message);
+          result.killed.push(d);
         }
 
-        // Reset vote state
-        game.voteTarget = null;
-        game.votes.clear();
+        // Reset vote+night state — carve-out: the FOR-voters captured above
+        // must survive into the haunt night. NOTE: the { preserveHauntVoters }
+        // flag MUST match the concludeRound options below — a mismatch would
+        // wipe the haunt voters (the haunt-parity test covers it).
+        resetNightActions(game, { preserveHauntVoters: true });
 
-        // Check win condition after joker death (+ possible lover death)
-        const winner = checkWinCondition(game);
-        if (winner) {
-          game.winner = winner;
-          game.phase = "game_over";
-          if (winner === "town") result.messages.push(Narrator.townWin());
-          else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
-        } else {
-          // Auto-transition to night after execution
-          game.phase = "night";
-          game.round++;
-          game.nightSubPhase = "mafia";
-          game.mafiaVotes.clear();
-          game.mafiaTarget = null;
-          game.doctorTarget = null;
-          game.detectiveTarget = null;
-          game.jokerHauntTarget = null;
-          result.messages.push(Narrator.nightFalls());
-        }
+        // Win check + game_over/haunt-night transition (the official-joker
+        // epilogue shape — same single epilogue, carve-out forwarded).
+        concludeRound(game, result.messages, { autoNight: true, preserveHauntVoters: true });
         return result;
       } else {
         // House: instant game over, joker wins
         game.winner = "joker";
+        logTransition(game, game.phase, "game_over", "joker_win");
         game.phase = "game_over";
 
-        const killResult = killPlayer(game, target.id);
-        if (killResult) {
-          game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
-          result.killed.push({ player: killResult.killed, message: Narrator.jokerWin(target.username) });
-
-          if (killResult.loverKilled) {
-            const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-            result.messages.push(loverMsg);
-            result.killed.push({ player: killResult.loverKilled, message: loverMsg });
-            game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
-          }
+        // jokerWin narration was already pushed to messages above; only the
+        // cascade adds a public line here (mirrors the official branch).
+        for (const d of applyDeath(game, target.id, "execution", Narrator.jokerWin(target.username))) {
+          if (d.cause === "lover_cascade") result.messages.push(d.message);
+          result.killed.push(d);
         }
 
-        // Reset vote state (mirrors the official branch and the normal path)
-        game.voteTarget = null;
-        game.votes.clear();
+        // Reset vote+night state (mirrors the official branch and the normal path)
+        resetNightActions(game);
         return result;
       }
     }
 
-    const killResult = killPlayer(game, target.id);
-    if (killResult) {
-      const execMsg = Narrator.execution(killResult.killed.username);
-      result.messages.push(execMsg);
-      result.killed.push({ player: killResult.killed, message: execMsg });
-      game.eventHistory.push({ round: game.round, type: "execution", playerName: killResult.killed.username });
-
-      if (killResult.loverKilled) {
-        const loverMsg = Narrator.loverDeath(killResult.loverKilled.username, killResult.killed.username);
-        result.messages.push(loverMsg);
-        result.killed.push({ player: killResult.loverKilled, message: loverMsg });
-        game.eventHistory.push({ round: game.round, type: "lover_death", playerName: killResult.loverKilled.username });
-      }
+    for (const d of applyDeath(game, target.id, "execution", Narrator.execution(target.username))) {
+      result.messages.push(d.message);
+      result.killed.push(d);
     }
   } else {
     result.messages.push(Narrator.executionSpared(target.username));
     game.eventHistory.push({ round: game.round, type: "spared", playerName: target.username });
   }
 
-  // Reset vote state
-  game.voteTarget = null;
-  game.votes.clear();
+  // Reset vote+night state. NOTE: the default (no-preserve) flags MUST match
+  // the concludeRound options below — see the official-joker branch above
+  // for the flagged pair.
+  resetNightActions(game);
 
-  // Check win condition
-  const winner = checkWinCondition(game);
-  if (winner) {
-    game.winner = winner;
-    game.phase = "game_over";
-    if (winner === "town") result.messages.push(Narrator.townWin());
-    else if (winner === "mafia") result.messages.push(Narrator.mafiaWin());
-  } else if (result.executed) {
-    // Auto-transition to night after execution
-    game.phase = "night";
-    game.round++;
-    game.nightSubPhase = "mafia";
-    game.mafiaVotes.clear();
-    game.mafiaTarget = null;
-    game.doctorTarget = null;
-    game.detectiveTarget = null;
-    game.jokerHauntTarget = null;
-    result.messages.push(Narrator.nightFalls());
-  } else {
-    // Spared — stay in day
-    game.phase = "day";
-  }
+  // Win check + game_over/auto-night/spared-day transition (the normal vote
+  // epilogue shape: executed → auto-night, spared → stay in day).
+  concludeRound(game, result.messages, { autoNight: result.executed });
 
   return result;
 }
@@ -910,8 +1422,10 @@ export function resolveVote(game: Game): VoteResult | null {
 export function cancelVote(game: Game, adminId: number): boolean {
   if (game.phase !== "voting") return false;
   if (adminId !== game.adminId) return false;
-  game.voteTarget = null;
-  game.votes.clear();
+  // ballot abort: phase guard means night fields are already clear — keeps
+  // the single-reset-list rule
+  resetNightActions(game);
+  logTransition(game, game.phase, "day", "cancel_vote");
   game.phase = "day";
   return true;
 }
@@ -919,17 +1433,10 @@ export function cancelVote(game: Game, adminId: number): boolean {
 export function forceDawn(game: Game): string[] {
   if (game.phase !== "night") return [];
 
-  // Reset night state without resolving
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = []; // clear haunt voters after this night
-  game.nightSubPhase = null;
-  game.voteTarget = null;
-  game.votes.clear();
-  game.awaitingNarratorReady = false;
+  // Reset night state without resolving — deliberately NO lastDoctorTarget
+  // capture here: the night never resolved, so the pending save is discarded.
+  resetNightActions(game);
+  logTransition(game, game.phase, "day", "force_dawn");
   game.phase = "day";
 
   const messages = ["The host has forced dawn. No one was killed tonight."];
@@ -940,18 +1447,7 @@ export function forceDawn(game: Game): string[] {
 export function endDay(game: Game): string[] {
   if (game.phase !== "day") return [];
 
-  game.phase = "night";
-  game.round++;
-  game.nightSubPhase = "mafia";
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = []; // clear haunt voters after this night
-  game.awaitingNarratorReady = false;
-
-  const messages = [Narrator.nightFalls()];
+  const messages = [beginNight(game, "end_day")];
   game.pendingMessages = messages;
   return messages;
 }
@@ -970,6 +1466,7 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
 }
 
 export function forceEndGame(game: Game): void {
+  logTransition(game, game.phase, "game_over", "force_end");
   game.phase = "game_over";
   game.forceEnded = true;
   // L3: keep winner well-defined — consumers (buildGameSync, end_game
@@ -977,88 +1474,28 @@ export function forceEndGame(game: Game): void {
   // The client's forceEnded branch shows a neutral end screen regardless.
   game.winner = "town";
   game.awaitingNarratorReady = false;
+  // B4a: forceEndGame is the one forced transition NO reset table reaches
+  // (it freezes in-flight state instead of resetting), so the revenge gate
+  // is cleared by hand here, exactly like awaitingNarratorReady (the L2
+  // pattern; HUNTER-DESIGN §6 lists end_game among the gate-clearing
+  // transitions). No-op while null-pinned in Program B.
+  game.pendingRevenge = null;
 }
 
 export function returnToLobby(game: Game): boolean {
   if (game.phase !== "game_over") return false;
 
-  // Reset all players to lobby state
-  for (const [, player] of game.players) {
-    player.role = null;
-    player.isAlive = true;
-    player.isLover = false;
-    player.loverId = null;
-    player.variant = 0;
-  }
-
-  // Reset game state but keep settings
-  game.phase = "lobby";
-  game.round = 0;
-  game.nightSubPhase = null;
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.voteTarget = null;
-  game.votes.clear();
-  game.lastDoctorTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = [];
-  game.jokerJointWinner = false;
-  game.nightKill = null;
-  game.doctorSaved = false;
-  game.detectiveResult = null;
-  game.winner = null;
-  game.forceEnded = false;
-  game.pendingMessages = [];
-  game.eventHistory = [];
-  game.dayStartedAt = null;
-  game.dayVoteCount = 0;
-  game.narratorHistory = [];
-  game.detectiveHistory = [];
-  game.awaitingNarratorReady = false;
+  // Reset players + game state back to the lobby, keeping settings
+  resetGameState(game, "return_to_lobby");
 
   return true;
 }
 
 export function restartGame(game: Game): string[] | null {
-  // Reset all players
-  for (const [, player] of game.players) {
-    player.role = null;
-    player.isAlive = true;
-    player.isLover = false;
-    player.loverId = null;
-    player.variant = 0;
-  }
-
-  // Reset game state
+  // Reset players + game state, then start fresh with the same settings
   game.createdAt = Date.now();
-  game.phase = "lobby";
-  game.round = 0;
-  game.nightSubPhase = null;
-  game.mafiaVotes.clear();
-  game.mafiaTarget = null;
-  game.doctorTarget = null;
-  game.detectiveTarget = null;
-  game.voteTarget = null;
-  game.votes.clear();
-  game.lastDoctorTarget = null;
-  game.jokerHauntTarget = null;
-  game.jokerHauntVoters = [];
-  game.jokerJointWinner = false;
-  game.nightKill = null;
-  game.doctorSaved = false;
-  game.detectiveResult = null;
-  game.winner = null;
-  game.forceEnded = false;
-  game.pendingMessages = [];
-  game.eventHistory = [];
-  game.dayStartedAt = null;
-  game.dayVoteCount = 0;
-  game.narratorHistory = [];
-  game.detectiveHistory = [];
+  resetGameState(game, "restart_game");
 
-  // Start fresh game with same settings
   return startGame(game);
 }
 
