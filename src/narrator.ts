@@ -143,19 +143,27 @@ const MAFIA_WIN_MESSAGES = [
   "The citizens look around and realize they're outnumbered. The Mafia claims victory and immediately raises HOA fees!",
 ];
 
-// C2a/C3a stubs — single variant each; task C6 expands these to 3–5
-// house-style variants (engine tests match loosely — position/name — never
-// exact prose).
 const HUNTER_REVEAL_MESSAGES = [
   "{name} was the Hunter! With their dying breath, they raise their weapon — the whole town holds its breath...",
+  "PLOT TWIST: {name} was the Hunter! They didn't come all this way to go quietly. One last shot, anyone?",
+  "Gasp! {name} was the Hunter all along! The weapon comes up one final time, and suddenly everyone remembers an urgent appointment elsewhere...",
+  "The truth comes out: {name} was the Hunter! Trembling hands, steady aim, one bullet left. The town goes very, very quiet...",
+  "{name} was the Hunter! Rule one of the woods: never corner a Hunter. The town is about to learn this the hard way...",
 ];
 
 const HUNTER_REVENGE_KILL_MESSAGES = [
   "{name} falls to the Hunter's final shot. Even death couldn't stop that trigger finger.",
+  "One last shot rings out, and {name} drops on the spot. The Hunter never misses. Well, never missed twice.",
+  "{name} is taken out by the Hunter's parting gift. No refunds, no exchanges, no survivors.",
+  "The Hunter's revenge is swift, precise, and extremely final. {name} didn't even have time to say 'wait'.",
+  "Down goes {name}, courtesy of the Hunter's farewell tour. Talk about going out with a bang.",
 ];
 
 const HUNTER_DECLINE_MESSAGES = [
   "The Hunter lowers their weapon. There will be no revenge tonight.",
+  "The Hunter takes one long look at the town... and lowers their weapon. Mercy? Indifference? We'll never know.",
+  "No shot rings out. The Hunter shoulders their weapon and walks into the great beyond. Anticlimactic, honestly.",
+  "The weapon stays cold. The Hunter departs without firing, leaving the town to stew in its own paranoia.",
 ];
 
 const NIGHT_FALLS_MESSAGES = [
