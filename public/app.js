@@ -832,7 +832,7 @@
     }
   });
 
-  ["doctor", "detective", "joker", "lovers"].forEach((role) => {
+  ["doctor", "detective", "joker", "hunter", "lovers"].forEach((role) => {
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
@@ -908,6 +908,7 @@
     $("toggle-doctor").checked = settings.enableDoctor;
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
+    $("toggle-hunter").checked = settings.enableHunter;
     $("toggle-lovers").checked = settings.enableLovers;
     if (settings.narrationAccent) {
       currentAccent = settings.narrationAccent;
@@ -1001,6 +1002,7 @@
     if (settings.enableDoctor) roles.push(`Doctor (${settings.doctorMode === "official" ? "Official" : "House"})`);
     if (settings.enableDetective) roles.push("Detective");
     if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
+    if (settings.enableHunter) roles.push("Hunter");
     if (settings.enableLovers) roles.push("Lovers");
 
     container.innerHTML = `
