@@ -1385,6 +1385,26 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
           }
 
+          // ── Vote-path revenge interrupt (C3b, HUNTER-DESIGN §4) ────────
+          // A Hunter died in this execution (directly or by lover cascade):
+          // the engine deferred the win check + auto-night, so the phase
+          // HOLDS at "voting" with the ballot already cleared. vote_result
+          // and the death loop above went out exactly as always; the public
+          // reveal + hunter prompt + revenge timeout now replace the
+          // epilogue branches below — resolveRevenge's night/game_over
+          // branches emit the deferred broadcast on resolution. While gated
+          // NO phase_change leaves this handler, so the illegal
+          // voting→voting edge (the pre-C3b "spared" fall-through) is
+          // structurally unreachable, and no day/night cue fires early.
+          // Note: voteLoverDeathName is deliberately dropped on this path —
+          // the cascade death was already announced via the loop above, and
+          // the post-revenge phase_change carries only REVENGE-cascade names
+          // (C5: the client must not expect it on the resumed broadcast).
+          if (game.pendingRevenge) {
+            openRevengeGate(game, game.pendingRevenge);
+            break;
+          }
+
           if (game.phase === "game_over") {
             game.dayStartedAt = null;
             broadcastPhaseChange(game, {
