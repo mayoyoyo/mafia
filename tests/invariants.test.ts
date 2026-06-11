@@ -20,7 +20,10 @@ import { describe, test, expect, afterEach } from "bun:test";
  * Invariant formulations under test (what the code actually guarantees):
  *   - outside night, every NIGHT_RESETS-classified field is at its
  *     post-reset value, EXCEPT: voteTarget/votes during voting (live
- *     ballot); jokerHauntVoters at game_over ONLY under jokerJointWinner
+ *     ballot); jokerHauntVoters at voting ONLY under an open gate with
+ *     resume.preserveHauntVoters (C2b E4 variant — allowance pinned in
+ *     tests/hunter-edge-matrix.test.ts, strict direction pinned here);
+ *     jokerHauntVoters at game_over ONLY under jokerJointWinner
  *     (the official-joker execution that ends the game keeps them — pinned
  *     in reset-seam.test.ts; narrowed from an unconditional game_over
  *     allowance in B4a); and ALL fields but awaitingNarratorReady and
@@ -174,6 +177,16 @@ describe("D4 assertInvariants — violations throw in test mode", () => {
     const game = gameAtNaturalGameOver();
     expect(game.jokerJointWinner).toBe(false);
     game.jokerHauntVoters = [2];
+    expect(() => assertInvariants(game, AT)).toThrow(/night_scope_dirty:jokerHauntVoters/);
+  });
+
+  test("jokerHauntVoters populated at voting WITHOUT the preserve gate (C2b narrowing: the allowance requires resume.preserveHauntVoters)", () => {
+    const game = gameInDay();
+    expect(callVote(game, 1, 5)).toBe(true);
+    expect(game.phase).toBe("voting");
+    game.jokerHauntVoters = [2]; // dirty with NO gate open
+    expect(() => assertInvariants(game, AT)).toThrow(/night_scope_dirty:jokerHauntVoters/);
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: true } }; // gate open, preserve flag ABSENT
     expect(() => assertInvariants(game, AT)).toThrow(/night_scope_dirty:jokerHauntVoters/);
   });
 

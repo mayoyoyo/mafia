@@ -104,7 +104,8 @@ describe("E1 — official-joker haunt kills the Hunter", () => {
     const vote = runVote(game, 2, [1, 3, 4, 5]);
     expect(vote.executed).toBe(true);
     expect(vote.jokerWin).toBe(true);
-    expect(game.jokerHauntVoters).toEqual([1, 3, 4, 5]);
+    // Membership + size, not insertion order: no consumer is order-sensitive.
+    expect([...game.jokerHauntVoters].sort((a, b) => a - b)).toEqual([1, 3, 4, 5]);
     // No Hunter died: no gate; the haunt night begins normally.
     expect(game.pendingRevenge).toBeNull();
     expect(game.phase).toBe("night");
@@ -326,7 +327,8 @@ describe("E4 — the lynch target is the Hunter's lover (Hunter NOT executed)", 
     expect(game.phase).toBe("voting");
     expect(game.votes.size).toBe(0);
     expect(game.voteTarget).toBeNull();
-    expect(game.jokerHauntVoters).toEqual([1, 4, 5, 6]);
+    // Membership + size, not insertion order: no consumer is order-sensitive.
+    expect([...game.jokerHauntVoters].sort((a, b) => a - b)).toEqual([1, 4, 5, 6]);
     expect(game.jokerJointWinner).toBe(true);
     expect(game.winner).toBeNull();
     expect(assertInvariants(game, AT)).toEqual([]);
@@ -338,7 +340,7 @@ describe("E4 — the lynch target is the Hunter's lover (Hunter NOT executed)", 
     expect(game.pendingRevenge).toBeNull();
     expect(game.phase).toBe("night");
     expect(game.round).toBe(2);
-    expect(game.jokerHauntVoters).toEqual([1, 4, 5, 6]); // preserved through beginNight
+    expect([...game.jokerHauntVoters].sort((a, b) => a - b)).toEqual([1, 4, 5, 6]); // preserved through beginNight
     expect(assertInvariants(game, AT)).toEqual([]);
 
     // The haunt still happens: the dead joker can pick a (living) FOR-voter
@@ -385,7 +387,7 @@ describe("E5 — win-condition interactions", () => {
     expect(assertInvariants(game, AT)).toEqual([]);
   });
 
-  test("(c) joker alive, revenge kills the LAST non-mafia townie -> mafia wins; the joker's presence does not save town (M8 §7 row endpoint)", () => {
+  test("(c1) joker alive, revenge kills the LAST non-mafia townie -> mafia wins; the joker's presence does not save town (M8 §7 row endpoint)", () => {
     const game = makeGame(
       ["mafia", "hunter", "joker", "citizen"],
       { enableJoker: true },
@@ -409,7 +411,7 @@ describe("E5 — win-condition interactions", () => {
     expect(assertInvariants(game, AT)).toEqual([]);
   });
 
-  test("(c) M8 is DECISIVE: the living joker is excluded from the parity compare — counting them as town would keep the game running", () => {
+  test("(c2) M8 is DECISIVE: the living joker is excluded from the parity compare — counting them as town would keep the game running", () => {
     const game = makeGame(
       ["mafia", "hunter", "joker", "citizen", "citizen"],
       { enableJoker: true },
@@ -428,7 +430,7 @@ describe("E5 — win-condition interactions", () => {
     expect(assertInvariants(game, AT)).toEqual([]);
   });
 
-  test("(c) joker alive, revenge kills the last mafia -> town wins; the living joker is NOT a winner", () => {
+  test("(c3) joker alive, revenge kills the last mafia -> town wins; the living joker is NOT a winner", () => {
     const game = makeGame(
       ["mafia", "hunter", "joker", "citizen", "citizen"],
       { enableJoker: true },
@@ -449,7 +451,7 @@ describe("E5 — win-condition interactions", () => {
     expect(assertInvariants(game, AT)).toEqual([]);
   });
 
-  test("(d) official-mode jokerJointWinner rides a revenge-ended game_over unchanged (§7 joint-winner row)", () => {
+  test("(§7 joint-winner row) official-mode jokerJointWinner rides a revenge-ended game_over unchanged — not a lettered §9 sub-case; E5(d) decline-at-parity lives in hunter-engine.test.ts", () => {
     // Day 1: the joker is lynched (joint winner, haunt night queued).
     // Night 2: mafia kills the Hunter (joker abstains from haunting).
     // Revenge creates parity -> mafia wins WITH the joint-winner flag riding.
