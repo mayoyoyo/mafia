@@ -186,6 +186,7 @@
     "doctor_targets",
     "detective_targets",
     "joker_haunt_targets",
+    "hunter_revenge_pending",
     "hunter_revenge_targets",
     "spectator_joker_deliberating",
     "spectator_joker_resolved",
@@ -193,8 +194,12 @@
   // hunter_revenge_targets is the death-triggered revenge prompt the advisory
   // above anticipates: it must also ride the suspense queue so it replays
   // AFTER the death reveal (and after the chain-ending applyPhaseChange that
-  // would otherwise hide the just-rendered prompt).
-  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay", "hunter_revenge_targets"]);
+  // would otherwise hide the just-rendered prompt). hunter_revenge_pending
+  // (the room-wide reveal + wait view, C5b) rides the same death-triggered
+  // flow and gets the identical treatment: the reveal must not render before
+  // the queued death beats replay, and applyPhaseChange's hide-all would
+  // stomp a wait view rendered mid-chain.
+  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay", "hunter_revenge_pending", "hunter_revenge_targets"]);
   const TRANSITION_GATE_TYPES = new Set(["sound_cue", ...HOLD_GATE_PROMPTS]);
   const NARRATION_GATE_TYPES = new Set(HOLD_GATE_PROMPTS);
   // Test handle: tests pin the exact membership of the derived gate lists.
@@ -333,6 +338,7 @@
         $("event-history-list").innerHTML = "";
         $("dead-overlay").classList.add("hidden");
         $("dead-dismiss-hint").classList.add("hidden");
+        $("revenge-wait").classList.add("hidden"); // C5b: restart while gated
         // Show players tab from game start
         resetEventHistoryTabs("players");
         $("event-history").classList.remove("hidden");
@@ -377,6 +383,15 @@
         showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
         break;
 
+      case "hunter_revenge_pending":
+        // C5b: the room-wide wait view — the public Hunter reveal plus a
+        // "waiting" status for everyone (panels are otherwise idle because
+        // the phase transition is deferred while the gate is open). On the
+        // hunter's own client this arrives just before hunter_revenge_targets,
+        // whose case below replaces the wait view with the prompt.
+        showRevengeWait(msg.hunterName);
+        break;
+
       case "hunter_revenge_targets":
         // The hunter is dead by definition here — the flag must be set
         // before showNightAction's dead-guard runs (joker-haunt machinery).
@@ -385,6 +400,9 @@
         // revenge prompt (same idea as the jokerWonOverlayShown skip below).
         $("dead-overlay").classList.add("hidden");
         $("dead-dismiss-hint").classList.add("hidden");
+        // The room-wide wait view (hunter_revenge_pending arrived just
+        // before this) gives way to the hunter's own prompt (C5b).
+        $("revenge-wait").classList.add("hidden");
         showNightAction("Take your revenge", msg.players, "hunter_revenge");
         break;
 
@@ -488,6 +506,7 @@
         gameCode = null;
         isAdmin = false;
         pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
+        $("revenge-wait").classList.add("hidden"); // C5b: return-to-lobby while gated
         $("narrator-messages").innerHTML = "";
         $("role-reveal").innerHTML = "";
         $("event-history-list").innerHTML = "";
@@ -593,6 +612,9 @@
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
+    // C5b: gate-closed baseline (E10d — rejoin after resolution must leave
+    // no stale wait view); the pendingRevenge branch below re-shows it.
+    $("revenge-wait").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -735,6 +757,17 @@
         totalVotes: vs.totalVotes,
         total: vs.total,
       });
+    }
+
+    // C5b: revenge-gate restore. pendingRevenge is the ONLY gate signal —
+    // never inferred from phase/subPhase (the gated game looks like an idle
+    // night or a cleared vote). Non-hunter: render the wait view (+ the skip
+    // control if admin). Hunter (isYou): render nothing here — the server
+    // re-sends hunter_revenge_targets right after game_sync and that case
+    // takes over (the jokerHauntPending treatment: the target list never
+    // rides game_sync).
+    if (msg.pendingRevenge && !msg.pendingRevenge.isYou) {
+      showRevengeWait(msg.pendingRevenge.hunterName);
     }
 
     // Show event history (always visible during game)
@@ -1492,6 +1525,9 @@
     // Hide all action panels
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
+    // C5b: the deferred phase_change IS the revenge-resolution signal — the
+    // room-wide wait view (and its admin skip control) comes down with it.
+    $("revenge-wait").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -1982,6 +2018,31 @@
       });
     }
   }
+
+  // C5b: the room-wide wait view while the revenge gate is open. The reveal
+  // is PUBLIC (HUNTER-DESIGN decision #10) — alive players, dead spectators
+  // and the admin all see who the Hunter is and wait for the shot. The admin
+  // (alive or dead — admin rights persist) additionally gets the force-skip
+  // safety net; showRevengeWait is the ONLY un-hide path, so re-toggling the
+  // button here keeps a stale skip control structurally impossible.
+  // Teardown sites (the wait view outlives no resolution): the
+  // hunter_revenge_targets case (the hunter's prompt replaces it), the
+  // game_started reset, the game_sync hide-all (re-shown by the
+  // pendingRevenge restore branch when the gate is still open),
+  // applyPhaseChange's hide-all (the deferred phase_change IS the
+  // resolution signal), handleGameOver, and room_closed.
+  function showRevengeWait(hunterName) {
+    $("revenge-wait-reveal").textContent = `${hunterName} was the Hunter!`;
+    $("btn-skip-revenge").classList.toggle("hidden", !isAdmin);
+    $("revenge-wait").classList.remove("hidden");
+  }
+
+  // Admin-only safety net for a stalled Hunter (the kitchen problem). The
+  // server resolves it as a decline; a click after the gate closed is a
+  // wire-silent no-op server-side, so no client-side locking is needed.
+  $("btn-skip-revenge").addEventListener("click", () => {
+    wsSend({ type: "force_skip_revenge" });
+  });
 
   // C5a: declining the revenge shot is a plain button (slide-confirm is
   // reserved for the kill). Only visible while the hunter_revenge prompt is
@@ -2731,6 +2792,7 @@
 
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
+    $("revenge-wait").classList.add("hidden"); // C5b: e.g. force-end while gated
     closeSettingsModal();
 
     // Reset gameplay state but keep gameCode/isAdmin for Play Again

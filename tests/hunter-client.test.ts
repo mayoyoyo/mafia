@@ -1,8 +1,11 @@
-// C5a: the Hunter's own revenge prompt path (client side).
+// C5a + C5b: the Hunter's revenge — client side.
 //
 // When the Hunter dies, the server (C1-C4) announces the death(s), then
 // broadcasts hunter_revenge_pending, then sends hunter_revenge_targets to
-// the hunter alone. These tests pin the client half of that contract:
+// the hunter alone. C5a pins the hunter's own prompt path; C5b pins the
+// room-wide wait view (the public reveal + "waiting for the Hunter"
+// status, with the admin's force-skip safety net) and its game_sync
+// restore/teardown. These tests pin the client half of that contract:
 //  1. Gate-list membership (the L5 trap): hunter_revenge_targets must be in
 //     the derived hold-and-replay gate constant AND in SUSPENSE_GATE_TYPES,
 //     or the overlay chains swallow the prompt (applyPhaseChange hides all
@@ -50,6 +53,44 @@ const isHidden = (id: string) => $(id).classList.contains("hidden");
 function startGame(role: string, mafiaTeam: string[] = []) {
   serverSays({ type: "logged_in", userId: 1, username: "Tester" });
   serverSays({ type: "game_started", role, isLover: false, variant: 0, mafiaTeam });
+}
+
+// isAdmin is NOT reset by game_started (admin rights persist across games in
+// a room), so C5b tests that assert on the skip control set it explicitly
+// via game_joined — both ways, since the flag leaks across tests in this file.
+function joinAs(admin: boolean) {
+  serverSays({ type: "logged_in", userId: 1, username: "Tester" });
+  serverSays({ type: "game_joined", code: "ABCD", isAdmin: admin });
+}
+
+// A realistic mid-gate game_sync (C4 projection shape): gated phase holds at
+// "night" with nightSubPhase already nulled and nightAction null —
+// pendingRevenge is the ONLY gate signal.
+function gatedSync(over: Record<string, unknown>) {
+  serverSays({
+    type: "game_sync",
+    code: "ABCD",
+    players: [
+      { id: 1, username: "Tester", isAlive: true },
+      { id: 2, username: "Hank", isAlive: false },
+      { id: 3, username: "Bob", isAlive: true },
+    ],
+    role: "citizen",
+    isLover: false,
+    variant: 0,
+    mafiaTeam: [],
+    isDead: false,
+    phase: "night",
+    nightSubPhase: null,
+    round: 2,
+    dayVoteCount: 0,
+    narratorHistory: ["Hank was the Hunter!"],
+    detectiveHistory: [],
+    eventHistory: [],
+    nightAction: null,
+    voteState: null,
+    ...over,
+  });
 }
 
 const TARGETS = [
@@ -251,5 +292,189 @@ describe("C5a: held during overlay chains, replayed after", () => {
     expect(isHidden("night-actions")).toBe(false);
     expect($("action-title").textContent).toBe("Take your revenge");
     expect(isHidden("dead-overlay")).toBe(true);
+  });
+});
+
+// ── C5b: the room-wide wait view ─────────────────────────────────────────────
+
+describe("C5b: gate-list membership (hunter_revenge_pending)", () => {
+  // Same L5 reasoning as hunter_revenge_targets (C5a): the reveal must not
+  // render mid overlay chain (applyPhaseChange's hide-all would stomp it /
+  // it would precede the queued death beats). Deliberate membership change;
+  // client-gates.test.ts pins the exact lists.
+  test("hunter_revenge_pending is in the transition gate", () => {
+    expect([...window.__holdGateLists.transition]).toContain("hunter_revenge_pending");
+  });
+
+  test("hunter_revenge_pending is in the narration gate", () => {
+    expect([...window.__holdGateLists.narration]).toContain("hunter_revenge_pending");
+  });
+
+  test("hunter_revenge_pending is in the suspense gate (reveal must not precede the death beats)", () => {
+    expect([...window.__holdGateLists.suspense]).toContain("hunter_revenge_pending");
+  });
+});
+
+describe("C5b: room-wide wait view on hunter_revenge_pending", () => {
+  test("non-hunter sees the reveal + waiting status; non-admin sees no skip control", () => {
+    joinAs(false);
+    startGame("citizen");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    serverSays({ type: "player_died", playerId: 2, playerName: "Hank", message: "Hank was killed in the night." });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Hank" });
+
+    expect(isHidden("revenge-wait")).toBe(false);
+    expect($("revenge-wait").textContent).toContain("Hank");
+    expect($("revenge-wait").textContent.toLowerCase()).toContain("waiting for the hunter");
+    expect(isHidden("btn-skip-revenge")).toBe(true); // never for non-admins
+    expect(isHidden("night-actions")).toBe(true); // the prompt is hunter-only
+  });
+
+  test("dead spectator sees the wait view too (the reveal is public)", () => {
+    joinAs(false);
+    startGame("citizen");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    serverSays({ type: "you_died", message: "You were killed in the night." });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Hank" });
+
+    expect(isHidden("revenge-wait")).toBe(false);
+    expect($("revenge-wait").textContent).toContain("Hank");
+  });
+
+  test("admin sees the skip control; clicking sends exactly force_skip_revenge", () => {
+    joinAs(true);
+    startGame("citizen");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Hank" });
+
+    expect(isHidden("revenge-wait")).toBe(false);
+    expect(isHidden("btn-skip-revenge")).toBe(false);
+    ws.sent.length = 0;
+    $("btn-skip-revenge").click();
+    expect(ws.sent).toEqual([{ type: "force_skip_revenge" }]);
+  });
+
+  test("hunter ordering: pending then targets — the prompt replaces the wait view", () => {
+    joinAs(false);
+    startGame("hunter");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    serverSays({ type: "you_died", message: "You were killed in the night." });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Tester" });
+    expect(isHidden("revenge-wait")).toBe(false); // reveal first (wire order)...
+
+    serverSays({ type: "hunter_revenge_targets", players: TARGETS });
+    expect(isHidden("revenge-wait")).toBe(true); // ...then the prompt wins
+    expect(isHidden("night-actions")).toBe(false);
+    expect($("action-title").textContent).toBe("Take your revenge");
+  });
+
+  test("pending arriving mid dawn-suspense is held, replayed after the death beats", async () => {
+    joinAs(false);
+    startGame("citizen");
+    serverSays({ type: "phase_change", phase: "night", round: 1 }); // direct apply (no prior phase)
+    serverSays({ type: "phase_change", phase: "day", round: 1, events: [] }); // night→day starts suspense
+    expect(isHidden("suspense-overlay")).toBe(false);
+
+    serverSays({ type: "player_died", playerId: 2, playerName: "Hank", message: "Hank was killed in the night." });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Hank" });
+    // Held: the reveal must not render while the chain is animating.
+    expect(isHidden("revenge-wait")).toBe(true);
+
+    await Bun.sleep(300); // chain = 6300 * 0.02 = 126ms
+    expect(isHidden("suspense-overlay")).toBe(true);
+    // Replayed AFTER the chain-ending applyPhaseChange (which hides the wait
+    // view) — so it sticks, in arrival order after the death beat.
+    expect(isHidden("revenge-wait")).toBe(false);
+    expect($("revenge-wait").textContent).toContain("Hank");
+  });
+});
+
+describe("C5b: game_sync restore (pendingRevenge)", () => {
+  test("non-hunter rejoin mid-gate renders the wait view (no skip for non-admin)", () => {
+    joinAs(false);
+    gatedSync({ pendingRevenge: { hunterName: "Hank", isYou: false } });
+
+    expect(isHidden("revenge-wait")).toBe(false);
+    expect($("revenge-wait").textContent).toContain("Hank");
+    expect(isHidden("btn-skip-revenge")).toBe(true);
+  });
+
+  test("admin rejoin mid-gate renders the wait view WITH the skip control", () => {
+    joinAs(true);
+    gatedSync({ pendingRevenge: { hunterName: "Hank", isYou: false } });
+
+    expect(isHidden("revenge-wait")).toBe(false);
+    expect(isHidden("btn-skip-revenge")).toBe(false);
+    ws.sent.length = 0;
+    $("btn-skip-revenge").click();
+    expect(ws.sent).toEqual([{ type: "force_skip_revenge" }]);
+  });
+
+  test("hunter rejoin mid-gate: no stale wait view; the re-sent targets render the prompt", () => {
+    joinAs(false);
+    gatedSync({
+      role: "hunter",
+      isDead: true,
+      players: [
+        { id: 1, username: "Tester", isAlive: false },
+        { id: 3, username: "Bob", isAlive: true },
+        { id: 4, username: "Carol", isAlive: true },
+      ],
+      pendingRevenge: { hunterName: "Tester", isYou: true },
+    });
+    // Mirrors jokerHauntPending: game_sync renders nothing for the hunter —
+    // the server re-sends hunter_revenge_targets right after game_sync.
+    expect(isHidden("revenge-wait")).toBe(true);
+
+    serverSays({ type: "hunter_revenge_targets", players: TARGETS });
+    expect(isHidden("night-actions")).toBe(false);
+    expect($("action-title").textContent).toBe("Take your revenge");
+    expect(isHidden("revenge-wait")).toBe(true);
+    expect(isHidden("btn-decline-revenge")).toBe(false);
+  });
+
+  test("rejoin after resolution (no pendingRevenge key) leaves nothing stale (E10d shape)", () => {
+    // Get a live wait view up first, then rejoin a gate-closed game.
+    joinAs(true);
+    startGame("citizen");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Hank" });
+    expect(isHidden("revenge-wait")).toBe(false);
+    expect(isHidden("btn-skip-revenge")).toBe(false);
+
+    gatedSync({ phase: "day", dayStartedAt: Date.now() }); // gate closed: key ABSENT
+    expect(isHidden("revenge-wait")).toBe(true); // no stale wait view / skip control
+  });
+});
+
+describe("C5b: wait-view teardown on resolution", () => {
+  test("the deferred phase_change clears the wait view (and it stays gone next phase)", async () => {
+    joinAs(true);
+    startGame("citizen");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Hank" });
+    expect(isHidden("revenge-wait")).toBe(false);
+
+    // Revenge resolves server-side: the deferred night→day phase_change
+    // arrives (plus death beats if a target was shot — not needed here).
+    serverSays({ type: "phase_change", phase: "day", round: 2, events: [] });
+    await Bun.sleep(300); // dawn chain = 6300 * 0.02 = 126ms
+    expect(isHidden("revenge-wait")).toBe(true); // torn down by applyPhaseChange
+
+    // Next phase: nothing re-shows it.
+    serverSays({ type: "phase_change", phase: "night", round: 3 });
+    await Bun.sleep(250); // chain = (3400 + 600) * 0.02 = 80ms
+    expect(isHidden("revenge-wait")).toBe(true);
+  });
+
+  test("a fresh game_started clears a stale wait view (restart while gated)", () => {
+    joinAs(false);
+    startGame("citizen");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    serverSays({ type: "hunter_revenge_pending", hunterName: "Hank" });
+    expect(isHidden("revenge-wait")).toBe(false);
+
+    startGame("citizen"); // play again
+    expect(isHidden("revenge-wait")).toBe(true);
   });
 });
