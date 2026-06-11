@@ -893,6 +893,11 @@ input::placeholder { color: var(--text-secondary); }
   background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
 }
 
+/* SLIDE CONFIRM - HUNTER REVENGE */
+.slide-confirm.role-hunter_revenge .slide-fill {
+  background: linear-gradient(90deg, rgba(46,125,50,0.3), rgba(46,125,50,0.6));
+}
+
 /* SETTINGS MODAL */
 .settings-modal-body { display: flex; flex-direction: column; gap: 12px; }
 .settings-end-game { margin-top: 8px; }

@@ -186,10 +186,15 @@
     "doctor_targets",
     "detective_targets",
     "joker_haunt_targets",
+    "hunter_revenge_targets",
     "spectator_joker_deliberating",
     "spectator_joker_resolved",
   ];
-  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay"]);
+  // hunter_revenge_targets is the death-triggered revenge prompt the advisory
+  // above anticipates: it must also ride the suspense queue so it replays
+  // AFTER the death reveal (and after the chain-ending applyPhaseChange that
+  // would otherwise hide the just-rendered prompt).
+  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay", "hunter_revenge_targets"]);
   const TRANSITION_GATE_TYPES = new Set(["sound_cue", ...HOLD_GATE_PROMPTS]);
   const NARRATION_GATE_TYPES = new Set(HOLD_GATE_PROMPTS);
   // Test handle: tests pin the exact membership of the derived gate lists.
@@ -370,6 +375,17 @@
       case "joker_haunt_targets":
         deadActionActive = true;
         showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
+        break;
+
+      case "hunter_revenge_targets":
+        // The hunter is dead by definition here — the flag must be set
+        // before showNightAction's dead-guard runs (joker-haunt machinery).
+        deadActionActive = true;
+        // The hunter's own you_died overlay must not sit on top of the
+        // revenge prompt (same idea as the jokerWonOverlayShown skip below).
+        $("dead-overlay").classList.add("hidden");
+        $("dead-dismiss-hint").classList.add("hidden");
+        showNightAction("Take your revenge", msg.players, "hunter_revenge");
         break;
 
       case "joker_win_overlay":
@@ -576,6 +592,7 @@
 
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
+    $("btn-decline-revenge").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -1168,10 +1185,11 @@
     // Set role-specific icon and label
     const iconArt = role === "mafia" ? KNIFE_ART
       : role === "doctor" ? CROSS_ART
-      : role === "joker_haunt" ? CLOWN_ART : MAGNIFIER_ART;
+      : role === "joker_haunt" ? CLOWN_ART
+      : role === "hunter_revenge" ? BOW_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt" };
+    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt", hunter_revenge: "slide to avenge" };
     label.textContent = labels[role] || "slide to confirm";
 
     slideCallback = callback;
@@ -1183,6 +1201,16 @@
     container.classList.remove("confirmed", "dragging");
     slideCallback = null;
   }
+
+  // Test handle: happy-dom can't drive the pointer drag (zero-size layout
+  // rects), so client tests fire the armed confirm directly, mirroring the
+  // threshold branch of onEnd below. Not read by any app code.
+  window.__testFireSlideConfirm = () => {
+    if (!slideCallback) return;
+    const cb = slideCallback;
+    slideCallback = null;
+    cb();
+  };
 
   // Slide drag handlers
   (function () {
@@ -1865,8 +1893,9 @@
   // NIGHT ACTIONS
   // ============================================================
   let nightActionLocked = false; // true after doctor/detective confirm
-  // True while a dead player's own action is in progress (today: only the
-  // joker haunt sets it; any future dead-player action sets the same flag).
+  // True while a dead player's own action is in progress (the joker haunt
+  // and the hunter revenge set it; any future dead-player action sets the
+  // same flag).
   // Suppresses the spectator views and exempts showNightAction's dead-guard.
   // Reset sites: the game_started case, the game_sync reset (handleGameSync),
   // and applyPhaseChange's night branch.
@@ -1888,7 +1917,7 @@
 
   function showNightAction(title, players, actionType, disabledId) {
     // A dead player may only act while their own dead action is active
-    // (deadActionActive — today: joker haunting from beyond the grave)
+    // (deadActionActive — joker haunting or hunter revenge from beyond the grave)
     if (isDead && !deadActionActive) return;
 
     const panel = $("night-actions");
@@ -1898,6 +1927,10 @@
     nightActionLocked = false;
 
     hideSlideConfirm();
+
+    // Decline affordance is exclusive to the hunter's revenge prompt
+    // (slide-confirm is reserved for the kill; declining is a plain button).
+    $("btn-decline-revenge").classList.toggle("hidden", actionType !== "hunter_revenge");
 
     const list = $("action-targets");
 
@@ -1922,10 +1955,10 @@
         })
         .join("");
 
-      // Doctor/Detective/Joker haunt: clicking selects visually, slide-to-confirm sends to server
+      // Doctor/Detective/Joker haunt/Hunter revenge: clicking selects visually, slide-to-confirm sends to server
       let selectedTargetId = null;
       let selectedName = null;
-      const slideRole = actionType === "joker_haunt" ? "joker_haunt" : myRole;
+      const slideRole = (actionType === "joker_haunt" || actionType === "hunter_revenge") ? actionType : myRole;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
           if (nightActionLocked) return;
@@ -1940,11 +1973,26 @@
             wsSend({ type: actionType, targetId: selectedTargetId });
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
+            // Action resolved: the hunter's decline affordance goes with it
+            // (no-op for every other action type; the button is already hidden)
+            $("btn-decline-revenge").classList.add("hidden");
           });
         });
       });
     }
   }
+
+  // C5a: declining the revenge shot is a plain button (slide-confirm is
+  // reserved for the kill). Only visible while the hunter_revenge prompt is
+  // up; null targetId is the wire shape for a decline.
+  $("btn-decline-revenge").addEventListener("click", () => {
+    if (nightActionLocked) return;
+    nightActionLocked = true;
+    wsSend({ type: "hunter_revenge", targetId: null });
+    $("btn-decline-revenge").classList.add("hidden");
+    hideSlideConfirm();
+    $("action-status").textContent = "You lower your bow.";
+  });
 
   function renderSingleMafiaTargets(list, players) {
     list.innerHTML = players

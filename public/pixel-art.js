@@ -299,6 +299,22 @@
     [_,_,_,_,_,_,_,_,_,_],
   ];
 
+  // Bow-and-arrow icon for hunter revenge slide-to-confirm: dark-brown bow
+  // limbs arcing right, pale string drawn straight at the left, fletched
+  // arrow flying right through the grip.
+  var BOW_ART = [
+    [_,_,"#852","#852",_,_,_,_,_,_],
+    [_,_,"#ddd","#852","#852",_,_,_,_,_],
+    [_,_,"#ddd",_,"#852","#852",_,_,_,_],
+    [_,_,"#ddd",_,_,"#852",_,"#ccc",_,_],
+    ["#e53","#a62","#a62","#a62","#a62","#a62","#a62","#eee","#eee",_],
+    [_,_,"#ddd",_,_,"#852",_,"#ccc",_,_],
+    [_,_,"#ddd",_,"#852","#852",_,_,_,_],
+    [_,_,"#ddd","#852","#852",_,_,_,_,_],
+    [_,_,"#852","#852",_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+  ];
+
   // 8-bit clown icon for joker haunt slide-to-confirm
   var CLOWN_ART = [
     [_,_,"#e53",_,_,_,_,"#e53",_,_],
@@ -367,6 +383,7 @@
   window.CROSS_ART = CROSS_ART;
   window.MAGNIFIER_ART = MAGNIFIER_ART;
   window.CLOWN_ART = CLOWN_ART;
+  window.BOW_ART = BOW_ART;
   window.pixelArtToSvg = pixelArtToSvg;
   window.getRoleImage = getRoleImage;
   window.ROLE_DESCRIPTIONS = ROLE_DESCRIPTIONS;
