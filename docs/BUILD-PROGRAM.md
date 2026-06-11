@@ -129,7 +129,7 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 ### Program C (`feat/hunter-role`)
 | Task | Scope | Commits | Notes |
 |---|---|---|---|
-| C1 | Types + settings + assignRoles | — | |
+| C1 | Types + settings + assignRoles | 861ec1f, 3988f91, af0de1b | DONE. Role union + enableHunter (boolKeys exhaustiveness-forced) + assignRoles slot after joker (no-floor silent-drop pinned) + lobby toggle (index.html row + 3 app.js wiring points, no mode selector) + start_game lobby guard (carry-over item 7). 399 tests (+12), typecheck 0, goldens 11/11 untouched (summarizer drops settings payloads — no golden edit needed). Extended bands 10600+/7600+, none new. Both reviews approved zero fix-first; cosmetic nits to ride along C2: defaults-test describe placement, twin guard comments, 5xxx PIN convention comment. |
 | C2 | Engine trigger + revenge | — | |
 | C3 | Server gate + timer + flows | — | |
 | C4 | game_sync + rejoin | — | |
