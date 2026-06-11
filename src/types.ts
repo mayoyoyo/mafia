@@ -1,4 +1,4 @@
-export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker";
+export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker" | "hunter";
 
 export interface Player {
   id: number;
@@ -18,6 +18,7 @@ export interface GameSettings {
   enableDoctor: boolean;
   enableDetective: boolean;
   enableJoker: boolean;
+  enableHunter: boolean;
   enableLovers: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableDoctor: false,
   enableDetective: false,
   enableJoker: false,
+  enableHunter: false,
   enableLovers: false,
   soundEnabled: false,
   narrationAccent: "classic",

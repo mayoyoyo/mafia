@@ -499,7 +499,7 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
 }
 
 // Keys handled by sanitizeSettings, grouped by validation strategy.
-const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableLovers", "soundEnabled"] as const;
+const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableLovers", "soundEnabled"] as const;
 const modeKeys = ["doctorMode", "jokerMode"] as const;
 
 // Compile-time exhaustiveness guard: if a key is added to GameSettings in
@@ -726,6 +726,11 @@ function assignRoles(game: Game): number {
     idx++;
   }
 
+  if (settings.enableHunter && idx < totalPlayers) {
+    game.players.get(playerIds[idx])!.role = "hunter";
+    idx++;
+  }
+
   // Rest are citizens
   while (idx < totalPlayers) {
     game.players.get(playerIds[idx])!.role = "citizen";
@@ -742,7 +747,7 @@ function assignRoles(game: Game): number {
       player.variant = citizenVariantIdx % 8;
       citizenVariantIdx++;
     } else {
-      player.variant = 0; // doctor, detective, joker have single variant
+      player.variant = 0; // doctor, detective, joker, hunter have single variant
     }
   }
 
