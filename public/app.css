@@ -21,6 +21,7 @@
   --role-doctor: #2196f3;
   --role-detective: #9c27b0;
   --role-joker: #2196f3;
+  --role-hunter: #ef6c00;
   --role-lover: #e91e63;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -391,6 +392,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.doctor .card-front { border-color: var(--role-doctor); }
 .role-card.detective .card-front { border-color: var(--role-detective); }
 .role-card.joker .card-front { border-color: var(--role-joker); }
+.role-card.hunter .card-front { border-color: var(--role-hunter); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
 .role-name { font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; }
@@ -399,6 +401,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.doctor .role-name { color: var(--role-doctor); }
 .role-card.detective .role-name { color: var(--role-detective); }
 .role-card.joker .role-name { color: var(--role-joker); }
+.role-card.hunter .role-name { color: var(--role-hunter); }
 .role-description { color: var(--text-secondary); font-size: 14px; margin-top: 8px; }
 .lover-badge {
   display: inline-block;
@@ -893,9 +896,9 @@ input::placeholder { color: var(--text-secondary); }
   background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
 }
 
-/* SLIDE CONFIRM - HUNTER REVENGE */
+/* SLIDE CONFIRM - HUNTER REVENGE (rgba of --role-hunter, like the other role skins) */
 .slide-confirm.role-hunter_revenge .slide-fill {
-  background: linear-gradient(90deg, rgba(46,125,50,0.3), rgba(46,125,50,0.6));
+  background: linear-gradient(90deg, rgba(239,108,0,0.3), rgba(239,108,0,0.6));
 }
 
 /* SETTINGS MODAL */
@@ -952,6 +955,7 @@ input::placeholder { color: var(--text-secondary); }
 .game-history-item.execution { color: #ff9800; }
 .game-history-item.save { color: var(--role-doctor); }
 .game-history-item.lover_death { color: var(--role-lover); }
+.game-history-item.hunter_revenge { color: var(--role-hunter); }
 .game-history-item.abstain { color: var(--text-secondary); font-style: italic; }
 .gameover-buttons { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
@@ -995,6 +999,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-reveal-role.doctor { background: var(--role-doctor); color: #fff; }
 .role-reveal-role.detective { background: var(--role-detective); color: #fff; }
 .role-reveal-role.joker { background: var(--role-joker); color: #fff; }
+.role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }
 .role-reveal-lover { font-size: 12px; color: var(--role-lover); margin-left: 8px; }
 .role-reveal-dead { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
 

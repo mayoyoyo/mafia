@@ -13,7 +13,7 @@ import { describe, test, expect, afterEach } from "bun:test";
  * design by construction: it drives the engine's real day-transition flow
  * (not hand-built state) and requires the gate to be open afterwards.
  *
- * Narrator coupling is deliberately LOOSE (task C6 expands the stubs to
+ * Narrator coupling is deliberately LOOSE (C6 expanded the stubs to
  * 3–5 variants): tests assert message POSITION/ORDER, event types, and
  * name inclusion — never exact prose.
  *
