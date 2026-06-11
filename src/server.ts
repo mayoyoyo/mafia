@@ -853,6 +853,8 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     // target list itself never rides game_sync.
     ...(game.pendingRevenge ? {
       pendingRevenge: {
+        // The "The Hunter" fallback is defensive dead code — removePlayer
+        // only runs at game_over/lobby, where the gate is structurally null (§4).
         hunterName: game.players.get(game.pendingRevenge.hunterId)?.username ?? "The Hunter",
         isYou: userId === game.pendingRevenge.hunterId,
       },

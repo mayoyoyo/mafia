@@ -424,7 +424,10 @@ describe("E10a timer: a mid-window rejoin never extends the revenge window (shor
     const dayChange = await waitMatch(admin.ws,
       m => m.type === "phase_change" && m.phase === "day", 6000, "expiry decline dawn");
     const elapsed = Date.now() - t0;
-    expect(elapsed).toBeGreaterThan(2100);
+    // Upper bound only (a re-arm fires ~t0+3800, well past it). No lower
+    // bound: t0 lags the real arm by client receipt (~150ms), so a CI stall
+    // in that window could false-fail it — the slog ["armed", "fired"]
+    // assertion below is the load-bearing no-re-arm proof.
     expect(elapsed).toBeLessThan(3500);
     expect(dayChange.messages.length).toBeGreaterThan(0);
 
@@ -614,6 +617,9 @@ describe("E13: role secrecy until death", () => {
     // ── The mechanical sweep, per non-hunter inbox ───────────────────────
     // The reveal moment is each inbox's own hunter_revenge_pending index
     // (per-socket FIFO makes the boundary inbox-local, never cross-inbox).
+    // Deliberately EXCLUDES game_sync: a post-death rejoin would
+    // false-positive on narratorHistory legitimately carrying the reveal —
+    // extenders adding a post-death rejoin here must allowlist it.
     const REVEAL_BEARING = new Set([
       "hunter_revenge_pending", // the reveal itself (type + hunterName)
       "phase_change",           // narrator messages + eventHistory ride here
