@@ -439,13 +439,25 @@ function openRevengeGate(game: Game, gate: PendingRevenge): void {
   const hunterName = hunter?.username ?? "The Hunter";
   recordNarrator(game, [Narrator.hunterReveal(hunterName)]);
   broadcastToGame(game.code, { type: "hunter_revenge_pending", hunterName });
-  if (hunter) {
-    // Living targets only — the gate never opens with zero living players
-    // (concludeRound's E11 suppression), so this list is non-empty.
-    const targets = getAlivePlayers(game).map((p) => toTargetInfo(p, game));
-    sendToUser(hunter.id, { type: "hunter_revenge_targets", players: targets });
-  }
+  sendRevengeTargets(game, gate);
   armRevengeTimer(game);
+}
+
+/**
+ * The hunter's private prompt: the living-target list (C4 factoring of
+ * openRevengeGate's middle). Two callers — the gate-open path above (which
+ * also reveals and arms the timer) and the hunter's rejoin re-send in
+ * join_game, which is RE-SEND-ONLY: the revenge timer keeps running from
+ * the original gate-open, so a disconnect can never extend or reset the
+ * window. The timer arming therefore stays in openRevengeGate alone.
+ */
+function sendRevengeTargets(game: Game, gate: PendingRevenge): void {
+  const hunter = game.players.get(gate.hunterId);
+  if (!hunter) return;
+  // Living targets only — the gate never opens with zero living players
+  // (concludeRound's E11 suppression), so this list is non-empty.
+  const targets = getAlivePlayers(game).map((p) => toTargetInfo(p, game));
+  sendToUser(hunter.id, { type: "hunter_revenge_targets", players: targets });
 }
 
 /**
@@ -830,6 +842,21 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     nightAction,
     voteState,
     gameOver,
+    // C4 (HUNTER-DESIGN §3.4, the H4 lesson): the open revenge gate is
+    // PUBLIC pending state — projected for EVERY rejoiner. Driven off
+    // game.pendingRevenge alone (while gated, phase holds at "night" with
+    // nightSubPhase already nulled, or at "voting" with the ballot cleared —
+    // neither sub-state can carry the signal). Key OMITTED when the gate is
+    // closed so the payload stays byte-identical to pre-Hunter syncs (the
+    // detectiveHistory/mafiaTeam absence pattern). isYou cues the hunter's
+    // client to expect the separate hunter_revenge_targets re-send — the
+    // target list itself never rides game_sync.
+    ...(game.pendingRevenge ? {
+      pendingRevenge: {
+        hunterName: game.players.get(game.pendingRevenge.hunterId)?.username ?? "The Hunter",
+        isYou: userId === game.pendingRevenge.hunterId,
+      },
+    } : {}),
   };
 }
 
@@ -918,10 +945,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         hasRevengeTimer: revengeTimers.has(g.code), // C3b: gate⇔timer correlation
       });
     }
-    // C3b (§3.6 M7): the revenge-gate rejection sweep. An unknown wire type
-    // indexes to undefined → falls through to the switch (no case matches),
-    // exactly as before the sweep. Invisible when pendingRevenge is null.
-    if (g?.pendingRevenge && REVENGE_GATE_REJECTED[msg.type]) {
+    // C3b (§3.6 M7): the revenge-gate rejection sweep. `=== true` (C4 fix):
+    // the table is a plain object literal, so an unknown wire type either
+    // indexes to undefined (most strings) or to an INHERITED prototype
+    // member (e.g. "toString" → a truthy function) — only the strict check
+    // keeps both falling through to the switch (no case matches), exactly
+    // as before the sweep. Invisible when pendingRevenge is null.
+    if (g?.pendingRevenge && REVENGE_GATE_REJECTED[msg.type] === true) {
       slog("revenge_gate_reject", { code: g.code, userId: client.userId ?? null, type: msg.type });
       return;
     }
@@ -1045,6 +1075,18 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             if (hauntTargets.length > 0) {
               send(ws, { type: "joker_haunt_targets", players: hauntTargets });
             }
+          }
+          // C4 (H4): revenge gate open + the rejoiner IS the hunter —
+          // re-send the private prompt right after game_sync (the dead-joker
+          // haunt re-send precedent above; game_sync.pendingRevenge.isYou
+          // told the client to expect it). Re-send-ONLY: the revenge timer
+          // keeps running from the original gate-open — a disconnect never
+          // extends or resets the window — so this path goes through
+          // sendRevengeTargets, never openRevengeGate/armRevengeTimer.
+          // Keyed on game.pendingRevenge alone (gated phase is night with a
+          // null sub-phase, or voting — never a sub-phase condition).
+          if (game.pendingRevenge && client.userId === game.pendingRevenge.hunterId) {
+            sendRevengeTargets(game, game.pendingRevenge);
           }
         } else {
           broadcastLobbyUpdate(game);

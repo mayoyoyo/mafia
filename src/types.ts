@@ -291,6 +291,18 @@ export type ServerMessage =
         jokerDeliberating?: boolean;
         jokerResolvedTarget?: string;
       } | null;
+      // Revenge gate (C4, HUNTER-DESIGN §3.4 — the H4 lesson): present
+      // (non-null) whenever the gate is open, for EVERY rejoiner (the
+      // reveal is public); the key is OMITTED entirely while the gate is
+      // closed (the detectiveHistory/mafiaTeam absence pattern — keeps the
+      // gate-closed payload byte-identical to pre-Hunter syncs). isYou is
+      // true when the rejoiner IS the hunter: their private target list
+      // never rides game_sync — it is re-sent as a separate
+      // hunter_revenge_targets message right after the sync.
+      pendingRevenge?: {
+        hunterName: string;
+        isYou: boolean;
+      } | null;
       // Vote state (null if not in voting)
       voteState: {
         targetName: string;
