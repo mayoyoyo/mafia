@@ -11,6 +11,7 @@ import {
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
+import { subPhaseCue } from "./types";
 import path from "path";
 import fs from "fs";
 
@@ -264,7 +265,7 @@ function handleSubPhaseAdvance(game: Game): void {
   // Send close cue for the current sub-phase
   const closingPhase = game.nightSubPhase;
   if (closingPhase && closingPhase !== "resolving") {
-    broadcastToGame(game.code, { type: "sound_cue", sound: `${closingPhase}_close` as any });
+    broadcastToGame(game.code, { type: "sound_cue", sound: subPhaseCue(closingPhase, "close") });
   }
 
   const result = advanceNightSubPhase(game);
@@ -278,11 +279,16 @@ function handleSubPhaseAdvance(game: Game): void {
     return;
   }
 
+  // Past the resolving early-return, nextPhase is a cue-emitting sub-phase.
+  // Captured as a const (B7) so the narrowing survives into the timer
+  // closures below — TS re-widens property accesses across function bounds.
+  const nextPhase = result.nextPhase;
+
   if (result.isFake) {
     // Fake sub-phase: enabled but dead role → open cue, random delay, close cue, then advance
     armNightTimer(game, "fake_open", 1500 /* pause after close cue before open */, () => {
       if (!getGame(game.code)) return;
-      broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+      broadcastToGame(game.code, { type: "sound_cue", sound: subPhaseCue(nextPhase, "open") });
       // Notify dead players that this role is dead (exclude haunting joker)
       if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
         sendToDeadPlayers(game, {
@@ -319,7 +325,7 @@ function handleSubPhaseAdvance(game: Game): void {
   armNightTimer(game, "subphase_open", 1500 /* pause after close cue before open */, () => {
     if (!getGame(game.code)) return;
 
-    broadcastToGame(game.code, { type: "sound_cue", sound: `${result.nextPhase}_open` as any });
+    broadcastToGame(game.code, { type: "sound_cue", sound: subPhaseCue(nextPhase, "open") });
 
     if (result.nextPhase === "doctor") {
       sendDoctorPrompts(game);

@@ -108,6 +108,24 @@ describe("B0d: dumpGame serializer", () => {
   });
 });
 
+// ── B7 (audit P8): typed sound-cue producer (pure unit, no ports) ───────
+
+import { subPhaseCue } from "../src/types";
+
+describe("B7: subPhaseCue typed producer", () => {
+  test("emits the exact historical cue string for every cue-emitting sub-phase", () => {
+    // Pinned byte-for-byte: the goldens assert these on the wire; this pins
+    // the producer itself. "resolving" needs no case — subPhaseCue("resolving", ...)
+    // is a compile error (CueSubPhase excludes it).
+    expect(subPhaseCue("mafia", "open")).toBe("mafia_open");
+    expect(subPhaseCue("mafia", "close")).toBe("mafia_close");
+    expect(subPhaseCue("doctor", "open")).toBe("doctor_open");
+    expect(subPhaseCue("doctor", "close")).toBe("doctor_close");
+    expect(subPhaseCue("detective", "open")).toBe("detective_open");
+    expect(subPhaseCue("detective", "close")).toBe("detective_close");
+  });
+});
+
 // ── Part 2: server choke-point logs on subprocess stdout ────────────────
 
 const PORT = 20600 + Math.floor(Math.random() * 400); // band 20600-20999

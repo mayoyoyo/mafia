@@ -58,6 +58,33 @@ export interface Death {
 
 export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
 
+// ── B7 (audit P8): sound-cue typing — derived, not hand-synced ──────────
+/** The night sub-phases that emit open/close narration cues — "resolving" is silent. */
+export type CueSubPhase = Exclude<NightSubPhase, "resolving">;
+
+/**
+ * Every cue the server can send. The per-sub-phase open/close pairs are
+ * DERIVED from NightSubPhase via template literals, so a new cue-emitting
+ * sub-phase extends the union automatically; the three standalone cues
+ * ("night"/"day"/"everyone_close") have no sub-phase and stay enumerated.
+ */
+export type SoundCue =
+  | "night"
+  | "day"
+  | "everyone_close"
+  | `${CueSubPhase}_open`
+  | `${CueSubPhase}_close`;
+
+/**
+ * Typed producer for the per-sub-phase cues — replaces the three `as any`
+ * casts at the server's cue-send sites (audit P8), so a misspelled cue or
+ * a non-cue sub-phase ("resolving") is a compile error, not a cue the
+ * client silently skips.
+ */
+export function subPhaseCue(phase: CueSubPhase, edge: "open" | "close"): SoundCue {
+  return `${phase}_${edge}`;
+}
+
 // ── B4a (audit P5): the round epilogue + Hunter revenge gate ────────────
 /**
  * Options for concludeRound (game-engine.ts), the single win-check/
@@ -192,7 +219,7 @@ export type ServerMessage =
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
-  | { type: "sound_cue"; sound: "night" | "day" | "everyone_close" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
+  | { type: "sound_cue"; sound: SoundCue }
   | { type: "awaiting_ready" }
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
