@@ -129,7 +129,7 @@ const NIGHT_RESETS = {
   // resetNightActions in all three flows (transitionToDay, both resolveVote
   // execution branches) — a gate opened at trigger time is WIPED by this
   // very line before concludeRound's gate check runs. That is why the
-  // trigger queues OUTSIDE the Game (queuedHunterDeaths, observe-and-queue)
+  // trigger queues OUTSIDE the Game (queuedHunterTrigger, observe-and-queue)
   // and the gate opens in concludeRound, past the reset boundary
   // (regression pinned in tests/hunter-engine.test.ts).
   pendingRevenge: (g: Game) => { g.pendingRevenge = null; },
@@ -232,7 +232,16 @@ export function resetGameState(game: Game, reason: string): void {
   // C2a: a queued-but-unconsumed Hunter trigger (only possible behind a
   // house-joker instant win, which already discards at the win site — this
   // is defense in depth) must never survive into a restarted/next game.
-  queuedHunterDeaths.delete(game);
+  // D2: slog'd only when an entry or open gate actually existed — the
+  // routine lobby reset stays silent.
+  if (queuedHunterTrigger.has(game) || game.pendingRevenge) {
+    slog("hunter_gate", {
+      code: game.code, event: "discarded",
+      hunterId: queuedHunterTrigger.get(game) ?? game.pendingRevenge!.hunterId,
+      phase: game.phase, round: game.round,
+    });
+  }
+  queuedHunterTrigger.delete(game);
   resetNightActions(game);
   for (const key of GAME_RESET_FIELDS) {
     GAME_RESETS[key](game);
@@ -1012,7 +1021,12 @@ export function setDeathTriggerSpy(fn: ((game: Game, death: Death) => void) | nu
 // resolveVote branch never reaches concludeRound); resetGameState and
 // forceEndGame discard defensively so no entry can outlive a forced
 // transition into a restarted/next game.
-const queuedHunterDeaths = new WeakMap<Game, number>();
+// D2 (night_timer precedent): every gate-lifecycle edge is slog'd as
+// "hunter_gate" (opened / suppressed_no_target / suppressed_game_over /
+// resolved / declined / discarded) — console only, never in WS payloads;
+// discard sites stay silent unless an entry or open gate actually existed.
+// Holds ONE hunter id per game (single-Hunter deal) — not a list of deaths.
+const queuedHunterTrigger = new WeakMap<Game, number>();
 
 /**
  * The single death-trigger hook point (audit P2); the Hunter revenge
@@ -1039,7 +1053,7 @@ export function notifyDeathTriggers(game: Game, death: Death): void {
   // conditions (E11 no-living-target, E12 already-game_over) are evaluated
   // there, on the settled post-resolution board.
   if (death.player.role === "hunter") {
-    queuedHunterDeaths.set(game, death.player.id);
+    queuedHunterTrigger.set(game, death.player.id);
   }
 }
 
@@ -1296,10 +1310,14 @@ export function concludeRound(game: Game, messages: string[], opts: ConcludeRoun
   // edges E11/E12) evaluates on the settled post-resolution board: a game
   // already over, or no living player left to shoot, discards the queue and
   // resolution proceeds straight through — win check included.
-  const queuedHunterId = queuedHunterDeaths.get(game);
+  const queuedHunterId = queuedHunterTrigger.get(game);
   if (queuedHunterId !== undefined) {
-    queuedHunterDeaths.delete(game);
-    if (game.phase !== "game_over" && getAlivePlayers(game).length > 0) {
+    queuedHunterTrigger.delete(game);
+    const suppressed =
+      game.phase === "game_over" ? "suppressed_game_over"
+      : getAlivePlayers(game).length === 0 ? "suppressed_no_target"
+      : null;
+    if (suppressed === null) {
       // Plain-data resume (decision #4): the exact options this call was
       // entered with, so the resume re-derives the same epilogue shape —
       // including the official-joker preserveHauntVoters carve-out.
@@ -1311,6 +1329,10 @@ export function concludeRound(game: Game, messages: string[], opts: ConcludeRoun
         },
       };
     }
+    slog("hunter_gate", {
+      code: game.code, event: suppressed ?? "opened",
+      hunterId: queuedHunterId, phase: game.phase, round: game.round,
+    });
   }
   if (game.pendingRevenge) return; // the gate: submitHunterRevenge clears it and re-enters with `resume`
 
@@ -1355,6 +1377,13 @@ export interface HunterRevengeResult {
  * the target's lover cascade) are on the board. Validation failures return
  * { ok: false } with ZERO state change. The caller (server, task C3) owns
  * all broadcasting; deaths are keyed on Death.cause, never position.
+ *
+ * POST-CONDITION (C3, read this): game.pendingRevenge is NOT guaranteed
+ * null after an { ok: true } return. Under today's single-Hunter deal it
+ * always is — but a Hunter dying in the revenge cascade would queue a new
+ * trigger, and the resume's concludeRound re-entry would consume it and
+ * RE-OPEN the gate before this function returns. Re-check
+ * game.pendingRevenge after the call rather than assuming null.
  */
 export function submitHunterRevenge(game: Game, hunterId: number, targetId: number | null): HunterRevengeResult {
   const rejected: HunterRevengeResult = { ok: false, deaths: [], messages: [] };
@@ -1380,6 +1409,12 @@ export function submitHunterRevenge(game: Game, hunterId: number, targetId: numb
   }
 
   game.pendingRevenge = null;
+  // D2: logged BEFORE the resume re-enters concludeRound, so phase/round are
+  // the gated values and a cascade-re-opened gate's "opened" line sorts after.
+  slog("hunter_gate", {
+    code: game.code, event: targetId === null ? "declined" : "resolved",
+    hunterId: gate.hunterId, phase: game.phase, round: game.round,
+  });
   concludeRound(game, messages, gate.resume);
   return { ok: true, deaths, messages };
 }
@@ -1398,6 +1433,12 @@ export function transitionToDay(game: Game): NightResult {
   // Win check + transition to day/game_over (the dawn epilogue shape).
   concludeRound(game, nightResult.messages, { autoNight: false });
 
+  // STALE-BY-DESIGN when the revenge gate deferred this dawn:
+  // submitHunterRevenge never appends, so post-revenge this lacks the
+  // revenge/win lines. Deliberate — pendingMessages is read by no
+  // production logic (ARCHITECTURE-AUDIT §3.2 item 1: messages flow via
+  // return values; dumpGame's copy is only the exhaustive debug snapshot)
+  // and is pointed for the §3.2 dead-code backlog, not for fixing here.
   game.pendingMessages = nightResult.messages;
   return nightResult;
 }
@@ -1517,7 +1558,14 @@ export function resolveVote(game: Game): VoteResult | null {
         // deaths apply, so a Hunter heartbreak-killed by this cascade gets
         // NO revenge — and since this branch never reaches concludeRound's
         // consume point, the queued trigger is discarded at the win site.
-        queuedHunterDeaths.delete(game);
+        const discardedHunterId = queuedHunterTrigger.get(game);
+        queuedHunterTrigger.delete(game);
+        if (discardedHunterId !== undefined) {
+          slog("hunter_gate", {
+            code: game.code, event: "discarded",
+            hunterId: discardedHunterId, phase: game.phase, round: game.round,
+          });
+        }
 
         // Reset vote+night state (mirrors the official branch and the normal path)
         resetNightActions(game);
@@ -1606,9 +1654,17 @@ export function forceEndGame(game: Game): void {
   // is cleared by hand here, exactly like awaitingNarratorReady (the L2
   // pattern; HUNTER-DESIGN §6 lists end_game among the gate-clearing
   // transitions). C2a: the trigger queue is discarded for the same reason
-  // (defense in depth — see resetGameState).
+  // (defense in depth — see resetGameState). D2: slog'd only when an entry
+  // or open gate actually existed — a plain force-end stays silent.
+  if (queuedHunterTrigger.has(game) || game.pendingRevenge) {
+    slog("hunter_gate", {
+      code: game.code, event: "discarded",
+      hunterId: queuedHunterTrigger.get(game) ?? game.pendingRevenge!.hunterId,
+      phase: game.phase, round: game.round,
+    });
+  }
   game.pendingRevenge = null;
-  queuedHunterDeaths.delete(game);
+  queuedHunterTrigger.delete(game);
 }
 
 export function returnToLobby(game: Game): boolean {
