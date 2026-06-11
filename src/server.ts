@@ -826,6 +826,70 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
   };
 }
 
+// ── C3b (HUNTER-DESIGN §3.6, gate checklist M7 row): the rejection sweep ────
+//
+// While a game's revenge gate is open, every game-mutating message is
+// rejected at the DISPATCH level, before its handler runs — one check
+// instead of 13 hand-edited guards (the M7 lesson: hand-edited guard sets
+// drift). The classification is EXHAUSTIVE over ClientMessage["type"] (a
+// new message type is a compile error until classified — the sanitizeSettings
+// boolKeys pattern), so the §3.6 list and its exceptions live in one table:
+//
+//   true  — rejected while gated (§3.6, verbatim). The two engine-reachable
+//           holes this sweep exists for: cast_vote (the phase HOLDS at
+//           "voting" with the ballot cleared, so castVote would take votes)
+//           and cancel_vote (cancelVote would wipe the gate via
+//           resetNightActions and orphan the armed revenge timer). The rest
+//           are double-guarded by their handlers' own phase checks.
+//   false — exempt (§3.6 exceptions): the resolution pair
+//           (hunter_revenge / force_skip_revenge), the gate-CLEARING forced
+//           transitions (§6 L2 — each clears the revenge timer at its site;
+//           force_dawn and return_to_lobby are engine-rejected at a voting
+//           gate and leave it intact; close_room destroys the room),
+//           connection-level traffic + prefs, and the two messages whose
+//           own guards make them unreachable while gated (update_settings:
+//           lobby-only; player_return_to_lobby: game_over-only — the gate
+//           is structurally null at both phases, §4).
+//
+// Rejections are SILENT on the wire (the established guard style — no
+// error, no broadcast); the slog line is their one positive trace (D2).
+const REVENGE_GATE_REJECTED: Record<ClientMessage["type"], boolean> = {
+  // §3.6 rejection list (verbatim)
+  call_vote: true,
+  cast_vote: true,
+  abstain_vote: true,
+  cancel_vote: true,
+  end_day: true,
+  mafia_vote: true,
+  mafia_remove_vote: true,
+  confirm_mafia_kill: true,
+  doctor_save: true,
+  detective_investigate: true,
+  joker_haunt: true,
+  narrator_ready: true,
+  start_game: true,
+  // the resolution pair
+  hunter_revenge: false,
+  force_skip_revenge: false,
+  // gate-clearing forced transitions (§6 L2)
+  force_dawn: false,
+  end_game: false,
+  restart_game: false,
+  return_to_lobby: false,
+  close_room: false,
+  // connection-level traffic + prefs
+  register: false,
+  login: false,
+  create_game: false,
+  join_game: false,
+  leave_game: false,
+  toggle_sound: false,
+  update_player_pref: false,
+  // unreachable while gated by their own phase guards (§4 phase scoping)
+  update_settings: false,
+  player_return_to_lobby: false,
+};
+
 function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
   // B0d (audit D2): one structured line per inbound WS message
   {
@@ -842,6 +906,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     // module, so its tracked-slot state is passed in here.
     if (g) {
       assertInvariants(g, { at: `ws_in:${msg.type}`, hasPendingNightTimer: nightTimers.has(g.code) });
+    }
+    // C3b (§3.6 M7): the revenge-gate rejection sweep. An unknown wire type
+    // indexes to undefined → falls through to the switch (no case matches),
+    // exactly as before the sweep. Invisible when pendingRevenge is null.
+    if (g?.pendingRevenge && REVENGE_GATE_REJECTED[msg.type]) {
+      slog("revenge_gate_reject", { code: g.code, userId: client.userId ?? null, type: msg.type });
+      return;
     }
   }
 
@@ -1614,11 +1685,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
       if (game.phase !== "night") return;
-      // C3a minimal guard: no night sequence may start over an open revenge
-      // gate. Structurally unreachable today (the gate and
-      // awaitingNarratorReady cannot coexist) — belt-and-braces until C3b's
-      // full M7 rejection sweep.
-      if (game.pendingRevenge) return;
+      // C3a's interim pendingRevenge guard was removed here: the C3b M7
+      // sweep (REVENGE_GATE_REJECTED, dispatch level) now rejects
+      // narrator_ready before this handler can run while gated.
       if (!game.awaitingNarratorReady) return;
       game.awaitingNarratorReady = false;
       startNightSequence(game);

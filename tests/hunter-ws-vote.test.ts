@@ -622,3 +622,230 @@ describe("E4 official-joker: lynched joker's lover is the hunter", () => {
     closeAll(game);
   }, 60000);
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// E8 — the M7 gate-rejection sweep + the gate-clearing forced transitions
+// ═══════════════════════════════════════════════════════════════════════
+
+/** HUNTER-DESIGN §3.6, verbatim: rejected while game.pendingRevenge !== null. */
+const GATE_REJECTED_TYPES = [
+  "call_vote", "cast_vote", "abstain_vote", "cancel_vote", "end_day",
+  "mafia_vote", "mafia_remove_vote", "confirm_mafia_kill", "doctor_save",
+  "detective_investigate", "joker_haunt", "narrator_ready", "start_game",
+] as const;
+
+describe("E8: M7 rejection sweep while the vote-path gate is open", () => {
+  test("every §3.6 message type is rejected with zero wire traffic; gate + timer survive; hunter still resolves", async () => {
+    const game = await setupGame(serverA!, BASE_ROLES, BASE_SETTINGS);
+    const [admin, mafia, hunter, citA, citB, citC] = [
+      game.players[ADMIN], game.players[MAFIA], game.players[HUNTER],
+      game.players[P3], game.players[CIT_B], game.players[CIT_C],
+    ];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    await lynchByVote(game, hunter, game.players);
+    await pendingP;
+    await Bun.sleep(150);
+    const preSweepPhaseChanges = admin.inbox.filter(m => m.type === "phase_change").length;
+    expect(preSweepPhaseChanges).toBe(2); // game-start night + forced day
+
+    // Bounded-collect (handler-guards.test.ts pattern) on two vantage
+    // points: the admin and an alive citizen. STRICT emptiness — a rejected
+    // handler produces no broadcast, no error, no private reply. The two
+    // engine-reachable holes the sweep exists for: cast_vote (phase holds
+    // at "voting" with a cleared ballot — castVote would record and
+    // broadcast vote_update) and cancel_vote (cancelVote would wipe the
+    // gate via resetNightActions, flip to day, and orphan the timer).
+    const collectAdmin = collectFor(admin.ws, 1000);
+    const collectCit = collectFor(citB.ws, 1000);
+    send(admin.ws, { type: "call_vote", targetId: citB.userId });
+    send(citB.ws, { type: "cast_vote", approve: true });
+    send(admin.ws, { type: "abstain_vote" });
+    send(admin.ws, { type: "cancel_vote" });
+    send(admin.ws, { type: "end_day" });
+    send(mafia.ws, { type: "mafia_vote", targetId: citB.userId, voteType: "lock" });
+    send(mafia.ws, { type: "mafia_remove_vote", targetId: citB.userId });
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(citC.ws, { type: "doctor_save", targetId: citB.userId });
+    send(citC.ws, { type: "detective_investigate", targetId: citB.userId });
+    send(citC.ws, { type: "joker_haunt", targetId: citB.userId });
+    send(admin.ws, { type: "narrator_ready" });
+    send(admin.ws, { type: "start_game" });
+    expect(await collectAdmin).toEqual([]);
+    expect(await collectCit).toEqual([]);
+
+    // Positive trace: the dispatch-level sweep bounced each of the 13 §3.6
+    // types exactly once (slog "revenge_gate_reject" — the rejections are
+    // deliberately silent on the wire).
+    expect(revengeGateRejects(serverA!, game.code).sort())
+      .toEqual([...GATE_REJECTED_TYPES].sort());
+
+    // §3.6 exceptions still flow while gated: prefs are connection-level.
+    const prefsP = waitFor(citC.ws, "player_prefs", 5000);
+    send(citC.ws, { type: "update_player_pref", key: "player_color", value: "#E53935" });
+    await prefsP;
+
+    // Gate + timer survived the sweep…
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed"]);
+    expect(admin.inbox.filter(m => m.type === "phase_change").length).toBe(preSweepPhaseChanges);
+
+    // …and the hunter can still resolve (decline → deferred auto-night).
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "post-sweep resolution");
+    send(hunter.ws, { type: "hunter_revenge", targetId: null });
+    const nightChange = await nightP;
+    expect(nightChange.round).toBe(2);
+    expect(nightChange.messages.length).toBe(2); // decline line + night-falls line
+    for (const p of game.players) {
+      expect(nightChange.messages[0]).not.toContain(p.username); // decline names nobody
+    }
+    await Bun.sleep(150);
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
+    expect(admin.inbox.find(m => m.type === "player_died" && m.playerId !== hunter.userId)).toBeUndefined();
+
+    closeAll(game);
+  }, 60000);
+
+  test("force_dawn at a VOTING gate is rejected by the engine: gate + timer survive, hunter still resolves", async () => {
+    const game = await setupGame(serverA!, BASE_ROLES, BASE_SETTINGS);
+    const [admin, , hunter, citA] = [
+      game.players[ADMIN], game.players[MAFIA], game.players[HUNTER], game.players[P3],
+    ];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    await lynchByVote(game, hunter, game.players);
+    await pendingP;
+    await Bun.sleep(150);
+
+    // force_dawn only applies to night-phase gates: at "voting" forceDawn
+    // rejects, and the rejection must NOT clear the gate or its timer (the
+    // clearRevengeTimer sits AFTER the success check — C3a placement).
+    send(admin.ws, { type: "force_dawn" });
+    await assertSilence(admin.ws,
+      ["phase_change", "sound_cue", "game_over", "player_died", "you_died", "lobby_update"], 600);
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed"]); // no "cleared"
+
+    // Gate alive: revenge still resolves into the deferred auto-night.
+    const victimP = waitFor(citA.ws, "you_died", 5000);
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "post-force_dawn resolution");
+    send(hunter.ws, { type: "hunter_revenge", targetId: citA.userId });
+    await victimP;
+    await nightP;
+    await Bun.sleep(150);
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
+
+    closeAll(game);
+  }, 60000);
+});
+
+describe("E8: gate-clearing forced transitions (short revenge timer — cleared, NOT fired, proven past expiry)", () => {
+  /** Lynch the hunter on server D (1500ms revenge timeout) and return at the open gate. */
+  async function gateOnD(): Promise<HunterGame> {
+    const game = await setupGame(serverD!, BASE_ROLES, BASE_SETTINGS);
+    await forceDawnToDay(game);
+    const pendingP = waitFor(game.players[ADMIN].ws, "hunter_revenge_pending", 8000);
+    await lynchByVote(game, game.players[HUNTER], game.players);
+    await pendingP;
+    return game;
+  }
+
+  test("end_game clears gate + timer; no late decline ever fires", async () => {
+    const game = await gateOnD();
+    const admin = game.players[ADMIN];
+
+    const overP = waitFor(admin.ws, "game_over", 5000);
+    const pcP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "game_over", 5000, "force-end phase_change");
+    send(admin.ws, { type: "end_game" });
+    const over = await overP;
+    await pcP;
+    expect(over.forceEnded).toBe(true);
+    expect(over.winner).toBe("town"); // L3: forceEndGame's well-defined winner
+
+    // Past the would-be expiry: total silence (an orphaned timer would fire
+    // a decline into the dead game) AND the slog lifecycle is armed→cleared
+    // with NO "fired" — the only observable that separates cleared from
+    // orphaned-but-inert.
+    await assertSilence(admin.ws,
+      ["phase_change", "player_died", "you_died", "hunter_revenge_pending", "sound_cue", "game_over"],
+      SHORT_REVENGE_MS + 700);
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed", "cleared"]);
+
+    // Flow proceeds on the settled state (ws_in invariants run NODE_ENV=test
+    // throw-mode in the spawned server — a violation would break this reply).
+    const lobbyP = waitFor(game.players[CIT_B].ws, "lobby_update", 5000);
+    send(game.players[CIT_B].ws, { type: "player_return_to_lobby" });
+    await lobbyP;
+
+    closeAll(game);
+  }, 60000);
+
+  test("restart_game clears gate + timer; fresh deal proceeds", async () => {
+    const game = await gateOnD();
+    const admin = game.players[ADMIN];
+
+    const startedPs = game.players.map(p => waitFor(p.ws, "game_started", 5000));
+    const readyP = waitFor(admin.ws, "awaiting_ready", 5000);
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "restart night");
+    send(admin.ws, { type: "restart_game" });
+    const started = await Promise.all(startedPs);
+    await readyP;
+    await nightP;
+    expect(started.map(s => s.role)).toEqual(BASE_ROLES); // the seam re-dealt
+
+    // Past the would-be expiry: the restarted game idles at the Begin Night
+    // gate — an orphaned timer's decline would emit into it.
+    await assertSilence(admin.ws,
+      ["phase_change", "player_died", "you_died", "hunter_revenge_pending", "sound_cue", "game_over"],
+      SHORT_REVENGE_MS + 700);
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed", "cleared"]);
+
+    // Flow proceeds: the new night begins normally.
+    const cueP = waitFor(admin.ws, "sound_cue", 5000);
+    send(admin.ws, { type: "narrator_ready" });
+    await cueP;
+
+    closeAll(game);
+  }, 60000);
+
+  test("return_to_lobby is engine-rejected at a voting gate (gate survives); the end_game → lobby chain leaves no timer behind", async () => {
+    // Engine reality (found writing this test): returnToLobby guards on
+    // phase === "game_over", where the gate is structurally null (§4
+    // invariant) — so return_to_lobby can NEVER see an open gate directly.
+    // Its §6 L2 clear is belt-and-braces (the end_day situation). What CAN
+    // happen: rejected at the gate (gate+timer must survive), then the
+    // admin force-ends and returns to lobby from game_over.
+    const game = await gateOnD();
+    const admin = game.players[ADMIN];
+
+    // (1) At the voting gate: engine-rejected, gate + timer survive.
+    const errP = waitFor(admin.ws, "error", 5000);
+    send(admin.ws, { type: "return_to_lobby" });
+    const err = await errP;
+    expect(err.message).toBe("Cannot return to lobby");
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed"]); // no "cleared"
+
+    // (2) end_game clears the gate; return_to_lobby now proceeds.
+    const overP = waitFor(admin.ws, "game_over", 5000);
+    send(admin.ws, { type: "end_game" });
+    await overP;
+    const lobbyP = waitFor(admin.ws, "lobby_update", 5000);
+    send(admin.ws, { type: "return_to_lobby" });
+    await lobbyP;
+
+    // (3) Past the would-be expiry: the cleared timer never fires into the
+    // fresh lobby.
+    await assertSilence(admin.ws,
+      ["phase_change", "player_died", "you_died", "hunter_revenge_pending", "sound_cue", "game_over"],
+      SHORT_REVENGE_MS + 700);
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed", "cleared"]);
+
+    // (4) Flow proceeds: a fresh game starts from the same lobby.
+    const startedPs = game.players.map(p => waitFor(p.ws, "game_started", 5000));
+    send(admin.ws, { type: "start_game" });
+    const started = await Promise.all(startedPs);
+    expect(started.map(s => s.role)).toEqual(BASE_ROLES);
+
+    closeAll(game);
+  }, 60000);
+});
