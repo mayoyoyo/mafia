@@ -124,7 +124,7 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 | B5 | P6-lite projections | 7f034e7, fa58d14 | DONE. toTargetInfo (9/9 literals) + projectGameOver(game, message) w/ winner guard; 4 of 7 game_over sites routed, 3 excluded w/ precise NOT-comments (2 divergence classes doc-d). tests/projections.test.ts (10). 375 tests. Backlog (user-visible pre-existing drift, NOT fixed): leave_game-active omits jokerJointWinner → joker loses reveal-screen trophy if host leaves vs End Game. |
 | B6 | P7-micro client hardening | dc5c13a, f293992 | DONE. deadActionActive (13-site rename; dead-guard !deadActionActive, both divergences proven unreachable); HOLD_GATE_PROMPTS base + per-gate deltas (L5 trap doc-d; suspense-gate advisory for C death-triggered prompts); frozen window.__holdGateLists test seam; tests/client-gates.test.ts (11, happy-dom). 386 tests. STAGING SMOKE for user post-merge: (1) official-mode joker game — execute joker, begin night: joker phone shows haunt prompt (not spectator panels), other dead players still see spectator views; (2) watch day→night + dawn: prompts only after overlay fade, death reveal at end of suspense beat. |
 | B7 | P8 cue typing | f6ceb75 | DONE. SoundCue = standalone cues + `${Exclude<NightSubPhase,"resolving">}_open/_close` (auto-extends for C); typed subPhaseCue in types.ts; 3/3 as-any casts gone (server.ts now zero). Compiler-only; cue strings byte-pinned. 387 tests. |
-| B8 | Final gate + APP_VERSION_STAGING bump | — | |
+| B8 | Final gate + APP_VERSION_STAGING bump | 9d58d95 | DONE. 4 parallel full-diff reviews vs 33ca844 ALL-APPROVED zero fix-first (src behavior sweep; client hunks; tests/bands/files — 38 commits, all trailers, no forbidden files; independent verification — 387/0/0, tsc 0, goldens 11/11 ×3 no flake, 10-player green, no repo-root DB writes, tree clean, nothing pushed). APP_VERSION_STAGING → staging.15_202606101723. |
 
 ### Program C (`feat/hunter-role`)
 | Task | Scope | Commits | Notes |
@@ -143,8 +143,20 @@ Parallel full-diff reviews of `git diff staging...HEAD` (src behavior-preservati
 - 18600–18999 — B0a goldens games 1–3 (tests/golden-sequences.test.ts)
 - 19600–19999 — B0a goldens games 4–5 (same file; 19860–19999 spare)
 
-### REMAINING
-B8 (final gate), then all of C. B0+B1 fully done at a40cdb7 (314 tests / 0 fail across 20 files, `bun run typecheck` 0 errors, goldens + 10-player gating everything). Next action: B8 — 4 parallel full-diff reviews vs 33ca844, fix-loop, then single APP_VERSION_STAGING bump.
+### REMAINING — PROGRAM B COMPLETE at 9d58d95 (387 tests / 0 fail, typecheck 0, goldens 11/11)
+User actions: push feat/engine-seams → PR → merge to staging → staging playtest (B6 smoke steps in the B6 row). Then start the Program C orchestrator fresh on feat/hunter-role cut from updated staging.
+
+**Program C carry-over notes (consolidated from B review records):**
+1. **SEQUENCING TRAP (C2)**: notifyDeathTriggers fires inside applyDeath, BEFORE the caller reset that nulls pendingRevenge — QUEUE from the hook; set game.pendingRevenge only after the reset boundary (doc-d at NIGHT_RESETS.pendingRevenge, the concludeRound gate, and HUNTER-DESIGN §4).
+2. Revenge kills enter via their own intent/path — never call applyDeath re-entrantly from the hook (contract on notifyDeathTriggers). GameEvent.cause/source additive wire fields exist for revenge labeling; you_died loops already key on Death.cause.
+3. concludeRound(resume) is the resume path; PendingRevenge.resume reuses ConcludeRoundOptions; resuming re-derives the same slog reason.
+4. Invariants C relaxes: pending_revenge_nonnull → HUNTER-DESIGN §4 phase invariants. LEGAL_PHASE_EDGES is Record<phase,...> — new phases force table updates at compile time. NightSubPhase extension auto-extends SoundCue (CueSubPhase excludes "resolving" only).
+5. projectGameOver THROWS on null winner — any new game_over route must set winner first. The 3 hand-assembled game_over sites have NOT-projectGameOver comments (2 divergence classes); pendingRevenge game_sync projection is C4 work.
+6. Client: revenge prompt handler must set deadActionActive; add the prompt type to HOLD_GATE_PROMPTS (one place) AND — if it must wait for the death reveal — to SUSPENSE_GATE_TYPES (advisory comment at the gate lists); frozen __holdGateLists is the membership test seam.
+7. Recommended C1-adjacent guard fix (B8 finding, pre-existing): start_game has no lobby guard — add `if (game.phase !== "lobby") return;` (crafted-WS edge; B4a beginNight changed its degenerate shape).
+8. Backlog (pre-existing, pinned NOT fixed in B — fix only if user asks): forceDawn leaves stale detectiveResult deliverable later; leave_game-active omits jokerJointWinner (joker loses reveal trophy vs End Game path); timer displacement quirk (set-over-live never cancels; doc-d at armNightTimer).
+9. Port bands: next fresh band for C WS tests = 22600+ (B used 18600-18999, 19600-19999, 20600-20999, 21600-21999).
+10. Hunter disabled ⇒ wire must stay byte-identical (11 goldens prove it after every C task); hunter-enabled flows get their own goldens/tests per C task list. B0+B1 fully done at a40cdb7 (314 tests / 0 fail across 20 files, `bun run typecheck` 0 errors, goldens + 10-player gating everything). Next action: B8 — 4 parallel full-diff reviews vs 33ca844, fix-loop, then single APP_VERSION_STAGING bump.
 
 Carry-over notes for the next orchestrator (from review records, session 1):
 - **B2**: B1 made "no other reset list" literally true — invariants can assert it. Brief invariant list applies; forceDawn's stale `detectiveResult` is PRE-EXISTING pinned behavior (whole-game scope, do not "fix" via invariant). dumpGame (src/debug.ts) + reset tables give B2 cheap field access; `satisfies Record<keyof Game,...>` pattern established in both.
