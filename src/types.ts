@@ -45,9 +45,11 @@ export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 // Every death in the game flows through the applyDeath funnel as one of
 // these; (source, cause) is the single derivation input for the public
 // event label (deriveDeathEventType in game-engine.ts).
-export type KillSource = "mafia" | "joker_haunt" | "execution";
+// "hunter_revenge" (C2a): the Hunter's dying shot — applied by
+// submitHunterRevenge AFTER the triggering resolution, never inside it.
+export type KillSource = "mafia" | "joker_haunt" | "execution" | "hunter_revenge";
 export type DeathCause = "direct" | "lover_cascade";
-export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death";
+export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death" | "hunter_revenge";
 
 export interface Death {
   player: Player;
@@ -104,9 +106,10 @@ export interface ConcludeRoundOptions {
 /**
  * The Hunter revenge gate (HUNTER-DESIGN §3.1) — PLAIN DATA, never a
  * server-held closure (closure-held gate state is un-rejoinable; audit D3).
- * NULL-PINNED for all of Program B: nothing sets it until Program C's
- * Hunter lands (notifyDeathTriggers opens it; submitHunterRevenge clears it
- * and resumes concludeRound with `resume`). assertInvariants pins null.
+ * Opened by concludeRound's trigger-queue consume when a Hunter died this
+ * resolution (C2a — notifyDeathTriggers only QUEUES; the gate is set past
+ * the caller's reset boundary); submitHunterRevenge clears it and resumes
+ * concludeRound with `resume`. assertInvariants pins the §4 phase scoping.
  */
 export interface PendingRevenge {
   hunterId: number;

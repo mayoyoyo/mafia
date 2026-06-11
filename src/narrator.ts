@@ -143,6 +143,16 @@ const MAFIA_WIN_MESSAGES = [
   "The citizens look around and realize they're outnumbered. The Mafia claims victory and immediately raises HOA fees!",
 ];
 
+// C2a stubs — single variant each; task C6 expands these to 3–5 house-style
+// variants (engine tests match loosely — position/name — never exact prose).
+const HUNTER_REVENGE_KILL_MESSAGES = [
+  "{name} falls to the Hunter's final shot. Even death couldn't stop that trigger finger.",
+];
+
+const HUNTER_DECLINE_MESSAGES = [
+  "The Hunter lowers their weapon. There will be no revenge tonight.",
+];
+
 const NIGHT_FALLS_MESSAGES = [
   "The sun sets and shadows creep across the town. Night has fallen. Lock your doors... and maybe your fridge.",
   "Darkness descends. The town sleeps, but not everyone rests peacefully. Someone is definitely up to no good.",
@@ -220,6 +230,12 @@ export const Narrator = {
       lastWords: pick(LAST_WORDS),
       food: pick(FOODS),
     });
+  },
+  hunterRevengeKill(name: string): string {
+    return fill(pick(HUNTER_REVENGE_KILL_MESSAGES), { name });
+  },
+  hunterDecline(): string {
+    return pick(HUNTER_DECLINE_MESSAGES);
   },
   townWin(): string {
     return pick(TOWN_WIN_MESSAGES);

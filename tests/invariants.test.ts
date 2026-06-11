@@ -27,9 +27,9 @@ import { describe, test, expect, afterEach } from "bun:test";
  *     pendingRevenge when forceEnded (forceEndGame freezes in-flight state
  *     where it stood, clearing only those two by hand).
  *   - winner non-null at game_over (L3).
- *   - pendingRevenge null ALWAYS (B4a pre-plumbing: null-pinned for all of
- *     Program B; Program C relaxes this to the phase-scoped form in
- *     HUNTER-DESIGN §4).
+ *   - pendingRevenge phase-scoped (C2a, HUNTER-DESIGN §4): non-null only at
+ *     night/voting, with votes empty, voteTarget null, and winner null;
+ *     null at lobby/day/game_over (the night-scope table enforces those).
  *   - the TRACKED night-timer slot (caller-provided) empty outside night.
  */
 
@@ -138,18 +138,36 @@ describe("D4 assertInvariants — violations throw in test mode", () => {
     expect(() => assertInvariants(game, AT)).toThrow(/winner_null_at_game_over/);
   });
 
-  test("pendingRevenge non-null DURING night (B4a: null-pinned in Program B, even where night-scope checks are skipped)", () => {
+  test("pendingRevenge non-null DURING night with a clean board is LEGAL (C2a relaxation: the dawn gate shape, §4)", () => {
     const game = makeGame(["mafia", "citizen", "citizen"]);
     expect(game.phase).toBe("night");
     game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
-    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_nonnull/);
+    expect(assertInvariants(game, AT)).toEqual([]);
   });
 
-  test("pendingRevenge non-null in day phase (caught by BOTH the explicit pin and the night-scope table)", () => {
+  test("pendingRevenge non-null in day phase (caught by BOTH the §4 phase check and the night-scope table)", () => {
     const game = gameInDay();
     game.pendingRevenge = { hunterId: 2, resume: { autoNight: true, preserveHauntVoters: true } };
-    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_nonnull/);
+    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_phase:day/);
     expect(() => assertInvariants(game, AT)).toThrow(/night_scope_dirty:pendingRevenge/);
+  });
+
+  test("pendingRevenge during voting with a LIVE ballot violates §4 (the caller's reset runs before the gate opens)", () => {
+    const game = gameInDay();
+    expect(callVote(game, 1, 5)).toBe(true);
+    castVote(game, 1, true);
+    expect(game.phase).toBe("voting");
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: true } };
+    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_votes_nonempty/);
+    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_vote_target_set/);
+  });
+
+  test("pendingRevenge alongside a winner violates §4 (the gate defers the win check — a winner means it leaked past)", () => {
+    const game = makeGame(["mafia", "citizen", "citizen"]);
+    expect(game.phase).toBe("night");
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
+    game.winner = "mafia";
+    expect(() => assertInvariants(game, AT)).toThrow(/pending_revenge_winner_set/);
   });
 
   test("jokerHauntVoters populated at a NON-joker game_over (B4a narrowing: the allowance requires jokerJointWinner)", () => {
