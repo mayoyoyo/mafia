@@ -410,11 +410,8 @@ describe("C1: start_game guard (no-op outside lobby)", () => {
     const { code, players } = await setupAndStart(4);
     const admin = players[0];
 
-    // Crafted-WS edge: admin re-sends start_game mid-game. The engine's
-    // startGame already refuses (returns null), but without a handler-level
-    // lobby guard the server falls through to the misleading
-    // "Need at least 3 players to start" error. The guard makes this a
-    // silent no-op, consistent with update_settings.
+    // Rationale: see the C1 (B8 finding) comment on the start_game lobby
+    // guard in src/server.ts.
     const collector = collectFor(admin.ws, 1500);
     send(admin.ws, { type: "start_game" });
 

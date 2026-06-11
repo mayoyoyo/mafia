@@ -198,6 +198,7 @@ describe("M6c: poisoned persisted settings are repaired on load", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("C1: enableHunter toggle round-trip", () => {
+  // NB: the "5xxx" reg() args below are user passcode PINs (Program C's PIN namespace), not ports.
   test("update_settings with enableHunter:true is reflected in settings_updated and lobby_update", async () => {
     const admin = await reg(uniqueName(), "5001");
     send(admin.ws, { type: "create_game" });

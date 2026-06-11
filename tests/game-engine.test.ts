@@ -537,6 +537,13 @@ describe("Settings", () => {
     expect(mafia.length).toBe(1);
     removeGame(game.code);
   });
+
+  test("enableHunter defaults to false (C1)", () => {
+    expect(DEFAULT_SETTINGS.enableHunter).toBe(false);
+    const game = createGame(1, "Admin");
+    expect(game.settings.enableHunter).toBe(false);
+    removeGame(game.code);
+  });
 });
 
 describe("sanitizeSettings edge bounds", () => {
@@ -574,13 +581,6 @@ describe("sanitizeSettings edge bounds", () => {
     expect(sanitizeSettings({ enableHunter: false }).enableHunter).toBe(false);
     expect(sanitizeSettings({ enableHunter: "yes" })).toEqual({});
     expect(sanitizeSettings({ enableHunter: 1 })).toEqual({});
-  });
-
-  test("enableHunter defaults to false (C1)", () => {
-    expect(DEFAULT_SETTINGS.enableHunter).toBe(false);
-    const game = createGame(1, "Admin");
-    expect(game.settings.enableHunter).toBe(false);
-    removeGame(game.code);
   });
 });
 
