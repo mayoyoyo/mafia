@@ -184,6 +184,35 @@ describe("C5a: slide-to-confirm skin", () => {
   });
 });
 
+describe("C5a: server-side resolution leaves no stale decline button", () => {
+  // The 60s timeout and admin force_skip_revenge both resolve the revenge
+  // WITHOUT any client action: the hunter's client receives only the
+  // deferred phase_change. applyPhaseChange's hide-all block must hide the
+  // decline button itself (not just the parent panel), because spectator
+  // views later un-hide #night-actions without going through showNightAction.
+  test("decline button stays hidden on the next night's spectator panel", async () => {
+    startGame("hunter");
+    serverSays({ type: "phase_change", phase: "night", round: 2 });
+    dieAndGetPrompt();
+    expect(isHidden("btn-decline-revenge")).toBe(false); // prompt up, button live
+
+    // Revenge resolves server-side (timeout / force-skip): only the deferred
+    // phase_change arrives. night→day starts the dawn suspense chain.
+    serverSays({ type: "phase_change", phase: "day", round: 2, events: [] });
+    await Bun.sleep(300); // chain = 6300 * 0.02 = 126ms
+    expect(isHidden("night-actions")).toBe(true); // panel hidden by applyPhaseChange
+
+    // Next night begins (applyPhaseChange resets deadActionActive)...
+    serverSays({ type: "phase_change", phase: "night", round: 3 });
+    await Bun.sleep(250); // chain = (3400 + 600) * 0.02 = 80ms
+    // ...then a spectator beat re-shows the panel without showNightAction.
+    serverSays({ type: "spectator_night_phase", subPhase: "doctor", isRoleAlive: true });
+
+    expect(isHidden("night-actions")).toBe(false); // spectator panel is up
+    expect(isHidden("btn-decline-revenge")).toBe(true); // no stale decline button
+  });
+});
+
 describe("C5a: held during overlay chains, replayed after", () => {
   test("prompt arriving mid night-transition is held, then replayed", async () => {
     startGame("hunter");

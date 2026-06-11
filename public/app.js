@@ -1491,6 +1491,7 @@
 
     // Hide all action panels
     $("night-actions").classList.add("hidden");
+    $("btn-decline-revenge").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
