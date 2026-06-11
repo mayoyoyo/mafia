@@ -134,7 +134,11 @@ function armNightTimer(game: Game, kind: string, delay: number, fn: () => void):
     // the delete just above runs synchronously, and under the displacement
     // quirk a stale timer's delete removes the NEWER entry too. Kept so the
     // assert shape matches ws_in; B4 revisits the displacement quirk.
-    assertInvariants(game, { at: `timer_fire:${kind}`, hasPendingNightTimer: nightTimers.has(game.code) });
+    assertInvariants(game, {
+      at: `timer_fire:${kind}`,
+      hasPendingNightTimer: nightTimers.has(game.code),
+      hasRevengeTimer: revengeTimers.has(game.code), // C3b: gate⇔timer correlation
+    });
     fn();
   }, delay);
   nightTimers.set(game.code, { timer, kind, delay });
@@ -189,6 +193,9 @@ function armRevengeTimer(game: Game): void {
     revengeTimers.delete(game.code);
     slog("revenge_timer", { code: game.code, kind: "revenge", delay, event: "fired" });
     if (getGame(game.code) !== game) return; // game removed — or the 4-char code reused by a NEW game; identity (not existence) keeps a stale closure inert
+    // hasRevengeTimer deliberately OMITTED (correlation skipped): the delete
+    // above already emptied this timer's own slot while the gate is still
+    // legally open — the one sanctioned gate-open/slot-empty moment.
     assertInvariants(game, { at: "timer_fire:revenge", hasPendingNightTimer: nightTimers.has(game.code) });
     if (!game.pendingRevenge) return; // gate already resolved/cleared
     // Boolean deliberately dropped (false = engine rejection, gate stays open — see resolveRevenge doc); C3b consumes it.
@@ -905,7 +912,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     // settled state this message found. The night-timer map lives in this
     // module, so its tracked-slot state is passed in here.
     if (g) {
-      assertInvariants(g, { at: `ws_in:${msg.type}`, hasPendingNightTimer: nightTimers.has(g.code) });
+      assertInvariants(g, {
+        at: `ws_in:${msg.type}`,
+        hasPendingNightTimer: nightTimers.has(g.code),
+        hasRevengeTimer: revengeTimers.has(g.code), // C3b: gate⇔timer correlation
+      });
     }
     // C3b (§3.6 M7): the revenge-gate rejection sweep. An unknown wire type
     // indexes to undefined → falls through to the switch (no case matches),

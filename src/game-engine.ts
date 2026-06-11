@@ -284,6 +284,15 @@ export interface InvariantContext {
    * callers omit it and the timer invariant is skipped.
    */
   hasPendingNightTimer?: boolean;
+  /**
+   * C3b (§6 M2/M7 correlation): whether this game's revenge-timer slot is
+   * occupied. Same caller contract as hasPendingNightTimer — server choke
+   * points pass it, engine-level callers omit it and the correlation is
+   * skipped. The revenge timer's own fire callback ALSO omits it: it
+   * deletes its slot before asserting, so mid-fire the gate is legally
+   * open with an empty slot.
+   */
+  hasRevengeTimer?: boolean;
 }
 
 /**
@@ -391,6 +400,20 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
     if (game.votes.size > 0) violations.push("pending_revenge_votes_nonempty");
     if (game.voteTarget !== null) violations.push("pending_revenge_vote_target_set");
     if (game.winner !== null) violations.push("pending_revenge_winner_set");
+  }
+
+  // Invariant (C3b, §6 M2/M7 correlation): the revenge gate and its timer
+  // move together — gate open ⇒ timeout armed (a missing timer is an
+  // orphaned gate no timeout-decline can ever close), and timer armed ⇒
+  // gate open (an orphaned timer is the M2 class). Checked only when the
+  // caller can see the slot (ctx contract above).
+  if (ctx.hasRevengeTimer !== undefined) {
+    if (game.pendingRevenge !== null && !ctx.hasRevengeTimer) {
+      violations.push("pending_revenge_timer_missing");
+    }
+    if (ctx.hasRevengeTimer && game.pendingRevenge === null) {
+      violations.push("revenge_timer_without_gate");
+    }
   }
 
   // Invariant (M2 class): the TRACKED night-timer slot is empty outside
