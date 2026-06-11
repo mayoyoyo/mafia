@@ -295,6 +295,68 @@ describe("E4 — the lynch target is the Hunter's lover (Hunter NOT executed)", 
     expect(assertInvariants(game, AT)).toEqual([]);
   });
 
+  test("VARIANT: official-mode joker lynched, joker's lover is the Hunter — resume.preserveHauntVoters true; post-revenge the haunt night still happens with jokerHauntVoters intact", () => {
+    // Joker seat 2 + Hunter seat 3 are the lover pair (indices 1 and 2).
+    const game = makeGame(
+      ["mafia", "joker", "hunter", "citizen", "citizen", "citizen"],
+      { enableJoker: true, jokerMode: "official" },
+      [1, 2],
+    );
+    forceDawn(game);
+
+    const vote = runVote(game, 2, [1, 4, 5, 6]); // lynch the joker — hunter votes NO
+    expect(vote.executed).toBe(true);
+    expect(vote.jokerWin).toBe(true);
+    expect(vote.killed.map((d) => [d.player.id, d.source, d.cause])).toEqual([
+      [2, "execution", "direct"],
+      [3, "execution", "lover_cascade"], // the Hunter, heartbreak-dead
+    ]);
+
+    // The gate holds the OFFICIAL-JOKER epilogue: preserveHauntVoters rides
+    // the resume (its reason to exist), and the captured FOR-voters survive
+    // the gated wait untouched. The assertInvariants line is the fix(C2b)
+    // regression: this REAL engine state used to flag
+    // night_scope_dirty:jokerHauntVoters, which would make the server's
+    // handleMessage choke point throw on EVERY message while the gate is
+    // open (test mode throws; production logs per message).
+    expect(game.pendingRevenge).toEqual({
+      hunterId: 3,
+      resume: { autoNight: true, preserveHauntVoters: true },
+    });
+    expect(game.phase).toBe("voting");
+    expect(game.votes.size).toBe(0);
+    expect(game.voteTarget).toBeNull();
+    expect(game.jokerHauntVoters).toEqual([1, 4, 5, 6]);
+    expect(game.jokerJointWinner).toBe(true);
+    expect(game.winner).toBeNull();
+    expect(assertInvariants(game, AT)).toEqual([]);
+
+    // Revenge resolves -> the deferred haunt night begins WITH the voters.
+    const res = submitHunterRevenge(game, 3, 4);
+    expect(res.ok).toBe(true);
+    expect(res.messages.length).toBe(2); // revenge line, then night-falls
+    expect(game.pendingRevenge).toBeNull();
+    expect(game.phase).toBe("night");
+    expect(game.round).toBe(2);
+    expect(game.jokerHauntVoters).toEqual([1, 4, 5, 6]); // preserved through beginNight
+    expect(assertInvariants(game, AT)).toEqual([]);
+
+    // The haunt still happens: the dead joker can pick a (living) FOR-voter
+    // and the haunt kill lands at the next dawn.
+    expect(submitJokerHaunt(game, 2, 5)).toBe(true);
+    expect(lockTarget(game, 1, 6).consensus).toBe(true);
+    advanceNightSubPhase(game); // -> resolving
+    const dawn = transitionToDay(game);
+    expect(dawn.killed.map((d) => [d.player.id, d.source, d.cause])).toEqual([
+      [6, "mafia", "direct"],
+      [5, "joker_haunt", "direct"],
+    ]);
+    // Only the mafia remains: game over, with the joint-winner joker riding.
+    expect(game.phase).toBe("game_over");
+    expect(game.winner).toBe("mafia");
+    expect(game.jokerJointWinner).toBe(true);
+    expect(assertInvariants(game, AT)).toEqual([]);
+  });
 });
 
 // ── E5 — Win-condition matrix (HUNTER-DESIGN §7; M8 settled) ────────────────

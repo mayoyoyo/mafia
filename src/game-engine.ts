@@ -325,6 +325,8 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
   //   voting    — voteTarget/votes ARE the live ballot (callVote/castVote),
   //               and pendingRevenge may hold the vote-path revenge gate
   //               (C2a; its shape is checked by the §4 invariant below);
+  //               jokerHauntVoters survive a gated official-joker lynch
+  //               ONLY while the gate's resume preserves them (C2b);
   //   game_over — jokerHauntVoters stay populated ONLY when the official-
   //               joker execution itself ends the game: that branch is the
   //               sole writer of jokerHauntVoters AND sets jokerJointWinner
@@ -344,6 +346,14 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
       skip.add("voteTarget");
       skip.add("votes");
       skip.add("pendingRevenge"); // C2a: vote-path gate legitimately holds at "voting" (§4 check below)
+      // C2b (E4 variant): an official-joker lynch whose lover cascade killed
+      // the Hunter defers its haunt night behind the gate — the captured
+      // FOR-voters legitimately survive at "voting" exactly when the deferred
+      // epilogue says to preserve them. Positive guarantee: the sole writer
+      // of jokerHauntVoters (resolveVote's official branch) pairs its
+      // preserving reset with the same flag on the concludeRound options the
+      // gate stores as `resume` (pinned in tests/hunter-edge-matrix.test.ts).
+      if (game.pendingRevenge?.resume.preserveHauntVoters) skip.add("jokerHauntVoters");
     }
     if (game.phase === "game_over") {
       if (game.jokerJointWinner) skip.add("jokerHauntVoters");
