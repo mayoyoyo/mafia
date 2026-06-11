@@ -1,6 +1,12 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { unlinkSync } from "node:fs";
 import type { Role } from "../src/types";
+import {
+  type HunterServer, type HunterGame,
+  spawnServer, teardownServer, waitFor, waitMatch, send,
+  setupGame as setupGameH, forceDawnToDay, lynchByVote, mafiaSoloKill,
+  killHunterAndAwaitGate, closeAll, rejoinRecorded,
+  revengeTimerEvents, revengeGateRejects, indexOfMsg,
+} from "./helpers/ws-harness";
 
 /**
  * C4 — game_sync projection + rejoin support for the revenge gate
@@ -48,58 +54,7 @@ const HUNTER_SETTINGS = {
 };
 const NO_HUNTER_SETTINGS = { ...HUNTER_SETTINGS, enableHunter: false };
 
-// ── Per-band server subprocesses (harness: tests/hunter-ws-vote.test.ts) ──
-
-interface HunterServer {
-  proc: ReturnType<typeof Bun.spawn>;
-  wsUrl: string;
-  dbPath: string;
-  /** Accumulated server stdout (slog JSON lines) — pattern: structured-logging.test.ts. */
-  logs: () => string;
-}
-
-async function spawnServer(
-  port: number, label: string, dealRoles: Role[],
-  extraEnv: Record<string, string> = {},
-): Promise<HunterServer> {
-  const wsUrl = `ws://localhost:${port}/ws`;
-  const dbPath = `/tmp/mafia-hunter-ws-rejoin-${label}-${Date.now()}-${port}.db`;
-  const proc = Bun.spawn(["bun", "run", "src/server.ts"], {
-    env: {
-      ...process.env,
-      PORT: String(port),
-      DATABASE_PATH: dbPath,
-      MAFIA_FIXED_DEAL: JSON.stringify({ roles: dealRoles }),
-      ...extraEnv,
-    },
-    cwd: import.meta.dir + "/..",
-    stdout: "pipe", stderr: "ignore",
-  });
-  // Stdout capture: "rejoin re-armed the revenge timer" and "rejoin re-sent
-  // nothing" are slog-only observables — a re-armed timer is wire-identical
-  // to the original one inside a test window; only the server's own
-  // "revenge_timer" lifecycle events (armed/overwritten/fired/cleared)
-  // distinguish them.
-  let stdoutBuf = "";
-  const dec = new TextDecoder();
-  (async () => {
-    for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
-      stdoutBuf += dec.decode(chunk, { stream: true });
-    }
-  })().catch(() => {});
-  for (let i = 0; i < 30; i++) {
-    try {
-      const ws = new WebSocket(wsUrl);
-      await new Promise<void>((ok, fail) => {
-        ws.onopen = () => { ws.close(); ok(); };
-        ws.onerror = () => fail();
-      });
-      return { proc, wsUrl, dbPath, logs: () => stdoutBuf };
-    } catch { await Bun.sleep(200); }
-  }
-  try { proc.kill(); } catch {}
-  throw new Error(`Hunter WS server failed to start on port ${port}`);
-}
+// ── Per-band server subprocesses (harness: tests/helpers/ws-harness.ts) ────
 
 let serverA: HunterServer | null = null;
 let serverB: HunterServer | null = null;
@@ -107,234 +62,21 @@ let serverC: HunterServer | null = null;
 
 beforeAll(async () => {
   [serverA, serverB, serverC] = await Promise.all([
-    spawnServer(PORT_A, "A", HUNTER_ROLES),
-    spawnServer(PORT_B, "B", HUNTER_ROLES,
-      { MAFIA_REVENGE_TIMER_MS: String(SHORT_REVENGE_MS) }),
-    spawnServer(PORT_C, "C", NO_HUNTER_ROLES),
+    spawnServer(PORT_A, "A", "rejoin", HUNTER_ROLES),
+    spawnServer(PORT_B, "B", "rejoin", HUNTER_ROLES,
+      { extraEnv: { MAFIA_REVENGE_TIMER_MS: String(SHORT_REVENGE_MS) } }),
+    spawnServer(PORT_C, "C", "rejoin", NO_HUNTER_ROLES),
   ]);
 });
 
 afterAll(() => {
-  for (const srv of [serverA, serverB, serverC]) {
-    if (!srv) continue;
-    try { srv.proc.kill(); } catch {}
-    for (const f of [srv.dbPath, `${srv.dbPath}-wal`, `${srv.dbPath}-shm`]) {
-      try { unlinkSync(f); } catch {}
-    }
-  }
+  for (const srv of [serverA, serverB, serverC]) teardownServer(srv);
 });
 
-// ── WS harness (copied from tests/hunter-ws-vote.test.ts) ────────────────
-
-function waitFor(ws: WebSocket, type: string, timeout = 5000): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`Timeout waiting for: ${type}`)), timeout);
-    const h = (e: MessageEvent) => {
-      const m = JSON.parse(e.data);
-      if (m.type === type) { clearTimeout(t); ws.removeEventListener("message", h); resolve(m); }
-    };
-    ws.addEventListener("message", h);
-  });
-}
-
-function waitMatch(ws: WebSocket, pred: (m: any) => boolean, timeout = 5000, label = "match"): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`Timeout: ${label}`)), timeout);
-    const h = (e: MessageEvent) => {
-      const m = JSON.parse(e.data);
-      if (pred(m)) { clearTimeout(t); ws.removeEventListener("message", h); resolve(m); }
-    };
-    ws.addEventListener("message", h);
-  });
-}
-
-function openWS(wsUrl: string): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
-    const t = setTimeout(() => reject(new Error("WS open timeout")), 3000);
-    ws.onopen = () => { clearTimeout(t); resolve(ws); };
-    ws.onerror = () => { clearTimeout(t); reject(new Error("WS open error")); };
-  });
-}
-
-function send(ws: WebSocket, msg: any) { ws.send(JSON.stringify(msg)); }
-
-interface HunterPlayer {
-  ws: WebSocket;
-  userId: number;
-  username: string;
-  pin: string;
-  seat: string;   // "P0".."P5" in join order
-  inbox: any[];   // every raw message received, in order, across reconnects
-}
-
-/** Register a user with an always-on inbox recorder attached at open. */
-async function regRecorded(wsUrl: string, name: string, pin: string, seat: string): Promise<HunterPlayer> {
-  const ws = await openWS(wsUrl);
-  const inbox: any[] = [];
-  ws.addEventListener("message", (e: MessageEvent) => inbox.push(JSON.parse(e.data)));
-  send(ws, { type: "register", username: name, passcode: pin });
-  const r = await waitFor(ws, "registered");
-  return { ws, userId: r.userId as number, username: name, pin, seat, inbox };
-}
-
-interface HunterGame {
-  code: string;
-  players: HunterPlayer[];
-  seatOfId: Map<number, string>;
-  seatOfName: Map<string, string>;
-}
-
-const ts = Date.now();
-let gameCounter = 0;
-
-/**
- * Register recorded clients, create/join in seat order, apply settings,
- * start, assert the fixed deal landed, and drop the Begin Night gate.
- * Returns with night 1 running (mafia sub-phase).
- */
-async function setupGame(srv: HunterServer, dealRoles: Role[], settings: Record<string, unknown>): Promise<HunterGame> {
-  const prefix = `hwr_${ts}_${++gameCounter}`;
-  const players: HunterPlayer[] = [];
-  for (let i = 0; i < dealRoles.length; i++) {
-    players.push(await regRecorded(srv.wsUrl, `${prefix}_${i}`, String(1000 + i), `P${i}`));
-  }
-  const admin = players[ADMIN];
-
-  send(admin.ws, { type: "create_game" });
-  const created = await waitFor(admin.ws, "game_created");
-  for (let i = 1; i < players.length; i++) {
-    send(players[i].ws, { type: "join_game", code: created.code });
-    await waitFor(players[i].ws, "game_joined");
-  }
-
-  send(admin.ws, { type: "update_settings", settings });
-  await waitFor(admin.ws, "settings_updated");
-
-  const startedPromises = players.map(p => waitFor(p.ws, "game_started"));
-  const readyPromise = waitFor(admin.ws, "awaiting_ready");
-  send(admin.ws, { type: "start_game" });
-  const started = await Promise.all(startedPromises);
-  await readyPromise;
-  expect(started.map(s => s.role)).toEqual(dealRoles); // the seam dealt the fixed assignment
-
-  send(admin.ws, { type: "narrator_ready" });
-  await waitFor(admin.ws, "sound_cue", 5000); // night sequence began
-  await Bun.sleep(100);
-
-  const seatOfId = new Map(players.map(p => [p.userId, p.seat]));
-  const seatOfName = new Map(players.map(p => [p.username, p.seat]));
-  return { code: created.code, players, seatOfId, seatOfName };
-}
-
-/** Skip night 1 without a death: admin force_dawn → day 1, everyone alive. */
-async function forceDawnToDay(game: HunterGame): Promise<void> {
-  const admin = game.players[ADMIN];
-  const day = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "day", 5000, "forced day");
-  send(admin.ws, { type: "force_dawn" });
-  await day;
-  await Bun.sleep(100);
-}
-
-/**
- * Day-phase lynch: admin calls the vote on `target`, every LIVING voter
- * approves, vote_result awaited on the admin socket, fan-out settled.
- */
-async function lynchByVote(game: HunterGame, target: HunterPlayer, voters: HunterPlayer[]): Promise<any> {
-  const admin = game.players[ADMIN];
-  const called = waitFor(admin.ws, "vote_called", 5000);
-  send(admin.ws, { type: "call_vote", targetId: target.userId });
-  await called;
-  const resultP = waitFor(admin.ws, "vote_result", 8000);
-  for (const v of voters) send(v.ws, { type: "cast_vote", approve: true });
-  const result = await resultP;
-  await Bun.sleep(150); // let per-socket fan-out settle on every inbox
-  return result;
-}
-
-/** Single-mafia night kill: maybe → lock (consensus of one) → confirm. */
-async function mafiaSoloKill(mafia: HunterPlayer, target: HunterPlayer): Promise<void> {
-  const maybeUpdate = waitFor(mafia.ws, "mafia_vote_update", 6000);
-  send(mafia.ws, { type: "mafia_vote", targetId: target.userId, voteType: "maybe" });
-  await maybeUpdate;
-  const confirmReady = waitFor(mafia.ws, "mafia_confirm_ready", 6000);
-  send(mafia.ws, { type: "mafia_vote", targetId: target.userId, voteType: "lock" });
-  await confirmReady;
-  const done = waitFor(mafia.ws, "night_action_done", 6000);
-  send(mafia.ws, { type: "confirm_mafia_kill" });
-  await done;
-}
-
-/**
- * Night 1: mafia kills the hunter, then await the gate opening on the
- * admin socket (NIGHT-path gate: phase "night", nightSubPhase null).
- */
-async function killHunterAndAwaitGate(game: HunterGame): Promise<any> {
-  const pendingPromise = waitFor(game.players[ADMIN].ws, "hunter_revenge_pending", 8000);
-  await mafiaSoloKill(game.players[MAFIA], game.players[HUNTER]);
-  const pending = await pendingPromise;
-  await Bun.sleep(150);
-  return pending;
-}
-
-function closeAll(game: HunterGame) {
-  for (const p of game.players) { try { p.ws.close(); } catch {} }
-}
-
-/**
- * Disconnect + reconnect a player, buffering every post-login message for
- * `settleMs` after join_game. The new socket's recorder ALSO appends to the
- * player's running inbox (E13 sweeps span reconnects), and player.ws is
- * swapped so later actions ride the new socket. Returns the rejoin slice.
- */
-async function rejoinRecorded(srv: HunterServer, p: HunterPlayer, code: string, settleMs = 700): Promise<any[]> {
-  try { p.ws.close(); } catch {}
-  await Bun.sleep(100);
-
-  const ws = await openWS(srv.wsUrl);
-  const slice: any[] = [];
-  ws.addEventListener("message", (e: MessageEvent) => {
-    const m = JSON.parse(e.data);
-    slice.push(m);
-    p.inbox.push(m);
-  });
-  send(ws, { type: "login", username: p.username, passcode: p.pin });
-  await waitFor(ws, "logged_in");
-  p.ws = ws;
-
-  send(ws, { type: "join_game", code });
-  await Bun.sleep(settleMs);
-
-  expect(slice.find(m => m.type === "game_joined")).toBeDefined();
-  expect(slice.filter(m => m.type === "game_sync").length).toBe(1);
-  return slice;
-}
-
-/**
- * THIS game's revenge-timer lifecycle ("armed"/"cleared"/"fired"/
- * "overwritten"), in server stdout order — parsed from the slog
- * "revenge_timer" lines, filtered by game code.
- */
-function revengeTimerEvents(srv: HunterServer, code: string): string[] {
-  return slogEvents(srv, "revenge_timer", code).map((e) => e.event as string);
-}
-
-/** THIS game's M7 sweep rejections: the message types the dispatch-level gate check bounced. */
-function revengeGateRejects(srv: HunterServer, code: string): string[] {
-  return slogEvents(srv, "revenge_gate_reject", code).map((e) => e.type as string);
-}
-
-function slogEvents(srv: HunterServer, slogName: string, code: string): any[] {
-  return srv.logs()
-    .split("\n")
-    .filter((l) => l.startsWith("{"))
-    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
-    .filter((e) => e && e.slog === slogName && e.code === code);
-}
-
-function indexOfMsg(inbox: any[], pred: (m: any) => boolean, from = 0): number {
-  for (let i = from; i < inbox.length; i++) if (pred(inbox[i])) return i;
-  return -1;
+// ── This file's setupGame: the shared harness driver bound to this file's
+//    username prefix (test bodies call setupGame(srv, dealRoles, settings)). ─
+function setupGame(srv: HunterServer, dealRoles: Role[], settings: Record<string, unknown>): Promise<HunterGame> {
+  return setupGameH(srv, { prefix: "hwr", dealRoles, settings });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
