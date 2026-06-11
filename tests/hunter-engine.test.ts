@@ -23,41 +23,28 @@ import { describe, test, expect, afterEach } from "bun:test";
  */
 
 import {
-  createGame, addPlayer, updateSettings, startGame, removeGame, setFixedDeal,
-  submitMafiaVote, advanceNightSubPhase, transitionToDay, callVote, castVote,
+  removeGame, setFixedDeal,
+  advanceNightSubPhase, transitionToDay, callVote, castVote,
   resolveVote, forceDawn, endDay, forceEndGame, returnToLobby, restartGame,
   applyDeath, resetNightActions, concludeRound, submitHunterRevenge,
   assertInvariants,
 } from "../src/game-engine";
 import { dumpGame } from "../src/debug";
 import type { Game, GameSettings, Role } from "../src/types";
+import { makeGame as makeGameH, lockTarget } from "./helpers/engine-fixtures";
 
-// ── Helpers (reset-seam.test.ts patterns) ───────────────────────────────────
+// ── Helpers (reset-seam.test.ts patterns; fixtures: tests/helpers/engine-fixtures.ts) ──
 
 const liveGames: string[] = [];
 afterEach(() => {
   for (const code of liveGames.splice(0)) removeGame(code);
 });
 
-/** Deal `roles` to players 1..n in join order (player 1 = admin). */
+/** makeGame bound to this file's afterEach cleanup (registers the code). */
 function makeGame(roles: Role[], settings?: Partial<GameSettings>, lovers?: [number, number]): Game {
-  const game = createGame(1, "Admin");
+  const game = makeGameH(roles, settings, lovers);
   liveGames.push(game.code);
-  for (let i = 2; i <= roles.length; i++) addPlayer(game, i, `Player${i}`);
-  if (settings) updateSettings(game, settings);
-  setFixedDeal({ roles, ...(lovers ? { lovers } : {}) });
-  try {
-    const started = startGame(game);
-    expect(started).not.toBeNull();
-  } finally {
-    setFixedDeal(null);
-  }
   return game;
-}
-
-function lockTarget(game: Game, mafiaId: number, targetId: number) {
-  submitMafiaVote(game, mafiaId, targetId, "maybe");
-  return submitMafiaVote(game, mafiaId, targetId, "lock");
 }
 
 /**

@@ -23,15 +23,15 @@ import { describe, test, expect, afterEach } from "bun:test";
  */
 
 import {
-  createGame, addPlayer, updateSettings, startGame, removeGame, setFixedDeal,
-  setDeathTriggerSpy, submitMafiaVote, advanceNightSubPhase, transitionToDay,
-  callVote, castVote, resolveVote, forceDawn, submitHunterRevenge,
-  submitDoctorSave, submitJokerHaunt, assertInvariants, projectGameOver,
+  removeGame, setDeathTriggerSpy, advanceNightSubPhase, transitionToDay,
+  forceDawn, submitHunterRevenge, submitDoctorSave, submitJokerHaunt,
+  assertInvariants, projectGameOver,
 } from "../src/game-engine";
-import type { NightResult, VoteResult } from "../src/game-engine";
+import type { NightResult } from "../src/game-engine";
 import type { Game, GameSettings, Role } from "../src/types";
+import { makeGame as makeGameH, lockTarget, runNight, runVote } from "./helpers/engine-fixtures";
 
-// ── Helpers (tests/hunter-engine.test.ts patterns) ──────────────────────────
+// ── Helpers (fixtures: tests/helpers/engine-fixtures.ts) ─────────────────────
 
 const liveGames: string[] = [];
 afterEach(() => {
@@ -39,47 +39,11 @@ afterEach(() => {
   setDeathTriggerSpy(null); // belt-and-braces: E2 also clears via finally
 });
 
-/** Deal `roles` to players 1..n in join order (player 1 = admin). */
+/** makeGame bound to this file's afterEach cleanup (registers the code). */
 function makeGame(roles: Role[], settings?: Partial<GameSettings>, lovers?: [number, number]): Game {
-  const game = createGame(1, "Admin");
+  const game = makeGameH(roles, settings, lovers);
   liveGames.push(game.code);
-  for (let i = 2; i <= roles.length; i++) addPlayer(game, i, `Player${i}`);
-  if (settings) updateSettings(game, settings);
-  setFixedDeal({ roles, ...(lovers ? { lovers } : {}) });
-  try {
-    const started = startGame(game);
-    expect(started).not.toBeNull();
-  } finally {
-    setFixedDeal(null);
-  }
-  game.awaitingNarratorReady = false; // narrator confirmed (server-side step)
   return game;
-}
-
-function lockTarget(game: Game, mafiaId: number, targetId: number) {
-  submitMafiaVote(game, mafiaId, targetId, "maybe");
-  return submitMafiaVote(game, mafiaId, targetId, "lock");
-}
-
-/**
- * Drive the REAL dawn flow for a doctor/detective-disabled night: mafia
- * (seat 1) night-kills `targetId`, sub-phase advances to resolving, dawn.
- */
-function runNight(game: Game, targetId: number): NightResult {
-  expect(lockTarget(game, 1, targetId).consensus).toBe(true);
-  advanceNightSubPhase(game); // doctor/detective disabled -> resolving
-  return transitionToDay(game);
-}
-
-/** Drive a REAL day ballot: admin calls the vote, `yes` seats vote FOR. */
-function runVote(game: Game, targetId: number, yes: number[]): VoteResult {
-  expect(callVote(game, 1, targetId)).toBe(true);
-  for (const [id, p] of game.players) {
-    if (p.isAlive) castVote(game, id, yes.includes(id));
-  }
-  const result = resolveVote(game);
-  expect(result).not.toBeNull();
-  return result!;
 }
 
 const AT = { at: "test" };
