@@ -904,6 +904,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Only the admin can start the game" });
         return;
       }
+      // C1 (B8 finding): crafted-WS edge — start_game outside the lobby is a
+      // silent no-op (like update_settings). Without this, the engine's null
+      // return fell through to the misleading "Need at least 3 players" error.
+      if (game.phase !== "lobby") return;
       const from = game.phase;
       const messages = startGame(game);
       if (!messages) {
