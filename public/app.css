@@ -1,3 +1,37 @@
+/* ============================================================
+   PIXEL NOIR — D1: @font-face declarations
+   ============================================================ */
+@font-face {
+  font-family: 'Silkscreen';
+  src: url('/fonts/silkscreen-400.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Silkscreen';
+  src: url('/fonts/silkscreen-700.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Libre Franklin';
+  src: url('/fonts/libre-franklin-var.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Libre Franklin';
+  src: url('/fonts/libre-franklin-var-italic.woff2') format('woff2');
+  font-weight: 100 900; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -5,29 +39,37 @@
 }
 
 :root {
-  --bg: #0a0a0a;
-  --bg-card: #151515;
-  --bg-elevated: #1c1c1e;
-  --bg-input: #1c1c1e;
-  --text: #f5f5f5;
-  --text-secondary: #8e8e93;
-  --border: #2c2c2e;
-  --primary: #e91e63;
-  --primary-dark: #c2185b;
-  --danger: #d32f2f;
+  /* Pixel Noir palette — D1 token swap (names unchanged, values updated) */
+  --bg: #0b0b10;
+  --bg-card: #1a1a2e;
+  --bg-elevated: #15152a;
+  --bg-input: #15152a;
+  --text: #ece5d8;
+  --text-secondary: #8a8a96;
+  --border: #34345c;
+  --primary: #e8a33d;
+  --primary-dark: #b87d24;
+  --danger: #b3202a;
+  --danger-bright: #d4313c;
   --success: #388e3c;
+  /* --warning: gold, clearly separated from hunter orange (#ef6c00) and amber primary (#e8a33d) */
+  --warning: #ffc107;
   --role-mafia: #d32f2f;
   --role-citizen: #388e3c;
   --role-doctor: #2196f3;
   --role-detective: #9c27b0;
-  --role-joker: #2196f3;
+  --role-joker: #26c6da;
   --role-hunter: #ef6c00;
   --role-lover: #e91e63;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Light theme */
+/* Font utilities — D1 */
+.disp { font-family: 'Silkscreen', monospace; }
+.mono { font-family: 'IBM Plex Mono', monospace; }
+
+/* Light theme — warm-paper neutrals kept; sync amber primary + role fixes */
 [data-theme="light"] {
   --bg: #f0ebe1;
   --bg-card: #faf7f2;
@@ -36,6 +78,13 @@
   --text: #1a1a1a;
   --text-secondary: #6b6b6b;
   --border: #d1cbc0;
+  /* Amber primary (no pink remnants) */
+  --primary: #b87d24;
+  --primary-dark: #8a5c18;
+  /* Contrast-correct warning on paper bg (darkened for AA) */
+  --warning: #c47d00;
+  /* Fixed role-joker (no doctor collision) */
+  --role-joker: #0097a7;
 }
 [data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
 
@@ -51,7 +100,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-family: 'Libre Franklin', 'Helvetica Neue', sans-serif;
   font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -84,6 +133,8 @@ html, body {
   transition: all 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  font-family: 'Silkscreen', monospace;
+  letter-spacing: 1px;
 }
 .btn:active { transform: scale(0.97); opacity: 0.8; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
@@ -126,16 +177,16 @@ input::placeholder { color: var(--text-secondary); }
   display: flex; align-items: center; justify-content: center;
 }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
-.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 800; }
+.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 700; font-family: 'Silkscreen', monospace; }
 .logo-small { padding: 24px 0 8px; }
 .logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
 .logo-small .logo-icon svg { width: 48px; height: 48px; }
-.logo-small h1 { font-size: 22px; letter-spacing: 6px; }
+.logo-small h1 { font-size: 22px; letter-spacing: 6px; font-family: 'Silkscreen', monospace; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
 .passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; }
 .error-msg { color: var(--danger); font-size: 14px; text-align: center; min-height: 20px; }
-.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; }
+.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; font-family: 'IBM Plex Mono', monospace; }
 
 /* HEADER */
 .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -149,7 +200,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ROOM CODE */
 .room-code { font-size: 14px; color: var(--text-secondary); }
-.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; }
+.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; font-family: 'IBM Plex Mono', monospace; }
 
 /* SETTINGS */
 .settings-panel {
@@ -276,19 +327,20 @@ input::placeholder { color: var(--text-secondary); }
   padding: 4px 0;
 }
 .phase-indicator {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
   padding: 6px 16px;
   border-radius: 20px;
   text-transform: uppercase;
   letter-spacing: 2px;
+  font-family: 'Silkscreen', monospace;
 }
-.phase-indicator.night { background: #1a237e; color: #7986cb; }
-.phase-indicator.day { background: #f57f17; color: #fff8e1; }
-.phase-indicator.voting { background: var(--primary); color: #fff; }
+.phase-indicator.night { background: #0d1126; color: #6a6f95; }
+.phase-indicator.day { background: var(--primary); color: #141008; }
+.phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
-.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; }
+.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
 
 /* ROLE CARD */
 .role-card {
@@ -325,7 +377,7 @@ input::placeholder { color: var(--text-secondary); }
   align-items: center;
   justify-content: center;
   background: #1a1a2e;
-  border: 2px solid #3a3a5e;
+  border: 2px solid var(--border);
   box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
   /* clip-path set by JS during drag; default = full rectangle */
   clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
@@ -343,6 +395,7 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 3px;
   text-transform: uppercase;
   color: #5a5a8a;
+  font-family: 'Silkscreen', monospace;
 }
 .peel-flap {
   position: absolute;
@@ -395,7 +448,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.hunter .card-front { border-color: var(--role-hunter); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
-.role-name { font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; }
+.role-name { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; font-family: 'Silkscreen', monospace; }
 .role-card.mafia .role-name { color: var(--role-mafia); }
 .role-card.citizen .role-name { color: var(--role-citizen); }
 .role-card.doctor .role-name { color: var(--role-doctor); }
@@ -478,7 +531,7 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.narrator-label { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
+.narrator-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px; font-family: 'Silkscreen', monospace; }
 .btn-transcript { font-size: 20px; padding: 2px 6px; }
 .narrator-messages { font-size: 15px; line-height: 1.6; }
 .narrator-messages .narrator-line {
@@ -539,11 +592,11 @@ input::placeholder { color: var(--text-secondary); }
   background: var(--bg-elevated);
 }
 .mafia-target-card.idle { border-color: var(--border); }
-.mafia-target-card.suggested { border-color: rgba(233,30,99,0.3); }
-.mafia-target-card.partial-lock { border-color: rgba(233,30,99,0.6); background: rgba(233,30,99,0.08); }
+.mafia-target-card.suggested { border-color: rgba(232,163,61,0.3); }
+.mafia-target-card.partial-lock { border-color: rgba(232,163,61,0.6); background: rgba(232,163,61,0.08); }
 .mafia-target-card.unanimous {
   border-color: var(--primary);
-  box-shadow: 0 0 12px rgba(233,30,99,0.25);
+  box-shadow: 0 0 12px rgba(232,163,61,0.25);
   animation: unanimousPulse 2s ease-in-out infinite;
 }
 .mafia-target-card.objected {
@@ -555,8 +608,8 @@ input::placeholder { color: var(--text-secondary); }
   opacity: 0.7;
 }
 @keyframes unanimousPulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(233,30,99,0.25); }
-  50% { box-shadow: 0 0 20px rgba(233,30,99,0.4); }
+  0%, 100% { box-shadow: 0 0 12px rgba(232,163,61,0.25); }
+  50% { box-shadow: 0 0 20px rgba(232,163,61,0.4); }
 }
 .mtc-header {
   display: flex;
@@ -571,9 +624,10 @@ input::placeholder { color: var(--text-secondary); }
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--primary);
-  background: rgba(233,30,99,0.15);
+  background: rgba(232,163,61,0.15);
   padding: 2px 8px;
   border-radius: 6px;
+  font-family: 'IBM Plex Mono', monospace;
 }
 .mtc-blocked-label {
   font-size: 11px;
@@ -640,11 +694,11 @@ input::placeholder { color: var(--text-secondary); }
 .mtc-btn-lock.mtc-btn-disabled { background: var(--bg-card); color: var(--text-secondary); opacity: 0.5; cursor: not-allowed; }
 .mtc-btn-object { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); flex: 1; }
 .mtc-btn-unlock { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-.mtc-btn-remove-objection { background: var(--bg-card); color: #e53935; border: 1px solid rgba(229,57,53,0.3); }
+.mtc-btn-remove-objection { background: var(--bg-card); color: var(--danger-bright); border: 1px solid rgba(211,49,60,0.3); }
 
 /* Spectator (dead player) styles */
 .spectator-locked { color: var(--primary); font-weight: 600; }
-.spectator-kill-result { color: #d32f2f; font-weight: 600; }
+.spectator-kill-result { color: var(--danger-bright); font-weight: 600; }
 #spectator-night-log { margin-bottom: 12px; }
 .spectator-log-entry {
   font-size: 13px; padding: 6px 0;
@@ -662,14 +716,14 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center; font-weight: 600;
 }
 .joker-spectator-status.deliberating {
-  background: rgba(156, 39, 176, 0.15);
-  color: #ce93d8;
-  border: 1px solid rgba(156, 39, 176, 0.3);
+  background: rgba(38, 198, 218, 0.15);
+  color: var(--role-joker);
+  border: 1px solid rgba(38, 198, 218, 0.3);
 }
 .joker-spectator-status.resolved {
-  background: rgba(156, 39, 176, 0.25);
-  color: #e1bee7;
-  border: 1px solid rgba(156, 39, 176, 0.5);
+  background: rgba(38, 198, 218, 0.25);
+  color: var(--role-joker);
+  border: 1px solid rgba(38, 198, 218, 0.5);
 }
 
 /* Single mafia target */
@@ -683,8 +737,8 @@ input::placeholder { color: var(--text-secondary); }
   transition: all 0.15s;
   font-weight: 500;
 }
-.single-mafia-target:active { border-color: var(--primary); background: rgba(233,30,99,0.08); }
-.single-mafia-target.selected { border-color: var(--primary); background: rgba(233,30,99,0.12); }
+.single-mafia-target:active { border-color: var(--primary); background: rgba(232,163,61,0.08); }
+.single-mafia-target.selected { border-color: var(--primary); background: rgba(232,163,61,0.12); }
 /* Animated narrator line */
 .narrator-line.animate-in {
   animation: narratorSlideIn 0.4s ease;
@@ -761,7 +815,7 @@ input::placeholder { color: var(--text-secondary); }
   top: 50%;
   width: 4px;
   height: 8px;
-  background: #d32f2f;
+  background: var(--danger);
   border-radius: 0 0 2px 2px;
   animation: blood-drip 0.8s ease-in infinite;
 }
@@ -846,7 +900,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 .skull { font-size: 120px; animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-.dead-text { font-size: 28px; font-weight: 800; color: var(--danger); text-transform: uppercase; letter-spacing: 4px; margin-top: 16px; }
+.dead-text { font-size: 28px; font-weight: 700; color: var(--danger); text-transform: uppercase; letter-spacing: 4px; margin-top: 16px; font-family: 'Silkscreen', monospace; }
 .death-message { color: var(--text-secondary); font-size: 14px; margin-top: 12px; padding: 0 32px; text-align: center; max-width: 350px; }
 .dead-dismiss-hint { color: var(--text-secondary); font-size: 13px; margin-top: 20px; opacity: 0.7; animation: pulse 2s ease-in-out infinite; }
 
@@ -893,7 +947,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* SLIDE CONFIRM - JOKER HAUNT */
 .slide-confirm.role-joker_haunt .slide-fill {
-  background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
+  background: linear-gradient(90deg, rgba(38,198,218,0.3), rgba(38,198,218,0.6));
 }
 
 /* SLIDE CONFIRM - HUNTER REVENGE (rgba of --role-hunter, like the other role skins) */
@@ -920,7 +974,7 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center;
   gap: 20px;
 }
-.gameover-content h1 { font-size: 36px; font-weight: 800; text-transform: uppercase; letter-spacing: 4px; }
+.gameover-content h1 { font-size: 36px; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; font-family: 'Silkscreen', monospace; }
 .gameover-content p { color: var(--text-secondary); font-size: 16px; padding: 0 16px; }
 
 /* MODAL */
@@ -952,7 +1006,7 @@ input::placeholder { color: var(--text-secondary); }
 .game-history-round:first-child { margin-top: 0; }
 .game-history-item { font-size: 14px; padding: 4px 0; color: var(--text); }
 .game-history-item.kill, .game-history-item.joker_haunt { color: var(--role-mafia); }
-.game-history-item.execution { color: #ff9800; }
+.game-history-item.execution { color: var(--warning); }
 .game-history-item.save { color: var(--role-doctor); }
 .game-history-item.lover_death { color: var(--role-lover); }
 .game-history-item.hunter_revenge { color: var(--role-hunter); }
@@ -1058,7 +1112,7 @@ input::placeholder { color: var(--text-secondary); }
 .event-item.kill, .event-item.joker_haunt { color: var(--danger); }
 .event-item.lover_death { color: var(--role-lover); }
 .event-item.save { color: var(--success); }
-.event-item.execution { color: #ff9800; }
+.event-item.execution { color: var(--warning); }
 .event-item.spared { color: var(--text-secondary); }
 .event-item.investigation_mafia { color: var(--danger); }
 .event-item.investigation_clear { color: var(--success); }
