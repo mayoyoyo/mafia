@@ -79,6 +79,15 @@
   function showScreen(name) {
     Object.values(screens).forEach((s) => s.classList.remove("active"));
     screens[name].classList.add("active");
+    // D2: phase ambience is only valid on the in-game screen. Clearing it here
+    // is the single chokepoint that covers every leave/return-to-lobby/menu/
+    // room_closed/logout/game-over path (which all route through showScreen) —
+    // no stale midnight lobby. applyPhaseChange()/handleGameSync re-set it after
+    // navigating to "game".
+    if (name !== "game") {
+      document.body.removeAttribute("data-phase");
+      syncThemeColor();
+    }
   }
 
   // ============================================================
@@ -598,6 +607,10 @@
 
     // 8. Show game screen with role card (face-down by default, like fresh start)
     showScreen("game");
+    // D2: rejoin must restore phase ambience — handleGameSync does NOT route
+    // through applyPhaseChange, so set data-phase here (showScreen cleared it).
+    document.body.setAttribute("data-phase", msg.phase);
+    syncThemeColor();
     updateRoleCard();
     resetCardPeel();
     $("card-back-art").innerHTML = pixelArtToSvg(isDead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
@@ -1513,6 +1526,12 @@
     previousPhase = msg.phase;
     currentPhase = msg.phase;
     $("round-number").textContent = msg.round;
+
+    // D2: phase-ambient theming — remap CSS tokens via a body attribute so the
+    // whole room shifts together (night→navy, day→warm, voting→blood accents).
+    // Cleared centrally in showScreen() on every return-to-lobby/menu path.
+    document.body.setAttribute("data-phase", msg.phase);
+    syncThemeColor();
 
     const indicator = $("phase-indicator");
     indicator.className = `phase-indicator ${msg.phase}`;
@@ -2599,6 +2618,14 @@
   function handleVoteCalled(msg, fromSync) {
     if (!fromSync) hasVoted = false;
 
+    // D2: an active execution ballot is the engine's "voting" sub-state, but the
+    // wire never broadcasts phase:"voting" (it arrives as vote_called over a
+    // day phase). Flip data-phase here so the blood tint scoped to .voting-panel
+    // lights up while the vote is live; handleVoteResult/cancel revert to the
+    // underlying phase. (game_sync rejoin mid-vote routes through here too.)
+    document.body.setAttribute("data-phase", "voting");
+    syncThemeColor();
+
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -2654,6 +2681,13 @@
 
   function handleVoteResult(msg) {
     $("voting-panel").classList.add("hidden");
+    // D2: ballot over — drop the voting tint back to the live phase (day). If an
+    // execution follows, the day/voting→night chain re-sets data-phase via
+    // applyPhaseChange; a spared vote stays on day, which this restores.
+    if (currentPhase) {
+      document.body.setAttribute("data-phase", currentPhase);
+      syncThemeColor();
+    }
     lastVoteResult = msg;
 
     const resultText = msg.executed
@@ -2757,10 +2791,20 @@
   });
 
   // Dark mode toggle
+  // D2: sync the browser-chrome <meta name="theme-color"> to the page bg so it
+  // tracks BOTH the theme AND the data-phase remap (night→navy, day→warm, etc.).
+  // Reading the computed --bg keeps one source of truth: the CSS cascade already
+  // resolves [data-theme] × [data-phase], so we just mirror the result.
+  function syncThemeColor() {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    const bg = getComputedStyle(document.body).getPropertyValue("--bg").trim();
+    if (bg) meta.setAttribute("content", bg);
+  }
+
   function applyTheme(dark) {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", dark ? "#0a0a0a" : "#f0ebe1");
+    syncThemeColor();
   }
 
   // Initialize theme from localStorage (dark by default)

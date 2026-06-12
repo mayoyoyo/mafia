@@ -96,6 +96,11 @@
 .pxb > .in { width: 100%; height: 100%; }
 
 /* ---- Texture utilities (static — zero new animations) ---- */
+/* TODO(D3+): .scanlines / .vignette / .dither-h are unused as standalone utility
+   classes — screen/overlay texture is currently applied via element-scoped
+   ::after/::before (e.g. .screen.active::after). D3 (icon/divider work) and D5
+   (suspense compositions) will either wire these in or drop them; left in place
+   intentionally so D2 ambience work introduces no churn here. */
 
 /* Scanlines: 1px line every 4px, pointer-events:none so it never blocks taps */
 .scanlines { position: relative; }
@@ -157,6 +162,76 @@
   --text: #f5f5f5;
   --text-secondary: #8e8e93;
 }
+
+/* ============================================================
+   PIXEL NOIR — D2: Phase ambience (token remaps on body[data-phase])
+   Set/cleared by JS (applyPhaseChange, handleGameSync, showScreen).
+   These selectors (specificity 0,1,1) intentionally override both :root and
+   [data-theme="light"] (0,1,0) so the room shifts together in EITHER theme —
+   a light-theme phone at night still reads as night. The role card re-declares
+   --bg-card/--border on itself, so it stays dark through every phase remap.
+   ============================================================ */
+
+/* NIGHT — deep navy, the whole room goes midnight together (mockup screen 02) */
+body[data-phase="night"] {
+  --bg: #0d1126;
+  --bg-card: #161d3d;
+  --bg-elevated: #121736;
+  --bg-input: #121736;
+  --border: #2b3568;
+}
+/* Light-theme night: same navy, panels lifted a touch so paper-ink text holds.
+   Night is a shared physical effect — it overrides paper even in light theme.
+   ([data-theme] lives on <html>, [data-phase] on <body>, so this is a descendant
+   match — higher specificity than the plain [data-theme="light"] paper block.) */
+[data-theme="light"] body[data-phase="night"] {
+  --bg: #0d1126;
+  --bg-card: #1b2348;
+  --bg-elevated: #161d3d;
+  --bg-input: #161d3d;
+  --border: #313c75;
+  --text: #ece5d8;
+  --text-secondary: #8a8fb0;
+}
+/* Moonlight radial wash at the top of the game screen at night (static). */
+body[data-phase="night"] #screen-game.active {
+  background-image: radial-gradient(ellipse 140% 60% at 50% -8%, rgba(58,76,150,0.55) 0%, transparent 60%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+/* DAY (dark theme): ink warmed slightly + amber accent emphasis. Light theme
+   already IS day (warm paper) — lean in with no bg remap, just amber emphasis. */
+body[data-phase="day"] {
+  --bg: #14110d;
+  --bg-card: #20191f;
+  --bg-elevated: #1b1620;
+  --bg-input: #1b1620;
+  --border: #3a3550;
+  --primary: #f0ab43;
+}
+[data-theme="light"] body[data-phase="day"] {
+  /* Paper is already day — keep it, just sharpen amber accents. */
+  --bg: #f0ebe1;
+  --bg-card: #faf7f2;
+  --bg-elevated: #e8e3d9;
+  --bg-input: #faf7f2;
+  --border: #d1cbc0;
+  --primary: #b87d24;
+}
+
+/* VOTING — bg stays phase-neutral dark; blood tint is SCOPED to the voting
+   panel only (verdict beats own red later — don't flood the screen). */
+body[data-phase="voting"] .voting-panel {
+  border-color: var(--danger-bright);
+  box-shadow: 0 0 0 1px rgba(212,49,60,0.25), 0 4px 24px rgba(179,32,42,0.22);
+}
+body[data-phase="voting"] .voting-panel h3 {
+  color: var(--danger-bright);
+}
+
+/* GAME_OVER — neutral: no remap (handled by clearing data-phase off the game
+   screen; the gameover screen never carries a phase). */
 
 html, body {
   height: 100%;
@@ -505,7 +580,9 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 2px;
   font-family: 'Silkscreen', monospace;
 }
-.phase-indicator.night { background: #0d1126; color: #6a6f95; }
+/* Phase pill rides the phase remap: amber-on-panel at night (so it reads on the
+   navy wash), amber fill by day, blood by voting. D3 adds pixel moon/sun art. */
+.phase-indicator.night { background: var(--bg-elevated); color: var(--primary); }
 .phase-indicator.day { background: var(--primary); color: #141008; }
 .phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
