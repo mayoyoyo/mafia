@@ -21,50 +21,7 @@
     <!-- AUTH SCREEN -->
     <div id="screen-auth" class="screen active">
       <div class="logo">
-        <div class="logo-icon">
-          <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-            <!-- Smoke trail -->
-            <rect x="12" y="6" width="1" height="1" fill="#aaa"/>
-            <rect x="13" y="5" width="1" height="1" fill="#888"/>
-            <rect x="14" y="4" width="1" height="1" fill="#555"/>
-            <!-- Fedora hat -->
-            <rect x="6" y="0" width="4" height="1" fill="#1a1a1a"/>
-            <rect x="5" y="1" width="6" height="1" fill="#222"/>
-            <rect x="5" y="2" width="6" height="1" fill="#222"/>
-            <rect x="3" y="3" width="10" height="1" fill="#2a2a2a"/>
-            <rect x="5" y="3" width="6" height="1" fill="#b71c1c"/>
-            <!-- Face - white, skinny -->
-            <rect x="6" y="4" width="4" height="1" fill="#fdd"/>
-            <!-- Eyes -->
-            <rect x="6" y="5" width="4" height="1" fill="#fdd"/>
-            <rect x="6" y="5" width="1" height="1" fill="#222"/>
-            <rect x="9" y="5" width="1" height="1" fill="#222"/>
-            <!-- Nose -->
-            <rect x="6" y="6" width="4" height="1" fill="#fdd"/>
-            <rect x="7" y="6" width="2" height="1" fill="#dbb"/>
-            <!-- Mouth + cigarette -->
-            <rect x="6" y="7" width="4" height="1" fill="#fdd"/>
-            <rect x="10" y="7" width="2" height="1" fill="#eee"/>
-            <rect x="12" y="7" width="1" height="1" fill="#e53935"/>
-            <!-- Chin -->
-            <rect x="6" y="8" width="4" height="1" fill="#fdd"/>
-            <!-- Suit collar + tie -->
-            <rect x="5" y="9" width="6" height="1" fill="#111"/>
-            <rect x="7" y="9" width="2" height="1" fill="#b71c1c"/>
-            <!-- Suit body + tie -->
-            <rect x="5" y="10" width="6" height="1" fill="#111"/>
-            <rect x="7" y="10" width="2" height="1" fill="#b71c1c"/>
-            <rect x="5" y="11" width="6" height="1" fill="#1a1a1a"/>
-            <rect x="7" y="11" width="2" height="1" fill="#b71c1c"/>
-            <rect x="6" y="12" width="4" height="1" fill="#1a1a1a"/>
-            <!-- Skinny legs -->
-            <rect x="6" y="13" width="2" height="1" fill="#111"/>
-            <rect x="8" y="13" width="2" height="1" fill="#111"/>
-            <!-- Shoes -->
-            <rect x="5" y="14" width="3" height="1" fill="#0a0a0a"/>
-            <rect x="8" y="14" width="3" height="1" fill="#0a0a0a"/>
-          </svg>
-        </div>
+        <div class="logo-icon" id="logo-icon-auth"></div>
         <h1>MAFIA</h1>
       </div>
       <div class="auth-form">
@@ -83,53 +40,10 @@
     <div id="screen-menu" class="screen">
       <!-- Pull to Refresh -->
       <div id="pull-refresh-menu" class="pull-refresh">
-        <div class="pull-refresh-spinner" id="pull-refresh-spinner-menu">&#8635;</div>
+        <div class="pull-refresh-spinner" id="pull-refresh-spinner-menu"></div>
       </div>
       <div class="logo logo-small">
-        <div class="logo-icon">
-          <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-            <!-- Smoke trail -->
-            <rect x="12" y="6" width="1" height="1" fill="#aaa"/>
-            <rect x="13" y="5" width="1" height="1" fill="#888"/>
-            <rect x="14" y="4" width="1" height="1" fill="#555"/>
-            <!-- Fedora hat -->
-            <rect x="6" y="0" width="4" height="1" fill="#1a1a1a"/>
-            <rect x="5" y="1" width="6" height="1" fill="#222"/>
-            <rect x="5" y="2" width="6" height="1" fill="#222"/>
-            <rect x="3" y="3" width="10" height="1" fill="#2a2a2a"/>
-            <rect x="5" y="3" width="6" height="1" fill="#b71c1c"/>
-            <!-- Face - white, skinny -->
-            <rect x="6" y="4" width="4" height="1" fill="#fdd"/>
-            <!-- Eyes -->
-            <rect x="6" y="5" width="4" height="1" fill="#fdd"/>
-            <rect x="6" y="5" width="1" height="1" fill="#222"/>
-            <rect x="9" y="5" width="1" height="1" fill="#222"/>
-            <!-- Nose -->
-            <rect x="6" y="6" width="4" height="1" fill="#fdd"/>
-            <rect x="7" y="6" width="2" height="1" fill="#dbb"/>
-            <!-- Mouth + cigarette -->
-            <rect x="6" y="7" width="4" height="1" fill="#fdd"/>
-            <rect x="10" y="7" width="2" height="1" fill="#eee"/>
-            <rect x="12" y="7" width="1" height="1" fill="#e53935"/>
-            <!-- Chin -->
-            <rect x="6" y="8" width="4" height="1" fill="#fdd"/>
-            <!-- Suit collar + tie -->
-            <rect x="5" y="9" width="6" height="1" fill="#111"/>
-            <rect x="7" y="9" width="2" height="1" fill="#b71c1c"/>
-            <!-- Suit body + tie -->
-            <rect x="5" y="10" width="6" height="1" fill="#111"/>
-            <rect x="7" y="10" width="2" height="1" fill="#b71c1c"/>
-            <rect x="5" y="11" width="6" height="1" fill="#1a1a1a"/>
-            <rect x="7" y="11" width="2" height="1" fill="#b71c1c"/>
-            <rect x="6" y="12" width="4" height="1" fill="#1a1a1a"/>
-            <!-- Skinny legs -->
-            <rect x="6" y="13" width="2" height="1" fill="#111"/>
-            <rect x="8" y="13" width="2" height="1" fill="#111"/>
-            <!-- Shoes -->
-            <rect x="5" y="14" width="3" height="1" fill="#0a0a0a"/>
-            <rect x="8" y="14" width="3" height="1" fill="#0a0a0a"/>
-          </svg>
-        </div>
+        <div class="logo-icon" id="logo-icon-menu"></div>
         <h1>MAFIA</h1>
       </div>
       <div class="header">
@@ -155,7 +69,7 @@
         <h2>Lobby</h2>
         <div class="header-right">
           <div class="room-code">Code: <span id="lobby-code"></span></div>
-          <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings">&#9881;</button>
+          <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings"></button>
         </div>
       </div>
 
@@ -246,7 +160,7 @@
         <h2>Lobby</h2>
         <div class="header-right">
           <div class="room-code">Code: <span id="lobby-code-player"></span></div>
-          <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings">&#9881;</button>
+          <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings"></button>
         </div>
       </div>
       <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
@@ -264,12 +178,12 @@
         <div class="phase-indicator" id="phase-indicator">Night</div>
         <div class="round-indicator">Round <span id="round-number">1</span></div>
         <div id="day-timer" class="day-timer hidden">00:00</div>
-        <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
+        <button id="btn-settings" class="btn btn-icon" title="Settings"></button>
       </div>
 
       <!-- Pull to Refresh -->
       <div id="pull-refresh" class="pull-refresh">
-        <div class="pull-refresh-spinner" id="pull-refresh-spinner">&#8635;</div>
+        <div class="pull-refresh-spinner" id="pull-refresh-spinner"></div>
       </div>
 
       <!-- Role Card -->
@@ -279,7 +193,7 @@
             <div id="role-image" class="role-image"></div>
             <div id="role-name" class="role-name"></div>
             <div id="role-description" class="role-description"></div>
-            <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
+            <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lover</div>
             <div id="role-icon-mini" class="role-icon-mini"></div>
             <div id="role-mini-balloon" class="role-mini-balloon hidden">
               <svg viewBox="0 0 7 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
@@ -302,7 +216,7 @@
             <div class="card-back-label">MEMBERSHIP CARD</div>
           </div>
           <div class="peel-flap"></div>
-          <div id="peel-hint" class="peel-hint hidden">peel to reveal &#8600;</div>
+          <div id="peel-hint" class="peel-hint hidden">peel to reveal <span class="peel-arrow-icon"></span></div>
         </div>
       </div>
 
@@ -310,7 +224,7 @@
       <div id="narrator-area" class="narrator-area">
         <div class="narrator-header">
           <span class="narrator-label">Narrator</span>
-          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript">&#128220;</button>
+          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript"></button>
         </div>
         <div id="narrator-messages" class="narrator-messages"></div>
       </div>
@@ -402,7 +316,7 @@
 
       <!-- Dead Overlay -->
       <div id="dead-overlay" class="dead-overlay hidden">
-        <div id="dead-emoji" class="skull">&#128128;</div>
+        <div id="dead-emoji" class="dead-skull-art"></div>
         <p class="dead-text">You are dead</p>
         <p id="death-message" class="death-message"></p>
         <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
@@ -410,7 +324,7 @@
 
       <!-- Joker Win Overlay (official mode — shows for everyone, dismissible) -->
       <div id="joker-win-overlay" class="joker-win-overlay hidden">
-        <div class="joker-trophy">&#127942;</div>
+        <div class="joker-trophy" id="joker-trophy-art"></div>
         <h2 class="joker-win-title">Joker Wins!</h2>
         <p id="joker-win-name" class="joker-win-name"></p>
         <p class="joker-win-hint">Tap to dismiss</p>

@@ -351,7 +351,9 @@ html, body {
    (user amendment). Neutralize the inherited .btn chrome (Silkscreen, padding,
    letter-spacing, pressed-edge) so it reads as a bare glyph button. Do NOT re-step.
    Lobby gear buttons keep .btn-icon as-is (D3 replaces them with pixel art). */
-.btn-icon { background: none; border: none; color: var(--text); font-size: 24px; padding: 4px 8px; cursor: pointer; clip-path: none; }
+/* D3b: btn-icon now hosts pixel art SVGs — drop font-size, size SVG via child rule */
+.btn-icon { background: none; border: none; color: var(--text); padding: 4px 8px; cursor: pointer; clip-path: none; display: inline-flex; align-items: center; justify-content: center; }
+.btn-icon svg { width: 24px; height: 24px; image-rendering: pixelated; vertical-align: middle; }
 #btn-close-settings.btn-icon {
   font-family: inherit;
   font-weight: 400;
@@ -696,11 +698,14 @@ input::placeholder { color: var(--text-secondary); }
   font-family: 'Silkscreen', monospace;
 }
 /* Phase pill rides the phase remap: amber-on-panel at night (so it reads on the
-   navy wash), amber fill by day, blood by voting. D3 adds pixel moon/sun art. */
+   navy wash), amber fill by day, blood by voting. D3b adds pixel moon/sun art. */
 .phase-indicator.night { background: var(--bg-elevated); color: var(--primary); }
 .phase-indicator.day { background: var(--primary); color: #141008; }
 .phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
+/* D3b: phase pill now has inline svg + text — align them */
+.phase-indicator { display: inline-flex; align-items: center; gap: 6px; }
+.phase-indicator svg { width: 16px; height: 16px; image-rendering: pixelated; flex-shrink: 0; }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
 .day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
 
@@ -831,6 +836,11 @@ input::placeholder { color: var(--text-secondary); }
   font-weight: 600;
   font-family: 'Silkscreen', monospace;
 }
+/* D3b: pixel heart icon in lover-badge, pixel arrow in peel-hint */
+.lover-badge-icon { display: inline-flex; vertical-align: middle; margin-right: 2px; }
+.lover-badge-icon svg { width: 14px; height: 14px; image-rendering: pixelated; vertical-align: middle; }
+.peel-arrow-icon { display: inline-flex; vertical-align: middle; }
+.peel-arrow-icon svg { width: 12px; height: 12px; image-rendering: pixelated; vertical-align: middle; }
 .role-icon-mini {
   position: absolute;
   bottom: 12px;
@@ -866,16 +876,16 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: center;
   transition: height 0.3s ease;
 }
+/* D3b: pull-refresh spinner now hosts pixel art SVG (refresh icon) */
 .pull-refresh-spinner {
-  font-size: 28px;
-  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.1s;
 }
-.pull-refresh.ready .pull-refresh-spinner {
-  color: var(--primary);
-}
+.pull-refresh-spinner svg { width: 28px; height: 28px; image-rendering: pixelated; }
+.pull-refresh.ready .pull-refresh-spinner svg { opacity: 1; }
 .pull-refresh.refreshing .pull-refresh-spinner {
-  color: var(--primary);
   animation: ptr-spin 0.8s linear infinite;
 }
 @keyframes ptr-spin {
@@ -898,7 +908,9 @@ input::placeholder { color: var(--text-secondary); }
   margin-bottom: 8px;
 }
 .narrator-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px; font-family: 'Silkscreen', monospace; }
-.btn-transcript { font-size: 20px; padding: 2px 6px; }
+/* D3b: transcript button now hosts pixel scroll SVG */
+.btn-transcript { padding: 2px 6px; }
+.btn-transcript svg { width: 20px; height: 20px; image-rendering: pixelated; }
 .narrator-messages { font-size: 15px; line-height: 1.6; }
 .narrator-messages .narrator-line {
   padding: 8px 0;
@@ -938,7 +950,12 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 15px;
   line-height: 1.5;
   animation: fadeIn 0.5s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+/* D3b: pixel magnifier icon in detective result */
+.detective-result svg { width: 18px; height: 18px; image-rendering: pixelated; flex-shrink: 0; }
 
 /* ACTION PANEL */
 .action-panel {
@@ -1061,6 +1078,10 @@ input::placeholder { color: var(--text-secondary); }
   gap: 4px;
   flex: 1;
 }
+/* D3b: pixel icon + Silkscreen label inside mtc buttons */
+.mtc-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mtc-icon svg { width: 16px; height: 16px; image-rendering: pixelated; }
+.mtc-label { font-family: 'Silkscreen', monospace; font-size: 11px; font-weight: 400; letter-spacing: 0.5px; }
 .mtc-btn:active { transform: scale(0.97); opacity: 0.8; }
 .mtc-btn-suggest { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 .mtc-btn-lock { background: var(--primary); color: #fff; }
@@ -1326,7 +1347,9 @@ input::placeholder { color: var(--text-secondary); }
   background: radial-gradient(ellipse 90% 55% at 50% 42%, transparent 45%, rgba(0,0,0,0.6) 100%);
   z-index: 2;
 }
-.skull { font-size: 120px; animation: pulse 2s ease-in-out infinite; }
+/* D3b: pixel art dead-skull — replaces font-size emoji .skull */
+.dead-skull-art { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
+.dead-skull-art svg { width: 80px; height: 80px; image-rendering: pixelated; filter: drop-shadow(0 0 12px var(--danger)); }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 .dead-text { font-size: 28px; font-weight: 700; color: var(--danger); text-transform: uppercase; letter-spacing: 4px; margin-top: 16px; font-family: 'Silkscreen', monospace; }
 .death-message { color: var(--text-secondary); font-size: 14px; margin-top: 12px; padding: 0 32px; text-align: center; max-width: 350px; }
@@ -1361,7 +1384,9 @@ input::placeholder { color: var(--text-secondary); }
   background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.55) 100%);
   z-index: 2;
 }
-.joker-trophy { font-size: 100px; animation: pulse 2s ease-in-out infinite; }
+/* D3b: pixel art joker trophy — replaces font-size emoji .joker-trophy */
+.joker-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
+.joker-trophy svg { width: 80px; height: 80px; image-rendering: pixelated; }
 .joker-win-title {
   font-size: 36px;
   font-weight: 800;
@@ -1383,11 +1408,13 @@ input::placeholder { color: var(--text-secondary); }
   animation: pulse 2s ease-in-out infinite;
 }
 
-/* JOKER TROPHY BADGE (game over role reveal) */
+/* JOKER TROPHY BADGE (game over role reveal) — D3b: pixel art */
 .role-reveal-trophy {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
   margin-left: 6px;
 }
+.role-reveal-trophy svg { width: 16px; height: 16px; image-rendering: pixelated; }
 
 /* SLIDE CONFIRM - JOKER HAUNT (re-pointed at --role-joker token, D1c) */
 .slide-confirm.role-joker_haunt .slide-fill {
@@ -1509,7 +1536,9 @@ input::placeholder { color: var(--text-secondary); }
 .role-reveal-role.detective { background: var(--role-detective); color: #fff; }
 .role-reveal-role.joker { background: var(--role-joker); color: #fff; }
 .role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }
-.role-reveal-lover { font-size: 12px; color: var(--role-lover); margin-left: 8px; }
+/* D3b: role-reveal-lover now has pixel heart art */
+.role-reveal-lover { display: inline-flex; align-items: center; gap: 3px; color: var(--role-lover); margin-left: 8px; font-size: 12px; }
+.role-reveal-lover svg { width: 12px; height: 12px; image-rendering: pixelated; }
 .role-reveal-dead { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
 
 /* EVENT HISTORY */
@@ -1555,7 +1584,9 @@ input::placeholder { color: var(--text-secondary); }
   border: 1px solid var(--role-mafia); border-radius: 4px;
   padding: 1px 5px; margin-left: auto; letter-spacing: 0.5px;
 }
-.detective-tag { margin-left: auto; font-size: 16px; line-height: 1; }
+/* D3b: detective-tag now hosts pixel thumbs art */
+.detective-tag { margin-left: auto; display: inline-flex; align-items: center; }
+.detective-tag svg { width: 16px; height: 16px; image-rendering: pixelated; }
 .event-history-list { font-size: 13px; line-height: 1.6; }
 .event-history-round {
   font-size: 11px;
@@ -1618,7 +1649,14 @@ input::placeholder { color: var(--text-secondary); }
   animation: suspenseFadeIn 0.8s ease;
   position: relative;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
+/* D3b: pixel art icons in suspense text */
+.suspense-text svg { width: 28px; height: 28px; image-rendering: pixelated; flex-shrink: 0; }
 @keyframes suspenseFadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }

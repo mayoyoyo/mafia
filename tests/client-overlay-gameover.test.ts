@@ -102,7 +102,7 @@ describe("L5: game_over queues behind active overlay transitions", () => {
 
     expect(beats.map((b) => b.text)).toEqual([
       "Alice was executed.",
-      "\u{1F494} Bob died of heartbreak.",
+      " Bob died of heartbreak.",
       "The game is over...",
       "Mafia Wins!",
     ]);
@@ -138,7 +138,7 @@ describe("L5: game_over queues behind active overlay transitions", () => {
       events: [],
       loverDeathName: "Bob",
     });
-    expect($("suspense-text").textContent).toBe("\u{1F494} Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
 
     serverSays({
       type: "game_over",
@@ -146,12 +146,12 @@ describe("L5: game_over queues behind active overlay transitions", () => {
       message: "The Mafia wins!",
       players: REVEAL_PLAYERS,
     });
-    expect($("suspense-text").textContent).toBe("\u{1F494} Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
 
     const beats = await recordBeats(ms(11000));
 
     expect(beats.map((b) => b.text)).toEqual([
-      "\u{1F494} Bob died of heartbreak.",
+      " Bob died of heartbreak.",
       "The game is over...",
       "Mafia Wins!",
     ]);
@@ -203,7 +203,7 @@ describe("L5 follow-up: held game_over is discarded when the game context ends",
       events: [],
       loverDeathName: "Bob",
     });
-    expect($("suspense-text").textContent).toBe("\u{1F494} Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
     serverSays({
       type: "game_over",
       winner: "mafia",
@@ -211,7 +211,7 @@ describe("L5 follow-up: held game_over is discarded when the game context ends",
       players: REVEAL_PLAYERS,
     });
     // Held — the beat is still on screen.
-    expect($("suspense-text").textContent).toBe("\u{1F494} Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
   }
 
   test("room_closed mid-chain: stale game_over must not stomp the menu", async () => {

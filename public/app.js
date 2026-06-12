@@ -500,7 +500,8 @@
         // If joker win overlay is already showing, skip the death overlay
         if (!jokerWonOverlayShown) {
           $("dead-overlay").classList.remove("hidden");
-          $("dead-emoji").textContent = msg.isLoverDeath ? "\u{1F494}" : "\u{1F480}";
+          // D3b: pixel art skull or heartbreak art instead of emoji
+          $("dead-emoji").innerHTML = pixelArtToSvg(msg.isLoverDeath ? HEARTBREAK_ART : CARD_BACK_DEAD_ART);
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
@@ -617,10 +618,16 @@
     $("dead-dismiss-hint").classList.add("hidden");
     $("round-number").textContent = msg.round;
 
-    // Phase indicator
+    // Phase indicator (D3b: pixel moon/sun art)
     const indicator = $("phase-indicator");
     indicator.className = `phase-indicator ${msg.phase}`;
-    indicator.textContent = msg.phase.toUpperCase();
+    if (msg.phase === "night") {
+      indicator.innerHTML = pixelArtToSvg(MOON_ART) + " " + msg.phase.toUpperCase();
+    } else if (msg.phase === "day" || msg.phase === "voting") {
+      indicator.innerHTML = pixelArtToSvg(SUN_ART) + " " + msg.phase.toUpperCase();
+    } else {
+      indicator.textContent = msg.phase.toUpperCase();
+    }
 
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
@@ -1536,7 +1543,15 @@
 
     const indicator = $("phase-indicator");
     indicator.className = `phase-indicator ${msg.phase}`;
-    indicator.textContent = msg.phase === "game_over" ? "GAME OVER" : msg.phase.toUpperCase();
+    // D3b: phase pill gets pixel moon/sun art alongside text
+    var phaseLabel = msg.phase === "game_over" ? "GAME OVER" : msg.phase.toUpperCase();
+    if (msg.phase === "night") {
+      indicator.innerHTML = pixelArtToSvg(MOON_ART) + " " + phaseLabel;
+    } else if (msg.phase === "day" || msg.phase === "voting") {
+      indicator.innerHTML = pixelArtToSvg(SUN_ART) + " " + phaseLabel;
+    } else {
+      indicator.textContent = phaseLabel;
+    }
 
     // Clear visible narrator for new phase (transcript preserves history)
     $("narrator-messages").innerHTML = "";
@@ -1650,7 +1665,8 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
-    text.textContent = `\u{1F494} ${loverName} died of heartbreak.`;
+    // D3b: pixel heartbreak art + text instead of emoji
+    text.innerHTML = pixelArtToSvg(HEARTBREAK_ART) + " " + escapeHtml(loverName) + " died of heartbreak.";
     text.style.color = "#9c27b0";
     text.style.animation = "none";
     void text.offsetWidth;
@@ -1745,10 +1761,14 @@
     const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
     const killEvent = roundEvents.find((e) => e.type === "kill");
     const victimName = killEvent ? killEvent.playerName : "Someone";
-    if (hasSave && hasKill) return { text: `\u{1F6E1}\uFE0F A life was saved... but ${victimName} didn't make it.`, color: "#2196f3" };
-    if (hasSave) return { text: "\u{1F6E1}\uFE0F The Doctor saved a life!", color: "#2196f3" };
-    if (hasKill) return { text: `\u{1F480} ${victimName} didn't survive the night.`, color: "#d32f2f" };
-    return { text: "\u{1F319} A peaceful night... somehow.", color: "#8e8e93" };
+    // D3b: pixel art icons instead of emoji
+    const crossSvg = pixelArtToSvg(CROSS_ART);
+    const skullSvg = pixelArtToSvg(CARD_BACK_DEAD_ART);
+    const moonSvg = pixelArtToSvg(MOON_ART);
+    if (hasSave && hasKill) return { html: crossSvg + ` A life was saved... but ${victimName} didn\u2019t make it.`, color: "#2196f3" };
+    if (hasSave) return { html: crossSvg + " The Doctor saved a life!", color: "#2196f3" };
+    if (hasKill) return { html: skullSvg + ` ${victimName} didn\u2019t survive the night.`, color: "#d32f2f" };
+    return { html: moonSvg + " A peaceful night... somehow.", color: "#8e8e93" };
   }
 
   function showSuspenseTransition(msg, callback) {
@@ -1776,7 +1796,8 @@
 
     setTimeout(() => {
       const verdict = getNightVerdict(msg);
-      text.textContent = verdict.text;
+      // D3b: verdict now has .html (pixel art svg + text)
+      text.innerHTML = verdict.html;
       text.style.color = verdict.color;
       text.style.animation = "none";
       void text.offsetWidth;
@@ -1785,7 +1806,8 @@
 
     if (hasLoverDeath) {
       setTimeout(() => {
-        text.textContent = `\u{1F494} ${msg.loverDeathName} died of heartbreak.`;
+        // D3b: pixel heartbreak art instead of emoji
+        text.innerHTML = pixelArtToSvg(HEARTBREAK_ART) + " " + escapeHtml(msg.loverDeathName) + " died of heartbreak.";
         text.style.color = "#9c27b0";
         text.style.animation = "none";
         void text.offsetWidth;
@@ -1817,12 +1839,14 @@
 
   function showDetectiveResult(msg) {
     const el = $("detective-result");
-    const text = msg.isMafia
-      ? `\u{1F50D} Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
-      : `\u{1F50D} Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
-    el.textContent = text;
+    // D3b: pixel magnifier icon instead of emoji
+    const magSvg = pixelArtToSvg(MAGNIFIER_ART);
+    const plainText = msg.isMafia
+      ? `Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
+      : `Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
+    el.innerHTML = magSvg + " " + plainText;
     el.classList.remove("hidden");
-    narratorTranscript.push(text);
+    narratorTranscript.push(plainText);
     detectiveHistory.push({
       round: parseInt($("round-number").textContent) || 1,
       targetName: msg.targetName,
@@ -1935,7 +1959,7 @@
           <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
           ${showMafiaTag ? '<span class="mafia-tag">MAFIA</span>' : ''}
-          ${investigated ? (isMafia ? '<span class="detective-tag mafia">\u{1F44E}</span>' : '<span class="detective-tag clear">\u{1F44D}</span>') : ''}
+          ${investigated ? (isMafia ? '<span class="detective-tag mafia">' + pixelArtToSvg(THUMB_DOWN_ART) + '</span>' : '<span class="detective-tag clear">' + pixelArtToSvg(THUMB_UP_ART) + '</span>') : ''}
         </div>`;
       })
       .join("");
@@ -2222,7 +2246,8 @@
         } else if (cardState === "idle") {
           const nomBtn = document.createElement("button");
           nomBtn.className = "mtc-btn mtc-btn-suggest";
-          nomBtn.textContent = "\u{1F449} Nominate";
+          // D3b: pixel POINT icon + Silkscreen label — mechanics unchanged
+          nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
           nomBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (nightActionLocked) return;
@@ -2232,7 +2257,8 @@
 
           const spareBtn = document.createElement("button");
           spareBtn.className = "mtc-btn mtc-btn-object";
-          spareBtn.textContent = "\u{274C} Spare";
+          // D3b: pixel X icon + Silkscreen label
+          spareBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span><span class="mtc-label">Spare</span>';
           spareBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (nightActionLocked) return;
@@ -2257,13 +2283,15 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              lockBtn.textContent = "\u{1F512} Lock In";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
@@ -2277,13 +2305,15 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              lockBtn.textContent = "\u{1F512} Lock In";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
@@ -2294,7 +2324,8 @@
           } else {
             const nomBtn = document.createElement("button");
             nomBtn.className = "mtc-btn mtc-btn-suggest";
-            nomBtn.textContent = "\u{1F449} Nominate";
+            // D3b: pixel POINT icon + Silkscreen label
+            nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
             nomBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (nightActionLocked) return;
@@ -2306,7 +2337,8 @@
           if (myVoteType !== "letsnot") {
             const objBtn = document.createElement("button");
             objBtn.className = "mtc-btn mtc-btn-object";
-            objBtn.textContent = "\u{274C}";
+            // D3b: pixel X icon (spare/object shorthand)
+            objBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span>';
             objBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (nightActionLocked) return;
@@ -2729,7 +2761,8 @@
   function showJokerWinOverlay(jokerName) {
     // Show using the death overlay but with joker-specific content
     $("dead-overlay").classList.remove("hidden");
-    $("dead-emoji").textContent = "\u{1F0CF}"; // joker card emoji
+    // D3b: pixel clown art instead of joker card emoji
+    $("dead-emoji").innerHTML = pixelArtToSvg(CLOWN_ART);
     $("death-message").textContent = "You achieved a joint victory!";
     $("dead-dismiss-hint").classList.remove("hidden");
   }
@@ -3055,9 +3088,10 @@
     container.innerHTML = sorted
       .map((p) => {
         const dead = !p.isAlive;
-        const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">\u2764 ${escapeHtml(loverPairs[p.id])}</span>` : "";
+        // D3b: pixel art icons instead of emoji
+        const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
-        const trophyText = (jokerJointWinner && p.role === "joker") ? '<span class="role-reveal-trophy">\uD83C\uDFC6</span>' : "";
+        const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
         return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
           <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
@@ -3513,11 +3547,62 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.3_202606100708";
-  const APP_VERSION_STAGING = "staging.16_202606120831";
+  const APP_VERSION_STAGING = "staging.17_202606121635";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
+
+  // D3b: Mascot single-sourcing — render MASCOT_ART into both logo containers
+  (function() {
+    var mascotSvg = pixelArtToSvg(MASCOT_ART, 16);
+    var authIcon = document.getElementById("logo-icon-auth");
+    var menuIcon = document.getElementById("logo-icon-menu");
+    if (authIcon) authIcon.innerHTML = mascotSvg;
+    if (menuIcon) menuIcon.innerHTML = mascotSvg;
+  })();
+
+  // D3b: Wire pixel icons into all static emoji/entity sites
+  (function() {
+    // Gear icon into all three settings buttons
+    var gearSvg = pixelArtToSvg(GEAR_ART);
+    var settingsButtons = ["btn-settings-lobby-admin", "btn-settings-lobby-player", "btn-settings"];
+    settingsButtons.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.innerHTML = gearSvg;
+    });
+
+    // Scroll icon into transcript button
+    var scrollSvg = pixelArtToSvg(SCROLL_ART);
+    var transcriptBtn = document.getElementById("btn-transcript");
+    if (transcriptBtn) transcriptBtn.innerHTML = scrollSvg;
+
+    // Refresh icon into pull-refresh spinners
+    var refreshSvg = pixelArtToSvg(REFRESH_ART);
+    ["pull-refresh-spinner-menu", "pull-refresh-spinner"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.innerHTML = refreshSvg;
+    });
+
+    // Skull into dead overlay (default state — JS also updates on you_died)
+    var deadEl = document.getElementById("dead-emoji");
+    if (deadEl) deadEl.innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+
+    // Trophy into joker win overlay
+    var trophyEl = document.getElementById("joker-trophy-art");
+    if (trophyEl) trophyEl.innerHTML = pixelArtToSvg(TROPHY_ART);
+
+    // Heart icon into lover-badge
+    var loverIcon = document.querySelector(".lover-badge-icon");
+    if (loverIcon) loverIcon.innerHTML = pixelArtToSvg(HEART_ART);
+
+    // Peel arrow — small pixel arrow (use bottom-right pointing arrow via rotated REFRESH or
+    // a simple inline SVG southeast arrow consistent with the pixel system)
+    // We use a small hand/point rotated to indicate "peel" direction.
+    // The spec says "peel hint arrow &#8600;" — wire a simple 10x10 pixel southeast arrow.
+    var peelIcon = document.querySelector(".peel-arrow-icon");
+    if (peelIcon) peelIcon.innerHTML = pixelArtToSvg(POINT_ART);
+  })();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
