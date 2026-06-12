@@ -106,19 +106,18 @@ describe("C7: app.css per-role classes", () => {
     expect(css).toContain(".game-history-item.hunter_revenge { color: var(--role-hunter); }");
   });
 
-  test("the C5a revenge slide-fill is reconciled to --role-hunter (rgba of the var color, like every other role's slide skin)", () => {
-    const varMatch = css.match(/--role-hunter:\s*(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))\s*;/);
-    expect(varMatch).not.toBeNull();
-    let hex = varMatch![1];
-    if (hex.length === 4) hex = "#" + [...hex.slice(1)].map((c) => c + c).join("");
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
+  test("the revenge slide-fill is re-pointed at the --role-hunter token (D1c: every role's slide skin now derives from its CSS variable, not a baked rgba literal)", () => {
+    // D1c reskin: the slide fills were re-pointed at the token palette via
+    // color-mix(in srgb, var(--role-X) N%, transparent) so a token change can
+    // never leave the slide skin stale. The hunter block must reference the
+    // --role-hunter variable directly rather than a hardcoded rgba of #ef6c00.
     const block = css.match(/\.slide-confirm\.role-hunter_revenge \.slide-fill\s*\{([^}]*)\}/);
     expect(block).not.toBeNull();
-    expect(block![1]).toContain(`rgba(${r},${g},${b}`);
-    // The C5a ad-hoc green must be gone.
+    expect(block![1]).toContain("var(--role-hunter)");
+    expect(block![1]).toContain("color-mix(in srgb");
+    // The C5a ad-hoc green must be gone (no green leak in any form).
     expect(css).not.toContain("rgba(46,125,50");
+    expect(css).not.toContain("#2e7d32");
   });
 });
 

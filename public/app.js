@@ -1254,6 +1254,12 @@
     let dragging = false;
     let startX = 0;
     let trackWidth = 0;
+    // iconWidth (handle size) and padding (resting inset) are MEASURED at
+    // drag-start from the live layout instead of hardcoded 48/4 — the D1c
+    // reskin changes the handle's box, and measuring keeps the drag
+    // thresholds locked to whatever the rendered geometry actually is. The
+    // handle is laid out (not display:none) whenever onStart can fire, so the
+    // reads are valid; see the getBoundingClientRect hit-test below.
     let iconWidth = 48;
     let padding = 4;
 
@@ -1268,6 +1274,12 @@
       if (dx < 0 || dx > iconRect.width || dy < 0 || dy > iconRect.height) return;
       e.preventDefault();
       dragging = true;
+      // Measure the live handle geometry while it is at rest (left:4px from
+      // setup/snap-back) — offsetWidth is the rendered handle box; the resting
+      // computed `left` is the symmetric track inset the math clamps against.
+      iconWidth = icon.offsetWidth || iconWidth;
+      const restingLeft = parseFloat(getComputedStyle(icon).left);
+      if (!Number.isNaN(restingLeft)) padding = restingLeft;
       startX = touch.clientX - icon.offsetLeft;
       const trackEl = container.querySelector(".slide-track");
       trackWidth = trackEl.offsetWidth;
@@ -1311,8 +1323,9 @@
         cb();
         setTimeout(() => hideSlideConfirm(), 400);
       } else {
-        // Snap back
-        icon.style.left = "4px";
+        // Snap back to the measured resting inset (matches the CSS left:4px,
+        // but stays locked to whatever the reskin's inset actually is).
+        icon.style.left = padding + "px";
         fill.style.width = "0";
         fill.classList.remove("dripping");
       }

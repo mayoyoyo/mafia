@@ -943,12 +943,19 @@ input::placeholder { color: var(--text-secondary); }
 .target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
 /* SLIDE-TO-CONFIRM */
 .slide-confirm { width: 100%; margin-top: 12px; }
+/* Pixel Noir slide (D1c) — stepped-corner track with a 2px stepped border
+   (frame = border color, inner = ink surface), per mockup screen 02. The INNER
+   .slide-track is the measured element AND the handle's offsetParent, so the
+   drag math stays internally consistent. */
+.slide-track-frame {
+  width: 100%;
+  background: var(--border);
+  padding: 2px;
+}
 .slide-track {
   position: relative;
   height: 56px;
-  border-radius: 28px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--bg);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -960,9 +967,9 @@ input::placeholder { color: var(--text-secondary); }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 2px;
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 4px;
   text-transform: uppercase;
   color: var(--text-secondary);
   pointer-events: none;
@@ -974,21 +981,38 @@ input::placeholder { color: var(--text-secondary); }
   top: 0;
   bottom: 0;
   width: 0;
-  border-radius: 28px 0 0 28px;
   z-index: 0;
   transition: width 0.15s ease;
 }
+/* Dithered leading edge — 6px conic checker tinted to the active role */
+.slide-fill::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background-image: conic-gradient(var(--slide-tint, var(--border)) 25%, transparent 25% 50%, var(--slide-tint, var(--border)) 50% 75%, transparent 75%);
+  background-size: 6px 6px;
+}
 .slide-confirm.dragging .slide-fill { transition: none; }
+/* Role-tinted fills — re-pointed at the token palette (D1c): the gradient and
+   the dither edge both derive from the role's CSS variable so a token change
+   can never leave the slide skin stale. */
 .slide-confirm.role-mafia .slide-fill {
-  background: linear-gradient(90deg, rgba(211,47,47,0.3), rgba(211,47,47,0.6));
+  --slide-tint: var(--role-mafia);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-mafia) 30%, transparent), color-mix(in srgb, var(--role-mafia) 60%, transparent));
 }
 .slide-confirm.role-doctor .slide-fill {
-  background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
+  --slide-tint: var(--role-doctor);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-doctor) 30%, transparent), color-mix(in srgb, var(--role-doctor) 60%, transparent));
 }
 .slide-confirm.role-detective .slide-fill {
-  background: linear-gradient(90deg, rgba(156,39,176,0.3), rgba(156,39,176,0.6));
+  --slide-tint: var(--role-detective);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-detective) 30%, transparent), color-mix(in srgb, var(--role-detective) 60%, transparent));
 }
-.slide-confirm.role-mafia .slide-fill.dripping::after {
+/* Existing mafia flavor — blood drip stays (existing animation, not new payoff) */
+.slide-confirm.role-mafia .slide-fill.dripping::before {
   content: "";
   position: absolute;
   right: -2px;
@@ -996,22 +1020,22 @@ input::placeholder { color: var(--text-secondary); }
   width: 4px;
   height: 8px;
   background: var(--danger);
-  border-radius: 0 0 2px 2px;
+  z-index: 1;
   animation: blood-drip 0.8s ease-in infinite;
 }
 @keyframes blood-drip {
   0% { transform: translateY(0); opacity: 1; }
   100% { transform: translateY(16px); opacity: 0; }
 }
+/* Handle — bordered pixel square carrying the role icon (mockup screen 02) */
 .slide-icon {
   position: absolute;
   left: 4px;
   top: 4px;
   width: 48px;
   height: 48px;
-  border-radius: 50%;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--slide-tint, var(--border));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1019,15 +1043,17 @@ input::placeholder { color: var(--text-secondary); }
   cursor: grab;
   transition: left 0.15s ease;
 }
+.slide-confirm.role-mafia .slide-icon { --slide-tint: var(--role-mafia); }
+.slide-confirm.role-doctor .slide-icon { --slide-tint: var(--role-doctor); }
+.slide-confirm.role-detective .slide-icon { --slide-tint: var(--role-detective); }
+.slide-confirm.role-joker_haunt .slide-icon { --slide-tint: var(--role-joker); }
+.slide-confirm.role-hunter_revenge .slide-icon { --slide-tint: var(--role-hunter); }
 .slide-confirm.dragging .slide-icon { transition: none; cursor: grabbing; }
 .slide-icon svg { width: 28px; height: 28px; image-rendering: pixelated; }
-.slide-confirm.confirmed .slide-track {
-  background: var(--success);
-  border-color: var(--success);
-}
+.slide-confirm.confirmed .slide-track-frame { background: var(--success); }
+.slide-confirm.confirmed .slide-track { background: var(--success); }
 .slide-confirm.confirmed .slide-label {
   color: #fff;
-  font-weight: 700;
 }
 .slide-confirm.confirmed .slide-fill { width: 100% !important; opacity: 0; }
 .slide-confirm.confirmed .slide-icon { opacity: 0; }
@@ -1166,14 +1192,16 @@ input::placeholder { color: var(--text-secondary); }
   margin-left: 6px;
 }
 
-/* SLIDE CONFIRM - JOKER HAUNT */
+/* SLIDE CONFIRM - JOKER HAUNT (re-pointed at --role-joker token, D1c) */
 .slide-confirm.role-joker_haunt .slide-fill {
-  background: linear-gradient(90deg, rgba(38,198,218,0.3), rgba(38,198,218,0.6));
+  --slide-tint: var(--role-joker);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-joker) 30%, transparent), color-mix(in srgb, var(--role-joker) 60%, transparent));
 }
 
-/* SLIDE CONFIRM - HUNTER REVENGE (rgba of --role-hunter, like the other role skins) */
+/* SLIDE CONFIRM - HUNTER REVENGE (re-pointed at --role-hunter token, D1c) */
 .slide-confirm.role-hunter_revenge .slide-fill {
-  background: linear-gradient(90deg, rgba(239,108,0,0.3), rgba(239,108,0,0.6));
+  --slide-tint: var(--role-hunter);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-hunter) 30%, transparent), color-mix(in srgb, var(--role-hunter) 60%, transparent));
 }
 
 /* SETTINGS MODAL */
