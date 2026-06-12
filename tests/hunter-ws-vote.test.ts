@@ -1,0 +1,601 @@
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import type { Role } from "../src/types";
+import {
+  type HunterServer, type HunterGame,
+  spawnServer, teardownServer, waitFor, waitMatch, assertSilence, collectFor,
+  send, setupGame as setupGameH, forceDawnToDay, lynchByVote, mafiaSoloKill,
+  closeAll, revengeTimerEvents, revengeGateRejects, indexOfMsg,
+} from "./helpers/ws-harness";
+
+/**
+ * C3b — WS half of the Hunter revenge flow, VOTE path (HUNTER-DESIGN §3.6,
+ * §4, §6, §9): edge E4 (day-lynch interrupt — direct, heartbreak, and the
+ * official-joker resume with preserveHauntVoters) and edge E8 (the M7
+ * gate-rejection sweep + the gate-clearing forced transitions). The night
+ * path (E1/E6/E9) is C3a in tests/hunter-ws-night.test.ts; rejoin
+ * mid-revenge (E10) is C4.
+ *
+ * Port band 23600-23999 is claimed by this file (taken elsewhere: 4567,
+ * 5567, 6567, 7600, 8600, 9600, 10600, 11600, 12600; 13600-17600 reserved;
+ * 18600-19999 + 21600-21999 goldens; 20600-20999 structured-logging;
+ * 22600-22999 hunter-ws-night). Sub-bands, one fixed deal per server
+ * process (the MAFIA_FIXED_DEAL env seam is process-wide):
+ *   server A 23600-23689 — base deal, no lovers, default 60s revenge
+ *     timeout (gates that must HOLD through silence windows): E4 base ×2,
+ *     E8 rejection sweep, E8 force_dawn-rejected-at-voting-gate;
+ *   server B 23700-23789 — lovers hunter+P3(citizen), 60s: E4 heartbreak;
+ *   server C 23800-23889 — joker at P3, lovers hunter+joker, 60s: E4
+ *     official-joker variant (the preserveHauntVoters payoff);
+ *   server D 23900-23989 — base deal, revenge timeout shortened to 1500ms
+ *     via MAFIA_REVENGE_TIMER_MS: the E8 gate-CLEARING forced transitions,
+ *     where "cleared, NOT fired" is proven by waiting past the would-be
+ *     expiry (the C3a E9 discipline; no real 60s waits anywhere).
+ *
+ * Lover pairing over WS: the existing MAFIA_FIXED_DEAL seam already carries
+ * `lovers: [i, j]` (join-order indices — assignFixedRoles pairs them
+ * directly); no seam extension was needed.
+ */
+
+const PORT_A = 23600 + Math.floor(Math.random() * 90); // 23600-23689
+const PORT_B = 23700 + Math.floor(Math.random() * 90); // 23700-23789
+const PORT_C = 23800 + Math.floor(Math.random() * 90); // 23800-23889
+const PORT_D = 23900 + Math.floor(Math.random() * 90); // 23900-23989
+const SHORT_REVENGE_MS = 1500;
+
+// Seat indices into every deal (join order). P3 is the variable seat:
+// citizen (A/D), the hunter's lover-citizen (B), the hunter's lover-joker (C).
+const ADMIN = 0, MAFIA = 1, HUNTER = 2, P3 = 3, CIT_B = 4, CIT_C = 5;
+
+const BASE_ROLES: Role[] = ["citizen", "mafia", "hunter", "citizen", "citizen", "citizen"];
+const JOKER_ROLES: Role[] = ["citizen", "mafia", "hunter", "joker", "citizen", "citizen"];
+
+const BASE_SETTINGS = {
+  mafiaCount: 1, enableDoctor: false, enableDetective: false,
+  enableJoker: false, enableHunter: true, enableLovers: false,
+};
+const LOVERS_SETTINGS = { ...BASE_SETTINGS, enableLovers: true };
+const JOKER_SETTINGS = {
+  ...BASE_SETTINGS, enableJoker: true, enableLovers: true, jokerMode: "official",
+};
+
+// ── Per-band server subprocesses (harness: tests/helpers/ws-harness.ts) ────
+
+let serverA: HunterServer | null = null;
+let serverB: HunterServer | null = null;
+let serverC: HunterServer | null = null;
+let serverD: HunterServer | null = null;
+
+beforeAll(async () => {
+  [serverA, serverB, serverC, serverD] = await Promise.all([
+    spawnServer(PORT_A, "A", "vote", BASE_ROLES),
+    spawnServer(PORT_B, "B", "vote", BASE_ROLES, { lovers: [HUNTER, P3] }),
+    spawnServer(PORT_C, "C", "vote", JOKER_ROLES, { lovers: [HUNTER, P3] }),
+    spawnServer(PORT_D, "D", "vote", BASE_ROLES,
+      { extraEnv: { MAFIA_REVENGE_TIMER_MS: String(SHORT_REVENGE_MS) } }),
+  ]);
+});
+
+afterAll(() => {
+  for (const srv of [serverA, serverB, serverC, serverD]) teardownServer(srv);
+});
+
+// ── This file's setupGame: the shared harness driver bound to this file's
+//    username prefix (test bodies call setupGame(srv, dealRoles, settings)). ─
+function setupGame(srv: HunterServer, dealRoles: Role[], settings: Record<string, unknown>): Promise<HunterGame> {
+  return setupGameH(srv, { prefix: "hwv", dealRoles, settings });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// E4 — vote-path interrupt, base case: the hunter is lynched directly
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("E4 base: hunter lynched by day vote", () => {
+  test("vote_result + deaths precede the gate; no phase_change/cue while gated; revenge → auto-night resumes", async () => {
+    const game = await setupGame(serverA!, BASE_ROLES, BASE_SETTINGS);
+    const [admin, mafia, hunter, citA, citB] = [
+      game.players[ADMIN], game.players[MAFIA], game.players[HUNTER],
+      game.players[P3], game.players[CIT_B],
+    ];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    const result = await lynchByVote(game, hunter, game.players); // all 6 alive approve
+    expect(result.executed).toBe(true);
+    expect(result.targetName).toBe(hunter.username);
+    const pending = await pendingP;
+    expect(pending.hunterName).toBe(hunter.username);
+    await Bun.sleep(150);
+
+    // Execution beats precede the gate, on every inbox: vote_result <
+    // player_died(hunter) < hunter_revenge_pending.
+    for (const p of game.players) {
+      const vrIdx = indexOfMsg(p.inbox, m => m.type === "vote_result");
+      const diedIdx = indexOfMsg(p.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
+      const pendingIdx = indexOfMsg(p.inbox, m => m.type === "hunter_revenge_pending");
+      expect(vrIdx).toBeGreaterThanOrEqual(0);
+      expect(diedIdx).toBeGreaterThan(vrIdx);
+      expect(pendingIdx).toBeGreaterThan(diedIdx);
+    }
+    const youDiedIdx = indexOfMsg(hunter.inbox, m => m.type === "you_died");
+    expect(youDiedIdx).toBeGreaterThanOrEqual(0);
+    expect(youDiedIdx).toBeLessThan(indexOfMsg(hunter.inbox, m => m.type === "hunter_revenge_pending"));
+
+    // The hunter — and ONLY the hunter — got the target list: the 5 living.
+    const targetsMsg = hunter.inbox.find(m => m.type === "hunter_revenge_targets");
+    expect(targetsMsg).toBeDefined();
+    const targetIds = targetsMsg.players.map((p: any) => p.id).sort((a: number, b: number) => a - b);
+    const livingIds = game.players.filter(p => p.userId !== hunter.userId).map(p => p.userId).sort((a, b) => a - b);
+    expect(targetIds).toEqual(livingIds);
+    for (const p of game.players) {
+      if (p.userId === hunter.userId) continue;
+      expect(p.inbox.find(m => m.type === "hunter_revenge_targets")).toBeUndefined();
+    }
+
+    // The auto-night is HELD: phase stays put — no phase_change beyond the
+    // two so far (game-start night + forced day), no cue, no game_over.
+    expect(admin.inbox.filter(m => m.type === "phase_change").length).toBe(2);
+    await assertSilence(admin.ws, ["phase_change", "game_over", "sound_cue"], 600);
+
+    // The revenge timeout is armed while gated.
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed"]);
+
+    // ── Revenge: hunter shoots a citizen → deferred auto-night resumes ──
+    const victimDiedP = waitFor(citA.ws, "you_died", 5000);
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "deferred auto-night");
+    send(hunter.ws, { type: "hunter_revenge", targetId: citA.userId });
+
+    const victimDied = await victimDiedP;
+    expect(victimDied.isLoverDeath).toBeUndefined();
+    const nightChange = await nightP;
+    expect(nightChange.round).toBe(2);
+    // Closing messages: the revenge kill line + the night-falls line.
+    expect(nightChange.messages.length).toBe(2);
+    expect(nightChange.messages[0]).toContain(citA.username);
+    expect(Array.isArray(nightChange.events)).toBe(true);
+    await Bun.sleep(150);
+
+    // Order on the admin inbox: pending < player_died(victim) <
+    // phase_change(night) < night cue; NO day cue after the gate opened
+    // (the vote-path resume goes to night, never dawn).
+    const pIdx = indexOfMsg(admin.inbox, m => m.type === "hunter_revenge_pending");
+    const vIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === citA.userId);
+    const ncIdx = indexOfMsg(admin.inbox, m => m.type === "phase_change" && m.phase === "night", pIdx);
+    const cueIdx = indexOfMsg(admin.inbox, m => m.type === "sound_cue" && m.sound === "night", pIdx);
+    expect(pIdx).toBeGreaterThanOrEqual(0);
+    expect(vIdx).toBeGreaterThan(pIdx);
+    expect(ncIdx).toBeGreaterThan(vIdx);
+    expect(cueIdx).toBeGreaterThan(ncIdx);
+    expect(indexOfMsg(admin.inbox, m => m.type === "sound_cue" && m.sound === "day", pIdx)).toBe(-1);
+    expect(admin.inbox.find(m => m.type === "game_over")).toBeUndefined();
+
+    // Gate resolved → timer cleared (slog lifecycle, never orphaned).
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
+
+    // Night 2 genuinely runs: mafia is re-prompted and a plain dawn lands
+    // (mafia-inbox-local index — never compared across inboxes).
+    expect(indexOfMsg(mafia.inbox, m => m.type === "mafia_targets",
+      indexOfMsg(mafia.inbox, m => m.type === "hunter_revenge_pending"))).toBeGreaterThan(-1);
+    const day2P = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "day" && m.round === 2, 8000, "dawn 2");
+    await mafiaSoloKill(mafia, citB);
+    await day2P;
+    // Exactly one gate ever opened.
+    expect(admin.inbox.filter(m => m.type === "hunter_revenge_pending").length).toBe(1);
+
+    closeAll(game);
+  }, 60000);
+
+  test("game_over by revenge from the voting phase: revenge kills the last mafia — town wins, no day cue", async () => {
+    const game = await setupGame(serverA!, BASE_ROLES, BASE_SETTINGS);
+    const [admin, mafia, hunter] = [game.players[ADMIN], game.players[MAFIA], game.players[HUNTER]];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    await lynchByVote(game, hunter, game.players);
+    await pendingP;
+
+    // Gated: no premature win evaluation on the pre-revenge board.
+    await assertSilence(admin.ws, ["game_over", "phase_change", "sound_cue"], 600);
+
+    const overP = waitFor(admin.ws, "game_over", 5000);
+    send(hunter.ws, { type: "hunter_revenge", targetId: mafia.userId });
+    const over = await overP;
+    expect(over.winner).toBe("town");
+    await Bun.sleep(150);
+
+    // Sequence: pending < player_died(mafia) < phase_change(game_over) <
+    // game_over — and NO day cue anywhere after the gate (the vote-path
+    // game_over shape sends no cue, unlike the night-path golden #7).
+    const pIdx = indexOfMsg(admin.inbox, m => m.type === "hunter_revenge_pending");
+    const vIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === mafia.userId);
+    const pcIdx = indexOfMsg(admin.inbox, m => m.type === "phase_change" && m.phase === "game_over");
+    const goIdx = indexOfMsg(admin.inbox, m => m.type === "game_over");
+    expect(pIdx).toBeGreaterThanOrEqual(0);
+    expect(vIdx).toBeGreaterThan(pIdx);
+    expect(pcIdx).toBeGreaterThan(vIdx);
+    expect(goIdx).toBeGreaterThan(pcIdx);
+    expect(indexOfMsg(admin.inbox, m => m.type === "sound_cue" && m.sound === "day", pIdx)).toBe(-1);
+
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
+
+    closeAll(game);
+  }, 60000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// E4 heartbreak: the lynch target is the hunter's LOVER (hunter not executed)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("E4 heartbreak: lover lynched, hunter dies of heartbreak mid-vote", () => {
+  test("cascade deaths broadcast, then the gate; revenge → night", async () => {
+    const game = await setupGame(serverB!, BASE_ROLES, LOVERS_SETTINGS);
+    const [admin, mafia, hunter, lover, citB] = [
+      game.players[ADMIN], game.players[MAFIA], game.players[HUNTER],
+      game.players[P3], game.players[CIT_B],
+    ];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    const result = await lynchByVote(game, lover, game.players);
+    expect(result.executed).toBe(true);
+    expect(result.targetName).toBe(lover.username); // the HUNTER was not the executed player
+    const pending = await pendingP;
+    expect(pending.hunterName).toBe(hunter.username);
+    await Bun.sleep(150);
+
+    // Cascade beats precede the gate on the admin inbox: vote_result <
+    // player_died(lover, direct) < player_died(hunter, heartbreak) < pending.
+    const vrIdx = indexOfMsg(admin.inbox, m => m.type === "vote_result");
+    const loverIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === lover.userId);
+    const hunterIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
+    const pendIdx = indexOfMsg(admin.inbox, m => m.type === "hunter_revenge_pending");
+    expect(vrIdx).toBeGreaterThanOrEqual(0);
+    expect(loverIdx).toBeGreaterThan(vrIdx);
+    expect(hunterIdx).toBeGreaterThan(loverIdx);
+    expect(pendIdx).toBeGreaterThan(hunterIdx);
+
+    // Death labels keyed on cause (B3): the lover died direct, the hunter
+    // of heartbreak.
+    const loverDied = lover.inbox.find(m => m.type === "you_died");
+    expect(loverDied.isLoverDeath).toBeUndefined();
+    const hunterDied = hunter.inbox.find(m => m.type === "you_died");
+    expect(hunterDied.isLoverDeath).toBe(true);
+
+    // Only the hunter got targets: the 4 living players.
+    const targetsMsg = hunter.inbox.find(m => m.type === "hunter_revenge_targets");
+    expect(targetsMsg.players.map((p: any) => game.seatOfId.get(p.id)).sort())
+      .toEqual(["P0", "P1", "P4", "P5"]);
+    for (const p of game.players) {
+      if (p.userId === hunter.userId) continue;
+      expect(p.inbox.find(m => m.type === "hunter_revenge_targets")).toBeUndefined();
+    }
+
+    // Held while gated.
+    expect(admin.inbox.filter(m => m.type === "phase_change").length).toBe(2);
+    await assertSilence(admin.ws, ["phase_change", "game_over", "sound_cue"], 600);
+    expect(revengeTimerEvents(serverB!, game.code)).toEqual(["armed"]);
+
+    // Revenge → the deferred auto-night resumes.
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "deferred auto-night");
+    send(hunter.ws, { type: "hunter_revenge", targetId: citB.userId });
+    const nightChange = await nightP;
+    expect(nightChange.round).toBe(2);
+    // The revenge target was no lover: the closing phase_change carries no
+    // loverDeathName (C5 note: the gated vote's own cascade name was
+    // already announced via the death loop, never re-attached here).
+    expect(nightChange.loverDeathName).toBeUndefined();
+    await Bun.sleep(150);
+    expect(revengeTimerEvents(serverB!, game.code)).toEqual(["armed", "cleared"]);
+    // Night 2 prompts the mafia again (mafia-inbox-local index).
+    expect(indexOfMsg(mafia.inbox, m => m.type === "mafia_targets",
+      indexOfMsg(mafia.inbox, m => m.type === "hunter_revenge_pending"))).toBeGreaterThan(-1);
+
+    closeAll(game);
+  }, 60000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// E4 official-joker variant: joker lynched, joker's lover is the hunter —
+// the gate defers the HAUNT night (preserveHauntVoters payoff)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("E4 official-joker: lynched joker's lover is the hunter", () => {
+  test("gate opens after the cascade; post-revenge the haunt night proceeds and the haunt lands on a FOR-voter", async () => {
+    const game = await setupGame(serverC!, JOKER_ROLES, JOKER_SETTINGS);
+    const [admin, mafia, hunter, joker, citB, citC] = [
+      game.players[ADMIN], game.players[MAFIA], game.players[HUNTER],
+      game.players[P3], game.players[CIT_B], game.players[CIT_C],
+    ];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    const overlayP = waitFor(joker.ws, "joker_win_overlay", 8000);
+    const result = await lynchByVote(game, joker, game.players); // all 6 are FOR-voters
+    expect(result.executed).toBe(true);
+    await pendingP;
+    await overlayP; // official-mode joker win overlay still reaches the joker
+    await Bun.sleep(150);
+
+    // Cascade then gate: player_died(joker) < player_died(hunter) < pending.
+    const jIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === joker.userId);
+    const hIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
+    const pendIdx = indexOfMsg(admin.inbox, m => m.type === "hunter_revenge_pending");
+    expect(jIdx).toBeGreaterThanOrEqual(0);
+    expect(hIdx).toBeGreaterThan(jIdx);
+    expect(pendIdx).toBeGreaterThan(hIdx);
+    expect(hunter.inbox.find(m => m.type === "you_died").isLoverDeath).toBe(true);
+
+    // Held while gated — in particular the haunt night has NOT started: no
+    // phase_change, no night cue, and no haunt prompt to the joker yet.
+    await assertSilence(admin.ws, ["phase_change", "game_over", "sound_cue"], 600);
+    expect(joker.inbox.find(m => m.type === "joker_haunt_targets")).toBeUndefined();
+    expect(revengeTimerEvents(serverC!, game.code)).toEqual(["armed"]);
+
+    // ── Revenge resolves → the deferred HAUNT night begins ──────────────
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "deferred haunt night");
+    const hauntPromptP = waitFor(joker.ws, "joker_haunt_targets", 5000);
+    send(hunter.ws, { type: "hunter_revenge", targetId: citB.userId });
+    const nightChange = await nightP;
+    expect(nightChange.round).toBe(2);
+    const hauntPrompt = await hauntPromptP;
+    await Bun.sleep(150);
+
+    // preserveHauntVoters observable on the wire: the haunt prompt arrived
+    // AFTER the deferred night began, listing the still-living FOR-voters
+    // (indices are joker-inbox-local — never compared across inboxes).
+    const jPendIdx = indexOfMsg(joker.inbox, m => m.type === "hunter_revenge_pending");
+    const ncIdx = indexOfMsg(joker.inbox, m => m.type === "phase_change" && m.phase === "night", jPendIdx);
+    const hpIdx = indexOfMsg(joker.inbox, m => m.type === "joker_haunt_targets");
+    expect(jPendIdx).toBeGreaterThanOrEqual(0);
+    expect(ncIdx).toBeGreaterThan(jPendIdx);
+    expect(hpIdx).toBeGreaterThan(ncIdx);
+    expect(hauntPrompt.players.map((p: any) => game.seatOfId.get(p.id)).sort())
+      .toEqual(["P0", "P1", "P5"]); // alive FOR-voters (P2-P4 dead)
+    expect(revengeTimerEvents(serverC!, game.code)).toEqual(["armed", "cleared"]);
+
+    // The haunt WORKS on a FOR-voter: joker haunts citC, mafia kills admin,
+    // dawn announces both — mafia alone remains and wins.
+    const hauntDone = waitFor(joker.ws, "night_action_done", 5000);
+    send(joker.ws, { type: "joker_haunt", targetId: citC.userId });
+    await hauntDone;
+    const overP = waitFor(mafia.ws, "game_over", 8000);
+    await mafiaSoloKill(mafia, admin);
+    const over = await overP;
+    expect(over.winner).toBe("mafia");
+    expect(over.jokerJointWinner).toBe(true); // §7: rides the payload unchanged
+    await Bun.sleep(150);
+    // The haunt victim's death is real and announced at dawn (mafia-inbox-
+    // local search, from the mafia's own gate-open index).
+    const mPendIdx = indexOfMsg(mafia.inbox, m => m.type === "hunter_revenge_pending");
+    expect(indexOfMsg(mafia.inbox, m => m.type === "player_died" && m.playerId === citC.userId, mPendIdx)).toBeGreaterThan(-1);
+    expect(citC.inbox.find(m => m.type === "you_died")).toBeDefined();
+
+    closeAll(game);
+  }, 60000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// E8 — the M7 gate-rejection sweep + the gate-clearing forced transitions
+// ═══════════════════════════════════════════════════════════════════════
+
+/** HUNTER-DESIGN §3.6, verbatim: rejected while game.pendingRevenge !== null. */
+const GATE_REJECTED_TYPES = [
+  "call_vote", "cast_vote", "abstain_vote", "cancel_vote", "end_day",
+  "mafia_vote", "mafia_remove_vote", "confirm_mafia_kill", "doctor_save",
+  "detective_investigate", "joker_haunt", "narrator_ready", "start_game",
+] as const;
+
+describe("E8: M7 rejection sweep while the vote-path gate is open", () => {
+  test("every §3.6 message type is rejected with zero wire traffic; gate + timer survive; hunter still resolves", async () => {
+    const game = await setupGame(serverA!, BASE_ROLES, BASE_SETTINGS);
+    const [admin, mafia, hunter, citA, citB, citC] = [
+      game.players[ADMIN], game.players[MAFIA], game.players[HUNTER],
+      game.players[P3], game.players[CIT_B], game.players[CIT_C],
+    ];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    await lynchByVote(game, hunter, game.players);
+    await pendingP;
+    await Bun.sleep(150);
+    const preSweepPhaseChanges = admin.inbox.filter(m => m.type === "phase_change").length;
+    expect(preSweepPhaseChanges).toBe(2); // game-start night + forced day
+
+    // Bounded-collect (handler-guards.test.ts pattern) on two vantage
+    // points: the admin and an alive citizen. STRICT emptiness — a rejected
+    // handler produces no broadcast, no error, no private reply. The two
+    // engine-reachable holes the sweep exists for: cast_vote (phase holds
+    // at "voting" with a cleared ballot — castVote would record and
+    // broadcast vote_update) and cancel_vote (cancelVote would wipe the
+    // gate via resetNightActions, flip to day, and orphan the timer).
+    const collectAdmin = collectFor(admin.ws, 1000);
+    const collectCit = collectFor(citB.ws, 1000);
+    send(admin.ws, { type: "call_vote", targetId: citB.userId });
+    send(citB.ws, { type: "cast_vote", approve: true });
+    send(admin.ws, { type: "abstain_vote" });
+    send(admin.ws, { type: "cancel_vote" });
+    send(admin.ws, { type: "end_day" });
+    send(mafia.ws, { type: "mafia_vote", targetId: citB.userId, voteType: "lock" });
+    send(mafia.ws, { type: "mafia_remove_vote", targetId: citB.userId });
+    send(mafia.ws, { type: "confirm_mafia_kill" });
+    send(citC.ws, { type: "doctor_save", targetId: citB.userId });
+    send(citC.ws, { type: "detective_investigate", targetId: citB.userId });
+    send(citC.ws, { type: "joker_haunt", targetId: citB.userId });
+    send(admin.ws, { type: "narrator_ready" });
+    send(admin.ws, { type: "start_game" });
+    expect(await collectAdmin).toEqual([]);
+    expect(await collectCit).toEqual([]);
+
+    // Positive trace: the dispatch-level sweep bounced each of the 13 §3.6
+    // types exactly once (slog "revenge_gate_reject" — the rejections are
+    // deliberately silent on the wire).
+    expect(revengeGateRejects(serverA!, game.code).sort())
+      .toEqual([...GATE_REJECTED_TYPES].sort());
+
+    // §3.6 exceptions still flow while gated: prefs are connection-level.
+    const prefsP = waitFor(citC.ws, "player_prefs", 5000);
+    send(citC.ws, { type: "update_player_pref", key: "player_color", value: "#E53935" });
+    await prefsP;
+
+    // Gate + timer survived the sweep…
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed"]);
+    expect(admin.inbox.filter(m => m.type === "phase_change").length).toBe(preSweepPhaseChanges);
+
+    // …and the hunter can still resolve (decline → deferred auto-night).
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "post-sweep resolution");
+    send(hunter.ws, { type: "hunter_revenge", targetId: null });
+    const nightChange = await nightP;
+    expect(nightChange.round).toBe(2);
+    expect(nightChange.messages.length).toBe(2); // decline line + night-falls line
+    for (const p of game.players) {
+      expect(nightChange.messages[0]).not.toContain(p.username); // decline names nobody
+    }
+    await Bun.sleep(150);
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
+    expect(admin.inbox.find(m => m.type === "player_died" && m.playerId !== hunter.userId)).toBeUndefined();
+
+    closeAll(game);
+  }, 60000);
+
+  test("force_dawn at a VOTING gate is rejected by the engine: gate + timer survive, hunter still resolves", async () => {
+    const game = await setupGame(serverA!, BASE_ROLES, BASE_SETTINGS);
+    const [admin, , hunter, citA] = [
+      game.players[ADMIN], game.players[MAFIA], game.players[HUNTER], game.players[P3],
+    ];
+
+    await forceDawnToDay(game);
+    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    await lynchByVote(game, hunter, game.players);
+    await pendingP;
+    await Bun.sleep(150);
+
+    // force_dawn only applies to night-phase gates: at "voting" forceDawn
+    // rejects, and the rejection must NOT clear the gate or its timer (the
+    // clearRevengeTimer sits AFTER the success check — C3a placement).
+    send(admin.ws, { type: "force_dawn" });
+    await assertSilence(admin.ws,
+      ["phase_change", "sound_cue", "game_over", "player_died", "you_died", "lobby_update"], 600);
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed"]); // no "cleared"
+
+    // Gate alive: revenge still resolves into the deferred auto-night.
+    const victimP = waitFor(citA.ws, "you_died", 5000);
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "post-force_dawn resolution");
+    send(hunter.ws, { type: "hunter_revenge", targetId: citA.userId });
+    await victimP;
+    await nightP;
+    await Bun.sleep(150);
+    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
+
+    closeAll(game);
+  }, 60000);
+});
+
+describe("E8: gate-clearing forced transitions (short revenge timer — cleared, NOT fired, proven past expiry)", () => {
+  /** Lynch the hunter on server D (1500ms revenge timeout) and return at the open gate. */
+  async function gateOnD(): Promise<HunterGame> {
+    const game = await setupGame(serverD!, BASE_ROLES, BASE_SETTINGS);
+    await forceDawnToDay(game);
+    const pendingP = waitFor(game.players[ADMIN].ws, "hunter_revenge_pending", 8000);
+    await lynchByVote(game, game.players[HUNTER], game.players);
+    await pendingP;
+    return game;
+  }
+
+  test("end_game clears gate + timer; no late decline ever fires", async () => {
+    const game = await gateOnD();
+    const admin = game.players[ADMIN];
+
+    const overP = waitFor(admin.ws, "game_over", 5000);
+    const pcP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "game_over", 5000, "force-end phase_change");
+    send(admin.ws, { type: "end_game" });
+    const over = await overP;
+    await pcP;
+    expect(over.forceEnded).toBe(true);
+    expect(over.winner).toBe("town"); // L3: forceEndGame's well-defined winner
+
+    // Past the would-be expiry: total silence (an orphaned timer would fire
+    // a decline into the dead game) AND the slog lifecycle is armed→cleared
+    // with NO "fired" — the only observable that separates cleared from
+    // orphaned-but-inert.
+    await assertSilence(admin.ws,
+      ["phase_change", "player_died", "you_died", "hunter_revenge_pending", "sound_cue", "game_over"],
+      SHORT_REVENGE_MS + 700);
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed", "cleared"]);
+
+    // Flow proceeds on the settled state (ws_in invariants run NODE_ENV=test
+    // throw-mode in the spawned server — a violation would break this reply).
+    const lobbyP = waitFor(game.players[CIT_B].ws, "lobby_update", 5000);
+    send(game.players[CIT_B].ws, { type: "player_return_to_lobby" });
+    await lobbyP;
+
+    closeAll(game);
+  }, 60000);
+
+  test("restart_game clears gate + timer; fresh deal proceeds", async () => {
+    const game = await gateOnD();
+    const admin = game.players[ADMIN];
+
+    const startedPs = game.players.map(p => waitFor(p.ws, "game_started", 5000));
+    const readyP = waitFor(admin.ws, "awaiting_ready", 5000);
+    const nightP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "restart night");
+    send(admin.ws, { type: "restart_game" });
+    const started = await Promise.all(startedPs);
+    await readyP;
+    await nightP;
+    expect(started.map(s => s.role)).toEqual(BASE_ROLES); // the seam re-dealt
+
+    // Past the would-be expiry: the restarted game idles at the Begin Night
+    // gate — an orphaned timer's decline would emit into it.
+    await assertSilence(admin.ws,
+      ["phase_change", "player_died", "you_died", "hunter_revenge_pending", "sound_cue", "game_over"],
+      SHORT_REVENGE_MS + 700);
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed", "cleared"]);
+
+    // Flow proceeds: the new night begins normally.
+    const cueP = waitFor(admin.ws, "sound_cue", 5000);
+    send(admin.ws, { type: "narrator_ready" });
+    await cueP;
+
+    closeAll(game);
+  }, 60000);
+
+  test("return_to_lobby is engine-rejected at a voting gate (gate survives); the end_game → lobby chain leaves no timer behind", async () => {
+    // Engine reality (found writing this test): returnToLobby guards on
+    // phase === "game_over", where the gate is structurally null (§4
+    // invariant) — so return_to_lobby can NEVER see an open gate directly.
+    // Its §6 L2 clear is belt-and-braces (the end_day situation). What CAN
+    // happen: rejected at the gate (gate+timer must survive), then the
+    // admin force-ends and returns to lobby from game_over.
+    const game = await gateOnD();
+    const admin = game.players[ADMIN];
+
+    // (1) At the voting gate: engine-rejected, gate + timer survive.
+    const errP = waitFor(admin.ws, "error", 5000);
+    send(admin.ws, { type: "return_to_lobby" });
+    const err = await errP;
+    expect(err.message).toBe("Cannot return to lobby");
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed"]); // no "cleared"
+
+    // (2) end_game clears the gate; return_to_lobby now proceeds.
+    const overP = waitFor(admin.ws, "game_over", 5000);
+    send(admin.ws, { type: "end_game" });
+    await overP;
+    const lobbyP = waitFor(admin.ws, "lobby_update", 5000);
+    send(admin.ws, { type: "return_to_lobby" });
+    await lobbyP;
+
+    // (3) Past the would-be expiry: the cleared timer never fires into the
+    // fresh lobby.
+    await assertSilence(admin.ws,
+      ["phase_change", "player_died", "you_died", "hunter_revenge_pending", "sound_cue", "game_over"],
+      SHORT_REVENGE_MS + 700);
+    expect(revengeTimerEvents(serverD!, game.code)).toEqual(["armed", "cleared"]);
+
+    // (4) Flow proceeds: a fresh game starts from the same lobby.
+    const startedPs = game.players.map(p => waitFor(p.ws, "game_started", 5000));
+    send(admin.ws, { type: "start_game" });
+    const started = await Promise.all(startedPs);
+    expect(started.map(s => s.role)).toEqual(BASE_ROLES);
+
+    closeAll(game);
+  }, 60000);
+});

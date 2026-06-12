@@ -44,20 +44,27 @@ function startGame(role: string, mafiaTeam: string[] = []) {
 
 describe("B6: derived hold-and-replay gate lists", () => {
   // These literals are the exact membership of the three hand-maintained
-  // lists as of the commit before B6. If a derivation change alters any
-  // gate's membership, these pins fail.
+  // lists as of the commit before B6, plus hunter_revenge_targets (C5a) and
+  // hunter_revenge_pending (C5b) — deliberate membership changes in all
+  // three gates; hunter-client.test.ts pins the held/replayed behavior.
+  // Both ride the death-triggered revenge flow: neither the hunter's prompt
+  // nor the room-wide reveal may render before the death beats complete or
+  // mid overlay chain (the chain-ending applyPhaseChange would stomp them).
+  // If a derivation change alters any gate's membership, these pins fail.
   const PROMPTS = [
     "mafia_targets",
     "doctor_targets",
     "detective_targets",
     "joker_haunt_targets",
+    "hunter_revenge_pending",
+    "hunter_revenge_targets",
     "spectator_joker_deliberating",
     "spectator_joker_resolved",
   ];
 
-  test("suspense gate holds exactly the death beats", () => {
+  test("suspense gate holds exactly the death beats + the death-triggered revenge reveal and prompt", () => {
     expect([...window.__holdGateLists.suspense].sort()).toEqual(
-      ["player_died", "you_died", "joker_win_overlay"].sort()
+      ["player_died", "you_died", "joker_win_overlay", "hunter_revenge_pending", "hunter_revenge_targets"].sort()
     );
   });
 

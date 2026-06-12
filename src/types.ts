@@ -1,4 +1,4 @@
-export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker";
+export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker" | "hunter";
 
 export interface Player {
   id: number;
@@ -18,6 +18,7 @@ export interface GameSettings {
   enableDoctor: boolean;
   enableDetective: boolean;
   enableJoker: boolean;
+  enableHunter: boolean;
   enableLovers: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableDoctor: false,
   enableDetective: false,
   enableJoker: false,
+  enableHunter: false,
   enableLovers: false,
   soundEnabled: false,
   narrationAccent: "classic",
@@ -43,9 +45,11 @@ export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 // Every death in the game flows through the applyDeath funnel as one of
 // these; (source, cause) is the single derivation input for the public
 // event label (deriveDeathEventType in game-engine.ts).
-export type KillSource = "mafia" | "joker_haunt" | "execution";
+// "hunter_revenge" (C2a): the Hunter's dying shot — applied by
+// submitHunterRevenge AFTER the triggering resolution, never inside it.
+export type KillSource = "mafia" | "joker_haunt" | "execution" | "hunter_revenge";
 export type DeathCause = "direct" | "lover_cascade";
-export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death";
+export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death" | "hunter_revenge";
 
 export interface Death {
   player: Player;
@@ -102,9 +106,10 @@ export interface ConcludeRoundOptions {
 /**
  * The Hunter revenge gate (HUNTER-DESIGN §3.1) — PLAIN DATA, never a
  * server-held closure (closure-held gate state is un-rejoinable; audit D3).
- * NULL-PINNED for all of Program B: nothing sets it until Program C's
- * Hunter lands (notifyDeathTriggers opens it; submitHunterRevenge clears it
- * and resumes concludeRound with `resume`). assertInvariants pins null.
+ * Opened by concludeRound's trigger-queue consume when a Hunter died this
+ * resolution (C2a — notifyDeathTriggers only QUEUES; the gate is set past
+ * the caller's reset boundary); submitHunterRevenge clears it and resumes
+ * concludeRound with `resume`. assertInvariants pins the §4 phase scoping.
  */
 export interface PendingRevenge {
   hunterId: number;
@@ -178,6 +183,10 @@ export type ClientMessage =
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
   | { type: "joker_haunt"; targetId: number }
+  // C3a (HUNTER-DESIGN §3.2): revenge resolution — hunter only; null = decline
+  | { type: "hunter_revenge"; targetId: number | null }
+  // C3a: admin only (rights retained dead or alive); resolves as decline
+  | { type: "force_skip_revenge" }
   | { type: "call_vote"; targetId: number }
   | { type: "abstain_vote" }
   | { type: "cancel_vote" }
@@ -210,6 +219,10 @@ export type ServerMessage =
   | { type: "detective_targets"; players: PlayerInfo[] }
   | { type: "detective_result"; targetName: string; isMafia: boolean }
   | { type: "joker_haunt_targets"; players: PlayerInfo[] }
+  // C3a (HUNTER-DESIGN §3.3): to the hunter when the gate opens (re-sent on rejoin — C4)
+  | { type: "hunter_revenge_targets"; players: PlayerInfo[] }
+  // C3a: broadcast to the whole room when the gate opens — this IS the public reveal
+  | { type: "hunter_revenge_pending"; hunterName: string }
   | { type: "joker_win_overlay"; jokerName: string }
   | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number }
@@ -294,6 +307,18 @@ export type ServerMessage =
         revealPlayers: PlayerInfo[];
         jokerJointWinner?: boolean;
       } | null;
+      // Revenge gate (C4, HUNTER-DESIGN §3.4 — the H4 lesson): present
+      // whenever the gate is open, for EVERY rejoiner (the reveal is
+      // public); the key is OMITTED entirely while the gate is closed
+      // (the detectiveHistory/mafiaTeam optional-only absence pattern —
+      // keeps the gate-closed payload byte-identical to pre-Hunter
+      // syncs). isYou is true when the rejoiner IS the hunter: their
+      // private target list never rides game_sync — it is re-sent as a
+      // separate hunter_revenge_targets message right after the sync.
+      pendingRevenge?: {
+        hunterName: string;
+        isYou: boolean;
+      };
     };
 
 export interface PlayerInfo {

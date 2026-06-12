@@ -117,20 +117,21 @@ const NIGHT_RESETS = {
   voteTarget: (g: Game) => { g.voteTarget = null; },
   votes: (g: Game) => { g.votes.clear(); },
   awaitingNarratorReady: (g: Game) => { g.awaitingNarratorReady = false; },
-  // B4a (Hunter pre-plumbing): the revenge gate clears at every forced
-  // transition (HUNTER-DESIGN §6 L2 row) — per-night scope reaches all of
-  // them (forceDawn/endDay/cancelVote via resetNightActions, lobby resets
-  // via resetGameState; forceEndGame clears by hand like
-  // awaitingNarratorReady). Null-pinned until Program C sets it. Resets by
+  // B4a/C2a: the revenge gate clears at every forced transition
+  // (HUNTER-DESIGN §6 L2 row) — per-night scope reaches all of them
+  // (forceDawn/endDay/cancelVote via resetNightActions, lobby resets via
+  // resetGameState; forceEndGame clears by hand like awaitingNarratorReady).
+  // Opened ONLY by concludeRound's trigger-queue consume (C2a). Resets by
   // REASSIGNMENT — no fresh-copy line needed in nightRestingSnapshot's
   // shield (see the FUTURE-BINDING note there).
-  // SEQUENCING TRAP (Program C): notifyDeathTriggers fires inside applyDeath,
-  // which runs BEFORE the caller's resetNightActions in all three flows
-  // (transitionToDay, both resolveVote execution branches) — a gate opened at
-  // trigger time is WIPED by this very line before concludeRound's gate check
-  // runs. C must queue from the hook (the OBSERVE-AND-QUEUE re-entrancy
-  // contract on notifyDeathTriggers) and open the gate AFTER the caller's
-  // reset boundary — or add a preserve carve-out here.
+  // SEQUENCING TRAP (implemented — keep it this way): notifyDeathTriggers
+  // fires inside applyDeath, which runs BEFORE the caller's
+  // resetNightActions in all three flows (transitionToDay, both resolveVote
+  // execution branches) — a gate opened at trigger time is WIPED by this
+  // very line before concludeRound's gate check runs. That is why the
+  // trigger queues OUTSIDE the Game (queuedHunterTrigger, observe-and-queue)
+  // and the gate opens in concludeRound, past the reset boundary
+  // (regression pinned in tests/hunter-engine.test.ts).
   pendingRevenge: (g: Game) => { g.pendingRevenge = null; },
 } as const;
 
@@ -228,6 +229,19 @@ export function beginNight(game: Game, reason: string, opts: ResetNightOptions =
  */
 export function resetGameState(game: Game, reason: string): void {
   logTransition(game, game.phase, "lobby", reason);
+  // C2a: a queued-but-unconsumed Hunter trigger (only possible behind a
+  // house-joker instant win, which already discards at the win site — this
+  // is defense in depth) must never survive into a restarted/next game.
+  // D2: slog'd only when an entry or open gate actually existed — the
+  // routine lobby reset stays silent.
+  if (queuedHunterTrigger.has(game) || game.pendingRevenge) {
+    slog("hunter_gate", {
+      code: game.code, event: "discarded",
+      hunterId: queuedHunterTrigger.get(game) ?? game.pendingRevenge!.hunterId,
+      phase: game.phase, round: game.round,
+    });
+  }
+  queuedHunterTrigger.delete(game);
   resetNightActions(game);
   for (const key of GAME_RESET_FIELDS) {
     GAME_RESETS[key](game);
@@ -270,6 +284,15 @@ export interface InvariantContext {
    * callers omit it and the timer invariant is skipped.
    */
   hasPendingNightTimer?: boolean;
+  /**
+   * C3b (§6 M2/M7 correlation): whether this game's revenge-timer slot is
+   * occupied. Same caller contract as hasPendingNightTimer — server choke
+   * points pass it, engine-level callers omit it and the correlation is
+   * skipped. The revenge timer's own fire callback ALSO omits it: it
+   * deletes its slot before asserting, so mid-fire the gate is legally
+   * open with an empty slot.
+   */
+  hasRevengeTimer?: boolean;
 }
 
 /**
@@ -308,7 +331,11 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
   // from B1's NIGHT_RESETS classification, never restated — sits at its
   // post-reset value. Phase allowances, each matching a positive guarantee
   // pinned in tests:
-  //   voting    — voteTarget/votes ARE the live ballot (callVote/castVote);
+  //   voting    — voteTarget/votes ARE the live ballot (callVote/castVote),
+  //               and pendingRevenge may hold the vote-path revenge gate
+  //               (C2a; its shape is checked by the §4 invariant below);
+  //               jokerHauntVoters survive a gated official-joker lynch
+  //               ONLY while the gate's resume preserves them (C2b);
   //   game_over — jokerHauntVoters stay populated ONLY when the official-
   //               joker execution itself ends the game: that branch is the
   //               sole writer of jokerHauntVoters AND sets jokerJointWinner
@@ -327,6 +354,15 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
     if (game.phase === "voting") {
       skip.add("voteTarget");
       skip.add("votes");
+      skip.add("pendingRevenge"); // C2a: vote-path gate legitimately holds at "voting" (§4 check below)
+      // C2b (E4 variant): an official-joker lynch whose lover cascade killed
+      // the Hunter defers its haunt night behind the gate — the captured
+      // FOR-voters legitimately survive at "voting" exactly when the deferred
+      // epilogue says to preserve them. Positive guarantee: the sole writer
+      // of jokerHauntVoters (resolveVote's official branch) pairs its
+      // preserving reset with the same flag on the concludeRound options the
+      // gate stores as `resume` (pinned in tests/hunter-edge-matrix.test.ts).
+      if (game.pendingRevenge?.resume.preserveHauntVoters) skip.add("jokerHauntVoters");
     }
     if (game.phase === "game_over") {
       if (game.jokerJointWinner) skip.add("jokerHauntVoters");
@@ -350,12 +386,34 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
     violations.push("winner_null_at_game_over");
   }
 
-  // Invariant (B4a pre-plumbing): pendingRevenge is NULL ALWAYS — nothing
-  // sets it until Program C's Hunter lands. C relaxes this to the
-  // phase-scoped form (HUNTER-DESIGN §4: non-null ⇒ phase ∈ {night,voting},
-  // votes empty, voteTarget null, winner null).
+  // Invariant (C2a, HUNTER-DESIGN §4): the revenge gate is phase-scoped.
+  // Non-null ⇒ phase ∈ {night, voting} with the ballot already cleared (the
+  // caller's reset runs BEFORE the gate opens) and no winner (the gate
+  // defers the win check — a winner alongside an open gate means the check
+  // leaked past it). Null at lobby/day/game_over is additionally enforced
+  // by the night-scope table above (pendingRevenge is NIGHT_RESETS-scoped
+  // and none of those phases skip it).
   if (game.pendingRevenge !== null) {
-    violations.push("pending_revenge_nonnull");
+    if (game.phase !== "night" && game.phase !== "voting") {
+      violations.push(`pending_revenge_phase:${game.phase}`);
+    }
+    if (game.votes.size > 0) violations.push("pending_revenge_votes_nonempty");
+    if (game.voteTarget !== null) violations.push("pending_revenge_vote_target_set");
+    if (game.winner !== null) violations.push("pending_revenge_winner_set");
+  }
+
+  // Invariant (C3b, §6 M2/M7 correlation): the revenge gate and its timer
+  // move together — gate open ⇒ timeout armed (a missing timer is an
+  // orphaned gate no timeout-decline can ever close), and timer armed ⇒
+  // gate open (an orphaned timer is the M2 class). Checked only when the
+  // caller can see the slot (ctx contract above).
+  if (ctx.hasRevengeTimer !== undefined) {
+    if (game.pendingRevenge !== null && !ctx.hasRevengeTimer) {
+      violations.push("pending_revenge_timer_missing");
+    }
+    if (ctx.hasRevengeTimer && game.pendingRevenge === null) {
+      violations.push("revenge_timer_without_gate");
+    }
   }
 
   // Invariant (M2 class): the TRACKED night-timer slot is empty outside
@@ -499,7 +557,7 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
 }
 
 // Keys handled by sanitizeSettings, grouped by validation strategy.
-const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableLovers", "soundEnabled"] as const;
+const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableLovers", "soundEnabled"] as const;
 const modeKeys = ["doctorMode", "jokerMode"] as const;
 
 // Compile-time exhaustiveness guard: if a key is added to GameSettings in
@@ -726,6 +784,11 @@ function assignRoles(game: Game): number {
     idx++;
   }
 
+  if (settings.enableHunter && idx < totalPlayers) {
+    game.players.get(playerIds[idx])!.role = "hunter";
+    idx++;
+  }
+
   // Rest are citizens
   while (idx < totalPlayers) {
     game.players.get(playerIds[idx])!.role = "citizen";
@@ -742,7 +805,7 @@ function assignRoles(game: Game): number {
       player.variant = citizenVariantIdx % 8;
       citizenVariantIdx++;
     } else {
-      player.variant = 0; // doctor, detective, joker have single variant
+      player.variant = 0; // doctor, detective, joker, hunter have single variant
     }
   }
 
@@ -964,6 +1027,7 @@ export function deriveDeathEventType(source: KillSource, cause: DeathCause): Dea
     case "mafia": return "kill";
     case "joker_haunt": return "joker_haunt";
     case "execution": return "execution";
+    case "hunter_revenge": return "hunter_revenge";
   }
 }
 
@@ -974,11 +1038,34 @@ export function setDeathTriggerSpy(fn: ((game: Game, death: Death) => void) | nu
   deathTriggerSpy = fn;
 }
 
+// ── C2a: the Hunter trigger queue (observe-and-queue, HUNTER-DESIGN §4) ──
+//
+// Keyed by Game IDENTITY, deliberately NOT a Game field:
+//   - it must survive the caller's reset boundary — resetNightActions wipes
+//     every NIGHT_RESETS field between applyDeath (where the trigger fires)
+//     and concludeRound (where the gate is checked), the sequencing trap
+//     documented at NIGHT_RESETS.pendingRevenge — and B1's exhaustiveness
+//     guard means a Game field would have to live in SOME reset scope;
+//   - a WeakMap entry dies with its Game (removeGame -> GC) and a different
+//     Game object can never see another game's entry.
+// Lifecycle: set by notifyDeathTriggers; consumed (or suppression-discarded,
+// E11/E12) at the top of concludeRound — the first point past every reset
+// boundary. The house-joker instant win discards at the win site (its
+// resolveVote branch never reaches concludeRound); resetGameState and
+// forceEndGame discard defensively so no entry can outlive a forced
+// transition into a restarted/next game.
+// D2 (night_timer precedent): every gate-lifecycle edge is slog'd as
+// "hunter_gate" (opened / suppressed_no_target / suppressed_game_over /
+// resolved / declined / discarded) — console only, never in WS payloads;
+// discard sites stay silent unless an entry or open gate actually existed.
+// Holds ONE hunter id per game (single-Hunter deal) — not a list of deaths.
+const queuedHunterTrigger = new WeakMap<Game, number>();
+
 /**
- * The single death-trigger hook point (audit P2). A NO-OP in Program B;
- * Program C hangs the Hunter revenge gate here. Called exactly once per
- * Death — every source (night kill, haunt, execution) and every cause
- * (direct or lover cascade) — from inside applyDeath.
+ * The single death-trigger hook point (audit P2); the Hunter revenge
+ * trigger (C2a) hangs here. Called exactly once per Death — every source
+ * (night kill, haunt, execution, revenge) and every cause (direct or lover
+ * cascade) — from inside applyDeath.
  *
  * Re-entrancy contract: this hook fires INSIDE applyDeath's bookkeeping
  * loop — implementations must OBSERVE AND QUEUE; do NOT call applyDeath
@@ -991,6 +1078,16 @@ export function setDeathTriggerSpy(fn: ((game: Game, death: Death) => void) | nu
  */
 export function notifyDeathTriggers(game: Game, death: Death): void {
   deathTriggerSpy?.(game, death);
+  // C2a — the Hunter trigger: OBSERVE AND QUEUE only (contract above). It
+  // fires for EVERY death source and cause, so a heartbreak-dead Hunter
+  // (lover cascade) queues exactly like a direct kill — the point of B3's
+  // bypass fix. No game-state mutation here: the gate itself is opened by
+  // concludeRound past the caller's reset boundary, and the suppression
+  // conditions (E11 no-living-target, E12 already-game_over) are evaluated
+  // there, on the settled post-resolution board.
+  if (death.player.role === "hunter") {
+    queuedHunterTrigger.set(game, death.player.id);
+  }
 }
 
 /**
@@ -1227,20 +1324,50 @@ export function resolveNight(game: Game): NightResult {
 
 /**
  * Win check + game-over/auto-night/day transition for a resolved round.
- * First line is the Hunter gate (Program C): a pending revenge defers BOTH
- * the win check and the transition; submitHunterRevenge clears the gate and
- * resumes by re-calling this with game.pendingRevenge.resume. Null-pinned
- * in Program B — nothing opens the gate until the Hunter lands.
+ * Its head is the Hunter machinery (C2a): first consume the trigger queue
+ * (opening the gate unless suppressed), then the gate line — a pending
+ * revenge defers BOTH the win check and the transition; submitHunterRevenge
+ * clears the gate and resumes by re-calling this with
+ * game.pendingRevenge.resume.
  *
- * SEQUENCING TRAP (Program C): notifyDeathTriggers fires inside applyDeath,
- * and the caller's resetNightActions — which WIPES pendingRevenge — runs
- * between applyDeath and this gate check in all three flows. A gate opened
- * inside the trigger hook is gone before this line sees it: queue from the
- * hook (the OBSERVE-AND-QUEUE contract on notifyDeathTriggers) and open the
- * gate AFTER the reset boundary, or carve out a preserve in NIGHT_RESETS.
+ * SEQUENCING TRAP (implemented here — keep it this way): the trigger fires
+ * inside applyDeath, and the caller's resetNightActions — which WIPES
+ * pendingRevenge — runs between applyDeath and this gate check in all three
+ * flows. That is WHY notifyDeathTriggers only queues (outside the Game
+ * object) and the gate is opened HERE, past every caller's reset boundary;
+ * a gate set inside the hook is wiped before this line sees it (regression
+ * pinned in tests/hunter-engine.test.ts).
  */
 export function concludeRound(game: Game, messages: string[], opts: ConcludeRoundOptions): void {
-  if (game.pendingRevenge) return; // C's resume path: submitHunterRevenge → concludeRound(resume)
+  // C2a: consume the queued Hunter death. Suppression (HUNTER-DESIGN §1,
+  // edges E11/E12) evaluates on the settled post-resolution board: a game
+  // already over, or no living player left to shoot, discards the queue and
+  // resolution proceeds straight through — win check included.
+  const queuedHunterId = queuedHunterTrigger.get(game);
+  if (queuedHunterId !== undefined) {
+    queuedHunterTrigger.delete(game);
+    const suppressed =
+      game.phase === "game_over" ? "suppressed_game_over"
+      : getAlivePlayers(game).length === 0 ? "suppressed_no_target"
+      : null;
+    if (suppressed === null) {
+      // Plain-data resume (decision #4): the exact options this call was
+      // entered with, so the resume re-derives the same epilogue shape —
+      // including the official-joker preserveHauntVoters carve-out.
+      game.pendingRevenge = {
+        hunterId: queuedHunterId,
+        resume: {
+          autoNight: opts.autoNight,
+          ...(opts.preserveHauntVoters !== undefined ? { preserveHauntVoters: opts.preserveHauntVoters } : {}),
+        },
+      };
+    }
+    slog("hunter_gate", {
+      code: game.code, event: suppressed ?? "opened",
+      hunterId: queuedHunterId, phase: game.phase, round: game.round,
+    });
+  }
+  if (game.pendingRevenge) return; // the gate: submitHunterRevenge clears it and re-enters with `resume`
 
   const fromNight = game.phase === "night";
 
@@ -1263,6 +1390,68 @@ export function concludeRound(game: Game, messages: string[], opts: ConcludeRoun
   }
 }
 
+// ── C2a (HUNTER-DESIGN §3.5): the one new public engine entry point ─────────
+
+export interface HunterRevengeResult {
+  ok: boolean;
+  /** Revenge deaths in kill order (direct, then lover cascade); [] on decline or rejection. */
+  deaths: Death[];
+  /** Narrator lines in order: revenge/decline line(s), then any epilogue line concludeRound appends. */
+  messages: string[];
+}
+
+/**
+ * Resolve the open revenge gate. `targetId === null` declines — the admin
+ * force-skip and the revenge timeout resolve through this exact path
+ * (decision #2). A non-null target takes the unstoppable shot (§5: never
+ * consults doctorTarget). One path, one branch (audit §P5): both arms clear
+ * the gate and re-enter concludeRound with the stored resume options, so
+ * the deferred win check runs ONLY there — after any revenge deaths (and
+ * the target's lover cascade) are on the board. Validation failures return
+ * { ok: false } with ZERO state change. The caller (server, task C3) owns
+ * all broadcasting; deaths are keyed on Death.cause, never position.
+ *
+ * POST-CONDITION (C3, read this): game.pendingRevenge is NOT guaranteed
+ * null after an { ok: true } return. Under today's single-Hunter deal it
+ * always is — but a Hunter dying in the revenge cascade would queue a new
+ * trigger, and the resume's concludeRound re-entry would consume it and
+ * RE-OPEN the gate before this function returns. Re-check
+ * game.pendingRevenge after the call rather than assuming null.
+ */
+export function submitHunterRevenge(game: Game, hunterId: number, targetId: number | null): HunterRevengeResult {
+  const rejected: HunterRevengeResult = { ok: false, deaths: [], messages: [] };
+  const gate = game.pendingRevenge;
+  if (!gate) return rejected;
+  if (hunterId !== gate.hunterId) return rejected;
+
+  const messages: string[] = [];
+  const deaths: Death[] = [];
+  if (targetId === null) {
+    messages.push(Narrator.hunterDecline());
+  } else {
+    const target = game.players.get(targetId);
+    if (!target || !target.isAlive) return rejected;
+    // Legal applyDeath site: we are OUTSIDE notifyDeathTriggers (the
+    // triggering resolution completed when the gate opened), so the funnel
+    // runs normally — eventHistory entries and the target's lover cascade
+    // come free (HUNTER-DESIGN §8.1).
+    for (const d of applyDeath(game, targetId, "hunter_revenge", Narrator.hunterRevengeKill(target.username))) {
+      messages.push(d.message);
+      deaths.push(d);
+    }
+  }
+
+  game.pendingRevenge = null;
+  // D2: logged BEFORE the resume re-enters concludeRound, so phase/round are
+  // the gated values and a cascade-re-opened gate's "opened" line sorts after.
+  slog("hunter_gate", {
+    code: game.code, event: targetId === null ? "declined" : "resolved",
+    hunterId: gate.hunterId, phase: game.phase, round: game.round,
+  });
+  concludeRound(game, messages, gate.resume);
+  return { ok: true, deaths, messages };
+}
+
 export function transitionToDay(game: Game): NightResult {
   // Event tracking lives in the death pipeline now: applyDeath pushes the
   // kill/lover_death/joker_haunt events, resolveNight inserts the house-mode
@@ -1277,6 +1466,12 @@ export function transitionToDay(game: Game): NightResult {
   // Win check + transition to day/game_over (the dawn epilogue shape).
   concludeRound(game, nightResult.messages, { autoNight: false });
 
+  // STALE-BY-DESIGN when the revenge gate deferred this dawn:
+  // submitHunterRevenge never appends, so post-revenge this lacks the
+  // revenge/win lines. Deliberate — pendingMessages is read by no
+  // production logic (ARCHITECTURE-AUDIT §3.2 item 1: messages flow via
+  // return values; dumpGame's copy is only the exhaustive debug snapshot)
+  // and is pointed for the §3.2 dead-code backlog, not for fixing here.
   game.pendingMessages = nightResult.messages;
   return nightResult;
 }
@@ -1392,6 +1587,19 @@ export function resolveVote(game: Game): VoteResult | null {
           result.killed.push(d);
         }
 
+        // C2a (E12): the instant win is already on the board when these
+        // deaths apply, so a Hunter heartbreak-killed by this cascade gets
+        // NO revenge — and since this branch never reaches concludeRound's
+        // consume point, the queued trigger is discarded at the win site.
+        const discardedHunterId = queuedHunterTrigger.get(game);
+        queuedHunterTrigger.delete(game);
+        if (discardedHunterId !== undefined) {
+          slog("hunter_gate", {
+            code: game.code, event: "discarded",
+            hunterId: discardedHunterId, phase: game.phase, round: game.round,
+          });
+        }
+
         // Reset vote+night state (mirrors the official branch and the normal path)
         resetNightActions(game);
         return result;
@@ -1478,8 +1686,18 @@ export function forceEndGame(game: Game): void {
   // (it freezes in-flight state instead of resetting), so the revenge gate
   // is cleared by hand here, exactly like awaitingNarratorReady (the L2
   // pattern; HUNTER-DESIGN §6 lists end_game among the gate-clearing
-  // transitions). No-op while null-pinned in Program B.
+  // transitions). C2a: the trigger queue is discarded for the same reason
+  // (defense in depth — see resetGameState). D2: slog'd only when an entry
+  // or open gate actually existed — a plain force-end stays silent.
+  if (queuedHunterTrigger.has(game) || game.pendingRevenge) {
+    slog("hunter_gate", {
+      code: game.code, event: "discarded",
+      hunterId: queuedHunterTrigger.get(game) ?? game.pendingRevenge!.hunterId,
+      phase: game.phase, round: game.round,
+    });
+  }
   game.pendingRevenge = null;
+  queuedHunterTrigger.delete(game);
 }
 
 export function returnToLobby(game: Game): boolean {

@@ -199,6 +199,11 @@
         </div>
 
         <div class="setting-row">
+          <span>Hunter</span>
+          <label class="toggle"><input type="checkbox" id="toggle-hunter"><span class="slider"></span></label>
+        </div>
+
+        <div class="setting-row">
           <span>Lovers</span>
           <label class="toggle"><input type="checkbox" id="toggle-lovers"><span class="slider"></span></label>
         </div>
@@ -303,6 +308,14 @@
         <button id="btn-begin-night" class="btn btn-primary btn-large hidden">Begin Night</button>
       </div>
 
+      <!-- Hunter Revenge Wait (C5b: room-wide while the revenge gate is open;
+           the skip button shows for the admin only) -->
+      <div id="revenge-wait" class="awaiting-ready hidden">
+        <p id="revenge-wait-reveal"></p>
+        <p>Waiting for the Hunter&#8230;</p>
+        <button id="btn-skip-revenge" class="btn btn-danger btn-small hidden">Skip revenge</button>
+      </div>
+
       <!-- Detective Result (persistent) -->
       <div id="detective-result" class="detective-result hidden"></div>
 
@@ -312,6 +325,7 @@
         <div id="spectator-night-log" class="hidden"></div>
         <div id="joker-spectator-status" class="joker-spectator-status hidden"></div>
         <ul id="action-targets" class="target-list"></ul>
+        <button id="btn-decline-revenge" class="btn btn-secondary btn-small hidden">Decline revenge</button>
         <div id="slide-confirm" class="slide-confirm hidden">
           <div class="slide-track">
             <div class="slide-label" id="slide-label">slide to confirm</div>

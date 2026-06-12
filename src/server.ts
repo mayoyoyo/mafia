@@ -6,11 +6,11 @@ import {
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
   submitJokerHaunt, getJokerHauntTargets, assertInvariants, assertPhaseEdge,
-  toTargetInfo, projectGameOver,
+  toTargetInfo, projectGameOver, submitHunterRevenge,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
-import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game } from "./types";
+import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game, PendingRevenge } from "./types";
 import { subPhaseCue } from "./types";
 import path from "path";
 import fs from "fs";
@@ -55,8 +55,15 @@ function sendToUser(userId: number, msg: ServerMessage): void {
 }
 
 function sendToDeadPlayers(game: Game, msg: ServerMessage, excludeUserId?: number): void {
+  // C3a (HUNTER-DESIGN §3.9): the prompted Hunter is isolated from the
+  // spectator feed while the revenge gate is open — the dead-joker
+  // treatment, applied centrally because EVERY sendToDeadPlayers payload is
+  // a dead-spectator panel and none may reach the hunter mid-prompt. The
+  // gate-open broadcasts themselves (hunter_revenge_pending, the resolution
+  // deaths, phase_change) ride broadcastToGame and are unaffected.
+  const revengeHunterId = game.pendingRevenge?.hunterId;
   for (const [, player] of game.players) {
-    if (!player.isAlive && player.id !== excludeUserId) {
+    if (!player.isAlive && player.id !== excludeUserId && player.id !== revengeHunterId) {
       sendToUser(player.id, msg);
     }
   }
@@ -127,11 +134,75 @@ function armNightTimer(game: Game, kind: string, delay: number, fn: () => void):
     // the delete just above runs synchronously, and under the displacement
     // quirk a stale timer's delete removes the NEWER entry too. Kept so the
     // assert shape matches ws_in; B4 revisits the displacement quirk.
-    assertInvariants(game, { at: `timer_fire:${kind}`, hasPendingNightTimer: nightTimers.has(game.code) });
+    assertInvariants(game, {
+      at: `timer_fire:${kind}`,
+      hasPendingNightTimer: nightTimers.has(game.code),
+      hasRevengeTimer: revengeTimers.has(game.code), // C3b: gate⇔timer correlation
+    });
     fn();
   }, delay);
   nightTimers.set(game.code, { timer, kind, delay });
   slog("night_timer", { code: game.code, kind, delay, event: "armed" });
+}
+
+// ── C3a (HUNTER-DESIGN §3.6, gate checklist M2 row): the revenge timer ──────
+//
+// The Hunter gate's timeout gets its OWN slot beside nightTimers — NEVER
+// stored in the (single, overwriting) night slot; sharing it is the M2 bug
+// class the checklist pins. Armed when the gate opens (openRevengeGate),
+// cleared on resolution (resolveRevenge) AND beside every forced-transition
+// clearNightTimer site (§6 L2 row: force_dawn, end_game, restart_game,
+// return_to_lobby, close_room, admin leave_game, the 2-hour sweep; end_day
+// has no clearNightTimer site and the gate cannot be open at "day"). Timer
+// fire resolves as a DECLINE through resolveRevenge — the identical path the
+// hunter_revenge/force_skip_revenge handlers use (decision #2). Lifecycle
+// slog'd as "revenge_timer" with the night_timer field shape (D2).
+//
+// Test seam (pattern: DATABASE_PATH / MAFIA_FIXED_DEAL): the
+// MAFIA_REVENGE_TIMER_MS env var overrides the 60s timeout so WS suites
+// never real-time wait. Production never sets it.
+const REVENGE_TIMEOUT_MS = (() => {
+  const v = Number(process.env.MAFIA_REVENGE_TIMER_MS);
+  return Number.isFinite(v) && v > 0 ? v : 60_000;
+})();
+
+const revengeTimers = new Map<string, { timer: Timer; delay: number }>();
+
+function clearRevengeTimer(gameCode: string): void {
+  const entry = revengeTimers.get(gameCode);
+  if (entry) {
+    clearTimeout(entry.timer);
+    revengeTimers.delete(gameCode);
+    slog("revenge_timer", { code: gameCode, kind: "revenge", delay: entry.delay, event: "cleared" });
+  }
+}
+
+function armRevengeTimer(game: Game): void {
+  const existing = revengeTimers.get(game.code);
+  if (existing) {
+    // Unreachable today (one gate per game, cleared on every resolution and
+    // forced transition) — logged for the same reconstructability as
+    // armNightTimer's overwrite line. The displaced timer is clearTimeout'd
+    // so it can never fire stale (armNightTimer's leak quirk is pinned
+    // pre-existing behavior, deliberately NOT copied here).
+    clearTimeout(existing.timer);
+    slog("revenge_timer", { code: game.code, kind: "revenge", delay: existing.delay, event: "overwritten" });
+  }
+  const delay = REVENGE_TIMEOUT_MS;
+  const timer = setTimeout(() => {
+    revengeTimers.delete(game.code);
+    slog("revenge_timer", { code: game.code, kind: "revenge", delay, event: "fired" });
+    if (getGame(game.code) !== game) return; // game removed — or the 4-char code reused by a NEW game; identity (not existence) keeps a stale closure inert
+    // hasRevengeTimer deliberately OMITTED (correlation skipped): the delete
+    // above already emptied this timer's own slot while the gate is still
+    // legally open — the one sanctioned gate-open/slot-empty moment.
+    assertInvariants(game, { at: "timer_fire:revenge", hasPendingNightTimer: nightTimers.has(game.code) });
+    if (!game.pendingRevenge) return; // gate already resolved/cleared
+    // Boolean deliberately dropped (false = engine rejection, gate stays open — see resolveRevenge doc); C3b consumes it.
+    resolveRevenge(game, game.pendingRevenge.hunterId, null);
+  }, delay);
+  revengeTimers.set(game.code, { timer, delay });
+  slog("revenge_timer", { code: game.code, kind: "revenge", delay, event: "armed" });
 }
 
 // ── B4b (audit D1): the ONE phase_change assembly point ─────────────────────
@@ -349,6 +420,132 @@ function startNightSequence(game: Game): void {
     const jokerId = getHauntingJokerId(game);
     sendToDeadPlayers(game, { type: "spectator_joker_deliberating" }, jokerId);
   }
+}
+
+// ── C3a (HUNTER-DESIGN §4): the revenge gate's server flow ──────────────────
+
+/**
+ * Stage 2 of the two-stage dawn: the gate just opened (engine-side, in
+ * concludeRound) — publicly reveal the Hunter (hunter_revenge_pending + the
+ * narrator reveal line), send the living-target list to the hunter ALONE,
+ * and arm the revenge timeout. The deferred day cue / phase_change happen
+ * in resolveRevenge once the gate clears. Also re-entered by resolveRevenge
+ * itself when a revenge cascade re-opens the gate (C2a post-condition).
+ * Callers pass the open gate itself, making the "gate is open" precondition
+ * structural (no non-null assertion to go stale).
+ */
+function openRevengeGate(game: Game, gate: PendingRevenge): void {
+  const hunter = game.players.get(gate.hunterId);
+  const hunterName = hunter?.username ?? "The Hunter";
+  recordNarrator(game, [Narrator.hunterReveal(hunterName)]);
+  broadcastToGame(game.code, { type: "hunter_revenge_pending", hunterName });
+  sendRevengeTargets(game, gate);
+  armRevengeTimer(game);
+}
+
+/**
+ * The hunter's private prompt: the living-target list (C4 factoring of
+ * openRevengeGate's middle). Two callers — the gate-open path above (which
+ * also reveals and arms the timer) and the hunter's rejoin re-send in
+ * join_game, which is RE-SEND-ONLY: the revenge timer keeps running from
+ * the original gate-open, so a disconnect can never extend or reset the
+ * window. The timer arming therefore stays in openRevengeGate alone.
+ */
+function sendRevengeTargets(game: Game, gate: PendingRevenge): void {
+  const hunter = game.players.get(gate.hunterId);
+  if (!hunter) return;
+  // Living targets only — the gate never opens with zero living players
+  // (concludeRound's E11 suppression), so this list is non-empty.
+  const targets = getAlivePlayers(game).map((p) => toTargetInfo(p, game));
+  sendToUser(hunter.id, { type: "hunter_revenge_targets", players: targets });
+}
+
+/**
+ * The ONE revenge resolution path (C3a): the hunter_revenge handler, the
+ * admin force_skip_revenge handler and the timer expiry all land here
+ * (HUNTER-DESIGN decision #2 — the three declines are one code path; a kill
+ * is the same path with a target). On ok the engine has already cleared the
+ * gate and re-entered concludeRound with the stored resume, so game.phase
+ * is the POST-epilogue phase when the closing broadcasts run. Returns false
+ * on engine rejection — zero state change, zero broadcast, the gate stays
+ * open and the hunter can retry.
+ */
+function resolveRevenge(game: Game, hunterId: number, targetId: number | null): boolean {
+  const from = game.phase; // BEFORE the engine resumes the deferred epilogue
+  const result = submitHunterRevenge(game, hunterId, targetId);
+  if (!result.ok) return false;
+
+  clearRevengeTimer(game.code);
+  recordNarrator(game, result.messages);
+
+  // Revenge death broadcasts — keyed on Death.cause, never position (B3).
+  let revengeLoverDeathName: string | undefined;
+  for (const d of result.deaths) {
+    const isLoverDeath = d.cause === "lover_cascade";
+    if (isLoverDeath) revengeLoverDeathName = d.player.username;
+    sendToUser(d.player.id, { type: "you_died", message: d.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
+    broadcastToGame(game.code, {
+      type: "player_died",
+      playerId: d.player.id,
+      playerName: d.player.username,
+      message: d.message,
+    });
+  }
+
+  // C2a POST-CONDITION re-check: ok:true does NOT guarantee a closed gate —
+  // a Hunter dying in the revenge cascade re-opens it inside the resume
+  // before submitHunterRevenge returns. Re-prompt instead of closing.
+  // (Unreachable under today's single-Hunter deal; contract-mandated.)
+  if (game.pendingRevenge) {
+    openRevengeGate(game, game.pendingRevenge);
+    return true;
+  }
+
+  // The deferred epilogue broadcast, dispatched on the phase concludeRound
+  // landed on. Night path (this task) resumes { autoNight: false } → "day"
+  // or "game_over"; the "night" branch keeps the path resume-shape-generic
+  // for the vote-path gate (C3b arms it) — it mirrors cast_vote's
+  // execution-to-night branch.
+  if (game.phase === "game_over") {
+    game.dayStartedAt = null;
+    broadcastPhaseChange(game, {
+      from,
+      messages: result.messages,
+      events: true,
+      loverDeathName: revengeLoverDeathName,
+      // The dawn's deferred day cue (the night-path game_over shape, golden
+      // #7); a vote-path game_over sends no cue (cast_vote shape).
+      dayCue: from === "night",
+    });
+    // Divergence kept visible: the live broadcast's message is the
+    // narrator's last line, NOT buildGameSync's canonical win line.
+    broadcastToGame(game.code, {
+      type: "game_over",
+      ...projectGameOver(game, result.messages[result.messages.length - 1]),
+    });
+  } else if (game.phase === "night") {
+    // Vote-path resume: auto-transition to the next night (C3b).
+    game.dayStartedAt = null;
+    game.dayVoteCount = 0;
+    broadcastPhaseChange(game, {
+      from,
+      messages: result.messages,
+      events: true,
+      loverDeathName: revengeLoverDeathName,
+    });
+    startNightSequence(game);
+  } else {
+    // Day — the deferred dawn completes.
+    game.dayStartedAt = Date.now();
+    broadcastPhaseChange(game, {
+      from,
+      messages: result.messages,
+      events: true,
+      loverDeathName: revengeLoverDeathName,
+      dayCue: true,
+    });
+  }
+  return true;
 }
 
 function buildSpectatorLog(game: Game): Array<{ phase: string; targetName: string | null; alive: boolean }> {
@@ -645,8 +842,89 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     nightAction,
     voteState,
     gameOver,
+    // C4 (HUNTER-DESIGN §3.4, the H4 lesson): the open revenge gate is
+    // PUBLIC pending state — projected for EVERY rejoiner. Driven off
+    // game.pendingRevenge alone (while gated, phase holds at "night" with
+    // nightSubPhase already nulled, or at "voting" with the ballot cleared —
+    // neither sub-state can carry the signal). Key OMITTED when the gate is
+    // closed so the payload stays byte-identical to pre-Hunter syncs (the
+    // detectiveHistory/mafiaTeam absence pattern). isYou cues the hunter's
+    // client to expect the separate hunter_revenge_targets re-send — the
+    // target list itself never rides game_sync.
+    ...(game.pendingRevenge ? {
+      pendingRevenge: {
+        // The "The Hunter" fallback is defensive dead code — removePlayer
+        // only runs at game_over/lobby, where the gate is structurally null (§4).
+        hunterName: game.players.get(game.pendingRevenge.hunterId)?.username ?? "The Hunter",
+        isYou: userId === game.pendingRevenge.hunterId,
+      },
+    } : {}),
   };
 }
+
+// ── C3b (HUNTER-DESIGN §3.6, gate checklist M7 row): the rejection sweep ────
+//
+// While a game's revenge gate is open, every game-mutating message is
+// rejected at the DISPATCH level, before its handler runs — one check
+// instead of 13 hand-edited guards (the M7 lesson: hand-edited guard sets
+// drift). The classification is EXHAUSTIVE over ClientMessage["type"] (a
+// new message type is a compile error until classified — the sanitizeSettings
+// boolKeys pattern), so the §3.6 list and its exceptions live in one table:
+//
+//   true  — rejected while gated (§3.6, verbatim). The two engine-reachable
+//           holes this sweep exists for: cast_vote (the phase HOLDS at
+//           "voting" with the ballot cleared, so castVote would take votes)
+//           and cancel_vote (cancelVote would wipe the gate via
+//           resetNightActions and orphan the armed revenge timer). The rest
+//           are double-guarded by their handlers' own phase checks.
+//   false — exempt (§3.6 exceptions): the resolution pair
+//           (hunter_revenge / force_skip_revenge), the gate-CLEARING forced
+//           transitions (§6 L2 — each clears the revenge timer at its site;
+//           force_dawn and return_to_lobby are engine-rejected at a voting
+//           gate and leave it intact; close_room destroys the room),
+//           connection-level traffic + prefs, and the two messages whose
+//           own guards make them unreachable while gated (update_settings:
+//           lobby-only; player_return_to_lobby: game_over-only — the gate
+//           is structurally null at both phases, §4).
+//
+// Rejections are SILENT on the wire (the established guard style — no
+// error, no broadcast); the slog line is their one positive trace (D2).
+const REVENGE_GATE_REJECTED: Record<ClientMessage["type"], boolean> = {
+  // §3.6 rejection list (verbatim)
+  call_vote: true,
+  cast_vote: true,
+  abstain_vote: true,
+  cancel_vote: true,
+  end_day: true,
+  mafia_vote: true,
+  mafia_remove_vote: true,
+  confirm_mafia_kill: true,
+  doctor_save: true,
+  detective_investigate: true,
+  joker_haunt: true,
+  narrator_ready: true,
+  start_game: true,
+  // the resolution pair
+  hunter_revenge: false,
+  force_skip_revenge: false,
+  // gate-clearing forced transitions (§6 L2)
+  force_dawn: false,
+  end_game: false,
+  restart_game: false,
+  return_to_lobby: false,
+  close_room: false,
+  // connection-level traffic + prefs
+  register: false,
+  login: false,
+  create_game: false,
+  join_game: false,
+  leave_game: false,
+  toggle_sound: false,
+  update_player_pref: false,
+  // unreachable while gated by their own phase guards (§4 phase scoping)
+  update_settings: false,
+  player_return_to_lobby: false,
+};
 
 function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
   // B0d (audit D2): one structured line per inbound WS message
@@ -663,7 +941,21 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     // settled state this message found. The night-timer map lives in this
     // module, so its tracked-slot state is passed in here.
     if (g) {
-      assertInvariants(g, { at: `ws_in:${msg.type}`, hasPendingNightTimer: nightTimers.has(g.code) });
+      assertInvariants(g, {
+        at: `ws_in:${msg.type}`,
+        hasPendingNightTimer: nightTimers.has(g.code),
+        hasRevengeTimer: revengeTimers.has(g.code), // C3b: gate⇔timer correlation
+      });
+    }
+    // C3b (§3.6 M7): the revenge-gate rejection sweep. `=== true` (C4 fix):
+    // the table is a plain object literal, so an unknown wire type either
+    // indexes to undefined (most strings) or to an INHERITED prototype
+    // member (e.g. "toString" → a truthy function) — only the strict check
+    // keeps both falling through to the switch (no case matches), exactly
+    // as before the sweep. Invisible when pendingRevenge is null.
+    if (g?.pendingRevenge && REVENGE_GATE_REJECTED[msg.type] === true) {
+      slog("revenge_gate_reject", { code: g.code, userId: client.userId ?? null, type: msg.type });
+      return;
     }
   }
 
@@ -786,6 +1078,18 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
               send(ws, { type: "joker_haunt_targets", players: hauntTargets });
             }
           }
+          // C4 (H4): revenge gate open + the rejoiner IS the hunter —
+          // re-send the private prompt right after game_sync (the dead-joker
+          // haunt re-send precedent above; game_sync.pendingRevenge.isYou
+          // told the client to expect it). Re-send-ONLY: the revenge timer
+          // keeps running from the original gate-open — a disconnect never
+          // extends or resets the window — so this path goes through
+          // sendRevengeTargets, never openRevengeGate/armRevengeTimer.
+          // Keyed on game.pendingRevenge alone (gated phase is night with a
+          // null sub-phase, or voting — never a sub-phase condition).
+          if (game.pendingRevenge && client.userId === game.pendingRevenge.hunterId) {
+            sendRevengeTargets(game, game.pendingRevenge);
+          }
         } else {
           broadcastLobbyUpdate(game);
         }
@@ -852,7 +1156,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         if (client.userId === game.adminId) {
           // Admin leaves active game = force end (room persists at game_over)
           const from = game.phase;
-          forceEndGame(game);
+          forceEndGame(game); // clears the revenge gate by hand (§6 L2)
+          clearRevengeTimer(game.code); // C3a: the timer dies with it (M2)
           broadcastPhaseChange(game, {
             from,
             clearTimer: true,
@@ -904,6 +1209,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         send(ws, { type: "error", message: "Only the admin can start the game" });
         return;
       }
+      // C1 (B8 finding): crafted-WS edge — start_game outside the lobby is a
+      // silent no-op (like update_settings). Without this, the engine's null
+      // return fell through to the misleading "Need at least 3 players" error.
+      if (game.phase !== "lobby") return;
       const from = game.phase;
       const messages = startGame(game);
       if (!messages) {
@@ -1067,6 +1376,37 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
+    case "hunter_revenge": {
+      // C3a (HUNTER-DESIGN §3.6): guards — in a game, gate open, sender IS
+      // the hunter. Rejections are silent (the night-action handler
+      // pattern); an engine rejection (dead/missing target) is equally
+      // silent and leaves the gate open so the hunter can retry.
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || !game.pendingRevenge) return;
+      if (client.userId !== game.pendingRevenge.hunterId) return;
+      // M6 hygiene: accept only null (decline) or a numeric target id from
+      // the wire — a malformed/missing targetId must not read as a decline.
+      const targetId = msg.targetId;
+      if (targetId !== null && typeof targetId !== "number") return;
+      // Boolean deliberately dropped (false = engine rejection, gate stays open — see resolveRevenge doc); C3b consumes it.
+      resolveRevenge(game, client.userId, targetId);
+      break;
+    }
+
+    case "force_skip_revenge": {
+      // C3a (HUNTER-DESIGN §3.6): admin only (rights retained dead or
+      // alive), gate open — resolves as a decline through the identical
+      // path (decision #2: the kitchen-problem safety net).
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || !game.pendingRevenge) return;
+      if (client.userId !== game.adminId) return;
+      // Boolean deliberately dropped (false = engine rejection, gate stays open — see resolveRevenge doc); C3b consumes it.
+      resolveRevenge(game, game.pendingRevenge.hunterId, null);
+      break;
+    }
+
     case "call_vote": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
@@ -1171,6 +1511,26 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
           }
 
+          // ── Vote-path revenge interrupt (C3b, HUNTER-DESIGN §4) ────────
+          // A Hunter died in this execution (directly or by lover cascade):
+          // the engine deferred the win check + auto-night, so the phase
+          // HOLDS at "voting" with the ballot already cleared. vote_result
+          // and the death loop above went out exactly as always; the public
+          // reveal + hunter prompt + revenge timeout now replace the
+          // epilogue branches below — resolveRevenge's night/game_over
+          // branches emit the deferred broadcast on resolution. While gated
+          // NO phase_change leaves this handler, so the illegal
+          // voting→voting edge (the pre-C3b "spared" fall-through) is
+          // structurally unreachable, and no day/night cue fires early.
+          // Note: voteLoverDeathName is deliberately dropped on this path —
+          // the cascade death was already announced via the loop above, and
+          // the post-revenge phase_change carries only REVENGE-cascade names
+          // (C5: the client must not expect it on the resumed broadcast).
+          if (game.pendingRevenge) {
+            openRevengeGate(game, game.pendingRevenge);
+            break;
+          }
+
           if (game.phase === "game_over") {
             game.dayStartedAt = null;
             broadcastPhaseChange(game, {
@@ -1218,6 +1578,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const from = game.phase;
       const messages = forceDawn(game);
       if (messages.length === 0) return;
+      // C3a (§6 L2): force_dawn is a sanctioned gate-CLEARING forced
+      // transition — forceDawn's reset just wiped pendingRevenge, so the
+      // armed revenge timeout dies with it (M2), and the dawn proceeds with
+      // NO revenge. Placed AFTER the success check: a rejected force_dawn
+      // (e.g. while a vote-path gate holds at "voting") must not orphan the
+      // still-open gate's timer.
+      clearRevengeTimer(game.code);
       game.dayStartedAt = Date.now();
       recordNarrator(game, messages);
 
@@ -1261,7 +1628,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (game.phase === "game_over") return;
 
       const from = game.phase;
-      forceEndGame(game);
+      forceEndGame(game); // clears the revenge gate by hand (§6 L2)
+      clearRevengeTimer(game.code); // C3a: the timer dies with it (M2)
       recordNarrator(game, ["Host has ended the game."]);
       broadcastPhaseChange(game, {
         from,
@@ -1295,6 +1663,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       // After the success check: an errant return_to_lobby during an active
       // night must NOT clear the legit pending timer (M2)
       clearNightTimer(game.code);
+      clearRevengeTimer(game.code); // C3a: gate cleared by resetGameState (§6 L2)
       broadcastLobbyUpdate(game);
       break;
     }
@@ -1305,6 +1674,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       clearNightTimer(game.code);
+      clearRevengeTimer(game.code); // C3a: room is being destroyed (M2 hygiene)
       broadcastToGame(game.code, { type: "room_closed", message: "The host has closed the room." });
       const closedCode = game.code;
       removeGame(closedCode);
@@ -1329,6 +1699,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       // failure path returns before the helper. Pre-existing semantics —
       // restartGame has no phase guard (M2's enabler, audit D1).
       clearNightTimer(game.code);
+      // C3a (§6 L2): restartGame's resetGameState clears the gate on every
+      // path (even a failed <3-player restart resets to lobby first), so the
+      // unconditional clear here can never orphan an open gate.
+      clearRevengeTimer(game.code);
       const from = game.phase;
       const messages = restartGame(game);
       if (!messages) {
@@ -1366,6 +1740,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) return;
       if (game.phase !== "night") return;
+      // C3a's interim pendingRevenge guard was removed here: the C3b M7
+      // sweep (REVENGE_GATE_REJECTED, dispatch level) now rejects
+      // narrator_ready before this handler can run while gated.
       if (!game.awaitingNarratorReady) return;
       game.awaitingNarratorReady = false;
       startNightSequence(game);
@@ -1526,6 +1903,20 @@ function resolveNightAndTransition(game: Game): void {
     });
   }
 
+  // ── Two-stage dawn (C3a, HUNTER-DESIGN §4) ─────────────────────────────
+  // Stage 1 always ran above: private results delivered, deaths announced.
+  // If a Hunter died tonight the engine opened the revenge gate (and
+  // concludeRound deferred the win check + transition — phase is still
+  // "night"): Stage 2 replaces the closing day-cue/phase_change with the
+  // public reveal + the hunter's prompt + the revenge timeout.
+  // resolveRevenge emits the deferred epilogue once the gate clears. With
+  // no gate, the tail below is byte-identical to the pre-C3a dawn (pinned
+  // by the golden message-sequence tests).
+  if (game.pendingRevenge) {
+    openRevengeGate(game, game.pendingRevenge);
+    return;
+  }
+
   // Day sound cue + phase change (night → day, or night → game_over on a win)
   broadcastPhaseChange(game, {
     from,
@@ -1649,6 +2040,7 @@ setInterval(() => {
   for (const [code, game] of getAllGames()) {
     if (now - game.createdAt > TWO_HOURS) {
       clearNightTimer(code);
+      clearRevengeTimer(code); // C3a: game is being reaped (M2 hygiene)
       // NOT projectGameOver: the sweep also reaps games idling AT game_over
       // (where winner may be "joker"/"mafia" and jokerJointWinner true) yet
       // always reports winner "town" with no jokerJointWinner/forceEnded —

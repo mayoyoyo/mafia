@@ -43,6 +43,21 @@
       [_,_,"#ff0","#0f0","#ff0","#0f0","#ff0","#0f0",_,_],
       [_,_,_,"#f00",_,_,"#00f",_,_,_],
     ],
+    // Hunter: blaze-orange cap with a bill pointing right, olive field
+    // jacket with orange vest stripes, brown boots, and a strung bow
+    // (BOW_ART palette: #852 limbs, #ddd string) held at their left side.
+    hunter: [
+      [_,_,_,"#e60","#e60","#e60","#e60",_,_,_],
+      [_,_,"#e60","#e60","#e60","#e60","#e60","#e60",_,_],
+      ["#852",_,"#e60","#e60","#e60","#e60","#e60","#e60","#e60",_],
+      ["#ddd","#852","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      ["#ddd","#852","#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+      ["#ddd","#852","#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      ["#ddd","#852","#fdd","#fdd","#b77","#b77","#fdd","#fdd",_,_],
+      ["#852",_,"#574","#574","#574","#574","#574","#574",_,_],
+      [_,_,"#574","#e60","#574","#574","#e60","#574",_,_],
+      [_,_,"#653","#653",_,_,"#653","#653",_,_],
+    ],
     citizen: [
       // 0: farmer
       [
@@ -299,6 +314,22 @@
     [_,_,_,_,_,_,_,_,_,_],
   ];
 
+  // Bow-and-arrow icon for hunter revenge slide-to-confirm: dark-brown bow
+  // limbs arcing right, pale string drawn straight at the left, fletched
+  // arrow flying right through the grip.
+  var BOW_ART = [
+    [_,_,"#852","#852",_,_,_,_,_,_],
+    [_,_,"#ddd","#852","#852",_,_,_,_,_],
+    [_,_,"#ddd",_,"#852","#852",_,_,_,_],
+    [_,_,"#ddd",_,_,"#852",_,"#ccc",_,_],
+    ["#e53","#a62","#a62","#a62","#a62","#a62","#a62","#eee","#eee",_],
+    [_,_,"#ddd",_,_,"#852",_,"#ccc",_,_],
+    [_,_,"#ddd",_,"#852","#852",_,_,_,_],
+    [_,_,"#ddd","#852","#852",_,_,_,_,_],
+    [_,_,"#852","#852",_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+  ];
+
   // 8-bit clown icon for joker haunt slide-to-confirm
   var CLOWN_ART = [
     [_,_,"#e53",_,_,_,_,"#e53",_,_],
@@ -347,6 +378,7 @@
     doctor: "You are the Doctor. Each night, choose one player to protect from the Mafia.",
     detective: "You are the Detective. Each night, investigate one player to discover if they are Mafia.",
     joker: "You are the Joker. Win by getting yourself executed during the day vote.",
+    hunter: "You are the Hunter. If you die, you may take one player down with you.",
   };
 
   var ROLE_COLORS = {
@@ -355,6 +387,7 @@
     doctor: "doctor",
     detective: "detective",
     joker: "joker",
+    hunter: "hunter",
   };
 
   // Expose on window for app.js
@@ -367,6 +400,7 @@
   window.CROSS_ART = CROSS_ART;
   window.MAGNIFIER_ART = MAGNIFIER_ART;
   window.CLOWN_ART = CLOWN_ART;
+  window.BOW_ART = BOW_ART;
   window.pixelArtToSvg = pixelArtToSvg;
   window.getRoleImage = getRoleImage;
   window.ROLE_DESCRIPTIONS = ROLE_DESCRIPTIONS;

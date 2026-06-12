@@ -20,6 +20,7 @@ A real-time multiplayer Mafia party game. Host a room, share the code, and play 
 | **Doctor** | Town | Protects one player from being killed | Cannot protect the same player two nights in a row. If they protect the Mafia's target, the kill is prevented. |
 | **Detective** | Town | Investigates one player to learn if they are Mafia | Result is revealed privately at dawn. Investigation still resolves even if the Detective is killed that night. |
 | **Joker** | Solo | None | Wins if voted out during the day. **Official mode** (default): the game continues — the Joker becomes a joint winner alongside the eventual winning team, and on the night immediately after the lynch may haunt one player who voted for their execution (the Doctor can block this kill). **House mode**: the Joker's execution ends the game instantly. Does not count toward either team's numbers. |
+| **Hunter** | Town | None — acts only on death | When the Hunter dies — by Mafia kill, day-vote execution, Joker haunt, or lover heartbreak — they are revealed and may immediately take one living player down with them. The shot cannot be blocked by the Doctor and resolves before the win check. Revenge is optional in both modes — the Hunter may decline (and the host may skip a stalled Hunter). |
 | **Lovers** | — | None | Two random players are paired. If one dies, the other dies of heartbreak. Lovers can be any role, including Mafia. |
 
 ### Multi-Mafia Deliberation

@@ -186,10 +186,20 @@
     "doctor_targets",
     "detective_targets",
     "joker_haunt_targets",
+    "hunter_revenge_pending",
+    "hunter_revenge_targets",
     "spectator_joker_deliberating",
     "spectator_joker_resolved",
   ];
-  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay"]);
+  // hunter_revenge_targets is the death-triggered revenge prompt the advisory
+  // above anticipates: it must also ride the suspense queue so it replays
+  // AFTER the death reveal (and after the chain-ending applyPhaseChange that
+  // would otherwise hide the just-rendered prompt). hunter_revenge_pending
+  // (the room-wide reveal + wait view, C5b) rides the same death-triggered
+  // flow and gets the identical treatment: the reveal must not render before
+  // the queued death beats replay, and applyPhaseChange's hide-all would
+  // stomp a wait view rendered mid-chain.
+  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay", "hunter_revenge_pending", "hunter_revenge_targets"]);
   const TRANSITION_GATE_TYPES = new Set(["sound_cue", ...HOLD_GATE_PROMPTS]);
   const NARRATION_GATE_TYPES = new Set(HOLD_GATE_PROMPTS);
   // Test handle: tests pin the exact membership of the derived gate lists.
@@ -328,6 +338,7 @@
         $("event-history-list").innerHTML = "";
         $("dead-overlay").classList.add("hidden");
         $("dead-dismiss-hint").classList.add("hidden");
+        $("revenge-wait").classList.add("hidden"); // C5b: restart while gated
         // Show players tab from game start
         resetEventHistoryTabs("players");
         $("event-history").classList.remove("hidden");
@@ -370,6 +381,29 @@
       case "joker_haunt_targets":
         deadActionActive = true;
         showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
+        break;
+
+      case "hunter_revenge_pending":
+        // C5b: the room-wide wait view — the public Hunter reveal plus a
+        // "waiting" status for everyone (panels are otherwise idle because
+        // the phase transition is deferred while the gate is open). On the
+        // hunter's own client this arrives just before hunter_revenge_targets,
+        // whose case below replaces the wait view with the prompt.
+        showRevengeWait(msg.hunterName);
+        break;
+
+      case "hunter_revenge_targets":
+        // The hunter is dead by definition here — the flag must be set
+        // before showNightAction's dead-guard runs (joker-haunt machinery).
+        deadActionActive = true;
+        // The hunter's own you_died overlay must not sit on top of the
+        // revenge prompt (same idea as the jokerWonOverlayShown skip below).
+        $("dead-overlay").classList.add("hidden");
+        $("dead-dismiss-hint").classList.add("hidden");
+        // The room-wide wait view (hunter_revenge_pending arrived just
+        // before this) gives way to the hunter's own prompt (C5b).
+        $("revenge-wait").classList.add("hidden");
+        showNightAction("Take your revenge", msg.players, "hunter_revenge");
         break;
 
       case "joker_win_overlay":
@@ -472,6 +506,7 @@
         gameCode = null;
         isAdmin = false;
         pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
+        $("revenge-wait").classList.add("hidden"); // C5b: return-to-lobby while gated
         $("narrator-messages").innerHTML = "";
         $("role-reveal").innerHTML = "";
         $("event-history-list").innerHTML = "";
@@ -576,6 +611,10 @@
 
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
+    $("btn-decline-revenge").classList.add("hidden");
+    // C5b: gate-closed baseline (E10d — rejoin after resolution must leave
+    // no stale wait view); the pendingRevenge branch below re-shows it.
+    $("revenge-wait").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -720,6 +759,17 @@
       });
     }
 
+    // C5b: revenge-gate restore. pendingRevenge is the ONLY gate signal —
+    // never inferred from phase/subPhase (the gated game looks like an idle
+    // night or a cleared vote). Non-hunter: render the wait view (+ the skip
+    // control if admin). Hunter (isYou): render nothing here — the server
+    // re-sends hunter_revenge_targets right after game_sync and that case
+    // takes over (the jokerHauntPending treatment: the target list never
+    // rides game_sync).
+    if (msg.pendingRevenge && !msg.pendingRevenge.isYou) {
+      showRevengeWait(msg.pendingRevenge.hunterName);
+    }
+
     // Show event history (always visible during game)
     $("event-history").classList.remove("hidden");
     updatePlayerStatus();
@@ -832,7 +882,7 @@
     }
   });
 
-  ["doctor", "detective", "joker", "lovers"].forEach((role) => {
+  ["doctor", "detective", "joker", "hunter", "lovers"].forEach((role) => {
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
@@ -908,6 +958,7 @@
     $("toggle-doctor").checked = settings.enableDoctor;
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
+    $("toggle-hunter").checked = settings.enableHunter;
     $("toggle-lovers").checked = settings.enableLovers;
     if (settings.narrationAccent) {
       currentAccent = settings.narrationAccent;
@@ -1001,6 +1052,7 @@
     if (settings.enableDoctor) roles.push(`Doctor (${settings.doctorMode === "official" ? "Official" : "House"})`);
     if (settings.enableDetective) roles.push("Detective");
     if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
+    if (settings.enableHunter) roles.push("Hunter");
     if (settings.enableLovers) roles.push("Lovers");
 
     container.innerHTML = `
@@ -1166,10 +1218,11 @@
     // Set role-specific icon and label
     const iconArt = role === "mafia" ? KNIFE_ART
       : role === "doctor" ? CROSS_ART
-      : role === "joker_haunt" ? CLOWN_ART : MAGNIFIER_ART;
+      : role === "joker_haunt" ? CLOWN_ART
+      : role === "hunter_revenge" ? BOW_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt" };
+    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt", hunter_revenge: "slide to avenge" };
     label.textContent = labels[role] || "slide to confirm";
 
     slideCallback = callback;
@@ -1181,6 +1234,16 @@
     container.classList.remove("confirmed", "dragging");
     slideCallback = null;
   }
+
+  // Test handle: happy-dom can't drive the pointer drag (zero-size layout
+  // rects), so client tests fire the armed confirm directly, mirroring the
+  // threshold branch of onEnd below. Not read by any app code.
+  window.__testFireSlideConfirm = () => {
+    if (!slideCallback) return;
+    const cb = slideCallback;
+    slideCallback = null;
+    cb();
+  };
 
   // Slide drag handlers
   (function () {
@@ -1461,6 +1524,10 @@
 
     // Hide all action panels
     $("night-actions").classList.add("hidden");
+    $("btn-decline-revenge").classList.add("hidden");
+    // C5b: the deferred phase_change IS the revenge-resolution signal — the
+    // room-wide wait view (and its admin skip control) comes down with it.
+    $("revenge-wait").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -1763,6 +1830,7 @@
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
       joker_haunt: "Haunted by the Joker",
+      hunter_revenge: "Shot by the Hunter",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -1863,8 +1931,9 @@
   // NIGHT ACTIONS
   // ============================================================
   let nightActionLocked = false; // true after doctor/detective confirm
-  // True while a dead player's own action is in progress (today: only the
-  // joker haunt sets it; any future dead-player action sets the same flag).
+  // True while a dead player's own action is in progress (the joker haunt
+  // and the hunter revenge set it; any future dead-player action sets the
+  // same flag).
   // Suppresses the spectator views and exempts showNightAction's dead-guard.
   // Reset sites: the game_started case, the game_sync reset (handleGameSync),
   // and applyPhaseChange's night branch.
@@ -1886,7 +1955,7 @@
 
   function showNightAction(title, players, actionType, disabledId) {
     // A dead player may only act while their own dead action is active
-    // (deadActionActive — today: joker haunting from beyond the grave)
+    // (deadActionActive — joker haunting or hunter revenge from beyond the grave)
     if (isDead && !deadActionActive) return;
 
     const panel = $("night-actions");
@@ -1896,6 +1965,10 @@
     nightActionLocked = false;
 
     hideSlideConfirm();
+
+    // Decline affordance is exclusive to the hunter's revenge prompt
+    // (slide-confirm is reserved for the kill; declining is a plain button).
+    $("btn-decline-revenge").classList.toggle("hidden", actionType !== "hunter_revenge");
 
     const list = $("action-targets");
 
@@ -1920,10 +1993,10 @@
         })
         .join("");
 
-      // Doctor/Detective/Joker haunt: clicking selects visually, slide-to-confirm sends to server
+      // Doctor/Detective/Joker haunt/Hunter revenge: clicking selects visually, slide-to-confirm sends to server
       let selectedTargetId = null;
       let selectedName = null;
-      const slideRole = actionType === "joker_haunt" ? "joker_haunt" : myRole;
+      const slideRole = (actionType === "joker_haunt" || actionType === "hunter_revenge") ? actionType : myRole;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
           if (nightActionLocked) return;
@@ -1938,11 +2011,51 @@
             wsSend({ type: actionType, targetId: selectedTargetId });
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
+            // Action resolved: the hunter's decline affordance goes with it
+            // (no-op for every other action type; the button is already hidden)
+            $("btn-decline-revenge").classList.add("hidden");
           });
         });
       });
     }
   }
+
+  // C5b: the room-wide wait view while the revenge gate is open. The reveal
+  // is PUBLIC (HUNTER-DESIGN decision #10) — alive players, dead spectators
+  // and the admin all see who the Hunter is and wait for the shot. The admin
+  // (alive or dead — admin rights persist) additionally gets the force-skip
+  // safety net; showRevengeWait is the ONLY un-hide path, so re-toggling the
+  // button here keeps a stale skip control structurally impossible.
+  // Teardown sites (the wait view outlives no resolution): the
+  // hunter_revenge_targets case (the hunter's prompt replaces it), the
+  // game_started reset, the game_sync hide-all (re-shown by the
+  // pendingRevenge restore branch when the gate is still open),
+  // applyPhaseChange's hide-all (the deferred phase_change IS the
+  // resolution signal), handleGameOver, and room_closed.
+  function showRevengeWait(hunterName) {
+    $("revenge-wait-reveal").textContent = `${hunterName} was the Hunter!`;
+    $("btn-skip-revenge").classList.toggle("hidden", !isAdmin);
+    $("revenge-wait").classList.remove("hidden");
+  }
+
+  // Admin-only safety net for a stalled Hunter (the kitchen problem). The
+  // server resolves it as a decline; a click after the gate closed is a
+  // wire-silent no-op server-side, so no client-side locking is needed.
+  $("btn-skip-revenge").addEventListener("click", () => {
+    wsSend({ type: "force_skip_revenge" });
+  });
+
+  // C5a: declining the revenge shot is a plain button (slide-confirm is
+  // reserved for the kill). Only visible while the hunter_revenge prompt is
+  // up; null targetId is the wire shape for a decline.
+  $("btn-decline-revenge").addEventListener("click", () => {
+    if (nightActionLocked) return;
+    nightActionLocked = true;
+    wsSend({ type: "hunter_revenge", targetId: null });
+    $("btn-decline-revenge").classList.add("hidden");
+    hideSlideConfirm();
+    $("action-status").textContent = "You lower your bow.";
+  });
 
   function renderSingleMafiaTargets(list, players) {
     list.innerHTML = players
@@ -2680,6 +2793,7 @@
 
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
+    $("revenge-wait").classList.add("hidden"); // C5b: e.g. force-end while gated
     closeSettingsModal();
 
     // Reset gameplay state but keep gameCode/isAdmin for Play Again
@@ -2728,6 +2842,18 @@
     renderGameHistory();
   }
 
+  // Game-over history label map (death causes → readable text).
+  const GAME_HISTORY_LABELS = {
+    kill: "Killed by the Mafia",
+    save: "Saved by the Doctor",
+    execution: "Executed by vote",
+    lover_death: "Died of heartbreak",
+    joker_haunt: "Haunted by the Joker",
+    hunter_revenge: "Shot by the Hunter",
+  };
+  // Test handle: pins the game-over history labels. Not read by any app code.
+  window.__gameOverHistoryLabels = GAME_HISTORY_LABELS;
+
   function renderGameHistory() {
     const container = $("game-history");
     container.innerHTML = "";
@@ -2735,17 +2861,11 @@
     const events = lastGameEvents.filter((e) => e.type !== "spared");
     if (events.length === 0) return;
 
-    const LABELS = {
-      kill: "Killed by the Mafia",
-      save: "Saved by the Doctor",
-      execution: "Executed by vote",
-      lover_death: "Died of heartbreak",
-      joker_haunt: "Haunted by the Joker",
-    };
+    const LABELS = GAME_HISTORY_LABELS;
 
     // Group by round, split night vs day
-    // Night events: kill, save, lover_death following a kill
-    // Day events: execution, lover_death following an execution
+    // Night events: kill, save, lover_death/hunter_revenge following a kill
+    // Day events: execution, lover_death/hunter_revenge following an execution
     const grouped = {};
     let lastPhase = "night";
     for (const ev of events) {
@@ -2756,7 +2876,11 @@
       } else if (ev.type === "execution") {
         grouped[ev.round].day.push(ev);
         lastPhase = "day";
-      } else if (ev.type === "lover_death") {
+      } else if (ev.type === "lover_death" || ev.type === "hunter_revenge") {
+        // No phase field (DeathEventType, like joker_haunt): follow the death
+        // that triggered it via lastPhase — dawn-gate revenge rides the night
+        // kill, vote-gate revenge rides the day execution. Same precedent as
+        // lover_death.
         grouped[ev.round][lastPhase].push(ev);
       }
     }
@@ -3263,7 +3387,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.3_202606100708";
-  const APP_VERSION_STAGING = "staging.15_202606101723";
+  const APP_VERSION_STAGING = "staging.16_202606120831";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
