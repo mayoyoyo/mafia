@@ -295,6 +295,44 @@ describe("C5a: held during overlay chains, replayed after", () => {
   });
 });
 
+// ── C9: hunter_revenge death-history labels ─────────────────────────────────
+//
+// The server emits death-history events of type "hunter_revenge" (the
+// Hunter's dying shot). The client has two label maps that translate event
+// types to readable text:
+//   1. EVENT_LABELS (in-game event history, rendered by renderEventHistory)
+//   2. LABELS       (game-over history summary, rendered by renderGameHistory)
+// Both must carry a hunter_revenge entry or the raw "hunter_revenge" string
+// leaks into the UI via the `... || ev.type` fallback. Sibling death causes
+// (kill, execution, lover_death, joker_haunt) all have entries in both maps.
+
+describe("C9: hunter_revenge label — in-game event history (EVENT_LABELS)", () => {
+  test("a hunter_revenge event renders a readable label, not the raw type", () => {
+    // Drive the real render path: game_sync renders eventHistory through
+    // renderEventHistory → EVENT_LABELS[ev.type] || ev.type.
+    gatedSync({
+      eventHistory: [
+        { round: 2, type: "hunter_revenge", playerName: "Bob" },
+      ],
+    });
+
+    const list = $("event-history-list");
+    expect(list.textContent).toContain("Bob");
+    expect(list.textContent).not.toContain("hunter_revenge"); // no raw-type leak
+    expect(list.textContent).toContain("Shot by the Hunter");
+  });
+});
+
+describe("C9: hunter_revenge label — game-over history summary (LABELS)", () => {
+  // renderGameHistory's bucketing loop doesn't route hunter_revenge into a
+  // night/day bucket, so the real render path can't surface it without an
+  // out-of-scope refactor. Pin the map entry directly via the window seam
+  // (same convention as __holdGateLists / __testFireSlideConfirm).
+  test("the game-over history map carries a hunter_revenge entry", () => {
+    expect(window.__gameOverHistoryLabels.hunter_revenge).toBe("Shot by the Hunter");
+  });
+});
+
 // ── C5b: the room-wide wait view ─────────────────────────────────────────────
 
 describe("C5b: gate-list membership (hunter_revenge_pending)", () => {

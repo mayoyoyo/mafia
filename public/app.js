@@ -1830,6 +1830,7 @@
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
       joker_haunt: "Haunted by the Joker",
+      hunter_revenge: "Shot by the Hunter",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -2841,6 +2842,18 @@
     renderGameHistory();
   }
 
+  // Game-over history label map (death causes → readable text).
+  const GAME_HISTORY_LABELS = {
+    kill: "Killed by the Mafia",
+    save: "Saved by the Doctor",
+    execution: "Executed by vote",
+    lover_death: "Died of heartbreak",
+    joker_haunt: "Haunted by the Joker",
+    hunter_revenge: "Shot by the Hunter",
+  };
+  // Test handle: pins the game-over history labels. Not read by any app code.
+  window.__gameOverHistoryLabels = GAME_HISTORY_LABELS;
+
   function renderGameHistory() {
     const container = $("game-history");
     container.innerHTML = "";
@@ -2848,13 +2861,7 @@
     const events = lastGameEvents.filter((e) => e.type !== "spared");
     if (events.length === 0) return;
 
-    const LABELS = {
-      kill: "Killed by the Mafia",
-      save: "Saved by the Doctor",
-      execution: "Executed by vote",
-      lover_death: "Died of heartbreak",
-      joker_haunt: "Haunted by the Joker",
-    };
+    const LABELS = GAME_HISTORY_LABELS;
 
     // Group by round, split night vs day
     // Night events: kill, save, lover_death following a kill
