@@ -69,6 +69,68 @@
 .disp { font-family: 'Silkscreen', monospace; }
 .mono { font-family: 'IBM Plex Mono', monospace; }
 
+/* ============================================================
+   PIXEL NOIR — D1b: Stepped-corner chrome + texture utilities
+   ============================================================ */
+
+/* Pixel-stepped corner clip-path (12px/4px — standard) */
+.pxc { clip-path: polygon(
+  0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+  calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+  100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+  calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+  12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+); }
+
+/* Pixel-stepped corner clip-path (6px/2px — small chips) */
+.pxc-sm { clip-path: polygon(
+  0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
+  calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
+  100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
+  calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
+  6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
+); }
+
+/* Stepped-border wrapper: outer = border color bg + .pxc, inner = surface bg + .pxc */
+.pxb { padding: 2px; }
+.pxb > .in { width: 100%; height: 100%; }
+
+/* ---- Texture utilities (static — zero new animations) ---- */
+
+/* Scanlines: 1px line every 4px, pointer-events:none so it never blocks taps */
+.scanlines { position: relative; }
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.10) 3px 4px
+  );
+  z-index: 1;
+}
+
+/* Radial vignette darkening toward edges */
+.vignette { position: relative; }
+.vignette::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  z-index: 2;
+}
+
+/* Dither divider: 6px conic checker pattern */
+.dither-h {
+  height: 6px;
+  background-image: conic-gradient(var(--border) 25%, transparent 25% 50%, var(--border) 50% 75%, transparent 75%);
+  background-size: 6px 6px;
+  opacity: 0.5;
+}
+
 /* Light theme — warm-paper neutrals kept; sync amber primary + role fixes */
 [data-theme="light"] {
   --bg: #f0ebe1;
@@ -119,18 +181,55 @@ html, body {
 }
 
 /* SCREENS */
-.screen { display: none; flex-direction: column; gap: 20px; min-height: calc(100vh - 32px - var(--safe-top) - var(--safe-bottom)); }
+.screen {
+  display: none;
+  flex-direction: column;
+  gap: 20px;
+  min-height: calc(100vh - 32px - var(--safe-top) - var(--safe-bottom));
+  position: relative;
+}
 .screen.active { display: flex; }
+/* Scanlines + vignette texture on all screens */
+.screen.active::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.08) 3px 4px
+  );
+  z-index: 9999;
+}
+/* Vignette on auth and game screens */
+#screen-auth.active::before,
+#screen-game.active::before,
+#screen-gameover.active::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.45) 100%);
+  z-index: 9998;
+}
 
 /* BUTTONS */
 .btn {
   border: none;
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  );
   font-size: 16px;
   font-weight: 600;
   padding: 14px 24px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   font-family: 'Silkscreen', monospace;
@@ -138,37 +237,98 @@ html, body {
 }
 .btn:active { transform: scale(0.97); opacity: 0.8; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
-.btn-primary { background: var(--primary); color: #fff; }
+/* Primary: amber fill, ink Silkscreen label, pressed-edge shadow */
+.btn-primary {
+  background: var(--primary);
+  color: #141008;
+  box-shadow: inset 0 -5px 0 rgba(70,40,0,.35);
+}
 .btn-primary:active { background: var(--primary-dark); }
-.btn-secondary { background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); }
-.btn-ghost { background: transparent; color: var(--text-secondary); padding: 8px 12px; font-size: 14px; }
+/* Secondary: uses pxb wrapper in HTML for stepped border; standalone keeps subtle border bg */
+.btn-secondary {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+/* Ghost: minimal; no clip-path so inline ghost can sit freely */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  font-size: 14px;
+  clip-path: none;
+  border-radius: 6px;
+}
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-large { padding: 18px 32px; font-size: 18px; width: 100%; }
-.btn-small { padding: 8px 16px; font-size: 13px; border-radius: 8px; }
-.btn-icon { background: none; border: none; color: var(--text); font-size: 24px; padding: 4px 8px; cursor: pointer; }
-.btn-counter { width: 40px; height: 40px; border-radius: 50%; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.btn-small {
+  padding: 8px 16px;
+  font-size: 13px;
+  clip-path: polygon(
+    0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
+    calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
+    calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
+    6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
+  );
+}
+.btn-icon { background: none; border: none; color: var(--text); font-size: 24px; padding: 4px 8px; cursor: pointer; clip-path: none; }
+.btn-counter { width: 40px; height: 40px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)); }
+/* Stepped border wrapper for secondary/ghost buttons (outer = border bg, inner = surface bg) */
+.btn-pxb {
+  background: var(--border);
+  padding: 2px;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  display: block;
+}
+.btn-pxb .btn { display: block; width: 100%; }
 
 /* VOTE BUTTONS */
-.btn-vote { width: 80px; height: 80px; border-radius: 50%; font-size: 40px; display: flex; align-items: center; justify-content: center; }
+.btn-vote {
+  width: 80px; height: 80px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  font-size: 40px; display: flex; align-items: center; justify-content: center;
+}
 .btn-vote svg { width: 40px; height: 40px; image-rendering: pixelated; }
 .btn-vote-yes { background: var(--success); }
 .btn-vote-no { background: var(--danger); }
-.btn-vote.selected { box-shadow: 0 0 0 4px #fff; }
+.btn-vote.selected { outline: 4px solid #fff; outline-offset: 2px; }
 
-/* INPUTS */
+/* INPUTS — stepped corners via clip-path; border shown through pxb wrapper in HTML */
 input[type="text"], input[type="tel"] {
   width: 100%;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  padding: 17px 18px;
+  border: none;
+  border-radius: 0;
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  );
   background: var(--bg-input);
   color: var(--text);
   font-size: 16px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: none;
 }
-input:focus { border-color: var(--primary); }
+/* Input focus: outline on wrapper (can't use border-color inside clip-path) */
+input:focus { background: var(--bg-elevated); }
 input::placeholder { color: var(--text-secondary); }
+/* Input wrapper for stepped border */
+.input-pxb {
+  background: var(--border);
+  padding: 2px;
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  );
+}
+.input-pxb input { display: block; }
 
 /* AUTH */
 .logo { text-align: center; padding: 60px 0 40px; }
@@ -184,7 +344,7 @@ input::placeholder { color: var(--text-secondary); }
 .logo-small h1 { font-size: 22px; letter-spacing: 6px; font-family: 'Silkscreen', monospace; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
-.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; }
+.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: 'IBM Plex Mono', monospace; }
 .error-msg { color: var(--danger); font-size: 14px; text-align: center; min-height: 20px; }
 .copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; font-family: 'IBM Plex Mono', monospace; }
 
@@ -205,9 +365,10 @@ input::placeholder { color: var(--text-secondary); }
 /* SETTINGS */
 .settings-panel {
   background: var(--bg-card);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
-  border: 1px solid var(--border);
+  border: none;
 }
 .settings-panel h3 { font-size: 16px; margin-bottom: 12px; color: var(--text-secondary); }
 .setting-row {
@@ -222,7 +383,7 @@ input::placeholder { color: var(--text-secondary); }
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 6px 10px;
   font-size: 14px;
   font-family: inherit;
@@ -238,9 +399,8 @@ input::placeholder { color: var(--text-secondary); }
 }
 .rule-tabs {
   display: flex;
-  gap: 0;
-  border-radius: 8px;
-  overflow: hidden;
+  gap: 2px;
+  border-radius: 0;
   border: 1px solid var(--border);
   width: fit-content;
 }
@@ -258,7 +418,8 @@ input::placeholder { color: var(--text-secondary); }
 }
 .rule-tab.active {
   background: var(--primary);
-  color: #fff;
+  color: #141008;
+  font-family: 'Silkscreen', monospace;
 }
 .rule-tab:not(.active):active {
   background: var(--bg-card);
@@ -301,7 +462,8 @@ input::placeholder { color: var(--text-secondary); }
   padding: 12px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   margin-bottom: 6px;
   display: flex;
   align-items: center;
@@ -311,10 +473,12 @@ input::placeholder { color: var(--text-secondary); }
 .players-list li .admin-badge {
   font-size: 11px;
   background: var(--primary);
-  color: #fff;
+  color: #141008;
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
   font-weight: 600;
+  font-family: 'Silkscreen', monospace;
 }
 .players-list li .dead-badge { color: var(--text-secondary); text-decoration: line-through; }
 .waiting-text { text-align: center; color: var(--text-secondary); padding: 20px 0; }
@@ -330,7 +494,8 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 14px;
   font-weight: 700;
   padding: 6px 16px;
-  border-radius: 20px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   text-transform: uppercase;
   letter-spacing: 2px;
   font-family: 'Silkscreen', monospace;
@@ -359,7 +524,7 @@ input::placeholder { color: var(--text-secondary); }
   /* flat stacking — no 3D transforms */
 }
 .card-front, .card-back {
-  border-radius: 20px;
+  border-radius: 0;
   padding: 24px;
   background: var(--bg-card);
   border: 2px solid var(--border);
@@ -368,6 +533,7 @@ input::placeholder { color: var(--text-secondary); }
 .card-front {
   /* sits below .card-back in the stack; visible when card-back clips away */
   position: relative;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
 }
 .card-back {
   position: absolute;
@@ -462,9 +628,11 @@ input::placeholder { color: var(--text-secondary); }
   background: var(--role-lover);
   color: #fff;
   padding: 4px 16px;
-  border-radius: 20px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   font-size: 14px;
   font-weight: 600;
+  font-family: 'Silkscreen', monospace;
 }
 .role-icon-mini {
   position: absolute;
@@ -521,7 +689,8 @@ input::placeholder { color: var(--text-secondary); }
 .narrator-area {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
   min-height: 60px;
 }
@@ -546,7 +715,8 @@ input::placeholder { color: var(--text-secondary); }
 .awaiting-ready {
   background: var(--bg-card);
   border: 2px solid var(--primary);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 20px;
   text-align: center;
   animation: fadeIn 0.5s ease;
@@ -565,7 +735,8 @@ input::placeholder { color: var(--text-secondary); }
 .detective-result {
   background: var(--bg-card);
   border: 2px solid var(--role-detective);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 14px 16px;
   font-size: 15px;
   line-height: 1.5;
@@ -576,7 +747,8 @@ input::placeholder { color: var(--text-secondary); }
 .action-panel {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
 }
 .action-panel h3 { font-size: 16px; margin-bottom: 12px; }
@@ -586,9 +758,10 @@ input::placeholder { color: var(--text-secondary); }
 .mafia-target-card {
   padding: 12px 14px;
   border: 2px solid var(--border);
-  border-radius: 14px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 8px;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
   background: var(--bg-elevated);
 }
 .mafia-target-card.idle { border-color: var(--border); }
@@ -626,7 +799,8 @@ input::placeholder { color: var(--text-secondary); }
   color: var(--primary);
   background: rgba(232,163,61,0.15);
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
   font-family: 'IBM Plex Mono', monospace;
 }
 .mtc-blocked-label {
@@ -637,7 +811,8 @@ input::placeholder { color: var(--text-secondary); }
   color: var(--text-secondary);
   background: var(--bg-elevated);
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
 }
 .mtc-chips {
   display: flex;
@@ -673,13 +848,14 @@ input::placeholder { color: var(--text-secondary); }
 }
 .mtc-btn {
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   font-size: 13px;
   font-weight: 600;
   padding: 10px 14px;
   min-height: 44px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: opacity 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   display: flex;
@@ -712,7 +888,9 @@ input::placeholder { color: var(--text-secondary); }
 /* Joker spectator status */
 .joker-spectator-status {
   font-size: 13px; padding: 8px 12px;
-  border-radius: 8px; margin-bottom: 8px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  margin-bottom: 8px;
   text-align: center; font-weight: 600;
 }
 .joker-spectator-status.deliberating {
@@ -730,11 +908,12 @@ input::placeholder { color: var(--text-secondary); }
 .single-mafia-target {
   padding: 14px 16px;
   border: 2px solid var(--border);
-  border-radius: 14px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 8px;
   background: var(--bg-elevated);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, background 0.15s;
   font-weight: 500;
 }
 .single-mafia-target:active { border-color: var(--primary); background: rgba(232,163,61,0.08); }
@@ -752,10 +931,11 @@ input::placeholder { color: var(--text-secondary); }
   padding: 14px 16px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 6px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s;
   font-weight: 500;
 }
 .target-list li:not(:has(.mafia-icons)):active { background: var(--primary); }
@@ -857,7 +1037,8 @@ input::placeholder { color: var(--text-secondary); }
 .vote-status {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
 }
 .vote-status h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
@@ -866,7 +1047,8 @@ input::placeholder { color: var(--text-secondary); }
 .voting-panel {
   background: var(--bg-card);
   border: 2px solid var(--primary);
-  border-radius: 20px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 24px;
   text-align: center;
 }
@@ -878,7 +1060,8 @@ input::placeholder { color: var(--text-secondary); }
 .admin-controls {
   background: var(--bg-card);
   border: 1px solid var(--primary);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
 }
 .admin-controls h3 { font-size: 16px; margin-bottom: 12px; color: var(--primary); }
@@ -898,6 +1081,28 @@ input::placeholder { color: var(--text-secondary); }
   z-index: 100;
   animation: fadeIn 1s ease;
 }
+/* Scanlines on dead overlay */
+.dead-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.10) 3px 4px
+  );
+  z-index: 1;
+}
+/* Vignette on dead overlay */
+.dead-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 90% 55% at 50% 42%, transparent 45%, rgba(0,0,0,0.6) 100%);
+  z-index: 2;
+}
 .skull { font-size: 120px; animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 .dead-text { font-size: 28px; font-weight: 700; color: var(--danger); text-transform: uppercase; letter-spacing: 4px; margin-top: 16px; font-family: 'Silkscreen', monospace; }
@@ -916,6 +1121,22 @@ input::placeholder { color: var(--text-secondary); }
   z-index: 100;
   animation: fadeIn 0.8s ease;
   cursor: pointer;
+}
+.joker-win-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0px 3px, rgba(0,0,0,0.10) 3px 4px);
+  z-index: 1;
+}
+.joker-win-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  z-index: 2;
 }
 .joker-trophy { font-size: 100px; animation: pulse 2s ease-in-out infinite; }
 .joker-win-title {
@@ -989,7 +1210,13 @@ input::placeholder { color: var(--text-secondary); }
 }
 .modal-content {
   background: var(--bg-elevated);
-  border-radius: 20px 20px 0 0;
+  border-radius: 0;
+  /* Stepped corners top-only for bottom-sheet feel */
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% 100%, 0 100%
+  );
   width: 100%;
   max-width: 430px;
   max-height: 60vh;
@@ -1026,7 +1253,8 @@ input::placeholder { color: var(--text-secondary); }
   padding: 10px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   margin-bottom: 6px;
 }
 .role-reveal-item.dead { opacity: 0.5; }
@@ -1046,7 +1274,9 @@ input::placeholder { color: var(--text-secondary); }
   text-transform: uppercase;
   letter-spacing: 1px;
   padding: 2px 10px;
-  border-radius: 8px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  font-family: 'Silkscreen', monospace;
 }
 .role-reveal-role.mafia { background: var(--role-mafia); color: #fff; }
 .role-reveal-role.citizen { background: var(--role-citizen); color: #fff; }
@@ -1061,7 +1291,8 @@ input::placeholder { color: var(--text-secondary); }
 .event-history {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 12px 16px;
 }
 .eh-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
@@ -1069,7 +1300,7 @@ input::placeholder { color: var(--text-secondary); }
   flex: 1;
   padding: 6px 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
@@ -1078,10 +1309,12 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 1px;
   cursor: pointer;
   transition: all 0.15s;
+  font-family: 'Silkscreen', monospace;
 }
 .eh-tab.active {
   background: var(--bg-elevated);
   color: var(--text);
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
 }
 .eh-panel { /* default visible */ }
 .player-status-list { font-size: 13px; line-height: 1.8; }
@@ -1117,7 +1350,7 @@ input::placeholder { color: var(--text-secondary); }
 .event-item.investigation_mafia { color: var(--danger); }
 .event-item.investigation_clear { color: var(--success); }
 
-/* SUSPENSE OVERLAY */
+/* SUSPENSE OVERLAY — z-index 300, topmost, NEVER change */
 .suspense-overlay {
   position: fixed;
   inset: 0;
@@ -1129,6 +1362,28 @@ input::placeholder { color: var(--text-secondary); }
   transition: opacity 0.8s ease;
 }
 .suspense-overlay.fade-out { opacity: 0; }
+/* Scanlines on suspense overlay (static, no animation) */
+.suspense-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.12) 3px 4px
+  );
+  z-index: 1;
+}
+/* Vignette on suspense overlay */
+.suspense-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.65) 100%);
+  z-index: 2;
+}
 .suspense-text {
   font-size: 28px;
   font-weight: 800;
@@ -1136,6 +1391,8 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center;
   padding: 0 32px;
   animation: suspenseFadeIn 0.8s ease;
+  position: relative;
+  z-index: 3;
 }
 @keyframes suspenseFadeIn {
   from { opacity: 0; transform: translateY(20px); }
@@ -1210,7 +1467,8 @@ input::placeholder { color: var(--text-secondary); }
 /* READ-ONLY SETTINGS DISPLAY (player lobby) */
 .player-lobby-settings {
   background: var(--bg-card);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 12px 16px;
   border: 1px solid var(--border);
   font-size: 14px;

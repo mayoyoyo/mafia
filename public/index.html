@@ -68,12 +68,12 @@
         <h1>MAFIA</h1>
       </div>
       <div class="auth-form">
-        <input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off">
+        <div class="input-pxb"><input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off"></div>
         <div class="passcode-row">
-          <input type="tel" id="auth-passcode" placeholder="4-digit PIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric">
+          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4-digit PIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
         </div>
-        <button id="btn-login" class="btn btn-primary">Log In</button>
-        <button id="btn-register" class="btn btn-secondary">Create Account</button>
+        <button id="btn-login" class="btn btn-primary btn-large">Log In</button>
+        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc">Create Account</button></div>
       </div>
       <div id="auth-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
@@ -138,10 +138,10 @@
       </div>
       <div class="menu-buttons">
         <button id="btn-host" class="btn btn-primary btn-large">Host Game</button>
-        <button id="btn-join-show" class="btn btn-secondary btn-large">Join Game</button>
+        <div class="btn-pxb pxc"><button id="btn-join-show" class="btn btn-secondary btn-large pxc">Join Game</button></div>
       </div>
       <div id="join-section" class="join-section hidden">
-        <input type="text" id="join-code" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters">
+        <div class="input-pxb" style="flex:1"><input type="text" id="join-code" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
         <button id="btn-join" class="btn btn-primary">Join</button>
       </div>
       <div id="menu-error" class="error-msg"></div>
@@ -417,11 +417,11 @@
         <div id="role-reveal" class="role-reveal"></div>
         <div id="gameover-buttons" class="gameover-buttons hidden">
           <button id="btn-play-again-same" class="btn btn-primary btn-large">Play Again</button>
-          <button id="btn-play-again-new" class="btn btn-secondary btn-large">New Settings</button>
+          <div class="btn-pxb pxc"><button id="btn-play-again-new" class="btn btn-secondary btn-large pxc">New Settings</button></div>
           <button id="btn-close-room" class="btn btn-danger btn-large">Close Room</button>
         </div>
         <div id="gameover-buttons-player" class="gameover-buttons hidden">
-          <button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large">Return to Lobby</button>
+          <div class="btn-pxb pxc"><button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large pxc">Return to Lobby</button></div>
         </div>
       </div>
     </div>
