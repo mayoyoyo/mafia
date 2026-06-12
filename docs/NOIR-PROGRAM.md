@@ -194,12 +194,12 @@ function getCosmeticAvatar(name) { // pre-reveal: role-agnostic profession art
 | Task | Scope | Commits | Notes |
 |---|---|---|---|
 | D0 | Spec + mockup + fonts (pre-merge) | b2c3a81 (docs+mockup), fonts commit follows | DONE 2026-06-11. 6 latin woff2 (Silkscreen 400/700 static; Libre Franklin variable wght 100-900 normal+italic; Plex Mono 400/500) + OFL.txt, all wOF2-verified. @font-face NOT wired (app.css is C's until merge). |
-| D1 | Fonts wired + tokens + chrome + texture | | gated on C merge + rebase |
+| D1 | Fonts wired + tokens + chrome + texture | | NEXT. Gate cleared; baseline verified 2026-06-12 in fresh worker instance: 510/0 tests, typecheck 0 (caution: don't run `bun install` concurrently with `bun test` — it corrupts the run). Folded hunter scope: slide entry restyle rides the D1 slide reskin; `--role-hunter #ef6c00` is TEST-PINNED (tests/hunter-content.test.ts rgb-derivation trap) — do NOT change it; instead, when tokenizing execution-event `#ff9800` → `--warning`, consider shifting the warning VALUE toward gold/yellow for hue separation from hunter orange AND amber primary `#e8a33d` (both render in game-history lists). |
 | D2 | Phase ambience | | |
 | D3 | Pixel iconography | | |
-| D4 | Avatars | | |
-| D5 | Dramatic beats | | |
-| D6 | Death / joker win / game over | | |
+| D4 | Avatars | | Hunter folded in: `PIXEL_ART.hunter` exists (C7) — include in game-over true-portrait reveal coverage. |
+| D5 | Dramatic beats | | Hunter folded in: C5 revenge prompt/wait overlays (`#revenge-wait`, decline button, hunter slide entry) get the restyle sweep; their HOLD_GATE/SUSPENSE_GATE entries are untouchable plumbing. |
+| D6 | Death / joker win / game over | | Playtest note folded in: dead Hunter never gets the YOU-ARE-DEAD overlay after the gate resolves (normal deaths do; card-back does swap to skull) — decide deliberately whether to show it post-gate, don't inherit by accident. |
 | D7 | Card peel | | |
 | D8 | Confirms + transitions + dvh | | |
 | D9 | Final gate + version bump | | |
