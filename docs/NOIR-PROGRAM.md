@@ -19,7 +19,11 @@
 
 ## Gate: D1+ requires Program C merged
 
-D0 runs now (new files only). Before D1: verify `git log origin/staging --oneline | grep -m1 hunter` shows Program C's merge, then:
+**GATE SATISFIED 2026-06-12:** C merged via PR #20 → `staging@19f4a14`; `staging.16` verified live; this branch already rebased onto it. Full 3-game staging playtest of the hunter passed (lynch+revenge, dawn-gate+decline, force-skip, rejoin mid-gate, visual smokes). Two playtest notes folded into task scopes: (1) D6 — the dead Hunter never gets the YOU-ARE-DEAD overlay after the gate resolves (normal deaths keep theirs; card-back does swap to skull) — decide deliberately, don't inherit by accident; (2) D1 — hunter `#ef6c00` and execution-event `#ff9800` oranges are near-adjacent, consider when tokenizing.
+
+**Execution model (user mandate):** D1–D9 run in a FRESH Claude Code instance opened in this worktree, kicked off with the blurb at the bottom of this file. The coordinating session validates, pushes, and merges — this worker NEVER pushes.
+
+D0 ran pre-merge (new files only). The original gate checklist (kept for the record):
 1. `git -C /Users/hansonkang/Documents/GitHub/mafia-noir fetch origin && git rebase origin/staging` (D0 commits are docs+new files; rebase is trivial).
 2. Read C's final carry-over notes in `docs/BUILD-PROGRAM.md` Status section.
 3. Add to D-scope: hunter slide-confirm entry (icon/label/CSS), hunter role color (must collide with nothing, spec §3.2), hunter portrait in avatar/reveal coverage (D4/D6), any new C5 overlays/prompts into the restyle sweep (D1/D5).
