@@ -2864,8 +2864,8 @@
     const LABELS = GAME_HISTORY_LABELS;
 
     // Group by round, split night vs day
-    // Night events: kill, save, lover_death following a kill
-    // Day events: execution, lover_death following an execution
+    // Night events: kill, save, lover_death/hunter_revenge following a kill
+    // Day events: execution, lover_death/hunter_revenge following an execution
     const grouped = {};
     let lastPhase = "night";
     for (const ev of events) {
@@ -2876,7 +2876,11 @@
       } else if (ev.type === "execution") {
         grouped[ev.round].day.push(ev);
         lastPhase = "day";
-      } else if (ev.type === "lover_death") {
+      } else if (ev.type === "lover_death" || ev.type === "hunter_revenge") {
+        // No phase field (DeathEventType, like joker_haunt): follow the death
+        // that triggered it via lastPhase — dawn-gate revenge rides the night
+        // kill, vote-gate revenge rides the day execution. Same precedent as
+        // lover_death.
         grouped[ev.round][lastPhase].push(ev);
       }
     }

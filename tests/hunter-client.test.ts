@@ -324,12 +324,64 @@ describe("C9: hunter_revenge label — in-game event history (EVENT_LABELS)", ()
 });
 
 describe("C9: hunter_revenge label — game-over history summary (LABELS)", () => {
-  // renderGameHistory's bucketing loop doesn't route hunter_revenge into a
-  // night/day bucket, so the real render path can't surface it without an
-  // out-of-scope refactor. Pin the map entry directly via the window seam
-  // (same convention as __holdGateLists / __testFireSlideConfirm).
+  // The map entry alone is necessary but not sufficient: renderGameHistory's
+  // bucketing loop must also route hunter_revenge into a night/day bucket or
+  // the event is dropped before the label is ever read. Pin both — the map
+  // (window seam) and the real render path (drive a game_over flow).
   test("the game-over history map carries a hunter_revenge entry", () => {
     expect(window.__gameOverHistoryLabels.hunter_revenge).toBe("Shot by the Hunter");
+  });
+
+  // Real path: events accumulate in-game via phase_change → renderEventHistory
+  // (which sets lastGameEvents), then a natural game_over runs the suspense
+  // reveal → showGameOverScreen → renderGameHistory. A dawn-gate revenge fires
+  // off a night kill, so both the kill and the revenge land in the SAME round
+  // and must both render under "Night 2". hunter_revenge has no phase field
+  // (DeathEventType, same shape as joker_haunt), so it rides lastPhase like
+  // lover_death does.
+  test("a dawn-gate hunter_revenge renders in the game-over history under its night", async () => {
+    startGame("citizen");
+    // Round-2 night: the Mafia kill Bob, the dying Hunter (Hank) shoots Carol.
+    serverSays({
+      type: "phase_change",
+      phase: "day",
+      round: 2,
+      messages: [],
+      events: [
+        { round: 2, type: "kill", playerName: "Bob" },
+        { round: 2, type: "hunter_revenge", playerName: "Carol", cause: "hunter_revenge", source: "Hank" },
+      ],
+    });
+
+    // Natural end (no transition in flight): the suspense reveal runs, and at
+    // its 4000ms beat (≈80ms at timeScale 0.02) showGameOverScreen fires.
+    serverSays({ type: "phase_change", phase: "game_over", round: 2, messages: ["The town wins!"], events: [] });
+    serverSays({
+      type: "game_over",
+      winner: "town",
+      message: "The town wins!",
+      players: [
+        { id: 1, username: "Tester", role: "citizen", isAlive: true, isLover: false },
+        { id: 2, username: "Hank", role: "hunter", isAlive: false, isLover: false },
+        { id: 3, username: "Carol", role: "mafia", isAlive: false, isLover: false },
+      ],
+    });
+
+    // Wait past the reveal's showGameOverScreen beat (4000ms → ~80ms).
+    await Bun.sleep(400);
+
+    const history = $("game-history");
+    expect(history.textContent).toContain("Shot by the Hunter");
+    expect(history.textContent).toContain("Carol"); // the revenge victim rides the label
+    expect(history.textContent).not.toContain("hunter_revenge"); // no raw-type leak
+    // It buckets into the night that triggered it, not a stray day bucket.
+    const nightHeader = [...history.querySelectorAll(".game-history-round")].find(
+      (h: any) => h.textContent === "Night 2",
+    );
+    expect(nightHeader).toBeTruthy();
+    const revengeItem = [...history.querySelectorAll(".game-history-item.hunter_revenge")][0];
+    expect(revengeItem).toBeTruthy();
+    expect(revengeItem.textContent).toContain("Carol");
   });
 });
 
