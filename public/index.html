@@ -210,9 +210,20 @@
           <label class="toggle"><input type="checkbox" id="toggle-lovers"><span class="slider"></span></label>
         </div>
 
-        <div class="setting-row">
-          <span>Narrator Voice</span>
-          <select id="lobby-accent" class="accent-select"></select>
+        <div id="lobby-accent" class="accent-picker setting-row collapsed">
+          <span class="accent-picker-title">Narrator Voice</span>
+          <button type="button" class="accent-picker-toggle" id="accent-picker-toggle" aria-expanded="false">
+            <span class="accent-picker-current" id="accent-picker-current"></span>
+            <span class="accent-picker-caret" aria-hidden="true"></span>
+          </button>
+          <div class="accent-picker-expanded" id="accent-picker-expanded" hidden>
+            <div class="accent-picker-stage">
+              <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice"></button>
+              <span class="accent-picker-label" id="accent-picker-label"></span>
+              <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice"></button>
+            </div>
+            <p class="accent-picker-desc" id="accent-picker-desc"></p>
+          </div>
         </div>
 
       </div>

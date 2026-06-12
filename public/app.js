@@ -933,9 +933,11 @@
     official: "Game continues \u2014 Joker can haunt a voter",
   });
 
-  $("lobby-accent").addEventListener("change", (e) => {
-    wsSend({ type: "update_settings", settings: { narrationAccent: e.target.value } });
-  });
+  // Narrator-voice picker (custom expandable control; replaces the native
+  // <select> whose long "label — description" options bled out of the panel).
+  // The arrows cycle accents and fire the SAME update_settings wire call the
+  // select fired; the server echo (updateSettingsUI) stays the only state writer.
+  setupAccentPicker();
 
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
@@ -975,8 +977,7 @@
     $("toggle-lovers").checked = settings.enableLovers;
     if (settings.narrationAccent) {
       currentAccent = settings.narrationAccent;
-      const sel = $("lobby-accent");
-      if (sel) sel.value = currentAccent;
+      renderAccentPicker();
       preloadNarrationAudio(currentAccent);
     }
     // Show/hide and sync mode sub-rows
@@ -3397,17 +3398,85 @@
     }
   }
 
-  function populateAccentSelector() {
-    const sel = $("lobby-accent");
-    if (!sel || !narrationData) return;
-    sel.innerHTML = "";
-    for (const [key, info] of Object.entries(narrationData.accents)) {
-      const opt = document.createElement("option");
-      opt.value = key;
-      opt.textContent = info.label + " — " + info.description;
-      sel.appendChild(opt);
+  // ============================================================
+  // NARRATOR-VOICE PICKER (custom expandable control)
+  // ============================================================
+  // Ordered accent keys, derived from narrationData. The arrows cycle this list
+  // (wrapping at both ends). currentAccent is NOT written locally as truth — each
+  // arrow press fires update_settings and the server echo (updateSettingsUI ->
+  // renderAccentPicker + preloadNarrationAudio) remains the single state writer.
+  function accentKeys() {
+    return narrationData ? Object.keys(narrationData.accents) : [];
+  }
+
+  // Wire the picker's expand/collapse and arrow handlers once at boot. Idempotent
+  // markup is in index.html; this only attaches listeners.
+  function setupAccentPicker() {
+    const root = $("lobby-accent");
+    if (!root) return;
+    const toggle = $("accent-picker-toggle");
+    const expanded = $("accent-picker-expanded");
+
+    const setExpanded = (open) => {
+      root.classList.toggle("collapsed", !open);
+      root.classList.toggle("expanded", open);
+      if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (expanded) expanded.hidden = !open;
+    };
+
+    // Tapping the collapsed row (or the affordance again) toggles open/closed.
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        setExpanded(root.classList.contains("collapsed"));
+      });
     }
-    sel.value = currentAccent;
+    // Collapse behavior: tapping outside the picker closes it (keeps the panel
+    // tidy and prevents the expanded stage from lingering). Documented choice.
+    document.addEventListener("click", (e) => {
+      if (root.classList.contains("collapsed")) return;
+      if (!root.contains(e.target)) setExpanded(false);
+    });
+
+    const prev = $("accent-arrow-prev");
+    const next = $("accent-arrow-next");
+    if (prev) prev.addEventListener("click", () => cycleAccent(-1));
+    if (next) next.addEventListener("click", () => cycleAccent(1));
+
+    renderAccentPicker();
+  }
+
+  // Step to the prev/next accent (wrap around the ends) and IMMEDIATELY send the
+  // same update_settings call the old <select> sent. No local state write — the
+  // displayed accent updates when the server echo lands in updateSettingsUI.
+  function cycleAccent(dir) {
+    const keys = accentKeys();
+    if (keys.length === 0) return;
+    let idx = keys.indexOf(currentAccent);
+    if (idx === -1) idx = 0;
+    const nextKey = keys[(idx + dir + keys.length) % keys.length];
+    wsSend({ type: "update_settings", settings: { narrationAccent: nextKey } });
+  }
+
+  // Paint the picker from currentAccent + narrationData. Called by the server-echo
+  // path (updateSettingsUI) and at init once narration.json loads. Labels and
+  // descriptions come from served JSON, so set them via textContent (no innerHTML).
+  function renderAccentPicker() {
+    const root = $("lobby-accent");
+    if (!root || !narrationData) return;
+    const info = narrationData.accents[currentAccent];
+    const label = info ? info.label : currentAccent;
+    const desc = info ? info.description : "";
+    const cur = $("accent-picker-current");
+    const lbl = $("accent-picker-label");
+    const dsc = $("accent-picker-desc");
+    if (cur) cur.textContent = label;      // collapsed row: label only (no bleed)
+    if (lbl) lbl.textContent = label;      // expanded: prominent label
+    if (dsc) dsc.textContent = desc;       // expanded: wrapped description below
+  }
+
+  // Kept for the init fetch call site below; now just paints the picker.
+  function populateAccentSelector() {
+    renderAccentPicker();
   }
 
   // Init: load narration data
