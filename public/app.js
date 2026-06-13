@@ -1765,9 +1765,11 @@
     const crossSvg = pixelArtToSvg(CROSS_ART);
     const skullSvg = pixelArtToSvg(CARD_BACK_DEAD_ART);
     const moonSvg = pixelArtToSvg(MOON_ART);
-    if (hasSave && hasKill) return { html: crossSvg + ` A life was saved... but ${victimName} didn\u2019t make it.`, color: "#2196f3" };
+    // Escape server-relayed username before interpolating into innerHTML (verdict.html -> text.innerHTML)
+    const v = escapeHtml(victimName);
+    if (hasSave && hasKill) return { html: crossSvg + ` A life was saved... but ${v} didn\u2019t make it.`, color: "#2196f3" };
     if (hasSave) return { html: crossSvg + " The Doctor saved a life!", color: "#2196f3" };
-    if (hasKill) return { html: skullSvg + ` ${victimName} didn\u2019t survive the night.`, color: "#d32f2f" };
+    if (hasKill) return { html: skullSvg + ` ${v} didn\u2019t survive the night.`, color: "#d32f2f" };
     return { html: moonSvg + " A peaceful night... somehow.", color: "#8e8e93" };
   }
 
@@ -1844,7 +1846,13 @@
     const plainText = msg.isMafia
       ? `Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
       : `Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
-    el.innerHTML = magSvg + " " + plainText;
+    // Escape server-relayed username before interpolating into innerHTML; transcript keeps the
+    // un-prefixed plain text (re-escaped at render via escapeHtml in the transcript view).
+    const safeName = escapeHtml(msg.targetName);
+    const htmlText = msg.isMafia
+      ? `Your investigation reveals: ${safeName} IS a member of the Mafia!`
+      : `Your investigation reveals: ${safeName} is NOT a member of the Mafia.`;
+    el.innerHTML = magSvg + " " + htmlText;
     el.classList.remove("hidden");
     narratorTranscript.push(plainText);
     detectiveHistory.push({
@@ -3547,7 +3555,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.3_202606100708";
-  const APP_VERSION_STAGING = "staging.17_202606121635";
+  const APP_VERSION_STAGING = "staging.18_202606121718";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
