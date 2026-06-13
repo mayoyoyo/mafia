@@ -1509,6 +1509,7 @@ input::placeholder { color: var(--text-secondary); }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 10px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1586,6 +1587,33 @@ input::placeholder { color: var(--text-secondary); }
 .player-status-dot.alive { background: var(--success); }
 .player-status-dot.dead { background: var(--danger); }
 .player-status-name.dead { text-decoration: line-through; color: var(--text-secondary); }
+
+/* D4: pixel avatars — cosmetic (pre-reveal) + true portraits (game-over reveal) */
+.player-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.player-avatar svg { image-rendering: pixelated; display: block; }
+/* lobby list + status list + mafia target cards + vote panel: 36px */
+.player-avatar-sm { width: 36px; height: 36px; }
+.player-avatar-sm svg { width: 36px; height: 36px; }
+/* dead avatar — muted opacity to match strikethrough language */
+.player-avatar-sm.dead { opacity: 0.55; }
+/* game-over reveal: 40px */
+.player-avatar-reveal { width: 40px; height: 40px; }
+.player-avatar-reveal svg { width: 40px; height: 40px; }
+/* lobby list: larger 40px in the roster */
+.players-list .player-avatar { width: 40px; height: 40px; }
+.players-list .player-avatar svg { width: 40px; height: 40px; }
+/* vote target avatar in the h3 — smaller, inline */
+.vote-target-avatar { width: 32px; height: 32px; vertical-align: middle; margin-right: 6px; }
+.vote-target-avatar svg { width: 32px; height: 32px; }
+
 .mafia-tag {
   font-size: 10px; font-weight: 700; color: var(--role-mafia);
   border: 1px solid var(--role-mafia); border-radius: 4px;

@@ -951,7 +951,9 @@
 
     const renderPlayerItem = (p) => {
       const colorDot = p.color ? `<span class="player-color-dot" style="background:${p.color}"></span>` : '';
-      return `<li>${colorDot}${escapeHtml(p.username)}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`;
+      // D4: role-agnostic cosmetic avatar — citizen-profession grid deterministic from name
+      const avatarSvg = getCosmeticAvatar(p.username);
+      return `<li><span class="player-avatar pxc">${avatarSvg}</span>${colorDot}${escapeHtml(p.username)}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`;
     };
 
     $("player-count-admin").textContent = players.length;
@@ -1963,7 +1965,12 @@
         const showMafiaTag = isMafiaTeammate && !hideMafiaTag;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
+        // D4: dead players get skull art; alive players get cosmetic avatar (citizen-profession)
+        const avatarSvg = p.isAlive
+          ? getCosmeticAvatar(p.username)
+          : pixelArtToSvg(CARD_BACK_DEAD_ART);
         return `<div class="player-status-item">
+          <span class="player-avatar player-avatar-sm pxc ${status}">${avatarSvg}</span>
           <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
           ${showMafiaTag ? '<span class="mafia-tag">MAFIA</span>' : ''}
@@ -2173,6 +2180,11 @@
       // Header
       const header = document.createElement("div");
       header.className = "mtc-header";
+      // D4: cosmetic avatar (citizen-profession, role-agnostic)
+      const avatarSpan = document.createElement("span");
+      avatarSpan.className = "player-avatar player-avatar-sm pxc";
+      avatarSpan.innerHTML = getCosmeticAvatar(p.username);
+      header.appendChild(avatarSpan);
       const nameEl = document.createElement("span");
       nameEl.className = "mtc-name";
       nameEl.textContent = p.username;
@@ -2670,7 +2682,13 @@
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
     $("admin-day-controls").classList.add("hidden");
+    // D4: set target name text + update cosmetic avatar next to it
     $("vote-target-name").textContent = msg.targetName;
+    const voteAvatarEl = $("vote-target-avatar");
+    if (voteAvatarEl) {
+      // getCosmeticAvatar returns SVG from pixelArtToSvg (static grid — safe)
+      voteAvatarEl.innerHTML = getCosmeticAvatar(msg.targetName);
+    }
     $("vote-progress").textContent = "Waiting for votes...";
 
     // Hide vote buttons if dead or already voted (rejoin), show otherwise
@@ -3100,7 +3118,12 @@
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
         const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
+        // D4: true role portrait at reveal — roles are in the reveal payload
+        const revealAvatar = p.role
+          ? getRoleImage(p.role, avatarIndexFor(p.username))
+          : getCosmeticAvatar(p.username);
         return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
+          <span class="player-avatar player-avatar-reveal pxc">${revealAvatar}</span>
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
           <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
           ${trophyText}
