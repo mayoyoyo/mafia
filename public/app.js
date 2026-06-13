@@ -347,6 +347,7 @@
         clearDetectiveResult();
         $("event-history-list").innerHTML = "";
         $("dead-overlay").classList.add("hidden");
+        $("joker-win-overlay").classList.add("hidden"); // D6: own element now
         $("dead-dismiss-hint").classList.add("hidden");
         $("revenge-wait").classList.add("hidden"); // C5b: restart while gated
         // Show players tab from game start
@@ -2814,20 +2815,28 @@
     $("modal-transcript").classList.add("hidden");
   });
 
-  // Dead overlay click-to-dismiss (for all players)
+  // Dead overlay click-to-dismiss (for all players) — dismissing reveals the
+  // live room view (spectator panels) beneath. The "WATCH THE TOWN" button uses
+  // this same dismiss path; no new spectate flow is invented.
   $("dead-overlay").addEventListener("click", () => {
     $("dead-overlay").classList.add("hidden");
     $("dead-dismiss-hint").classList.add("hidden");
   });
 
-  // Joker win overlay (official mode — only visible to the joker, replaces death screen)
+  // Joker win overlay (D6: its own #joker-win-overlay, no longer reuses the dead
+  // overlay). Clown centerpiece + amber celebration staging. Click-to-dismiss
+  // reveals the room/gameover view beneath, same as the dead overlay.
+  $("joker-win-overlay").addEventListener("click", () => {
+    $("joker-win-overlay").classList.add("hidden");
+  });
+
   function showJokerWinOverlay(jokerName) {
-    // Show using the death overlay but with joker-specific content
-    $("dead-overlay").classList.remove("hidden");
-    // D3b: pixel clown art instead of joker card emoji
-    $("dead-emoji").innerHTML = pixelArtToSvg(CLOWN_ART);
-    $("death-message").textContent = "You achieved a joint victory!";
-    $("dead-dismiss-hint").classList.remove("hidden");
+    $("joker-win-overlay").classList.remove("hidden");
+    $("joker-trophy-art").innerHTML = pixelArtToSvg(CLOWN_ART);
+    // Winner name comes from the existing payload field only.
+    $("joker-win-name").textContent = jokerName
+      ? `${jokerName} had the last laugh`
+      : "You achieved a joint victory!";
   }
 
   // Doctor save private notification (official mode)
@@ -3013,6 +3022,7 @@
 
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
+    $("joker-win-overlay").classList.add("hidden"); // D6: own element now
     $("revenge-wait").classList.add("hidden"); // C5b: e.g. force-end while gated
     closeSettingsModal();
 
@@ -3041,6 +3051,17 @@
 
   function showGameOverScreen(msg, admin) {
     showScreen("gameover");
+    // D6: TROPHY_ART centerpiece, recolored per winning faction via a CSS filter
+    // class (reuses the D5 faction-tint approach — no new grids). Force-ended
+    // games have no winner → neutral trophy.
+    const trophyEl = $("gameover-trophy");
+    trophyEl.innerHTML = pixelArtToSvg(TROPHY_ART);
+    const winClass =
+      msg.forceEnded ? "win-neutral" :
+      msg.winner === "town" ? "win-town" :
+      msg.winner === "mafia" ? "win-mafia" :
+      msg.winner === "joker" ? "win-joker" : "win-neutral";
+    trophyEl.className = "gameover-trophy " + winClass;
     const titles = {
       town: "Citizens Win!",
       mafia: "Mafia Wins!",
@@ -3721,9 +3742,10 @@
     var deadEl = document.getElementById("dead-emoji");
     if (deadEl) deadEl.innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
 
-    // Trophy into joker win overlay
+    // Clown into joker win overlay (D6: default state — showJokerWinOverlay also
+    // (re)sets it on every show). The container id keeps "joker-trophy-art".
     var trophyEl = document.getElementById("joker-trophy-art");
-    if (trophyEl) trophyEl.innerHTML = pixelArtToSvg(TROPHY_ART);
+    if (trophyEl) trophyEl.innerHTML = pixelArtToSvg(CLOWN_ART);
 
     // Heart icon into lover-badge
     var loverIcon = document.querySelector(".lover-badge-icon");

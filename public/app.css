@@ -1390,16 +1390,26 @@ input::placeholder { color: var(--text-secondary); }
 .admin-buttons .btn { flex: 1; min-width: 0; }
 
 /* DEAD OVERLAY */
+/* ============================================================
+   D6 — DEATH POSTER (#dead-overlay; mockup screen 03)
+   The most-photographed screen. z-index 100 so the z-300 suspense
+   overlay still plays the death beat on top; this poster reveals
+   beneath it. Blood-glow radial ground + scanlines + vignette match
+   the D5 overlay language.
+   ============================================================ */
 .dead-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 42%, rgba(179,32,42,0.16) 0%, transparent 65%),
+    rgba(7,7,11,0.96);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 100;
   animation: fadeIn 1s ease;
+  cursor: pointer;
 }
 /* Scanlines on dead overlay */
 .dead-overlay::after {
@@ -1410,7 +1420,7 @@ input::placeholder { color: var(--text-secondary); }
   background: repeating-linear-gradient(
     0deg,
     transparent 0px 3px,
-    rgba(0,0,0,0.10) 3px 4px
+    rgba(0,0,0,0.12) 3px 4px
   );
   z-index: 1;
 }
@@ -1420,22 +1430,63 @@ input::placeholder { color: var(--text-secondary); }
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse 90% 55% at 50% 42%, transparent 45%, rgba(0,0,0,0.6) 100%);
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.65) 100%);
   z-index: 2;
 }
-/* D3b: pixel art dead-skull — replaces font-size emoji .skull */
-.dead-skull-art { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
-.dead-skull-art svg { width: 80px; height: 80px; image-rendering: pixelated; filter: drop-shadow(0 0 12px var(--danger)); }
+/* The poster column sits above the texture pseudo-elements */
+.dead-poster {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 32px;
+  max-width: 430px;
+}
+/* D3b/D6: pixel art skull — the shared dramatic centerpiece (CARD_BACK_DEAD_ART),
+   NOT a per-player avatar. Static blood glow via drop-shadow (no animation on the
+   filter). Reuses the existing scale pulse (ceiling), not a new keyframe. */
+.dead-skull-art { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 30px; }
+.dead-skull-art svg { width: 132px; height: 132px; image-rendering: pixelated; filter: drop-shadow(0 0 28px rgba(179,32,42,0.45)); }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-.dead-text { font-size: 28px; font-weight: 700; color: var(--danger); text-transform: uppercase; letter-spacing: 4px; margin-top: 16px; font-family: 'Silkscreen', monospace; }
-.death-message { color: var(--text-secondary); font-size: 14px; margin-top: 12px; padding: 0 32px; text-align: center; max-width: 350px; }
-.dead-dismiss-hint { color: var(--text-secondary); font-size: 13px; margin-top: 20px; opacity: 0.7; animation: pulse 2s ease-in-out infinite; }
+.dead-pre {
+  font-family: 'Silkscreen', monospace;
+  font-size: 13px;
+  letter-spacing: 9px;
+  color: var(--primary);
+  text-transform: uppercase;
+  padding-left: 9px;
+  margin-bottom: 12px;
+}
+.dead-text { font-size: 48px; font-weight: 700; color: var(--danger-bright); text-transform: uppercase; letter-spacing: 9px; padding-left: 9px; font-family: 'Silkscreen', monospace; }
+.death-message { color: var(--text-secondary); font-size: 14.5px; font-style: italic; margin-top: 20px; padding: 0 16px; text-align: center; max-width: 350px; }
+.dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
+.dead-note { color: #62626e; font-size: 13px; font-style: italic; margin-bottom: 26px; }
+.btn-watch {
+  background: #0c0c12;
+  border: 2px solid var(--border);
+  color: var(--text);
+  font-family: 'Silkscreen', monospace;
+  font-size: 11px;
+  letter-spacing: 3px;
+  padding: 15px 30px;
+  cursor: pointer;
+}
+.btn-watch:active { box-shadow: inset 0 -3px 0 rgba(0,0,0,0.35); }
+.dead-dismiss-hint { color: var(--text-secondary); font-size: 13px; margin-top: 18px; opacity: 0.7; animation: pulse 2s ease-in-out infinite; }
 
-/* JOKER WIN OVERLAY */
+/* ============================================================
+   D6 — JOKER WIN OVERLAY (#joker-win-overlay; its own element now,
+   no longer reuses the dead overlay). Clown centerpiece + amber
+   celebration. z-index 100, click-to-dismiss.
+   ============================================================ */
 .joker-win-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.88);
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(232,163,61,0.18) 0%, transparent 64%),
+    rgba(8,8,13,0.96);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1449,7 +1500,7 @@ input::placeholder { color: var(--text-secondary); }
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: repeating-linear-gradient(0deg, transparent 0px 3px, rgba(0,0,0,0.10) 3px 4px);
+  background: repeating-linear-gradient(0deg, transparent 0px 3px, rgba(0,0,0,0.12) 3px 4px);
   z-index: 1;
 }
 .joker-win-overlay::before {
@@ -1457,29 +1508,51 @@ input::placeholder { color: var(--text-secondary); }
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.6) 100%);
   z-index: 2;
 }
-/* D3b: pixel art joker trophy — replaces font-size emoji .joker-trophy */
-.joker-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
-.joker-trophy svg { width: 80px; height: 80px; image-rendering: pixelated; }
+.joker-poster {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 32px;
+  max-width: 430px;
+}
+/* D6: pixel CLOWN_ART centerpiece (set by showJokerWinOverlay). Amber celebration
+   glow via static drop-shadow; reuses the scale pulse (ceiling). */
+.joker-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 28px; }
+.joker-trophy svg { width: 120px; height: 120px; image-rendering: pixelated; filter: drop-shadow(0 0 26px rgba(232,163,61,0.45)); }
+.joker-win-pre {
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 7px;
+  color: var(--primary);
+  text-transform: uppercase;
+  padding-left: 7px;
+  margin-bottom: 12px;
+}
 .joker-win-title {
-  font-size: 36px;
-  font-weight: 800;
+  font-family: 'Silkscreen', monospace;
+  font-size: 38px;
+  font-weight: 700;
   color: var(--role-joker);
   text-transform: uppercase;
-  letter-spacing: 4px;
-  margin-top: 12px;
+  letter-spacing: 6px;
+  padding-left: 6px;
 }
 .joker-win-name {
   color: var(--text-secondary);
-  font-size: 16px;
-  margin-top: 8px;
+  font-size: 15px;
+  font-style: italic;
+  margin-top: 18px;
 }
+.joker-win-div { width: 130px; margin: 26px 0; opacity: 0.55; }
 .joker-win-hint {
   color: var(--text-secondary);
   font-size: 13px;
-  margin-top: 24px;
   opacity: 0.7;
   animation: pulse 2s ease-in-out infinite;
 }
@@ -1525,6 +1598,17 @@ input::placeholder { color: var(--text-secondary); }
 }
 .gameover-content h1 { font-size: 36px; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; font-family: 'Silkscreen', monospace; }
 .gameover-content p { color: var(--text-secondary); font-size: 16px; padding: 0 16px; }
+
+/* D6: TROPHY_ART centerpiece, faction-tinted (same filter language as the D5
+   suspense beat-win-* trophy — base art is amber/gold, hue-rotate per faction;
+   no new grids). Reuses the existing scale pulse (ceiling), static glow only. */
+.gameover-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
+.gameover-trophy:empty { display: none; }
+.gameover-trophy svg { width: 92px; height: 92px; image-rendering: pixelated; }
+.gameover-trophy.win-neutral svg { filter: drop-shadow(0 0 20px rgba(232,163,61,0.40)); }
+.gameover-trophy.win-town svg { filter: hue-rotate(85deg) saturate(1.1) drop-shadow(0 0 20px rgba(56,142,60,0.40)); }
+.gameover-trophy.win-mafia svg { filter: hue-rotate(-35deg) saturate(1.4) drop-shadow(0 0 20px rgba(211,47,47,0.40)); }
+.gameover-trophy.win-joker svg { filter: hue-rotate(150deg) saturate(1.3) drop-shadow(0 0 20px rgba(38,198,218,0.40)); }
 
 /* MODAL */
 .modal {

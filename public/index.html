@@ -319,20 +319,32 @@
         <button id="btn-force-dawn" class="btn btn-primary">Force Dawn</button>
       </div>
 
-      <!-- Dead Overlay -->
+      <!-- Dead Overlay (D6: death poster — mockup screen 03; z-index 100, reveals
+           BENEATH the z-300 suspense overlay so the death beat plays over it) -->
       <div id="dead-overlay" class="dead-overlay hidden">
-        <div id="dead-emoji" class="dead-skull-art"></div>
-        <p class="dead-text">You are dead</p>
-        <p id="death-message" class="death-message"></p>
-        <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
+        <div class="dead-poster">
+          <div id="dead-emoji" class="dead-skull-art"></div>
+          <p class="dead-pre">YOU ARE</p>
+          <p class="dead-text">DEAD</p>
+          <p id="death-message" class="death-message"></p>
+          <div class="dither-h dead-div"></div>
+          <p class="dead-note">stay quiet. you can still watch the town squirm.</p>
+          <button id="btn-watch-town" class="btn-watch pxc">WATCH THE TOWN</button>
+          <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
+        </div>
       </div>
 
-      <!-- Joker Win Overlay (official mode — shows for everyone, dismissible) -->
+      <!-- Joker Win Overlay (D6: real overlay — clown centerpiece + amber
+           celebration; targeted by showJokerWinOverlay; z-index 100) -->
       <div id="joker-win-overlay" class="joker-win-overlay hidden">
-        <div class="joker-trophy" id="joker-trophy-art"></div>
-        <h2 class="joker-win-title">Joker Wins!</h2>
-        <p id="joker-win-name" class="joker-win-name"></p>
-        <p class="joker-win-hint">Tap to dismiss</p>
+        <div class="joker-poster">
+          <div class="joker-trophy" id="joker-trophy-art"></div>
+          <p class="joker-win-pre">THE LAST LAUGH</p>
+          <h2 class="joker-win-title">JOKER WINS</h2>
+          <p id="joker-win-name" class="joker-win-name"></p>
+          <div class="dither-h joker-win-div"></div>
+          <p class="joker-win-hint">Tap to dismiss</p>
+        </div>
       </div>
 
     </div>
@@ -343,6 +355,7 @@
         <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave Room</button>
       </div>
       <div class="gameover-content">
+        <div id="gameover-trophy" class="gameover-trophy"></div>
         <h1 id="gameover-title"></h1>
         <p id="gameover-message"></p>
         <div id="game-history" class="game-history"></div>
