@@ -1135,9 +1135,11 @@
     const back = card.querySelector(".card-back");
     back.classList.remove("dragging");
     back.style.clipPath = "";
+    back.style.opacity = "";
     const flap = card.querySelector(".peel-flap");
     flap.classList.remove("dragging");
     flap.style.clipPath = "";
+    flap.style.opacity = "";
     flap.style.left = "";
     flap.style.top = "";
     flap.style.right = "";
@@ -1162,55 +1164,99 @@
       return dx >= 0 && dx <= GRAB_ZONE && dy >= 0 && dy <= GRAB_ZONE;
     }
 
+    // Reflect point C across the line through two endpoints E1,E2 (percent space).
+    // Used to place the lifted corner P = mirror of C=(100,100) across the crease.
+    // Returns [px,py]; degenerate (E1≈E2) returns C unchanged.
+    function reflectAcrossLine(cx, cy, x1, y1, x2, y2) {
+      const ex = x2 - x1, ey = y2 - y1;
+      const denom = ex * ex + ey * ey;
+      if (denom < 1e-9) return [cx, cy];
+      const a = ex * ex - ey * ey;
+      const b = 2 * ex * ey;
+      const rx = cx - x1, ry = cy - y1;
+      return [
+        x1 + (a * rx + b * ry) / denom,
+        y1 + (b * rx - a * ry) / denom,
+      ];
+    }
+
     function setPeel(clientX, clientY) {
       if (!cardRect) return;
       // Raw drag distance from the bottom-right corner (0..1 of card extent).
       // These are the SAME tracked quantities as before — only the RENDERING below
-      // changes (diagonal fold instead of the axis-aligned L-notch). No gesture
-      // threshold reads these; release always snaps shut.
+      // changes (translating-crease fold instead of D7's corner-pivot fold). No
+      // gesture threshold reads these; release always snaps shut.
       const px = Math.max(0, Math.min(1, (cardRect.right - clientX) / cardRect.width));
       const py = Math.max(0, Math.min(1, (cardRect.bottom - clientY) / cardRect.height));
       flap.classList.add("dragging");
-      // Resistance curve: ease the rendered lift (pow<1 => more lift early, eases
-      // as you pull). Applied to the rendering only — thresholds are untouched.
-      const pxE = Math.pow(px, 0.85);
-      const pyE = Math.pow(py, 0.85);
-      // Lifted corner point P (percent), trailing the drag vector from the
-      // bottom-right corner C=(100,100).
-      const cx = (1 - pxE) * 100;
-      const cy = (1 - pyE) * 100;
-      const dx = cx - 100; // <= 0
-      const dy = cy - 100; // <= 0
-      // Below a tiny pull, render no fold (avoids div-by-zero and corner jitter).
-      if (dx > -0.5 && dy > -0.5) {
+      // D7.5: ONE normalized progress t∈[0,1] drives the whole fold (pure function
+      // of t → the close is just the reverse sweep). The diagonal pull is the single
+      // clean driver (mixed-axis folds go ragged); reuse D7's pow(.85) resistance
+      // curve, now reaching 1. pull along the diagonal: hypot(px,py)/SQRT2.
+      const pull = Math.min(1, Math.hypot(px, py) / Math.SQRT2);
+      const t = Math.pow(pull, 0.85);
+      // t=0 guard: no fold — full-rect back + degenerate flap (matches D7's no-fold).
+      if (t < 0.005) {
         back.style.clipPath = "polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)";
         flap.style.clipPath = "polygon(100% 100%, 100% 100%, 100% 100%)";
         return;
       }
-      // DIAGONAL FOLD: P is the mirror image of the corner C=(100,100) across the
-      // crease. The crease is the perpendicular bisector of C–P; it meets the
-      // bottom edge at B=(bx,100) and the right edge at R=(100,ry). The folded-up
-      // flap is triangle B–R–P; the card-back shows everything minus triangle B–R–C.
-      // bx = 100 + dx/2 + dy^2/(2dx) ; ry = 100 + dy/2 + dx^2/(2dy)
-      let bx = 100 + dx / 2 + (dy * dy) / (2 * dx);
-      let ry = 100 + dy / 2 + (dx * dx) / (2 * dy);
-      // Clamp crease intercepts to the card so the polygon stays well-formed when
-      // one drag axis dominates (fold otherwise wants to leave an edge).
-      bx = Math.max(0, Math.min(100, bx));
-      ry = Math.max(0, Math.min(100, ry));
-      // Visible card-back = full rect with the corner triangle (B, C, R) removed.
-      back.style.clipPath =
-        `polygon(0% 0%, 100% 0%, 100% ${ry}%, ${bx}% 100%, 0% 100%)`;
-      // Flap underside = the folded triangle B–R–P (the lifted paper's back).
-      flap.style.clipPath =
-        `polygon(${bx}% 100%, 100% ${ry}%, ${cx}% ${cy}%)`;
+      // TRANSLATING CREASE (docs/research/peel-full-card.md). s=t*2; s=1 is the old
+      // anti-diagonal / 50% line. Crease endpoints walk the edges; P = reflection of
+      // dragged corner C=(100,100) across the crease line through the two endpoints.
+      const s = t * 2;
+      // Crease endpoints: Bx,By on the lower/left walk, Rx,Ry on the right/top walk.
+      let bx, by, rx, ry;
+      if (s <= 1) {
+        // Phase A: endpoints on the bottom (Bx:100→0) & right (Ry:100→0) edges
+        // — reproduces D7's corner peek through t=0.5.
+        bx = 100 - 100 * s; by = 100;
+        rx = 100;           ry = 100 - 100 * s;
+      } else {
+        // Phase B: crease passed the anti-diagonal; endpoints climb the left
+        // (By:100→0) & top (Rx:100→0) edges so the fold sweeps to the top-left
+        // corner = 100% revealed.
+        const u = s - 1; // 0..1
+        bx = 0;             by = 100 - 100 * u;
+        rx = 100 - 100 * u; ry = 0;
+      }
+      const P = reflectAcrossLine(100, 100, bx, by, rx, ry);
+      const pxp = P[0], pyp = P[1];
+      // FALLBACK (brief): near the far corner the geometric flap can read ragged /
+      // invert. Cap the geometric peel at t≈0.9 and finish the last ~10% with an
+      // opacity cross-fade of the card-back ("card lays open") — cheap, zero
+      // geometry risk. Below the cap the flap is fully opaque (D7 behavior).
+      const CAP = 0.9;
+      if (t > CAP) {
+        const k = (t - CAP) / (1 - CAP); // 0..1 across the final 10%
+        back.style.opacity = String(1 - k);
+        flap.style.opacity = String(1 - k);
+      } else {
+        back.style.opacity = "";
+        flap.style.opacity = "";
+      }
+      // Visible card-back = card minus the swept corner region.
+      // Flap = folded triangle (crease endpoints + reflected corner P).
+      if (s <= 1) {
+        back.style.clipPath =
+          `polygon(0% 0%, 100% 0%, 100% ${ry}%, ${bx}% 100%, 0% 100%)`;
+        flap.style.clipPath =
+          `polygon(${bx}% 100%, 100% ${ry}%, ${pxp}% ${pyp}%)`;
+      } else {
+        back.style.clipPath =
+          `polygon(0% 0%, ${rx}% 0%, 0% ${by}%)`;
+        flap.style.clipPath =
+          `polygon(0% ${by}%, ${rx}% 0%, ${pxp}% ${pyp}%)`;
+      }
     }
 
     function resetPeel() {
       back.classList.remove("dragging");
       back.style.clipPath = "";
+      back.style.opacity = "";
       flap.classList.remove("dragging");
       flap.style.clipPath = "";
+      flap.style.opacity = "";
       flap.style.left = "";
       flap.style.top = "";
       flap.style.right = "";
