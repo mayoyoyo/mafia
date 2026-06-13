@@ -236,8 +236,12 @@
       </div>
 
       <!-- Hunter Revenge Wait (C5b: room-wide while the revenge gate is open;
-           the skip button shows for the admin only) -->
-      <div id="revenge-wait" class="awaiting-ready hidden">
+           the skip button shows for the admin only). D5 noir restyle: BOW
+           centerpiece + Silkscreen headline; show/hide logic is untouched
+           plumbing — only the painted chrome changed. -->
+      <div id="revenge-wait" class="awaiting-ready revenge-wait hidden">
+        <div id="revenge-wait-art" class="revenge-wait-art"></div>
+        <div class="revenge-wait-headline">THE HUNTER FALLS</div>
         <p id="revenge-wait-reveal"></p>
         <p>Waiting for the Hunter&#8230;</p>
         <button id="btn-skip-revenge" class="btn btn-danger btn-small hidden">Skip revenge</button>
@@ -354,8 +358,16 @@
     </div>
 
     <!-- SUSPENSE OVERLAY -->
+    <!-- z-index 300, topmost; death overlays reveal BENEATH it. Staged
+         composition (D5): pre-line (amber Silkscreen) + pixel art centerpiece
+         + display text. #suspense-text KEEPS its id — the five beat writers
+         target it. -->
     <div id="suspense-overlay" class="suspense-overlay hidden">
-      <div id="suspense-text" class="suspense-text"></div>
+      <div class="suspense-stage">
+        <div id="suspense-pre" class="suspense-pre"></div>
+        <div id="suspense-art" class="suspense-art"></div>
+        <div id="suspense-text" class="suspense-text"></div>
+      </div>
     </div>
 
     <!-- SETTINGS MODAL -->

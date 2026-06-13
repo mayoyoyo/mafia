@@ -947,6 +947,36 @@ input::placeholder { color: var(--text-secondary); }
   margin-top: 4px;
 }
 
+/* D5: hunter revenge-wait panel — noir restyle sweep. BOW centerpiece +
+   Silkscreen headline; the reveal/wait copy stays in the readable body face.
+   The hunter accent (--role-hunter) frames the panel. Restyle only — the
+   show/hide logic and the reveal name are untouchable C5b plumbing. */
+.revenge-wait {
+  border-color: var(--role-hunter);
+}
+.revenge-wait-art {
+  width: 72px;
+  height: 72px;
+  margin: 2px auto 12px;
+}
+.revenge-wait-art:empty { display: none; }
+.revenge-wait-art svg {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+  filter: drop-shadow(0 0 10px rgba(239,108,0,.35));
+}
+.revenge-wait-headline {
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 4px;
+  color: var(--role-hunter);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  padding-left: 4px;
+}
+
 /* DETECTIVE RESULT */
 .detective-result {
   background: var(--bg-card);
@@ -1675,26 +1705,121 @@ input::placeholder { color: var(--text-secondary); }
   background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.65) 100%);
   z-index: 2;
 }
-.suspense-text {
-  font-size: 28px;
-  font-weight: 800;
-  color: #f5f5f5;
-  text-align: center;
-  padding: 0 32px;
-  animation: suspenseFadeIn 0.8s ease;
+/* D5: staged composition — pre-line (amber Silkscreen) + pixel art centerpiece
+   + display text, all stacked above the scanline/vignette pseudo-elements
+   (z-index 3). Per-beat background washes ride the beat-* classes below. */
+.suspense-stage {
   position: relative;
   z-index: 3;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  text-align: center;
+  padding: 0 32px;
+  max-width: 430px;
 }
-/* D3b: pixel art icons in suspense text */
-.suspense-text svg { width: 28px; height: 28px; image-rendering: pixelated; flex-shrink: 0; }
+/* Amber Silkscreen pre-line — the "verdict label" voice. Empty by default so it
+   reserves no space until a beat sets it. */
+.suspense-pre {
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 6px;
+  color: var(--primary);
+  text-transform: uppercase;
+  padding-left: 6px; /* visual-center the tracked caps */
+}
+.suspense-pre:empty { display: none; }
+/* Pixel art centerpiece — static, pixelated, sized between the mockup's 96-120px.
+   The animation restart hack lives on .suspense-text only; the art does not
+   re-animate per beat (it cross-fades implicitly via innerHTML swap). */
+.suspense-art {
+  width: 112px;
+  height: 112px;
+  margin: 18px 0 22px;
+}
+.suspense-art:empty { display: none; }
+.suspense-art svg {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
+.suspense-text {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #f5f5f5;
+  text-align: center;
+  animation: suspenseFadeIn 0.8s ease;
+}
 @keyframes suspenseFadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* D5 BEAT TINTS — static per-beat background washes layered behind the staged
+   content. The overlay base stays #000; each beat paints a radial wash (the
+   mockup's night/death/dawn ambience) plus an art recolor for the trophy.
+   Static only — no @keyframes added. */
+.suspense-overlay.beat-night {
+  background:
+    radial-gradient(ellipse 140% 70% at 50% -10%, #1b2452 0%, transparent 60%),
+    #0d1126;
+}
+.suspense-overlay.beat-dawn {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 30%, rgba(232,163,61,0.14) 0%, transparent 62%),
+    #0b0b10;
+}
+.suspense-overlay.beat-death,
+.suspense-overlay.beat-execution {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 42%, rgba(179,32,42,0.20) 0%, transparent 65%),
+    #07070b;
+}
+.suspense-overlay.beat-execution .suspense-art svg,
+.suspense-overlay.beat-death .suspense-art svg {
+  /* blood-cast the skull without recoloring the grid */
+  filter: drop-shadow(0 0 22px rgba(179,32,42,.40));
+}
+.suspense-overlay.beat-heartbreak {
+  background:
+    radial-gradient(ellipse 95% 60% at 50% 42%, rgba(156,39,176,0.16) 0%, transparent 64%),
+    #0a0710;
+}
+/* Game over — trophy recolored per winning faction via CSS filter (no new grid).
+   Base trophy art is amber/gold; hue-rotate + saturate shifts it per faction. */
+.suspense-overlay.beat-gameover,
+.suspense-overlay.beat-win-town,
+.suspense-overlay.beat-win-mafia,
+.suspense-overlay.beat-win-joker {
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(232,163,61,0.16) 0%, transparent 64%),
+    #08080d;
+}
+.suspense-overlay.beat-win-town {
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(56,142,60,0.18) 0%, transparent 64%),
+    #08080d;
+}
+.suspense-overlay.beat-win-town .suspense-art svg {
+  filter: hue-rotate(85deg) saturate(1.1) drop-shadow(0 0 20px rgba(56,142,60,.40));
+}
+.suspense-overlay.beat-win-mafia {
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(211,47,47,0.18) 0%, transparent 64%),
+    #08080d;
+}
+.suspense-overlay.beat-win-mafia .suspense-art svg {
+  filter: hue-rotate(-35deg) saturate(1.4) drop-shadow(0 0 20px rgba(211,47,47,.40));
+}
+.suspense-overlay.beat-win-joker .suspense-art svg {
+  filter: hue-rotate(150deg) saturate(1.3) drop-shadow(0 0 20px rgba(38,198,218,.40));
+}
+/* town/mafia/joker winners keep amber-gold trophy with just a glow when neutral */
+.suspense-overlay.beat-gameover .suspense-art svg {
+  filter: drop-shadow(0 0 20px rgba(232,163,61,.40));
 }
 
 /* VOTE COUNT LABEL */

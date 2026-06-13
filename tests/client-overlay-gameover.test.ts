@@ -12,6 +12,13 @@
 // a synchronous stomp check at the exact decision point plus a poller that
 // records every distinct suspense-text beat (beats are >100ms apart even
 // scaled, far above the 5ms poll step).
+//
+// D5 NOTE: the heartbreak beat text is "Bob died of heartbreak." with NO
+// leading space. Pre-D5 the writers injected the pixel art INTO #suspense-text
+// (innerHTML = svg + " " + text), so the SVG-stripped textContent kept a
+// leading space. D5 moved the art into a sibling #suspense-art slot, so the
+// text node now carries only the clean sentence. (Same textContent-vs-SVG
+// lesson D3 applied once before.)
 
 import { describe, test, expect, afterAll } from "bun:test";
 import { loadClientApp, unloadClientApp } from "./helpers/client-harness";
@@ -102,7 +109,7 @@ describe("L5: game_over queues behind active overlay transitions", () => {
 
     expect(beats.map((b) => b.text)).toEqual([
       "Alice was executed.",
-      " Bob died of heartbreak.",
+      "Bob died of heartbreak.",
       "The game is over...",
       "Mafia Wins!",
     ]);
@@ -138,7 +145,7 @@ describe("L5: game_over queues behind active overlay transitions", () => {
       events: [],
       loverDeathName: "Bob",
     });
-    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe("Bob died of heartbreak.");
 
     serverSays({
       type: "game_over",
@@ -146,12 +153,12 @@ describe("L5: game_over queues behind active overlay transitions", () => {
       message: "The Mafia wins!",
       players: REVEAL_PLAYERS,
     });
-    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe("Bob died of heartbreak.");
 
     const beats = await recordBeats(ms(11000));
 
     expect(beats.map((b) => b.text)).toEqual([
-      " Bob died of heartbreak.",
+      "Bob died of heartbreak.",
       "The game is over...",
       "Mafia Wins!",
     ]);
@@ -203,7 +210,7 @@ describe("L5 follow-up: held game_over is discarded when the game context ends",
       events: [],
       loverDeathName: "Bob",
     });
-    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe("Bob died of heartbreak.");
     serverSays({
       type: "game_over",
       winner: "mafia",
@@ -211,7 +218,7 @@ describe("L5 follow-up: held game_over is discarded when the game context ends",
       players: REVEAL_PLAYERS,
     });
     // Held — the beat is still on screen.
-    expect($("suspense-text").textContent).toBe(" Bob died of heartbreak.");
+    expect($("suspense-text").textContent).toBe("Bob died of heartbreak.");
   }
 
   test("room_closed mid-chain: stale game_over must not stomp the menu", async () => {

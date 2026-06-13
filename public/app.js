@@ -1628,6 +1628,35 @@
   }
 
   // ============================================================
+  // SUSPENSE STAGE COMPOSITION (D5)
+  // ------------------------------------------------------------
+  // The five beat writers paint a staged composition into the suspense overlay
+  // (pre-line + pixel art + text) WITHOUT touching the timing/queue plumbing.
+  // setSuspenseStage only changes WHAT is painted; the writers own WHEN.
+  // art:  a 10x10 pixel grid (rendered via the existing pipeline) or null/"" to
+  //       clear the centerpiece. preText: amber Silkscreen pre-line, or "" to
+  //       clear it. beatClass: a single beat-tint class on the overlay (e.g.
+  //       "beat-death") or "" for none. All beat classes are reset first so no
+  //       beat inherits the previous beat's tint.
+  const SUSPENSE_BEAT_CLASSES = ["beat-night", "beat-dawn", "beat-death", "beat-execution", "beat-heartbreak", "beat-gameover", "beat-win-town", "beat-win-mafia", "beat-win-joker"];
+  function setSuspenseStage(art, preText, beatClass) {
+    const overlay = $("suspense-overlay");
+    const artEl = $("suspense-art");
+    const preEl = $("suspense-pre");
+    overlay.classList.remove(...SUSPENSE_BEAT_CLASSES);
+    if (beatClass) overlay.classList.add(beatClass);
+    // art grids are static (pixelArtToSvg over registry grids) — no user input
+    artEl.innerHTML = art ? pixelArtToSvg(art) : "";
+    // pre-line is fixed copy set by the writers (never a relayed username) —
+    // textContent keeps it XSS-inert regardless.
+    preEl.textContent = preText || "";
+  }
+  // Clear the stage when the overlay hides so the next beat starts blank.
+  function clearSuspenseStage() {
+    setSuspenseStage("", "", "");
+  }
+
+  // ============================================================
   // EXECUTION TRANSITION (vote result → night)
   // ============================================================
   function showExecutionTransition(voteResult, callback) {
@@ -1642,6 +1671,15 @@
       : "The vote was abstained.";
     const color = voteResult.executed ? "#d32f2f" : "#8e8e93";
 
+    // D5: staged composition — execution beat = skull + blood tint when a player
+    // hangs; abstain is a neutral verdict (no skull). Composition only; the text
+    // node and its timing are untouched.
+    if (voteResult.executed) {
+      setSuspenseStage(CARD_BACK_DEAD_ART, "THE VERDICT", "beat-execution");
+    } else {
+      setSuspenseStage("", "THE VERDICT", "");
+    }
+
     text.textContent = msg;
     text.style.color = color;
     text.style.animation = "none";
@@ -1654,6 +1692,7 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        clearSuspenseStage();
         executionTransitionActive = false;
         // no flushPendingGameOver here — all call sites chain into heartbreak/night, whose terminals flush
         callback();
@@ -1667,8 +1706,10 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
-    // D3b: pixel heartbreak art + text instead of emoji
-    text.innerHTML = pixelArtToSvg(HEARTBREAK_ART) + " " + escapeHtml(loverName) + " died of heartbreak.";
+    // D5: heartbreak art migrated from the text node into the dedicated art slot.
+    // The text node now carries only the (XSS-safe via textContent) sentence.
+    setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
+    text.textContent = loverName + " died of heartbreak.";
     text.style.color = "#9c27b0";
     text.style.animation = "none";
     void text.offsetWidth;
@@ -1680,6 +1721,7 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        clearSuspenseStage();
         heartbreakTransitionActive = false;
         callback();
         flushPendingGameOver();
@@ -1718,6 +1760,8 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
+    // D5: nightfall = moon centerpiece, navy wash (beat-night tint).
+    setSuspenseStage(MOON_ART, "NIGHTFALL", "beat-night");
     text.textContent = pair[0];
     text.style.color = "";
     text.style.animation = "none";
@@ -1738,6 +1782,7 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        clearSuspenseStage();
         nightTransitionActive = false;
         callback();
         // Replay queued night action prompts after applyPhaseChange
@@ -1763,16 +1808,14 @@
     const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
     const killEvent = roundEvents.find((e) => e.type === "kill");
     const victimName = killEvent ? killEvent.playerName : "Someone";
-    // D3b: pixel art icons instead of emoji
-    const crossSvg = pixelArtToSvg(CROSS_ART);
-    const skullSvg = pixelArtToSvg(CARD_BACK_DEAD_ART);
-    const moonSvg = pixelArtToSvg(MOON_ART);
-    // Escape server-relayed username before interpolating into innerHTML (verdict.html -> text.innerHTML)
-    const v = escapeHtml(victimName);
-    if (hasSave && hasKill) return { html: crossSvg + ` A life was saved... but ${v} didn\u2019t make it.`, color: "#2196f3" };
-    if (hasSave) return { html: crossSvg + " The Doctor saved a life!", color: "#2196f3" };
-    if (hasKill) return { html: skullSvg + ` ${v} didn\u2019t survive the night.`, color: "#d32f2f" };
-    return { html: moonSvg + " A peaceful night... somehow.", color: "#8e8e93" };
+    // D5: verdict returns an art GRID + plain text + tint, painted into the
+    // dedicated stage slots (the writer uses .textContent, so the relayed
+    // username never reaches innerHTML \u2014 strictly safer than the prior
+    // escapeHtml-into-innerHTML path).
+    if (hasSave && hasKill) return { art: CROSS_ART, text: `A life was saved... but ${victimName} didn\u2019t make it.`, color: "#2196f3", beatClass: "beat-dawn" };
+    if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "#2196f3", beatClass: "beat-dawn" };
+    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: `${victimName} didn\u2019t survive the night.`, color: "#d32f2f", beatClass: "beat-death" };
+    return { art: SUN_ART, text: "A peaceful night... somehow.", color: "#8e8e93", beatClass: "beat-dawn" };
   }
 
   function showSuspenseTransition(msg, callback) {
@@ -1784,6 +1827,9 @@
     const extraDelay = hasLoverDeath ? 2800 : 0;
 
     overlay.classList.remove("hidden", "fade-out");
+    // D5: dawn opens on the sun centerpiece; the verdict beat re-stages art per
+    // outcome (skull on a kill, cross on a save, sun on a peaceful night).
+    setSuspenseStage(SUN_ART, "DAWN", "beat-dawn");
     text.textContent = "The sun rises...";
     text.style.color = "";
     text.style.animation = "none";
@@ -1800,8 +1846,9 @@
 
     setTimeout(() => {
       const verdict = getNightVerdict(msg);
-      // D3b: verdict now has .html (pixel art svg + text)
-      text.innerHTML = verdict.html;
+      // D5: verdict carries an art grid + plain text + tint for the stage.
+      setSuspenseStage(verdict.art, "THE VERDICT", verdict.beatClass);
+      text.textContent = verdict.text;
       text.style.color = verdict.color;
       text.style.animation = "none";
       void text.offsetWidth;
@@ -1810,8 +1857,10 @@
 
     if (hasLoverDeath) {
       setTimeout(() => {
-        // D3b: pixel heartbreak art instead of emoji
-        text.innerHTML = pixelArtToSvg(HEARTBREAK_ART) + " " + escapeHtml(msg.loverDeathName) + " died of heartbreak.";
+        // D5: heartbreak art into the stage slot; text node carries the sentence
+        // (textContent — relayed name stays XSS-inert).
+        setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
+        text.textContent = msg.loverDeathName + " died of heartbreak.";
         text.style.color = "#9c27b0";
         text.style.animation = "none";
         void text.offsetWidth;
@@ -1827,6 +1876,7 @@
       overlay.classList.add("hidden");
       overlay.classList.remove("fade-out");
       text.style.color = "";
+      clearSuspenseStage();
       suspenseActive = false;
 
       // Apply the phase change
@@ -3046,6 +3096,14 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
+    // D5: trophy centerpiece, recolored per winning faction via a beat-win-*
+    // CSS class (filter recolor — no new grids). The trophy holds from the
+    // opening line through the winner reveal.
+    const winBeat =
+      msg.winner === "town" ? "beat-win-town" :
+      msg.winner === "mafia" ? "beat-win-mafia" :
+      msg.winner === "joker" ? "beat-win-joker" : "beat-gameover";
+    setSuspenseStage(TROPHY_ART, "FINAL VERDICT", winBeat);
     text.textContent = "The game is over...";
     text.style.color = "";
     text.style.animation = "none";
@@ -3083,6 +3141,7 @@
       overlay.classList.add("hidden");
       overlay.classList.remove("fade-out");
       text.style.color = "";
+      clearSuspenseStage();
       revealRolesStaggered(msg.players, admin);
     }, 4800);
   }
@@ -3621,6 +3680,11 @@
     // Heart icon into lover-badge
     var loverIcon = document.querySelector(".lover-badge-icon");
     if (loverIcon) loverIcon.innerHTML = pixelArtToSvg(HEART_ART);
+
+    // D5: BOW centerpiece into the hunter revenge-wait panel (static — the
+    // reveal name + show/hide are owned by the C5b plumbing, untouched here).
+    var revengeArt = document.getElementById("revenge-wait-art");
+    if (revengeArt) revengeArt.innerHTML = pixelArtToSvg(BOW_ART);
 
     // Peel arrow — small pixel arrow (use bottom-right pointing arrow via rotated REFRESH or
     // a simple inline SVG southeast arrow consistent with the pixel system)
