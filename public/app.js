@@ -72,13 +72,35 @@
     game: $("screen-game"),
     gameover: $("screen-gameover"),
   };
+  // D8: tracks the currently-active screen so showScreen() can choose a
+  // threshold-specific enter animation (lobby→game, game→gameover).
+  let activeScreenName = null;
 
   // ============================================================
   // SCREEN MANAGEMENT
   // ============================================================
   function showScreen(name) {
-    Object.values(screens).forEach((s) => s.classList.remove("active"));
-    screens[name].classList.add("active");
+    // D8: screen transition — pick a purpose-built enter animation for the key
+    // narrative thresholds (lobby→game, game→gameover), else a generic soft
+    // enter. The animation classes are mutually exclusive; restart by removing
+    // then re-adding so a repeat navigation re-triggers. prefers-reduced-motion
+    // (CSS) collapses all of these to instant/opacity-only.
+    var prevName = activeScreenName;
+    var enterClass = "screen-enter";
+    if (prevName === "lobbyAdmin" || prevName === "lobbyPlayer") {
+      if (name === "game") enterClass = "screen-enter-game";
+    }
+    if (prevName === "game" && name === "gameover") enterClass = "screen-enter-gameover";
+
+    Object.values(screens).forEach((s) => {
+      s.classList.remove("active", "screen-enter", "screen-enter-game", "screen-enter-gameover");
+    });
+    var next = screens[name];
+    next.classList.add("active");
+    // Force a reflow so re-navigating to the same screen restarts the animation.
+    void next.offsetWidth;
+    next.classList.add(enterClass);
+    activeScreenName = name;
     // D2: phase ambience is only valid on the in-game screen. Clearing it here
     // is the single chokepoint that covers every leave/return-to-lobby/menu/
     // room_closed/logout/game-over path (which all route through showScreen) —
@@ -2779,16 +2801,29 @@
   }
 
   $("btn-force-dawn").addEventListener("click", () => {
-    if (confirm("Force dawn? Night actions will be skipped and no one will be killed.")) {
-      wsSend({ type: "force_dawn" });
-    }
+    showConfirmSheet(
+      "Force Dawn",
+      "Night actions will be skipped and no one will be killed.",
+      "Force Dawn",
+      () => { wsSend({ type: "force_dawn" }); },
+      { danger: true }
+    );
   });
 
   $("btn-end-day").addEventListener("click", () => {
-    if (confirm("End the day and transition to night?")) {
-      ensureAudioReady();
-      wsSend({ type: "end_day" });
-    }
+    showConfirmSheet(
+      "End Day",
+      "End the day and transition to night?",
+      "End Day",
+      () => {
+        // AUDIO GESTURE CHAIN (spec §10): ensureAudioReady() runs FIRST, here,
+        // synchronously inside the Confirm-button click handler's call stack —
+        // no await/microtask sits between the tap and this call, so iOS Safari
+        // keeps the user-gesture context that unlocks/plays night narration.
+        ensureAudioReady();
+        wsSend({ type: "end_day" });
+      }
+    );
   });
 
   function handleVoteCalled(msg, fromSync) {
@@ -2973,6 +3008,55 @@
     $("modal-settings").classList.add("hidden");
   }
 
+  // ============================================================
+  // D8: IN-WORLD CONFIRM SHEET (replaces native confirm())
+  // ============================================================
+  // CRITICAL audio-gesture contract (spec §10): native confirm() was
+  // SYNCHRONOUS — End Day's ensureAudioReady() ran in the SAME user gesture as
+  // the click. This sheet is async (the user taps Confirm later), so the
+  // Confirm-button click handler IS the user gesture. onConfirm() MUST be
+  // invoked SYNCHRONOUSLY from that listener — no await, no .then, no
+  // setTimeout — or iOS Safari loses the gesture context and night narration
+  // audio silently fails to unlock/play. The OK listener below is registered
+  // ONCE and calls the stored callback directly in-stack.
+  var _confirmOnConfirm = null;
+
+  function hideConfirmSheet() {
+    $("confirm-sheet").classList.add("hidden");
+    _confirmOnConfirm = null;
+  }
+
+  // showConfirmSheet(title, body, confirmLabel, onConfirm, opts?)
+  //   opts.danger=true → red Confirm button (destructive actions).
+  function showConfirmSheet(title, body, confirmLabel, onConfirm, opts) {
+    opts = opts || {};
+    $("confirm-sheet-title").textContent = title;
+    $("confirm-sheet-body").textContent = body;
+    var ok = $("confirm-sheet-ok");
+    ok.textContent = confirmLabel || "Confirm";
+    // danger styling: swap the amber primary for the blood-red danger fill.
+    ok.classList.toggle("btn-danger", !!opts.danger);
+    ok.classList.toggle("btn-primary", !opts.danger);
+    _confirmOnConfirm = onConfirm;
+    $("confirm-sheet").classList.remove("hidden");
+  }
+
+  // OK button: registered ONCE. Invokes the stored callback SYNCHRONOUSLY (real
+  // user gesture) so ensureAudioReady() inside an onConfirm keeps iOS audio
+  // unlocked. Do NOT make this async / await the callback / defer it.
+  $("confirm-sheet-ok").addEventListener("click", () => {
+    var cb = _confirmOnConfirm;
+    hideConfirmSheet();
+    if (cb) cb(); // SYNCHRONOUS — preserves the user-gesture call stack
+  });
+
+  $("confirm-sheet-cancel").addEventListener("click", hideConfirmSheet);
+
+  // Backdrop tap dismisses with no action.
+  $("confirm-sheet").addEventListener("click", (e) => {
+    if (e.target === $("confirm-sheet")) hideConfirmSheet();
+  });
+
   $("toggle-sound").addEventListener("change", (e) => {
     soundEnabled = e.target.checked;
     if (!soundEnabled) flushSoundQueue();
@@ -3080,22 +3164,34 @@
   });
 
   $("btn-end-game").addEventListener("click", () => {
-    if (confirm("Are you sure you want to end the game?")) {
-      wsSend({ type: "end_game" });
-      closeSettingsModal();
-    }
+    showConfirmSheet(
+      "End Game",
+      "Are you sure you want to end the game?",
+      "End Game",
+      () => {
+        wsSend({ type: "end_game" });
+        closeSettingsModal();
+      },
+      { danger: true }
+    );
   });
 
   $("btn-settings-leave").addEventListener("click", () => {
-    if (confirm("Leave the game? You can rejoin later with the same room code.")) {
-      wsSend({ type: "leave_game" });
-      localStorage.removeItem("mafia_game_code");
-      $("event-history").classList.add("hidden");
-      gameCode = null;
-      isAdmin = false;
-      closeSettingsModal();
-      showScreen("menu");
-    }
+    showConfirmSheet(
+      "Leave Game",
+      "Leave the game? You can rejoin later with the same room code.",
+      "Leave Game",
+      () => {
+        wsSend({ type: "leave_game" });
+        localStorage.removeItem("mafia_game_code");
+        $("event-history").classList.add("hidden");
+        gameCode = null;
+        isAdmin = false;
+        closeSettingsModal();
+        showScreen("menu");
+      },
+      { danger: true }
+    );
   });
 
   // ============================================================
@@ -3406,9 +3502,13 @@
   });
 
   $("btn-close-room").addEventListener("click", () => {
-    if (confirm("Close room? All players will be removed.")) {
-      wsSend({ type: "close_room" });
-    }
+    showConfirmSheet(
+      "Close Room",
+      "All players will be removed.",
+      "Close Room",
+      () => { wsSend({ type: "close_room" }); },
+      { danger: true }
+    );
   });
 
   // ============================================================

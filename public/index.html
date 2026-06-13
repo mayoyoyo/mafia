@@ -434,6 +434,18 @@
       </div>
     </div>
 
+    <!-- D8: IN-WORLD CONFIRM SHEET (replaces native confirm() for the five admin actions) -->
+    <div id="confirm-sheet" class="modal confirm-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-sheet-title">
+      <div class="modal-content confirm-sheet-content">
+        <h3 id="confirm-sheet-title" class="confirm-sheet-title"></h3>
+        <p id="confirm-sheet-body" class="confirm-sheet-body"></p>
+        <div class="confirm-sheet-actions">
+          <div class="btn-pxb pxc"><button id="confirm-sheet-cancel" class="btn btn-secondary pxc">Cancel</button></div>
+          <button id="confirm-sheet-ok" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script src="/pixel-art.js"></script>

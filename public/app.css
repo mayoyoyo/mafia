@@ -259,10 +259,45 @@ html, body {
   display: none;
   flex-direction: column;
   gap: 20px;
+  /* 100vh fallback above for old WebKit; 100dvh accounts for the dynamic
+     mobile toolbar so the screen fills the real viewport. */
   min-height: calc(100vh - 32px - var(--safe-top) - var(--safe-bottom));
+  min-height: calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom));
   position: relative;
 }
 .screen.active { display: flex; }
+/* D8: screen-enter transitions (~200ms). screenEnter is the generic soft enter;
+   screenEnterGame (lobby→game) and screenEnterGameover (game→gameover) are the
+   two purpose-built threshold beats. All are opacity + a small translate;
+   prefers-reduced-motion collapses them (block below). */
+.screen.screen-enter { animation: screenEnter 0.2s ease both; }
+.screen.screen-enter-game { animation: screenEnterGame 0.22s ease both; }
+.screen.screen-enter-gameover { animation: screenEnterGameover 0.22s ease both; }
+@keyframes screenEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes screenEnterGame {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes screenEnterGameover {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* D8: reduced-motion — collapse screen + confirm-sheet entrances to an instant
+   opacity fade (no translate/scale) so motion-sensitive users get no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .screen.screen-enter,
+  .screen.screen-enter-game,
+  .screen.screen-enter-gameover {
+    animation: screenEnterReduced 0.01s linear both;
+  }
+  @keyframes screenEnterReduced {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
 /* Scanlines + vignette texture on all screens */
 .screen.active::after {
   content: '';
@@ -1598,7 +1633,9 @@ input::placeholder { color: var(--text-secondary); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* 100vh fallback above for old WebKit; 100dvh for the real mobile viewport. */
   min-height: calc(100vh - 64px);
+  min-height: calc(100dvh - 64px);
   text-align: center;
   gap: 20px;
 }
@@ -1644,6 +1681,52 @@ input::placeholder { color: var(--text-secondary); }
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .modal-header h3 { font-size: 18px; }
 .empty-text { text-align: center; color: var(--text-secondary); padding: 20px; }
+
+/* D8: IN-WORLD CONFIRM SHEET — noir bottom-sheet replacing native confirm().
+   Reuses the .modal/.modal-content bottom-sheet shell (stepped top corners,
+   430px column, scanline-free overlay). Both themes + the 3-way theme modes
+   inherit via the same tokens the settings sheet uses. */
+.confirm-sheet .modal-content {
+  padding: 22px 20px;
+  /* safe-area aware: keep the actions clear of the iOS home indicator */
+  padding-bottom: calc(22px + var(--safe-bottom));
+  /* brief slide-up entrance (collapsed under prefers-reduced-motion) */
+  animation: confirmSheetUp 0.2s ease both;
+}
+@keyframes confirmSheetUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* D8: reduced-motion — disable the confirm-sheet slide-up (no translate). Placed
+   AFTER the base rule above so it wins the cascade at equal specificity. */
+@media (prefers-reduced-motion: reduce) {
+  .confirm-sheet .modal-content { animation: none; }
+}
+.confirm-sheet-title {
+  font-family: 'Silkscreen', monospace;
+  font-size: 17px;
+  letter-spacing: 1px;
+  color: var(--primary);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.confirm-sheet-body {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+.confirm-sheet-actions {
+  display: flex;
+  gap: 10px;
+}
+/* Both halves flex evenly; min-width:0 lets the bare .btn (white-space:nowrap)
+   shrink below its content width so the wider labels ("FORCE DAWN") don't
+   overflow at 320px. Tighter horizontal padding + a hair smaller label keep the
+   widest Silkscreen label inside the 280px inner column at 320px. */
+.confirm-sheet-actions .btn-pxb,
+.confirm-sheet-actions > .btn { flex: 1 1 0; min-width: 0; }
+.confirm-sheet-actions .btn { width: 100%; padding-left: 12px; padding-right: 12px; font-size: 15px; }
 
 /* GAME HISTORY (Game Over) */
 .game-history { width: 100%; margin-bottom: 16px; text-align: left; }
