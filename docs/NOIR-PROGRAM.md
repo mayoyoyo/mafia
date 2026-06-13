@@ -191,6 +191,8 @@ function getCosmeticAvatar(name) { // pre-reveal: role-agnostic profession art
 
 ## Status
 
+> **RESUME POINT (2026-06-13, HEAD `47e84ba`):** D0–D7.5 all DONE + two-stage reviewed (incl. user-feedback rounds D2.5/D3.5/D5.5/D7.5). Baseline 518/518 tests, tsc 0, goldens 11/11, `APP_VERSION_STAGING` still `staging.16_202606120831` (D9 owns the one bump). **NEXT = D8** (in-world confirm sheets + screen transitions + dvh; the `ensureAudioReady()` user-gesture chain is the fragile constraint — spec §10), then **D9** (final gate: full-diff sweeps + the accumulated D9 nit backlog scattered in the rows below + `.gitignore` `.playwright-mcp/` + the single version bump). Nothing pushed — coordinating instance pushes/merges. A fresh orchestrator: read spec §2 + all the USER AMENDMENT blocks (§3.3/§4/§6/§9), then this Status table, then start D8.
+
 | Task | Scope | Commits | Notes |
 |---|---|---|---|
 | D0 | Spec + mockup + fonts (pre-merge) | b2c3a81 (docs+mockup), fonts commit follows | DONE 2026-06-11. 6 latin woff2 (Silkscreen 400/700 static; Libre Franklin variable wght 100-900 normal+italic; Plex Mono 400/500) + OFL.txt, all wOF2-verified. @font-face NOT wired (app.css is C's until merge). |
