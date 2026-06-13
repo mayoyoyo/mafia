@@ -535,22 +535,6 @@
     return '<svg viewBox="0 0 ' + size + ' ' + size + '" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">' + rects + '</svg>';
   }
 
-  // D4: deterministic client-side avatar hash.
-  // djb2-style: h = ((h << 5) - h + charCode) | 0 — same on every client.
-  function avatarIndexFor(name) {
-    var h = 0;
-    for (var i = 0; i < name.length; i++) {
-      h = ((h << 5) - h + name.charCodeAt(i)) | 0;
-    }
-    return h < 0 ? -h : h;
-  }
-
-  // D4: pre-reveal cosmetic avatar — citizen-profession only, role-agnostic.
-  function getCosmeticAvatar(name) {
-    var grids = PIXEL_ART.citizen;
-    return pixelArtToSvg(grids[avatarIndexFor(name) % grids.length]);
-  }
-
   function getRoleImage(role, variant) {
     if (role === "citizen") {
       var grids = PIXEL_ART.citizen;
@@ -607,8 +591,6 @@
   window.MOON_ART = MOON_ART;
   window.SUN_ART = SUN_ART;
   window.MASCOT_ART = MASCOT_ART;
-  window.avatarIndexFor = avatarIndexFor;
-  window.getCosmeticAvatar = getCosmeticAvatar;
   window.pixelArtToSvg = pixelArtToSvg;
   window.getRoleImage = getRoleImage;
   window.ROLE_DESCRIPTIONS = ROLE_DESCRIPTIONS;
