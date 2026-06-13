@@ -86,7 +86,9 @@
     // navigating to "game".
     if (name !== "game") {
       document.body.removeAttribute("data-phase");
-      syncThemeColor();
+      // D5.5b: off the game screen there's no phase — re-evaluate the effective
+      // base (Dynamic keeps the last base / falls back to dark in the lobby).
+      applyEffectiveTheme(null);
     }
   }
 
@@ -610,7 +612,8 @@
     // D2: rejoin must restore phase ambience — handleGameSync does NOT route
     // through applyPhaseChange, so set data-phase here (showScreen cleared it).
     document.body.setAttribute("data-phase", msg.phase);
-    syncThemeColor();
+    // D5.5b: restore the effective base for the rejoined phase (Dynamic).
+    applyEffectiveTheme();
     updateRoleCard();
     resetCardPeel();
     $("card-back-art").innerHTML = pixelArtToSvg(isDead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
@@ -1537,7 +1540,8 @@
     // whole room shifts together (night→navy, day→warm, voting→blood accents).
     // Cleared centrally in showScreen() on every return-to-lobby/menu path.
     document.body.setAttribute("data-phase", msg.phase);
-    syncThemeColor();
+    // D5.5b: re-evaluate the effective base for this phase (Dynamic flips here).
+    applyEffectiveTheme();
 
     const indicator = $("phase-indicator");
     indicator.className = `phase-indicator ${msg.phase}`;
@@ -2713,7 +2717,9 @@
     // lights up while the vote is live; handleVoteResult/cancel revert to the
     // underlying phase. (game_sync rejoin mid-vote routes through here too.)
     document.body.setAttribute("data-phase", "voting");
-    syncThemeColor();
+    // D5.5b: vote sub-state drives the dark base under Dynamic (pass the override
+    // since currentPhase is still the underlying day).
+    applyEffectiveTheme("voting");
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
@@ -2775,7 +2781,8 @@
     // applyPhaseChange; a spared vote stays on day, which this restores.
     if (currentPhase) {
       document.body.setAttribute("data-phase", currentPhase);
-      syncThemeColor();
+      // D5.5b: drop back to the live phase's effective base (Dynamic → day=light).
+      applyEffectiveTheme();
     }
     lastVoteResult = msg;
 
@@ -2837,7 +2844,7 @@
   // ============================================================
   function openSettingsModal() {
     $("toggle-sound").checked = soundEnabled;
-    $("toggle-dark-mode").checked = document.documentElement.getAttribute("data-theme") !== "light";
+    updateThemeModeControl(); // D5.5b: reflect the active theme mode in the segmented control
     $("toggle-hide-mafia-tag").checked = hideMafiaTag;
     // Show room code for admin
     if (isAdmin && gameCode) {
@@ -2892,22 +2899,88 @@
     if (bg) meta.setAttribute("content", bg);
   }
 
-  function applyTheme(dark) {
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  // ============================================================
+  // D5.5b — THREE-WAY THEME PREFERENCE (Dark / Light / Dynamic)
+  // Pure client-local display pref (spec §4 amendment). NEVER sends a wire
+  // message and NEVER touches game state — switching is display-only.
+  // ----------------------------------------------------------------
+  // EFFECTIVE BASE contract: data-theme (dark|light) is ALWAYS set and is the
+  // effective base. In Dynamic it's computed from the live phase (night/voting
+  // → dark, day → light, game_over/lobby → keep last / fall back to dark); in
+  // Dark/Light it's pinned. The §4 token remaps key on [data-theme]×[data-phase]
+  // in CSS — the "every phone goes midnight together" base-flip lives in Dynamic
+  // only; Dark stays dark always, forced-Light stays paper at night (the navy
+  // night takeover is gated to the dark base in app.css).
+  // ============================================================
+  let themeMode = "dynamic"; // dark | light | dynamic
+  let lastEffectiveTheme = "dark"; // remembered for game_over (keep last base)
+
+  // Compute the effective base (dark|light) for a given phase under the current mode.
+  function effectiveTheme(phase) {
+    if (themeMode === "dark") return "dark";
+    if (themeMode === "light") return "light";
+    // dynamic: phase drives the base
+    if (phase === "night" || phase === "voting") return "dark";
+    if (phase === "day") return "light";
+    // game_over / lobby / boot (no phase): keep the last effective base, default dark
+    return lastEffectiveTheme || "dark";
+  }
+
+  // Apply the effective base, set data-theme, sync chrome. phaseOverride lets the
+  // vote sub-state (which rides on a day phase but sets data-phase="voting") drive
+  // the dark base under Dynamic; callers without it use the live currentPhase.
+  function applyEffectiveTheme(phaseOverride) {
+    const phase = phaseOverride === undefined ? currentPhase : phaseOverride;
+    const eff = effectiveTheme(phase);
+    lastEffectiveTheme = eff;
+    document.documentElement.setAttribute("data-theme", eff);
     syncThemeColor();
   }
 
-  // Initialize theme from localStorage (dark by default)
-  const savedTheme = localStorage.getItem("mafia_dark_mode");
-  const darkMode = savedTheme === null ? true : savedTheme === "true";
-  $("toggle-dark-mode").checked = darkMode;
-  if (!darkMode) applyTheme(false);
+  // Persist + apply a new mode immediately (re-evaluate for the current phase).
+  function setThemeMode(mode) {
+    themeMode = mode;
+    localStorage.setItem("themeMode", mode);
+    applyEffectiveTheme();
+    updateThemeModeControl();
+  }
 
-  $("toggle-dark-mode").addEventListener("change", (e) => {
-    const isDark = e.target.checked;
-    localStorage.setItem("mafia_dark_mode", String(isDark));
-    applyTheme(isDark);
-  });
+  // Reflect the active mode in the segmented control (if present in the DOM).
+  function updateThemeModeControl() {
+    const seg = document.getElementById("theme-mode-control");
+    if (!seg) return;
+    seg.querySelectorAll("[data-mode]").forEach((b) => {
+      const on = b.getAttribute("data-mode") === themeMode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // Initialize theme mode: prefer the new 'themeMode' pref; else MIGRATE the old
+  // 'mafia_dark_mode' (true → dark, false → light); else default Dynamic.
+  (function initThemeMode() {
+    const saved = localStorage.getItem("themeMode");
+    if (saved === "dark" || saved === "light" || saved === "dynamic") {
+      themeMode = saved;
+    } else {
+      const old = localStorage.getItem("mafia_dark_mode");
+      if (old === "true" || old === true) themeMode = "dark";
+      else if (old === "false" || old === false) themeMode = "light";
+      else themeMode = "dynamic";
+      localStorage.setItem("themeMode", themeMode);
+    }
+    applyEffectiveTheme();
+  })();
+
+  // Wire the segmented control (3 buttons). Display-only: no wire, no game state.
+  const themeModeControl = document.getElementById("theme-mode-control");
+  if (themeModeControl) {
+    themeModeControl.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-mode]");
+      if (!btn) return;
+      setThemeMode(btn.getAttribute("data-mode"));
+    });
+  }
 
   $("toggle-hide-mafia-tag").addEventListener("change", (e) => {
     hideMafiaTag = e.target.checked;

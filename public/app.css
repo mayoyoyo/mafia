@@ -164,45 +164,49 @@
 }
 
 /* ============================================================
-   PIXEL NOIR — D2: Phase ambience (token remaps on body[data-phase])
+   PIXEL NOIR — D2 + D5.5b: Phase ambience (token remaps on body[data-phase])
    Set/cleared by JS (applyPhaseChange, handleGameSync, showScreen).
-   These selectors (specificity 0,1,1) intentionally override both :root and
-   [data-theme="light"] (0,1,0) so the room shifts together in EITHER theme —
-   a light-theme phone at night still reads as night. The role card re-declares
-   --bg-card/--border on itself, so it stays dark through every phase remap.
+
+   D5.5b three-way-theme contract (spec §4 amendment): data-theme is the
+   EFFECTIVE base (dark|light) and is ALWAYS set by JS. The base-flipping NAVY
+   night takeover is now GATED to the dark base only — in forced-Light the base
+   stays paper at night (no navy takeover; only a subtle dusk accent). In Dynamic
+   the base flips to dark at night, so the dark-night remap below fires; in Dark
+   the base is pinned dark, so night still flavors navy within dark. The light-base
+   day remap is a no-op paper hold. The role card re-declares --bg-card/--border on
+   itself, so it stays dark through every phase remap.
    ============================================================ */
 
-/* NIGHT — deep navy, the whole room goes midnight together (mockup screen 02) */
-body[data-phase="night"] {
+/* NIGHT — deep navy, the whole room goes midnight together (mockup screen 02).
+   Gated to the DARK base: Dynamic (base flipped to dark) + forced-Dark. */
+[data-theme="dark"] body[data-phase="night"],
+:root:not([data-theme]) body[data-phase="night"] {
   --bg: #0d1126;
   --bg-card: #161d3d;
   --bg-elevated: #121736;
   --bg-input: #121736;
   --border: #2b3568;
 }
-/* Light-theme night: same navy, panels lifted a touch so paper-ink text holds.
-   Night is a shared physical effect — it overrides paper even in light theme.
-   ([data-theme] lives on <html>, [data-phase] on <body>, so this is a descendant
-   match — higher specificity than the plain [data-theme="light"] paper block.) */
+/* Forced-Light at night: NO navy takeover — paper holds. A subtle dusk accent
+   only (cooler border, dimmed primary) so night still reads without flipping
+   the base. The aggressive navy override is intentionally NOT applied here. */
 [data-theme="light"] body[data-phase="night"] {
-  --bg: #0d1126;
-  --bg-card: #1b2348;
-  --bg-elevated: #161d3d;
-  --bg-input: #161d3d;
-  --border: #313c75;
-  --text: #ece5d8;
-  --text-secondary: #8a8fb0;
+  --border: #b9b4c4;
+  --primary: #a06d1f;
 }
-/* Moonlight radial wash at the top of the game screen at night (static). */
-body[data-phase="night"] #screen-game.active {
+/* Moonlight radial wash at the top of the game screen at night — DARK base only
+   (it would muddy the paper light theme). */
+[data-theme="dark"] body[data-phase="night"] #screen-game.active,
+:root:not([data-theme]) body[data-phase="night"] #screen-game.active {
   background-image: radial-gradient(ellipse 140% 60% at 50% -8%, rgba(58,76,150,0.55) 0%, transparent 60%);
   background-repeat: no-repeat;
   background-attachment: fixed;
 }
 
-/* DAY (dark theme): ink warmed slightly + amber accent emphasis. Light theme
+/* DAY (dark base): ink warmed slightly + amber accent emphasis. Light base
    already IS day (warm paper) — lean in with no bg remap, just amber emphasis. */
-body[data-phase="day"] {
+[data-theme="dark"] body[data-phase="day"],
+:root:not([data-theme]) body[data-phase="day"] {
   --bg: #14110d;
   --bg-card: #20191f;
   --bg-elevated: #1b1620;
@@ -212,11 +216,6 @@ body[data-phase="day"] {
 }
 [data-theme="light"] body[data-phase="day"] {
   /* Paper is already day — keep it, just sharpen amber accents. */
-  --bg: #f0ebe1;
-  --bg-card: #faf7f2;
-  --bg-elevated: #e8e3d9;
-  --bg-input: #faf7f2;
-  --border: #d1cbc0;
   --primary: #b87d24;
 }
 
@@ -657,6 +656,39 @@ input::placeholder { color: var(--text-secondary); }
 .toggle input:checked + .slider { background: var(--success); border-color: var(--success); }
 .toggle input:checked + .slider::before { transform: translateX(20px); }
 
+/* D5.5b: three-way theme preference — a noir segmented control (Dark/Light/
+   Dynamic). Replaces the old 2-state dark-mode toggle. The active option is
+   amber-filled with ink Silkscreen so it reads unambiguously as the selection.
+   Display-only pref — switching never touches game state. */
+.theme-mode-control {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+}
+.theme-mode-btn {
+  min-height: 32px;
+  padding: 7px 11px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: 'Silkscreen', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.theme-mode-btn:last-child { border-right: none; }
+.theme-mode-btn:hover { color: var(--text); }
+.theme-mode-btn.active {
+  background: var(--primary);
+  color: #141008;
+}
+
 /* PLAYERS LIST */
 .players-section { flex: 1; }
 .players-section h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
@@ -687,11 +719,28 @@ input::placeholder { color: var(--text-secondary); }
 .waiting-text { text-align: center; color: var(--text-secondary); padding: 20px 0; }
 
 /* GAME SCREEN */
+/* D5.5b: a 3-cell grid (1fr auto 1fr) so "Round N" sits VISUALLY CENTERED in the
+   header — the two 1fr edge columns are equal by definition, so the centre auto
+   column lands dead-centre regardless of pill width, and the columns never overlap
+   (even at 320px with the wider NIGHT pill). Pill left, round centre, timer+gear
+   right. The header carries NO background (the night navy slab is gone) — it sits
+   on the screen bg in every phase and all three theme modes. */
 .game-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  background: transparent;
+}
+.game-header .phase-indicator { justify-self: start; }
+.game-header .round-indicator { justify-self: center; text-align: center; white-space: nowrap; }
+.game-header-right {
+  justify-self: end;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 0;
+  gap: 8px;
+  min-width: 0;
 }
 .phase-indicator {
   font-size: 14px;
@@ -703,9 +752,16 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 2px;
   font-family: 'Silkscreen', monospace;
 }
-/* Phase pill rides the phase remap: amber-on-panel at night (so it reads on the
-   navy wash), amber fill by day, blood by voting. D3b adds pixel moon/sun art. */
-.phase-indicator.night { background: var(--bg-elevated); color: var(--primary); }
+/* Phase pill rides the phase remap. D5.5b: at night the old solid --bg-elevated
+   fill read as a clumsy navy slab indistinguishable from the night bg/panels.
+   Make it a CLEAN chip — transparent fill + amber outline + amber Silkscreen — so
+   it reads as an intentional pill sitting on the screen bg, not a box. The 2px
+   stepped clip already shapes the chip; the box-shadow draws the stepped outline. */
+.phase-indicator.night {
+  background: transparent;
+  color: var(--primary);
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
 .phase-indicator.day { background: var(--primary); color: #141008; }
 .phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }

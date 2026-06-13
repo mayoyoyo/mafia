@@ -177,8 +177,10 @@
       <div class="game-header">
         <div class="phase-indicator" id="phase-indicator">Night</div>
         <div class="round-indicator">Round <span id="round-number">1</span></div>
-        <div id="day-timer" class="day-timer hidden">00:00</div>
-        <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
+        <div class="game-header-right">
+          <div id="day-timer" class="day-timer hidden">00:00</div>
+          <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
 
       <!-- Pull to Refresh -->
@@ -386,8 +388,12 @@
             <label class="toggle"><input type="checkbox" id="toggle-sound"><span class="slider"></span></label>
           </div>
           <div class="setting-row">
-            <span>Dark Mode</span>
-            <label class="toggle"><input type="checkbox" id="toggle-dark-mode" checked><span class="slider"></span></label>
+            <span>Theme</span>
+            <div id="theme-mode-control" class="theme-mode-control" role="group" aria-label="Theme">
+              <button type="button" class="theme-mode-btn" data-mode="dark" aria-pressed="false">Dark</button>
+              <button type="button" class="theme-mode-btn" data-mode="light" aria-pressed="false">Light</button>
+              <button type="button" class="theme-mode-btn" data-mode="dynamic" aria-pressed="false">Dynamic</button>
+            </div>
           </div>
           <div class="setting-row">
             <span>Hide Mafia Tag</span>
