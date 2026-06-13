@@ -847,12 +847,18 @@ input::placeholder { color: var(--text-secondary); }
   opacity: 0;
 }
 .peel-flap.dragging {
-  background: #1a1a2e;
-  clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
+  /* D7: spans the whole card; JS clips it to the live fold triangle.
+     Card-stock underside gradient (lighter than the card-back face) reads as
+     the back of the lifted paper; drop-shadow lifts it off the card. */
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #3a3a52 0%, #2a2a40 45%, #1d1d30 100%);
   border: none;
   border-radius: 0;
   opacity: 1;
-  filter: drop-shadow(-2px -2px 3px rgba(0,0,0,0.3));
+  filter: drop-shadow(-3px -3px 4px rgba(0,0,0,0.45));
+  /* clip-path (the fold triangle) is set inline by the drag handler */
 }
 .role-card.mafia .card-front { border-color: var(--role-mafia); }
 .role-card.citizen .card-front { border-color: var(--role-citizen); }

@@ -1137,6 +1137,7 @@
     back.style.clipPath = "";
     const flap = card.querySelector(".peel-flap");
     flap.classList.remove("dragging");
+    flap.style.clipPath = "";
     flap.style.left = "";
     flap.style.top = "";
     flap.style.right = "";
@@ -1163,23 +1164,53 @@
 
     function setPeel(clientX, clientY) {
       if (!cardRect) return;
+      // Raw drag distance from the bottom-right corner (0..1 of card extent).
+      // These are the SAME tracked quantities as before — only the RENDERING below
+      // changes (diagonal fold instead of the axis-aligned L-notch). No gesture
+      // threshold reads these; release always snaps shut.
       const px = Math.max(0, Math.min(1, (cardRect.right - clientX) / cardRect.width));
       const py = Math.max(0, Math.min(1, (cardRect.bottom - clientY) / cardRect.height));
-      const cx = (1 - px) * 100;
-      const cy = (1 - py) * 100;
-      back.style.clipPath = `polygon(0% 0%, 100% 0%, 100% ${cy}%, ${cx}% ${cy}%, ${cx}% 100%, 0% 100%)`;
-      // Move peel-flap to follow the fold point
       flap.classList.add("dragging");
-      flap.style.right = "auto";
-      flap.style.bottom = "auto";
-      flap.style.left = `${cx}%`;
-      flap.style.top = `${cy}%`;
+      // Resistance curve: ease the rendered lift (pow<1 => more lift early, eases
+      // as you pull). Applied to the rendering only — thresholds are untouched.
+      const pxE = Math.pow(px, 0.85);
+      const pyE = Math.pow(py, 0.85);
+      // Lifted corner point P (percent), trailing the drag vector from the
+      // bottom-right corner C=(100,100).
+      const cx = (1 - pxE) * 100;
+      const cy = (1 - pyE) * 100;
+      const dx = cx - 100; // <= 0
+      const dy = cy - 100; // <= 0
+      // Below a tiny pull, render no fold (avoids div-by-zero and corner jitter).
+      if (dx > -0.5 && dy > -0.5) {
+        back.style.clipPath = "polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)";
+        flap.style.clipPath = "polygon(100% 100%, 100% 100%, 100% 100%)";
+        return;
+      }
+      // DIAGONAL FOLD: P is the mirror image of the corner C=(100,100) across the
+      // crease. The crease is the perpendicular bisector of C–P; it meets the
+      // bottom edge at B=(bx,100) and the right edge at R=(100,ry). The folded-up
+      // flap is triangle B–R–P; the card-back shows everything minus triangle B–R–C.
+      // bx = 100 + dx/2 + dy^2/(2dx) ; ry = 100 + dy/2 + dx^2/(2dy)
+      let bx = 100 + dx / 2 + (dy * dy) / (2 * dx);
+      let ry = 100 + dy / 2 + (dx * dx) / (2 * dy);
+      // Clamp crease intercepts to the card so the polygon stays well-formed when
+      // one drag axis dominates (fold otherwise wants to leave an edge).
+      bx = Math.max(0, Math.min(100, bx));
+      ry = Math.max(0, Math.min(100, ry));
+      // Visible card-back = full rect with the corner triangle (B, C, R) removed.
+      back.style.clipPath =
+        `polygon(0% 0%, 100% 0%, 100% ${ry}%, ${bx}% 100%, 0% 100%)`;
+      // Flap underside = the folded triangle B–R–P (the lifted paper's back).
+      flap.style.clipPath =
+        `polygon(${bx}% 100%, 100% ${ry}%, ${cx}% ${cy}%)`;
     }
 
     function resetPeel() {
       back.classList.remove("dragging");
       back.style.clipPath = "";
       flap.classList.remove("dragging");
+      flap.style.clipPath = "";
       flap.style.left = "";
       flap.style.top = "";
       flap.style.right = "";
