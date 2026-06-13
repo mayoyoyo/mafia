@@ -350,12 +350,17 @@ html, body {
 /* D2.5: settings-modal close X reverted to STOCK pre-D1 plain dismiss affordance
    (user amendment). Neutralize the inherited .btn chrome (Silkscreen, padding,
    letter-spacing, pressed-edge) so it reads as a bare glyph button. Do NOT re-step.
-   Lobby gear buttons keep .btn-icon as-is (D3 replaces them with pixel art). */
+   D3.5: settings gear buttons (#btn-settings-lobby-admin, #btn-settings-lobby-player,
+   #btn-settings) also reverted to stock &#9881; per §3.3 extension 2026-06-12. */
 /* D3b: btn-icon now hosts pixel art SVGs — drop font-size, size SVG via child rule */
 .btn-icon { background: none; border: none; color: var(--text); padding: 4px 8px; cursor: pointer; clip-path: none; display: inline-flex; align-items: center; justify-content: center; }
 .btn-icon svg { width: 24px; height: 24px; image-rendering: pixelated; vertical-align: middle; }
-#btn-close-settings.btn-icon {
+#btn-close-settings.btn-icon,
+#btn-settings-lobby-admin.btn-icon,
+#btn-settings-lobby-player.btn-icon,
+#btn-settings.btn-icon {
   font-family: inherit;
+  font-size: 24px;
   font-weight: 400;
   letter-spacing: normal;
   box-shadow: none;
@@ -883,8 +888,10 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: center;
   transition: transform 0.1s;
 }
-.pull-refresh-spinner svg { width: 28px; height: 28px; image-rendering: pixelated; }
-.pull-refresh.ready .pull-refresh-spinner svg { opacity: 1; }
+/* D3.5 ride-along: base spinner is dim; .ready brings it to full brightness + slight scale.
+   The old no-op (base was already opacity:1, .ready set same) is replaced. */
+.pull-refresh-spinner svg { width: 28px; height: 28px; image-rendering: pixelated; opacity: 0.45; transition: opacity 0.15s, filter 0.15s; }
+.pull-refresh.ready .pull-refresh-spinner svg { opacity: 1; filter: brightness(1.4); }
 .pull-refresh.refreshing .pull-refresh-spinner {
   animation: ptr-spin 0.8s linear infinite;
 }

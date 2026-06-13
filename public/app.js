@@ -3572,13 +3572,8 @@
 
   // D3b: Wire pixel icons into all static emoji/entity sites
   (function() {
-    // Gear icon into all three settings buttons
-    var gearSvg = pixelArtToSvg(GEAR_ART);
-    var settingsButtons = ["btn-settings-lobby-admin", "btn-settings-lobby-player", "btn-settings"];
-    settingsButtons.forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) el.innerHTML = gearSvg;
-    });
+    // D3.5: settings gear buttons reverted to stock &#9881; (user amendment §3.3 extension).
+    // GEAR_ART stays in the registry (pixel-art.js) but is not injected at these sites.
 
     // Scroll icon into transcript button
     var scrollSvg = pixelArtToSvg(SCROLL_ART);
