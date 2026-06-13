@@ -1196,9 +1196,14 @@
       const pull = Math.min(1, Math.hypot(px, py) / Math.SQRT2);
       const t = Math.pow(pull, 0.85);
       // t=0 guard: no fold — full-rect back + degenerate flap (matches D7's no-fold).
+      // Clear any crossfade opacity left by a prior t>CAP frame: dragging back to the
+      // corner without releasing must restore the OPAQUE full-rect back, else the
+      // secret leaks through a transparent-but-full cover. (Mirrors the t<=CAP reset.)
       if (t < 0.005) {
         back.style.clipPath = "polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)";
         flap.style.clipPath = "polygon(100% 100%, 100% 100%, 100% 100%)";
+        back.style.opacity = "";
+        flap.style.opacity = "";
         return;
       }
       // TRANSLATING CREASE (docs/research/peel-full-card.md). s=t*2; s=1 is the old
