@@ -3555,7 +3555,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.3_202606100708";
-  const APP_VERSION_STAGING = "staging.18_202606121718";
+  const APP_VERSION_STAGING = "staging.16_202606120831";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
