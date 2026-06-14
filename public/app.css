@@ -95,6 +95,105 @@
 .pxb { padding: 2px; }
 .pxb > .in { width: 100%; height: 100%; }
 
+/* ====================================================================
+   STEPPED-CORNER PANEL BORDER (two-layer, CSS-only)
+   --------------------------------------------------------------------
+   An inset box-shadow traces only the four straight box edges, so on a
+   clip-path() stepped panel the diagonal corner steps came out EMPTY.
+   This replicates the .btn-pxb / .input-pxb wrapper mechanism with no
+   markup change, using pseudo-elements:
+     ::before  = BORDER layer  — fills the panel's full stepped shape
+                 with the border colour (var(--pxb-color)).
+     ::after   = SURFACE layer — same stepped shape, inset by the border
+                 width, filled with the surface colour (var(--pxb-surface)).
+                 Carries the subtle 3D bevel so it is ALSO clipped to the
+                 stepped outline and never reintroduces empty corners.
+   Because both layers use clip-path:inherit, they take the panel's own
+   stepped polygon — the ::after's inset box re-derives the same steps
+   2px smaller, leaving a complete stepped border (corners included).
+   Real content sits above via z-index. Per-panel/per-state colour is
+   driven purely by the --pxb-* custom properties below.
+   ==================================================================== */
+.narrator-area,
+.action-panel,
+.admin-controls,
+.voting-panel,
+.vote-status,
+.mafia-target-card,
+.single-mafia-target,
+.target-list li,
+.event-history,
+.detective-result,
+.awaiting-ready,
+.settings-panel,
+.player-lobby-settings,
+.players-list li,
+.role-reveal-item,
+.theme-mode-control,
+.accent-picker-toggle,
+.accent-arrow {
+  position: relative;
+  z-index: 0;                /* own stacking context so the -1 layers stay contained */
+  background: transparent;   /* colour comes from the ::before/::after layers */
+  border: none;
+  box-shadow: none;          /* kill any leftover inset-shadow border */
+}
+.narrator-area::before,
+.action-panel::before,
+.admin-controls::before,
+.voting-panel::before,
+.vote-status::before,
+.mafia-target-card::before,
+.single-mafia-target::before,
+.target-list li::before,
+.event-history::before,
+.detective-result::before,
+.awaiting-ready::before,
+.settings-panel::before,
+.player-lobby-settings::before,
+.players-list li::before,
+.role-reveal-item::before,
+.theme-mode-control::before,
+.accent-picker-toggle::before,
+.accent-arrow::before {           /* BORDER layer */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--pxb-color, var(--border));
+  clip-path: inherit;
+  pointer-events: none;
+}
+.narrator-area::after,
+.action-panel::after,
+.admin-controls::after,
+.voting-panel::after,
+.vote-status::after,
+.mafia-target-card::after,
+.single-mafia-target::after,
+.target-list li::after,
+.event-history::after,
+.detective-result::after,
+.awaiting-ready::after,
+.settings-panel::after,
+.player-lobby-settings::after,
+.players-list li::after,
+.role-reveal-item::after,
+.theme-mode-control::after,
+.accent-picker-toggle::after,
+.accent-arrow::after {            /* SURFACE layer + bevel */
+  content: "";
+  position: absolute;
+  inset: var(--pxb-w, 2px);
+  z-index: -1;
+  background: var(--pxb-surface, var(--bg-card));
+  clip-path: inherit;
+  box-shadow:
+    inset 2px 2px 0 0 rgba(255,255,255,0.05),
+    inset -2px -2px 0 0 rgba(0,0,0,0.28);
+  pointer-events: none;
+}
+
 /* ---- Texture utilities (static — zero new animations) ---- */
 /* NOTE: .scanlines / .vignette remain unused as standalone utility classes —
    screen/overlay texture is applied via element-scoped ::after/::before
@@ -153,6 +252,19 @@
   --role-joker: #0097a7;
 }
 [data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
+/* Light theme: suppress the radial vignette on auth/game/gameover screens.
+   The vignette darkens the edges of the full viewport (position:fixed; inset:0)
+   with up to 45% black toward the sides. At viewports wider than the 430px
+   max-width column the area outside the column sits at the "edge" of the
+   gradient and gets heavily darkened — creating a visible dark frame around
+   the lighter center column. In light mode the flat paper bg already reads
+   clearly; the dramatic vignette fights it and produces the floating-rectangle
+   seam. Zero opacity removes the frame; dark mode is unaffected. */
+[data-theme="light"] #screen-auth.active::before,
+[data-theme="light"] #screen-game.active::before,
+[data-theme="light"] #screen-gameover.active::before {
+  opacity: 0;
+}
 
 /* Keep membership card dark regardless of theme */
 .role-card {
@@ -193,13 +305,11 @@
   --border: #b9b4c4;
   --primary: #a06d1f;
 }
-/* Moonlight radial wash at the top of the game screen at night — DARK base only
-   (it would muddy the paper light theme). */
+/* D0 iter: moonlight radial wash removed — header floats on flat night-navy,
+   no bright top panel fusing it to the role card. */
 [data-theme="dark"] body[data-phase="night"] #screen-game.active,
 :root:not([data-theme]) body[data-phase="night"] #screen-game.active {
-  background-image: radial-gradient(ellipse 140% 60% at 50% -8%, rgba(58,76,150,0.55) 0%, transparent 60%);
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+  background-image: none;
 }
 
 /* DAY (dark base): ink warmed slightly + amber accent emphasis. Light base
@@ -220,8 +330,7 @@
 /* VOTING — bg stays phase-neutral dark; blood tint is SCOPED to the voting
    panel only (verdict beats own red later — don't flood the screen). */
 body[data-phase="voting"] .voting-panel {
-  border-color: var(--danger-bright);
-  box-shadow: 0 0 0 1px rgba(212,49,60,0.25), 0 4px 24px rgba(179,32,42,0.22);
+  --pxb-color: var(--danger-bright);
 }
 body[data-phase="voting"] .voting-panel h3 {
   color: var(--danger-bright);
@@ -518,11 +627,11 @@ input::placeholder { color: var(--text-secondary); }
 
 /* SETTINGS */
 .settings-panel {
-  background: var(--bg-card);
+  /* two-layer stepped border via shared .pxframe rule above */
+  --pxb-surface: var(--bg-card);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
-  border: none;
 }
 .settings-panel h3 { font-size: 16px; margin-bottom: 12px; color: var(--text-secondary); }
 .setting-row {
@@ -558,9 +667,9 @@ input::placeholder { color: var(--text-secondary); }
   gap: 8px;
   min-width: 0;            /* allow the label to shrink/ellipsis, never overflow */
   max-width: 60%;
-  background: var(--bg-input);
+  --pxb-surface: var(--bg-input);
+  --pxb-w: 1px;
   color: var(--text);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
   padding: 8px 12px;
@@ -587,7 +696,7 @@ input::placeholder { color: var(--text-secondary); }
   border-top: none;
   border-bottom: 6px solid var(--primary);
 }
-.accent-picker-toggle:focus-visible { border-color: var(--primary); }
+.accent-picker-toggle:focus-visible { --pxb-color: var(--primary); }
 .accent-picker-expanded[hidden] { display: none; }
 .accent-picker-stage {
   display: flex;
@@ -602,9 +711,9 @@ input::placeholder { color: var(--text-secondary); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-elevated);
+  --pxb-surface: var(--bg-elevated);
+  --pxb-w: 1px;
   color: var(--primary);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   font-family: 'Silkscreen', monospace;
@@ -613,7 +722,7 @@ input::placeholder { color: var(--text-secondary); }
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-.accent-arrow:active { background: var(--border); }
+.accent-arrow:active { --pxb-surface: var(--border); }
 .accent-arrow-prev::before { content: "\25C0"; }
 .accent-arrow-next::before { content: "\25B6"; }
 .accent-picker-label {
@@ -715,8 +824,8 @@ input::placeholder { color: var(--text-secondary); }
 .theme-mode-control {
   display: inline-flex;
   flex-shrink: 0;
-  border: 2px solid var(--border);
-  background: var(--bg-elevated);
+  --pxb-surface: var(--bg-elevated);
+  padding: 2px;              /* inset the segmented buttons so the 2px stepped frame shows around them */
   overflow: hidden;
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
 }
@@ -746,9 +855,8 @@ input::placeholder { color: var(--text-secondary); }
 .players-section h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
 .players-list { list-style: none; }
 .players-list li {
+  --pxb-w: 1px;
   padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   margin-bottom: 6px;
@@ -804,16 +912,18 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 2px;
   font-family: 'Silkscreen', monospace;
 }
-/* Phase pill rides the phase remap. D5.5b: at night the old solid --bg-elevated
-   fill read as a clumsy navy slab indistinguishable from the night bg/panels.
-   Make it a CLEAN chip — transparent fill + amber outline + amber Silkscreen — so
-   it reads as an intentional pill sitting on the screen bg, not a box. The 2px
-   stepped clip already shapes the chip; the box-shadow draws the stepped outline. */
+/* D0 iter: night pill is now a SOLID amber fill (matches the "BEGIN NIGHT"
+   primary button) — opaque amber background, ink/dark text + icon for legibility.
+   The stepped clip-path already shapes the chip; no outline needed. */
 .phase-indicator.night {
-  background: transparent;
-  color: var(--primary);
-  box-shadow: inset 0 0 0 2px var(--primary);
+  background: var(--primary);
+  color: #141008;
+  box-shadow: none;
 }
+/* D0 iter2: moon SVG cells are amber (#e8a33d) — invisible on the amber pill.
+   Force every rect in the night-pill SVG to ink (#141008) so the crescent
+   reads as a dark silhouette, matching the NIGHT text. */
+.phase-indicator.night svg rect { fill: #141008 !important; }
 .phase-indicator.day { background: var(--primary); color: #141008; }
 .phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
@@ -999,8 +1109,6 @@ input::placeholder { color: var(--text-secondary); }
 
 /* NARRATOR */
 .narrator-area {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
@@ -1027,8 +1135,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* AWAITING NARRATOR READY */
 .awaiting-ready {
-  background: var(--bg-card);
-  border: 2px solid var(--primary);
+  --pxb-color: var(--primary);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 20px;
@@ -1077,8 +1184,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* DETECTIVE RESULT */
 .detective-result {
-  background: var(--bg-card);
-  border: 2px solid var(--role-detective);
+  --pxb-color: var(--role-detective);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 14px 16px;
@@ -1094,8 +1200,6 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ACTION PANEL */
 .action-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
@@ -1105,20 +1209,22 @@ input::placeholder { color: var(--text-secondary); }
 
 /* Mafia target cards */
 .mafia-target-card {
+  /* surface tint lives on --pxb-surface so the stepped border (::before) is
+     unaffected by per-state background changes */
+  --pxb-surface: var(--bg-elevated);
   padding: 12px 14px;
-  border: 2px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 8px;
-  transition: background 0.2s ease, border-color 0.2s ease;
-  background: var(--bg-elevated);
 }
-.mafia-target-card.idle { border-color: var(--border); }
-.mafia-target-card.suggested { border-color: rgba(232,163,61,0.3); }
-.mafia-target-card.partial-lock { border-color: rgba(232,163,61,0.6); background: rgba(232,163,61,0.08); }
+.mafia-target-card.idle { --pxb-color: var(--border); }
+.mafia-target-card.suggested { --pxb-color: rgba(232,163,61,0.45); }
+.mafia-target-card.partial-lock {
+  --pxb-color: rgba(232,163,61,0.7);
+  --pxb-surface: rgba(232,163,61,0.08);
+}
 .mafia-target-card.unanimous {
-  border-color: var(--primary);
-  box-shadow: 0 0 12px rgba(232,163,61,0.25);
+  --pxb-color: var(--primary);
   animation: unanimousPulse 2s ease-in-out infinite;
 }
 .mafia-target-card.objected {
@@ -1129,9 +1235,12 @@ input::placeholder { color: var(--text-secondary); }
   pointer-events: auto;
   opacity: 0.7;
 }
+/* Unanimous glow — pulse the surface-layer bevel/tint; border stays solid amber.
+   (An outer glow would be clipped away by the stepped clip-path, so we pulse a
+   subtle inner amber wash on the ::after surface instead.) */
 @keyframes unanimousPulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(232,163,61,0.25); }
-  50% { box-shadow: 0 0 20px rgba(232,163,61,0.4); }
+  0%, 100% { --pxb-surface: var(--bg-elevated); }
+  50% { --pxb-surface: rgba(232,163,61,0.10); }
 }
 .mtc-header {
   display: flex;
@@ -1246,31 +1355,50 @@ input::placeholder { color: var(--text-secondary); }
   margin-bottom: 8px;
   text-align: center; font-weight: 600;
 }
-.joker-spectator-status.deliberating {
-  background: rgba(38, 198, 218, 0.15);
-  color: var(--role-joker);
-  border: 1px solid rgba(38, 198, 218, 0.3);
-}
+/* Two-layer stepped border (same mechanism as .pxframe) so the cyan ring wraps
+   the stepped corners. The base chip has no border; only these states do. */
+.joker-spectator-status.deliberating,
 .joker-spectator-status.resolved {
-  background: rgba(38, 198, 218, 0.25);
+  position: relative;
+  z-index: 0;
   color: var(--role-joker);
-  border: 1px solid rgba(38, 198, 218, 0.5);
 }
+.joker-spectator-status.deliberating::before,
+.joker-spectator-status.resolved::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  clip-path: inherit; pointer-events: none;
+}
+.joker-spectator-status.deliberating::after,
+.joker-spectator-status.resolved::after {
+  content: ""; position: absolute; inset: 1px; z-index: -1;
+  clip-path: inherit; pointer-events: none;
+  box-shadow:
+    inset 1px 1px 0 0 rgba(255,255,255,0.04),
+    inset -1px -1px 0 0 rgba(0,0,0,0.22);
+}
+.joker-spectator-status.deliberating::before { background: rgba(38, 198, 218, 0.3); }
+.joker-spectator-status.deliberating::after  { background: rgba(38, 198, 218, 0.15); }
+.joker-spectator-status.resolved::before { background: rgba(38, 198, 218, 0.5); }
+.joker-spectator-status.resolved::after  { background: rgba(38, 198, 218, 0.25); }
 
 /* Single mafia target */
 .single-mafia-target {
+  --pxb-surface: var(--bg-elevated);
   padding: 14px 16px;
-  border: 2px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 8px;
-  background: var(--bg-elevated);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
   font-weight: 500;
 }
-.single-mafia-target:active { border-color: var(--primary); background: rgba(232,163,61,0.08); }
-.single-mafia-target.selected { border-color: var(--primary); background: rgba(232,163,61,0.12); }
+.single-mafia-target:active {
+  --pxb-color: var(--primary);
+  --pxb-surface: rgba(232,163,61,0.08);
+}
+.single-mafia-target.selected {
+  --pxb-color: var(--primary);
+  --pxb-surface: rgba(232,163,61,0.12);
+}
 /* Animated narrator line */
 .narrator-line.animate-in {
   animation: narratorSlideIn 0.4s ease;
@@ -1281,18 +1409,19 @@ input::placeholder { color: var(--text-secondary); }
 }
 .target-list { list-style: none; }
 .target-list li {
+  --pxb-surface: var(--bg-elevated);
   padding: 14px 16px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 6px;
   cursor: pointer;
-  transition: background 0.15s;
   font-weight: 500;
 }
-.target-list li:not(:has(.mafia-icons)):active { background: var(--primary); }
-.target-list li.selected { background: var(--primary); border-color: var(--primary); }
+.target-list li:not(:has(.mafia-icons)):active { --pxb-surface: var(--primary); }
+.target-list li.selected {
+  --pxb-surface: var(--primary);
+  --pxb-color: var(--primary);
+}
 .target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
 /* SLIDE-TO-CONFIRM */
 .slide-confirm { width: 100%; margin-top: 12px; }
@@ -1414,8 +1543,6 @@ input::placeholder { color: var(--text-secondary); }
 
 /* VOTE STATUS */
 .vote-status {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
@@ -1424,8 +1551,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* VOTING PANEL */
 .voting-panel {
-  background: var(--bg-card);
-  border: 2px solid var(--primary);
+  --pxb-color: var(--primary);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 24px;
@@ -1437,8 +1563,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ADMIN CONTROLS */
 .admin-controls {
-  background: var(--bg-card);
-  border: 1px solid var(--primary);
+  --pxb-color: var(--primary);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
@@ -1778,12 +1903,11 @@ input::placeholder { color: var(--text-secondary); }
   margin: 0 auto;
 }
 .role-reveal-item {
+  --pxb-w: 1px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   margin-bottom: 6px;
@@ -1822,8 +1946,6 @@ input::placeholder { color: var(--text-secondary); }
 
 /* EVENT HISTORY */
 .event-history {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 12px 16px;
@@ -2104,11 +2226,9 @@ input::placeholder { color: var(--text-secondary); }
 
 /* READ-ONLY SETTINGS DISPLAY (player lobby) */
 .player-lobby-settings {
-  background: var(--bg-card);
   border-radius: 0;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 12px 16px;
-  border: 1px solid var(--border);
   font-size: 14px;
 }
 .player-lobby-settings:empty { display: none; }
