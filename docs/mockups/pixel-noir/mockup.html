@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pixel Noir — direction mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Libre+Franklin:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=block" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0b0b10;
+    --midnight: #1a1a2e;
+    --midnight-2: #15152a;
+    --night-bg: #0d1126;
+    --night-panel: #161d3d;
+    --border-nv: #34345c;
+    --blood: #b3202a;
+    --blood-bright: #d4313c;
+    --amber: #e8a33d;
+    --amber-dark: #b87d24;
+    --paper: #ece5d8;
+    --dim: #8a8a96;
+    --dim-2: #5d5d6e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #101014;
+    font-family: 'Libre Franklin', sans-serif;
+    color: var(--paper);
+    padding: 48px 56px 40px;
+  }
+  .disp { font-family: 'Silkscreen', monospace; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  h1.sheet-title { font-family:'Silkscreen'; font-size: 17px; letter-spacing: 6px; color: var(--paper); margin-bottom: 6px; }
+  .sheet-sub { font-size: 13px; color: var(--dim); margin-bottom: 36px; font-style: italic; }
+
+  .row { display: flex; gap: 44px; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+  .phone-label { font-family:'IBM Plex Mono'; font-size: 11px; letter-spacing: 2px; color: #6e6e78; }
+
+  .phone {
+    width: 390px; height: 844px;
+    border: 2px solid #2a2a33;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .phone::after { /* shared grain: faint scanlines over everything */
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,0.10) 3px 4px);
+  }
+  .vignette::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+  .pad { padding: 28px 22px; height: 100%; display: flex; flex-direction: column; position: relative; }
+
+  /* pixel-stepped corners */
+  .pxc { clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  ); }
+  .pxb { padding: 2px; } /* stepped border: outer = border color, inner = surface */
+  .pxb > .in { width: 100%; height: 100%; }
+
+  .px-art svg { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+
+  .dither-div { height: 6px; background-image: conic-gradient(#3a3a4a 25%, transparent 25% 50%, #3a3a4a 50% 75%, transparent 75%); background-size: 6px 6px; opacity: .5; }
+
+  /* ============ 01 LANDING ============ */
+  .p-landing { background: var(--ink); }
+  .p-landing .pad { align-items: center; }
+  .mascot { width: 96px; height: 96px; margin-top: 64px; }
+  .mascot svg { width: 100%; height: 100%; image-rendering: pixelated; }
+  .wordmark { font-family:'Silkscreen'; font-weight: 700; font-size: 36px; letter-spacing: 12px; margin: 22px 0 8px 12px; color: var(--paper); }
+  .wordmark .dot { color: var(--blood-bright); }
+  .tagline { font-style: italic; font-size: 13.5px; color: var(--dim); margin-bottom: 56px; }
+  .field { width: 100%; background: var(--border-nv); margin-bottom: 14px; }
+  .field .in { background: var(--midnight-2); padding: 17px 18px; font-size: 16px; color: var(--dim); }
+  .field.pin .in { text-align: center; letter-spacing: 6px; font-family: 'IBM Plex Mono'; font-size: 15px; }
+  .btn-amber { width: 100%; background: var(--amber); margin: 12px 0 14px; }
+  .btn-amber .in { background: var(--amber); box-shadow: inset 0 -5px 0 rgba(70,40,0,.35); padding: 17px; text-align: center;
+    font-family:'Silkscreen'; font-weight: 700; font-size: 14px; letter-spacing: 3px; color: #141008; }
+  .btn-ghost { width: 100%; background: var(--border-nv); }
+  .btn-ghost .in { background: var(--ink); padding: 16px; text-align: center; font-family:'Silkscreen'; font-size: 12px; letter-spacing: 3px; color: var(--paper); }
+  .landing-foot { margin-top: auto; font-family: 'IBM Plex Mono'; font-size: 10px; color: #4a4a55; }
+
+  /* ============ 02 NIGHT ============ */
+  .p-night { background:
+    radial-gradient(ellipse 140% 70% at 50% -10%, #1b2452 0%, transparent 60%),
+    var(--night-bg); }
+  .nightbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .nightbar .phase { font-family:'Silkscreen'; font-size: 11px; letter-spacing: 3px; color: var(--amber); display: flex; align-items: center; gap: 9px; }
+  .moon { width: 14px; height: 14px; }
+  .nightbar .room { font-family: 'IBM Plex Mono'; font-size: 11px; color: #5d6694; letter-spacing: 1px; }
+  .narrator { background: var(--blood); margin-bottom: 26px; }
+  .narrator .in { background: var(--night-panel); border-left: 4px solid var(--blood); padding: 16px 16px 16px 14px;
+    font-style: italic; font-size: 15px; line-height: 1.5; color: var(--paper); }
+  .sect { font-family:'Silkscreen'; font-size: 10px; letter-spacing: 2px; color: #6a6f95; margin: 0 0 12px 2px; }
+  .sect b { color: var(--amber); font-weight: 400; }
+  .target { background: var(--border-nv); margin-bottom: 12px; }
+  .target .in { background: var(--night-panel); display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+  .target.nominated { background: var(--amber); }
+  .target.nominated .in { background: #221c33; }
+  .target.dim { opacity: .45; }
+  .avatar { width: 40px; height: 40px; flex-shrink: 0; background: #0e1330; padding: 4px; }
+  .t-name { font-weight: 600; font-size: 15.5px; letter-spacing: .2px; flex: 1; }
+  .t-sub { font-family: 'IBM Plex Mono'; font-size: 10px; color: #5d6694; display: block; margin-top: 2px; font-weight: 400; }
+  .chip { font-family:'Silkscreen'; font-size: 9px; letter-spacing: 1px; padding: 5px 8px 4px; color: #141008; background: var(--amber); }
+  .lockrow { display: flex; gap: 6px; margin-top: 5px; }
+  .lockrow span { font-family:'IBM Plex Mono'; font-size: 9.5px; padding: 2px 6px; background: #0e1330; color: #7d84ad; }
+  .lockrow span.locked { color: var(--amber); }
+  .slide-wrap { margin-top: auto; }
+  .slide-track { background: #432; background: var(--border-nv); position: relative; height: 60px; }
+  .slide-track .in { background: #1b0d12; position: relative; height: 100%; overflow: hidden; }
+  .slide-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 26%;
+    background: linear-gradient(90deg, #4d0d12, var(--blood)); }
+  .slide-fill::after { content:''; position: absolute; right: -6px; top: 0; bottom: 0; width: 6px;
+    background-image: conic-gradient(var(--blood) 25%, transparent 25% 50%, var(--blood) 50% 75%, transparent 75%); background-size: 6px 6px; }
+  .slide-label { position: absolute; top: 0; bottom: 0; left: 33%; right: 12px; display: flex; align-items: center; justify-content: center;
+    font-family:'Silkscreen'; font-size: 12px; letter-spacing: 5px; color: rgba(236,229,216,.5); }
+  .slide-handle { position: absolute; left: calc(26% - 24px); top: 50%; transform: translateY(-50%);
+    width: 48px; height: 48px; background: var(--blood); padding: 3px; }
+  .slide-handle .in2 { width: 100%; height: 100%; background: var(--ink); display: flex; align-items: center; justify-content: center; }
+  .slide-handle .px-art { width: 30px; height: 30px; }
+  .slide-hint { font-family:'IBM Plex Mono'; font-size: 10px; color: #4d557e; text-align: center; margin-top: 12px; }
+
+  /* ============ 03 DEATH ============ */
+  .p-death { background: radial-gradient(ellipse 90% 55% at 50% 42%, rgba(179,32,42,0.16) 0%, transparent 65%), #07070b; }
+  .p-death .pad { align-items: center; justify-content: center; text-align: center; }
+  .skull { width: 170px; height: 170px; margin-bottom: 38px; filter: drop-shadow(0 0 28px rgba(179,32,42,.35)); }
+  .dead-pre { font-family:'Silkscreen'; font-size: 13px; letter-spacing: 9px; color: var(--amber); margin-bottom: 14px; padding-left: 9px; }
+  .dead-main { font-family:'Silkscreen'; font-weight: 700; font-size: 52px; letter-spacing: 10px; color: var(--blood-bright); margin-bottom: 22px; padding-left: 10px; }
+  .dead-sub { font-style: italic; font-size: 14.5px; color: var(--dim); margin-bottom: 34px; }
+  .dead-div { width: 130px; margin-bottom: 34px; }
+  .dead-note { font-size: 13px; color: #62626e; margin-bottom: 46px; }
+  .btn-watch { width: 240px; background: var(--border-nv); }
+  .btn-watch .in { background: #0c0c12; padding: 15px; text-align: center; font-family:'Silkscreen'; font-size: 11px; letter-spacing: 3px; color: var(--paper); }
+
+  /* ============ legend ============ */
+  .legend { margin-top: 40px; display: flex; align-items: center; gap: 36px; }
+  .swatches { display: flex; gap: 14px; }
+  .sw { text-align: center; }
+  .sw i { display: block; width: 44px; height: 44px; border: 2px solid #2a2a33; margin-bottom: 7px; }
+  .sw span { font-family:'IBM Plex Mono'; font-size: 9.5px; color: #6e6e78; display: block; line-height: 1.5; }
+  .typespec { border-left: 2px solid #2a2a33; padding-left: 32px; }
+  .typespec .t1 { font-family:'Silkscreen'; font-size: 15px; letter-spacing: 2px; margin-bottom: 8px; }
+  .typespec .t2 { font-size: 14px; color: var(--dim); margin-bottom: 4px; }
+  .typespec .t3 { font-family:'IBM Plex Mono'; font-size: 11.5px; color: #6e6e78; }
+</style>
+</head>
+<body>
+
+<h1 class="sheet-title">PIXEL NOIR</h1>
+<div class="sheet-sub">direction mockup — same screens, same mechanics, the pixel identity extended to the whole shell. Night screen shows phase-ambient theming.</div>
+
+<div class="row">
+
+  <!-- 01 LANDING -->
+  <div class="col">
+    <div class="phone p-landing vignette">
+      <div class="pad">
+        <div class="mascot" id="mascot"></div>
+        <div class="wordmark">MAFIA<span class="dot">.</span></div>
+        <div class="tagline">a game of liars, for friends</div>
+        <div class="field pxb pxc"><div class="in pxc">Username</div></div>
+        <div class="field pin pxb pxc"><div class="in pxc">4-DIGIT PIN</div></div>
+        <div class="btn-amber pxb pxc"><div class="in pxc">LOG IN</div></div>
+        <div class="btn-ghost pxb pxc"><div class="in pxc">CREATE ACCOUNT</div></div>
+        <div class="landing-foot">© DaleWorldwide · staging.16</div>
+      </div>
+    </div>
+    <div class="phone-label">01 · LANDING — ink black, amber primary, Silkscreen wordmark</div>
+  </div>
+
+  <!-- 02 NIGHT -->
+  <div class="col">
+    <div class="phone p-night vignette">
+      <div class="pad">
+        <div class="nightbar">
+          <div class="phase"><span class="moon px-art" id="moon"></span>NIGHT · ROUND 3</div>
+          <div class="room">ROOM E92G</div>
+        </div>
+        <div class="narrator pxc"><div class="in">The town sleeps. Mafia — agree on a victim. The lock must be unanimous.</div></div>
+        <div class="sect">CHOOSE A TARGET — <b>2 OF 3 LOCKED</b></div>
+
+        <div class="target nominated pxb pxc"><div class="in pxc">
+          <div class="avatar pxc px-art" data-art="citizen-4"></div>
+          <div class="t-name">dale
+            <div class="lockrow"><span class="locked">MO ✓</span><span class="locked">RAY ✓</span><span>YOU —</span></div>
+          </div>
+          <div class="chip pxc">NOMINATED</div>
+        </div></div>
+
+        <div class="target pxb pxc"><div class="in pxc">
+          <div class="avatar pxc px-art" data-art="citizen-0"></div>
+          <div class="t-name">mo<span class="t-sub">no nomination</span></div>
+        </div></div>
+
+        <div class="target pxb pxc"><div class="in pxc">
+          <div class="avatar pxc px-art" data-art="citizen-6"></div>
+          <div class="t-name">jenny<span class="t-sub">no nomination</span></div>
+        </div></div>
+
+        <div class="target dim pxb pxc"><div class="in pxc">
+          <div class="avatar pxc px-art" data-art="dead"></div>
+          <div class="t-name" style="text-decoration:line-through">ray<span class="t-sub">dead — round 2</span></div>
+        </div></div>
+
+        <div class="slide-wrap">
+          <div class="slide-track pxb pxc"><div class="in pxc">
+            <div class="slide-fill"></div>
+            <div class="slide-label">SLIDE TO KILL</div>
+            <div class="slide-handle pxc"><div class="in2 pxc"><span class="px-art" id="knife"></span></div></div>
+          </div></div>
+          <div class="slide-hint">unanimous lock required to strike</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">02 · NIGHT, MAFIA TURN — phase-ambient navy, avatars, deliberation + slide unchanged</div>
+  </div>
+
+  <!-- 03 DEATH -->
+  <div class="col">
+    <div class="phone p-death vignette">
+      <div class="pad">
+        <div class="skull px-art" id="skull"></div>
+        <div class="dead-pre">YOU ARE</div>
+        <div class="dead-main">DEAD</div>
+        <div class="dead-sub">stabbed in the night — round 3</div>
+        <div class="dither-div dead-div"></div>
+        <div class="dead-note">stay quiet. you can still watch the town squirm.</div>
+        <div class="btn-watch pxb pxc"><div class="in pxc">WATCH THE TOWN</div></div>
+      </div>
+    </div>
+    <div class="phone-label">03 · DEATH — the app's own pixel skull, no more font emoji</div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <div class="swatches">
+    <div class="sw"><i style="background:#0b0b10"></i><span>INK<br>#0B0B10</span></div>
+    <div class="sw"><i style="background:#1a1a2e"></i><span>MIDNIGHT<br>#1A1A2E</span></div>
+    <div class="sw"><i style="background:#b3202a"></i><span>BLOOD<br>#B3202A</span></div>
+    <div class="sw"><i style="background:#e8a33d"></i><span>AMBER<br>#E8A33D</span></div>
+    <div class="sw"><i style="background:#ece5d8"></i><span>PAPER<br>#ECE5D8</span></div>
+  </div>
+  <div class="typespec">
+    <div class="t1">SILKSCREEN — DISPLAY &amp; LABELS</div>
+    <div class="t2">Libre Franklin — body, narrator prose, names (readable at 13–16px)</div>
+    <div class="t3">IBM Plex Mono — room codes, timers, version strings</div>
+  </div>
+</div>
+
+<script src="pixel-art.js"></script>
+<script>
+  // mascot: copy of the real 16x16 logo from index.html
+  document.getElementById('mascot').innerHTML = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <rect x="12" y="6" width="1" height="1" fill="#aaa"/><rect x="13" y="5" width="1" height="1" fill="#888"/><rect x="14" y="4" width="1" height="1" fill="#555"/>
+    <rect x="6" y="0" width="4" height="1" fill="#1a1a1a"/><rect x="5" y="1" width="6" height="1" fill="#222"/><rect x="5" y="2" width="6" height="1" fill="#222"/>
+    <rect x="3" y="3" width="10" height="1" fill="#2a2a2a"/><rect x="5" y="3" width="6" height="1" fill="#b71c1c"/>
+    <rect x="6" y="4" width="4" height="1" fill="#fdd"/><rect x="6" y="5" width="4" height="1" fill="#fdd"/>
+    <rect x="6" y="5" width="1" height="1" fill="#222"/><rect x="9" y="5" width="1" height="1" fill="#222"/>
+    <rect x="6" y="6" width="4" height="1" fill="#fdd"/><rect x="7" y="6" width="2" height="1" fill="#dbb"/>
+    <rect x="6" y="7" width="4" height="1" fill="#fdd"/><rect x="10" y="7" width="2" height="1" fill="#eee"/><rect x="12" y="7" width="1" height="1" fill="#e53935"/>
+    <rect x="6" y="8" width="4" height="1" fill="#fdd"/>
+    <rect x="5" y="9" width="6" height="1" fill="#111"/><rect x="7" y="9" width="2" height="1" fill="#b71c1c"/>
+    <rect x="5" y="10" width="6" height="1" fill="#111"/><rect x="7" y="10" width="2" height="1" fill="#b71c1c"/>
+    <rect x="5" y="11" width="6" height="1" fill="#1a1a1a"/><rect x="7" y="11" width="2" height="1" fill="#b71c1c"/>
+    <rect x="6" y="12" width="4" height="1" fill="#1a1a1a"/>
+    <rect x="6" y="13" width="2" height="1" fill="#111"/><rect x="8" y="13" width="2" height="1" fill="#111"/>
+    <rect x="5" y="14" width="3" height="1" fill="#0a0a0a"/><rect x="8" y="14" width="3" height="1" fill="#0a0a0a"/>
+  </svg>`;
+
+  // real art from the app's own pipeline
+  document.getElementById('knife').innerHTML = pixelArtToSvg(window.KNIFE_ART);
+  document.getElementById('skull').innerHTML = pixelArtToSvg(window.CARD_BACK_DEAD_ART);
+  document.querySelectorAll('[data-art]').forEach(function(el){
+    var key = el.getAttribute('data-art');
+    if (key === 'dead') { el.innerHTML = pixelArtToSvg(window.CARD_BACK_DEAD_ART); return; }
+    var parts = key.split('-');
+    el.innerHTML = pixelArtToSvg(window.PIXEL_ART[parts[0]][+parts[1]]);
+  });
+
+  // tiny amber crescent moon, drawn in the same 10x10 language
+  var _ = null, A = '#e8a33d';
+  var MOON = [
+    [_,_,_,A,A,A,_,_,_,_],
+    [_,_,A,A,A,_,_,_,_,_],
+    [_,A,A,A,_,_,_,_,_,_],
+    [_,A,A,_,_,_,_,_,_,_],
+    [_,A,A,_,_,_,_,_,_,_],
+    [_,A,A,_,_,_,_,_,_,_],
+    [_,A,A,A,_,_,_,_,_,_],
+    [_,_,A,A,A,_,_,_,_,_],
+    [_,_,_,A,A,A,A,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+  ];
+  document.getElementById('moon').innerHTML = pixelArtToSvg(MOON);
+</script>
+</body>
+</html>

@@ -1,3 +1,37 @@
+/* ============================================================
+   PIXEL NOIR — D1: @font-face declarations
+   ============================================================ */
+@font-face {
+  font-family: 'Silkscreen';
+  src: url('/fonts/silkscreen-400.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Silkscreen';
+  src: url('/fonts/silkscreen-700.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Libre Franklin';
+  src: url('/fonts/libre-franklin-var.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Libre Franklin';
+  src: url('/fonts/libre-franklin-var-italic.woff2') format('woff2');
+  font-weight: 100 900; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -5,29 +39,103 @@
 }
 
 :root {
-  --bg: #0a0a0a;
-  --bg-card: #151515;
-  --bg-elevated: #1c1c1e;
-  --bg-input: #1c1c1e;
-  --text: #f5f5f5;
-  --text-secondary: #8e8e93;
-  --border: #2c2c2e;
-  --primary: #e91e63;
-  --primary-dark: #c2185b;
-  --danger: #d32f2f;
+  /* Pixel Noir palette — D1 token swap (names unchanged, values updated) */
+  --bg: #0b0b10;
+  --bg-card: #1a1a2e;
+  --bg-elevated: #15152a;
+  --bg-input: #15152a;
+  --text: #ece5d8;
+  --text-secondary: #8a8a96;
+  --border: #34345c;
+  --primary: #e8a33d;
+  --primary-dark: #b87d24;
+  --danger: #b3202a;
+  --danger-bright: #d4313c;
   --success: #388e3c;
+  /* --warning: gold, clearly separated from hunter orange (#ef6c00) and amber primary (#e8a33d) */
+  --warning: #ffc107;
   --role-mafia: #d32f2f;
   --role-citizen: #388e3c;
   --role-doctor: #2196f3;
   --role-detective: #9c27b0;
-  --role-joker: #2196f3;
+  --role-joker: #26c6da;
   --role-hunter: #ef6c00;
   --role-lover: #e91e63;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Light theme */
+/* Font utilities — D1 */
+.disp { font-family: 'Silkscreen', monospace; }
+.mono { font-family: 'IBM Plex Mono', monospace; }
+
+/* ============================================================
+   PIXEL NOIR — D1b: Stepped-corner chrome + texture utilities
+   ============================================================ */
+
+/* Pixel-stepped corner clip-path (12px/4px — standard) */
+.pxc { clip-path: polygon(
+  0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+  calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+  100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+  calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+  12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+); }
+
+/* Pixel-stepped corner clip-path (6px/2px — small chips) */
+.pxc-sm { clip-path: polygon(
+  0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
+  calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
+  100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
+  calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
+  6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
+); }
+
+/* Stepped-border wrapper: outer = border color bg + .pxc, inner = surface bg + .pxc */
+.pxb { padding: 2px; }
+.pxb > .in { width: 100%; height: 100%; }
+
+/* ---- Texture utilities (static — zero new animations) ---- */
+/* NOTE: .scanlines / .vignette remain unused as standalone utility classes —
+   screen/overlay texture is applied via element-scoped ::after/::before
+   (e.g. .screen.active::after). Left in place intentionally as named utilities.
+   (.dither-h IS wired — the dead/joker-win overlay dividers in index.html.) */
+
+/* Scanlines: 1px line every 4px, pointer-events:none so it never blocks taps */
+.scanlines { position: relative; }
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.10) 3px 4px
+  );
+  z-index: 1;
+}
+
+/* Radial vignette darkening toward edges */
+.vignette { position: relative; }
+.vignette::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  z-index: 2;
+}
+
+/* Dither divider: 6px conic checker pattern */
+.dither-h {
+  height: 6px;
+  background-image: conic-gradient(var(--border) 25%, transparent 25% 50%, var(--border) 50% 75%, transparent 75%);
+  background-size: 6px 6px;
+  opacity: 0.5;
+}
+
+/* Light theme — warm-paper neutrals kept; sync amber primary + role fixes */
 [data-theme="light"] {
   --bg: #f0ebe1;
   --bg-card: #faf7f2;
@@ -36,6 +144,13 @@
   --text: #1a1a1a;
   --text-secondary: #6b6b6b;
   --border: #d1cbc0;
+  /* Amber primary (no pink remnants) */
+  --primary: #b87d24;
+  --primary-dark: #8a5c18;
+  /* Contrast-correct warning on paper bg (darkened for AA) */
+  --warning: #c47d00;
+  /* Fixed role-joker (no doctor collision) */
+  --role-joker: #0097a7;
 }
 [data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
 
@@ -47,11 +162,79 @@
   --text-secondary: #8e8e93;
 }
 
+/* ============================================================
+   PIXEL NOIR — D2 + D5.5b: Phase ambience (token remaps on body[data-phase])
+   Set/cleared by JS (applyPhaseChange, handleGameSync, showScreen).
+
+   D5.5b three-way-theme contract (spec §4 amendment): data-theme is the
+   EFFECTIVE base (dark|light) and is ALWAYS set by JS. The base-flipping NAVY
+   night takeover is now GATED to the dark base only — in forced-Light the base
+   stays paper at night (no navy takeover; only a subtle dusk accent). In Dynamic
+   the base flips to dark at night, so the dark-night remap below fires; in Dark
+   the base is pinned dark, so night still flavors navy within dark. The light-base
+   day remap is a no-op paper hold. The role card re-declares --bg-card/--border on
+   itself, so it stays dark through every phase remap.
+   ============================================================ */
+
+/* NIGHT — deep navy, the whole room goes midnight together (mockup screen 02).
+   Gated to the DARK base: Dynamic (base flipped to dark) + forced-Dark. */
+[data-theme="dark"] body[data-phase="night"],
+:root:not([data-theme]) body[data-phase="night"] {
+  --bg: #0d1126;
+  --bg-card: #161d3d;
+  --bg-elevated: #121736;
+  --bg-input: #121736;
+  --border: #2b3568;
+}
+/* Forced-Light at night: NO navy takeover — paper holds. A subtle dusk accent
+   only (cooler border, dimmed primary) so night still reads without flipping
+   the base. The aggressive navy override is intentionally NOT applied here. */
+[data-theme="light"] body[data-phase="night"] {
+  --border: #b9b4c4;
+  --primary: #a06d1f;
+}
+/* Moonlight radial wash at the top of the game screen at night — DARK base only
+   (it would muddy the paper light theme). */
+[data-theme="dark"] body[data-phase="night"] #screen-game.active,
+:root:not([data-theme]) body[data-phase="night"] #screen-game.active {
+  background-image: radial-gradient(ellipse 140% 60% at 50% -8%, rgba(58,76,150,0.55) 0%, transparent 60%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+/* DAY (dark base): ink warmed slightly + amber accent emphasis. Light base
+   already IS day (warm paper) — lean in with no bg remap, just amber emphasis. */
+[data-theme="dark"] body[data-phase="day"],
+:root:not([data-theme]) body[data-phase="day"] {
+  --bg: #14110d;
+  --bg-card: #20191f;
+  --bg-elevated: #1b1620;
+  --bg-input: #1b1620;
+  --border: #3a3550;
+  --primary: #f0ab43;
+}
+/* Light base is already "day" (warm paper) — no day remap needed; the former
+   [data-theme="light"] body[data-phase="day"] block only re-set --primary to the
+   same value the base light theme already has, so it was a no-op and is dropped. */
+
+/* VOTING — bg stays phase-neutral dark; blood tint is SCOPED to the voting
+   panel only (verdict beats own red later — don't flood the screen). */
+body[data-phase="voting"] .voting-panel {
+  border-color: var(--danger-bright);
+  box-shadow: 0 0 0 1px rgba(212,49,60,0.25), 0 4px 24px rgba(179,32,42,0.22);
+}
+body[data-phase="voting"] .voting-panel h3 {
+  color: var(--danger-bright);
+}
+
+/* GAME_OVER — neutral: no remap (handled by clearing data-phase off the game
+   screen; the gameover screen never carries a phase). */
+
 html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-family: 'Libre Franklin', 'Helvetica Neue', sans-serif;
   font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -70,54 +253,231 @@ html, body {
 }
 
 /* SCREENS */
-.screen { display: none; flex-direction: column; gap: 20px; min-height: calc(100vh - 32px - var(--safe-top) - var(--safe-bottom)); }
+.screen {
+  display: none;
+  flex-direction: column;
+  gap: 20px;
+  /* 100vh fallback above for old WebKit; 100dvh accounts for the dynamic
+     mobile toolbar so the screen fills the real viewport. */
+  min-height: calc(100vh - 32px - var(--safe-top) - var(--safe-bottom));
+  min-height: calc(100dvh - 32px - var(--safe-top) - var(--safe-bottom));
+  position: relative;
+}
 .screen.active { display: flex; }
+/* D8: screen-enter transitions (~200ms). screenEnter is the generic soft enter;
+   screenEnterGame (lobby→game) and screenEnterGameover (game→gameover) are the
+   two purpose-built threshold beats. All are opacity + a small translate;
+   prefers-reduced-motion collapses them (block below). */
+.screen.screen-enter { animation: screenEnter 0.2s ease both; }
+.screen.screen-enter-game { animation: screenEnterGame 0.22s ease both; }
+.screen.screen-enter-gameover { animation: screenEnterGameover 0.22s ease both; }
+@keyframes screenEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes screenEnterGame {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes screenEnterGameover {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* D8: reduced-motion — collapse screen + confirm-sheet entrances to an instant
+   opacity fade (no translate/scale) so motion-sensitive users get no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .screen.screen-enter,
+  .screen.screen-enter-game,
+  .screen.screen-enter-gameover {
+    animation: screenEnterReduced 0.01s linear both;
+  }
+  @keyframes screenEnterReduced {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+/* Scanlines + vignette texture on all screens */
+/* z-9999/z-9998 here are SCREEN-SCOPED texture, confined to the active screen's
+   own stacking context (the screen establishes one via its enter-animation
+   transform/opacity); these big indices compete only with siblings INSIDE that
+   screen and stay BELOW the body-level z-300 #suspense-overlay (a later app-root
+   sibling) — they do NOT violate the z-300-topmost invariant. */
+.screen.active::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.08) 3px 4px
+  );
+  z-index: 9999;
+}
+/* Vignette on auth and game screens (z-9998 — same screen-scoped reasoning as
+   the scanline ::after above; stays beneath the z-300 suspense overlay). */
+#screen-auth.active::before,
+#screen-game.active::before,
+#screen-gameover.active::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.45) 100%);
+  z-index: 9998;
+}
 
 /* BUTTONS */
 .btn {
   border: none;
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  );
   font-size: 16px;
   font-weight: 600;
   padding: 14px 24px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  font-family: 'Silkscreen', monospace;
+  letter-spacing: 1px;
+  white-space: nowrap;
 }
 .btn:active { transform: scale(0.97); opacity: 0.8; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
-.btn-primary { background: var(--primary); color: #fff; }
+/* Primary: amber fill, ink Silkscreen label, pressed-edge shadow */
+.btn-primary {
+  background: var(--primary);
+  color: #141008;
+  box-shadow: inset 0 -5px 0 rgba(70,40,0,.35);
+}
 .btn-primary:active { background: var(--primary-dark); }
-.btn-secondary { background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); }
-.btn-ghost { background: transparent; color: var(--text-secondary); padding: 8px 12px; font-size: 14px; }
+/* Secondary: uses pxb wrapper in HTML for stepped border; standalone keeps subtle border bg */
+.btn-secondary {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+/* Ghost: minimal; no clip-path so inline ghost can sit freely */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  font-size: 14px;
+  clip-path: none;
+  border-radius: 6px;
+}
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-large { padding: 18px 32px; font-size: 18px; width: 100%; }
-.btn-small { padding: 8px 16px; font-size: 13px; border-radius: 8px; }
-.btn-icon { background: none; border: none; color: var(--text); font-size: 24px; padding: 4px 8px; cursor: pointer; }
-.btn-counter { width: 40px; height: 40px; border-radius: 50%; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.btn-small {
+  padding: 8px 16px;
+  font-size: 13px;
+  clip-path: polygon(
+    0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
+    calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
+    calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
+    6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
+  );
+}
+/* D2.5: settings-modal close X reverted to STOCK pre-D1 plain dismiss affordance
+   (user amendment). Neutralize the inherited .btn chrome (Silkscreen, padding,
+   letter-spacing, pressed-edge) so it reads as a bare glyph button. Do NOT re-step.
+   D3.5: settings gear buttons (#btn-settings-lobby-admin, #btn-settings-lobby-player,
+   #btn-settings) also reverted to stock &#9881; per §3.3 extension 2026-06-12. */
+/* D3b: btn-icon now hosts pixel art SVGs — drop font-size, size SVG via child rule */
+.btn-icon { background: none; border: none; color: var(--text); padding: 4px 8px; cursor: pointer; clip-path: none; display: inline-flex; align-items: center; justify-content: center; }
+.btn-icon svg { width: 24px; height: 24px; image-rendering: pixelated; vertical-align: middle; }
+#btn-close-settings.btn-icon,
+#btn-close-transcript.btn-icon,
+#btn-settings-lobby-admin.btn-icon,
+#btn-settings-lobby-player.btn-icon,
+#btn-settings.btn-icon {
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: normal;
+  box-shadow: none;
+  border-radius: 0;
+}
+/* D2.5: +/- stepper reverted to STOCK pre-D1 round button (user amendment).
+   Restore border-radius:50% and drop the stepped clip-path. Do NOT re-step. */
+.btn-counter {
+  width: 40px; height: 40px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 20px;
+  font-family: inherit;
+  font-weight: 400;
+  letter-spacing: normal;
+  box-shadow: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  clip-path: none;
+}
+/* Stepped border wrapper for secondary/ghost buttons (outer = border bg, inner = surface bg) */
+.btn-pxb {
+  background: var(--border);
+  padding: 2px;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  display: block;
+}
+.btn-pxb .btn { display: block; width: 100%; }
 
 /* VOTE BUTTONS */
-.btn-vote { width: 80px; height: 80px; border-radius: 50%; font-size: 40px; display: flex; align-items: center; justify-content: center; }
+.btn-vote {
+  width: 80px; height: 80px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  font-size: 40px; display: flex; align-items: center; justify-content: center;
+}
 .btn-vote svg { width: 40px; height: 40px; image-rendering: pixelated; }
 .btn-vote-yes { background: var(--success); }
 .btn-vote-no { background: var(--danger); }
-.btn-vote.selected { box-shadow: 0 0 0 4px #fff; }
+.btn-vote.selected { outline: 4px solid #fff; outline-offset: 2px; }
 
-/* INPUTS */
+/* INPUTS — stepped corners via clip-path; border shown through pxb wrapper in HTML */
 input[type="text"], input[type="tel"] {
   width: 100%;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  padding: 17px 18px;
+  border: none;
+  border-radius: 0;
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  );
   background: var(--bg-input);
   color: var(--text);
   font-size: 16px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: none;
 }
-input:focus { border-color: var(--primary); }
+/* Input focus: outline on wrapper (can't use border-color inside clip-path) */
+input:focus { background: var(--bg-elevated); }
 input::placeholder { color: var(--text-secondary); }
+/* Input wrapper for stepped border */
+.input-pxb {
+  background: var(--border);
+  padding: 2px;
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  );
+}
+.input-pxb input { display: block; }
 
 /* AUTH */
 .logo { text-align: center; padding: 60px 0 40px; }
@@ -126,16 +486,21 @@ input::placeholder { color: var(--text-secondary); }
   display: flex; align-items: center; justify-content: center;
 }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
-.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 800; }
+.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 700; font-family: 'Silkscreen', monospace; }
+/* Wordmark blood period (mockup .wordmark .dot) — subtle blood-red accent after
+   MAFIA, inherits the Silkscreen size; just recolored. */
+.wordmark-dot { color: var(--danger-bright); }
 .logo-small { padding: 24px 0 8px; }
 .logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
 .logo-small .logo-icon svg { width: 48px; height: 48px; }
-.logo-small h1 { font-size: 22px; letter-spacing: 6px; }
+.logo-small h1 { font-size: 22px; letter-spacing: 6px; font-family: 'Silkscreen', monospace; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
-.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; }
+.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: 'IBM Plex Mono', monospace; }
+/* Keep the entered 4-digit value tracked at 8px, but the placeholder text is normal — at 8px tracking '4-digit PIN' overflows the 320px column and clips */
+.passcode-row input::placeholder { letter-spacing: normal; font-size: 16px; }
 .error-msg { color: var(--danger); font-size: 14px; text-align: center; min-height: 20px; }
-.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; }
+.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; font-family: 'IBM Plex Mono', monospace; }
 
 /* HEADER */
 .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -149,14 +514,15 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ROOM CODE */
 .room-code { font-size: 14px; color: var(--text-secondary); }
-.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; }
+.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; font-family: 'IBM Plex Mono', monospace; }
 
 /* SETTINGS */
 .settings-panel {
   background: var(--bg-card);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
-  border: 1px solid var(--border);
+  border: none;
 }
 .settings-panel h3 { font-size: 16px; margin-bottom: 12px; color: var(--text-secondary); }
 .setting-row {
@@ -167,18 +533,116 @@ input::placeholder { color: var(--text-secondary); }
   border-bottom: 1px solid var(--border);
 }
 .setting-row:last-of-type { border-bottom: none; }
-.accent-select {
+/* D2.5: custom narrator-voice picker (replaces the native <select> whose long
+   "label — description" option strings bled out of the panel). Noir-styled —
+   arrows are unambiguous affordances. Collapsed: label-only row. Expanded:
+   ◀ ▶ arrows (44px tap targets) flank the prominent label, description wraps below. */
+.accent-picker {
+  /* It's a .setting-row too. Title + collapsed-toggle stay a row (the row's own
+     space-between handles that); the expanded block wraps to its own full-width
+     line below via flex-wrap. */
+  flex-wrap: wrap;
+  gap: 8px 0;
+}
+.accent-picker-title {
+  font-size: inherit;
+  color: var(--text);
+}
+.accent-picker-expanded {
+  flex-basis: 100%;       /* force onto its own line below the header row */
+  width: 100%;
+}
+.accent-picker-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;            /* allow the label to shrink/ellipsis, never overflow */
+  max-width: 60%;
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  padding: 8px 12px;
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
   outline: none;
 }
-.accent-select:focus { border-color: var(--primary); }
+.accent-picker-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Caret affordance: pixel-style down/up chevron via borders. */
+.accent-picker-caret {
+  flex-shrink: 0;
+  width: 0; height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--text-secondary);
+}
+.accent-picker.expanded .accent-picker-caret {
+  border-top: none;
+  border-bottom: 6px solid var(--primary);
+}
+.accent-picker-toggle:focus-visible { border-color: var(--primary); }
+.accent-picker-expanded[hidden] { display: none; }
+.accent-picker-stage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.accent-arrow {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  font-family: 'Silkscreen', monospace;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.accent-arrow:active { background: var(--border); }
+.accent-arrow-prev::before { content: "\25C0"; }
+.accent-arrow-next::before { content: "\25B6"; }
+.accent-picker-label {
+  flex: 1;
+  text-align: center;
+  font-family: 'Silkscreen', monospace;
+  font-size: 15px;
+  color: var(--text);
+  min-width: 0;
+  /* break-word (not anywhere) so a long Silkscreen accent label like
+     "TRANSYLVANIAN" wraps as a whole word instead of fracturing mid-word
+     at 320px. */
+  overflow-wrap: break-word;
+}
+.accent-picker-desc {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-secondary);
+  text-align: center;
+  overflow-wrap: break-word;
+}
+/* At very narrow widths the ~153px gap between the two 44px arrows is just shy
+   of the longest label's intrinsic width ("TRANSYLVANIAN" ≈ 137px @15px), so it
+   wraps and break-word is forced to split the word. Shrink the Silkscreen label
+   a step so the whole word fits on one line and stays intact. */
+@media (max-width: 360px) {
+  .accent-picker-label { font-size: 13px; }
+}
 .counter { display: flex; align-items: center; gap: 12px; }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
 /* RULE MODE TABS (Official vs House) */
@@ -187,9 +651,8 @@ input::placeholder { color: var(--text-secondary); }
 }
 .rule-tabs {
   display: flex;
-  gap: 0;
-  border-radius: 8px;
-  overflow: hidden;
+  gap: 2px;
+  border-radius: 0;
   border: 1px solid var(--border);
   width: fit-content;
 }
@@ -207,7 +670,8 @@ input::placeholder { color: var(--text-secondary); }
 }
 .rule-tab.active {
   background: var(--primary);
-  color: #fff;
+  color: #141008;
+  font-family: 'Silkscreen', monospace;
 }
 .rule-tab:not(.active):active {
   background: var(--bg-card);
@@ -222,6 +686,8 @@ input::placeholder { color: var(--text-secondary); }
 /* TOGGLE SWITCH */
 .toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; }
 .toggle input { opacity: 0; width: 0; height: 0; }
+/* D2.5: reverted to STOCK pre-D1 styling (user amendment) — pill track + round
+   knob. Colors stay tokenized so both themes still work. Do NOT re-step. */
 .slider {
   position: absolute; inset: 0;
   background: var(--bg-elevated);
@@ -242,6 +708,39 @@ input::placeholder { color: var(--text-secondary); }
 .toggle input:checked + .slider { background: var(--success); border-color: var(--success); }
 .toggle input:checked + .slider::before { transform: translateX(20px); }
 
+/* D5.5b: three-way theme preference — a noir segmented control (Dark/Light/
+   Dynamic). Replaces the old 2-state dark-mode toggle. The active option is
+   amber-filled with ink Silkscreen so it reads unambiguously as the selection.
+   Display-only pref — switching never touches game state. */
+.theme-mode-control {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+}
+.theme-mode-btn {
+  min-height: 32px;
+  padding: 7px 11px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: 'Silkscreen', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.theme-mode-btn:last-child { border-right: none; }
+.theme-mode-btn:hover { color: var(--text); }
+.theme-mode-btn.active {
+  background: var(--primary);
+  color: #141008;
+}
+
 /* PLAYERS LIST */
 .players-section { flex: 1; }
 .players-section h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
@@ -250,7 +749,8 @@ input::placeholder { color: var(--text-secondary); }
   padding: 12px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   margin-bottom: 6px;
   display: flex;
   align-items: center;
@@ -260,35 +760,68 @@ input::placeholder { color: var(--text-secondary); }
 .players-list li .admin-badge {
   font-size: 11px;
   background: var(--primary);
-  color: #fff;
+  color: #141008;
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
   font-weight: 600;
+  font-family: 'Silkscreen', monospace;
 }
 .players-list li .dead-badge { color: var(--text-secondary); text-decoration: line-through; }
 .waiting-text { text-align: center; color: var(--text-secondary); padding: 20px 0; }
 
 /* GAME SCREEN */
+/* D5.5b: a 3-cell grid (1fr auto 1fr) so "Round N" sits VISUALLY CENTERED in the
+   header — the two 1fr edge columns are equal by definition, so the centre auto
+   column lands dead-centre regardless of pill width, and the columns never overlap
+   (even at 320px with the wider NIGHT pill). Pill left, round centre, timer+gear
+   right. The header carries NO background (the night navy slab is gone) — it sits
+   on the screen bg in every phase and all three theme modes. */
 .game-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  background: transparent;
+}
+.game-header .phase-indicator { justify-self: start; }
+.game-header .round-indicator { justify-self: center; text-align: center; white-space: nowrap; }
+.game-header-right {
+  justify-self: end;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 0;
+  gap: 8px;
+  min-width: 0;
 }
 .phase-indicator {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
   padding: 6px 16px;
-  border-radius: 20px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   text-transform: uppercase;
   letter-spacing: 2px;
+  font-family: 'Silkscreen', monospace;
 }
-.phase-indicator.night { background: #1a237e; color: #7986cb; }
-.phase-indicator.day { background: #f57f17; color: #fff8e1; }
-.phase-indicator.voting { background: var(--primary); color: #fff; }
+/* Phase pill rides the phase remap. D5.5b: at night the old solid --bg-elevated
+   fill read as a clumsy navy slab indistinguishable from the night bg/panels.
+   Make it a CLEAN chip — transparent fill + amber outline + amber Silkscreen — so
+   it reads as an intentional pill sitting on the screen bg, not a box. The 2px
+   stepped clip already shapes the chip; the box-shadow draws the stepped outline. */
+.phase-indicator.night {
+  background: transparent;
+  color: var(--primary);
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+.phase-indicator.day { background: var(--primary); color: #141008; }
+.phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
+/* D3b: phase pill now has inline svg + text — align them */
+.phase-indicator { display: inline-flex; align-items: center; gap: 6px; }
+.phase-indicator svg { width: 16px; height: 16px; image-rendering: pixelated; flex-shrink: 0; }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
-.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; }
+.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
 
 /* ROLE CARD */
 .role-card {
@@ -307,7 +840,7 @@ input::placeholder { color: var(--text-secondary); }
   /* flat stacking — no 3D transforms */
 }
 .card-front, .card-back {
-  border-radius: 20px;
+  border-radius: 0;
   padding: 24px;
   background: var(--bg-card);
   border: 2px solid var(--border);
@@ -316,6 +849,7 @@ input::placeholder { color: var(--text-secondary); }
 .card-front {
   /* sits below .card-back in the stack; visible when card-back clips away */
   position: relative;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
 }
 .card-back {
   position: absolute;
@@ -325,7 +859,7 @@ input::placeholder { color: var(--text-secondary); }
   align-items: center;
   justify-content: center;
   background: #1a1a2e;
-  border: 2px solid #3a3a5e;
+  border: 2px solid var(--border);
   box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
   /* clip-path set by JS during drag; default = full rectangle */
   clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
@@ -343,6 +877,7 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 3px;
   text-transform: uppercase;
   color: #5a5a8a;
+  font-family: 'Silkscreen', monospace;
 }
 .peel-flap {
   position: absolute;
@@ -360,32 +895,23 @@ input::placeholder { color: var(--text-secondary); }
   opacity: 0.8;
   transition: opacity 0.3s;
 }
-.peel-flap.hidden-flap {
-  opacity: 0;
-}
-.peel-hint {
-  position: absolute;
-  bottom: 52px;
-  right: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #5a5a8a;
-  letter-spacing: 1px;
-  z-index: 4;
-  pointer-events: none;
-  animation: peel-hint-pulse 2s ease-in-out infinite;
-}
-@keyframes peel-hint-pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
 .peel-flap.dragging {
-  background: #1a1a2e;
-  clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
+  /* D7: spans the whole card; JS clips it to the live fold triangle.
+     Card-stock underside gradient (lighter than the card-back face) reads as
+     the back of the lifted paper; drop-shadow lifts it off the card. */
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #3a3a52 0%, #2a2a40 45%, #1d1d30 100%);
   border: none;
   border-radius: 0;
   opacity: 1;
-  filter: drop-shadow(-2px -2px 3px rgba(0,0,0,0.3));
+  /* No opacity transition while dragging — the flap opacity is driven inline by
+     JS in lock-step with the card-back's instant crossfade; the resting 0.3s
+     transition would otherwise lag the back on fast drags. */
+  transition: none;
+  filter: drop-shadow(-3px -3px 4px rgba(0,0,0,0.45));
+  /* clip-path (the fold triangle) is set inline by the drag handler */
 }
 .role-card.mafia .card-front { border-color: var(--role-mafia); }
 .role-card.citizen .card-front { border-color: var(--role-citizen); }
@@ -395,7 +921,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.hunter .card-front { border-color: var(--role-hunter); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
-.role-name { font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; }
+.role-name { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; font-family: 'Silkscreen', monospace; }
 .role-card.mafia .role-name { color: var(--role-mafia); }
 .role-card.citizen .role-name { color: var(--role-citizen); }
 .role-card.doctor .role-name { color: var(--role-doctor); }
@@ -409,10 +935,15 @@ input::placeholder { color: var(--text-secondary); }
   background: var(--role-lover);
   color: #fff;
   padding: 4px 16px;
-  border-radius: 20px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   font-size: 14px;
   font-weight: 600;
+  font-family: 'Silkscreen', monospace;
 }
+/* D3b: pixel heart icon in lover-badge */
+.lover-badge-icon { display: inline-flex; vertical-align: middle; margin-right: 2px; }
+.lover-badge-icon svg { width: 14px; height: 14px; image-rendering: pixelated; vertical-align: middle; }
 .role-icon-mini {
   position: absolute;
   bottom: 12px;
@@ -448,16 +979,18 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: center;
   transition: height 0.3s ease;
 }
+/* D3b: pull-refresh spinner now hosts pixel art SVG (refresh icon) */
 .pull-refresh-spinner {
-  font-size: 28px;
-  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.1s;
 }
-.pull-refresh.ready .pull-refresh-spinner {
-  color: var(--primary);
-}
+/* D3.5 ride-along: base spinner is dim; .ready brings it to full brightness + slight scale.
+   The old no-op (base was already opacity:1, .ready set same) is replaced. */
+.pull-refresh-spinner svg { width: 28px; height: 28px; image-rendering: pixelated; opacity: 0.45; transition: opacity 0.15s, filter 0.15s; }
+.pull-refresh.ready .pull-refresh-spinner svg { opacity: 1; filter: brightness(1.4); }
 .pull-refresh.refreshing .pull-refresh-spinner {
-  color: var(--primary);
   animation: ptr-spin 0.8s linear infinite;
 }
 @keyframes ptr-spin {
@@ -468,7 +1001,8 @@ input::placeholder { color: var(--text-secondary); }
 .narrator-area {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
   min-height: 60px;
 }
@@ -478,8 +1012,10 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.narrator-label { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
-.btn-transcript { font-size: 20px; padding: 2px 6px; }
+.narrator-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px; font-family: 'Silkscreen', monospace; }
+/* D3b: transcript button now hosts pixel scroll SVG */
+.btn-transcript { padding: 2px 6px; }
+.btn-transcript svg { width: 20px; height: 20px; image-rendering: pixelated; }
 .narrator-messages { font-size: 15px; line-height: 1.6; }
 .narrator-messages .narrator-line {
   padding: 8px 0;
@@ -493,7 +1029,8 @@ input::placeholder { color: var(--text-secondary); }
 .awaiting-ready {
   background: var(--bg-card);
   border: 2px solid var(--primary);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 20px;
   text-align: center;
   animation: fadeIn 0.5s ease;
@@ -508,22 +1045,59 @@ input::placeholder { color: var(--text-secondary); }
   margin-top: 4px;
 }
 
+/* D5: hunter revenge-wait panel — noir restyle sweep. BOW centerpiece +
+   Silkscreen headline; the reveal/wait copy stays in the readable body face.
+   The hunter accent (--role-hunter) frames the panel. Restyle only — the
+   show/hide logic and the reveal name are untouchable C5b plumbing. */
+.revenge-wait {
+  border-color: var(--role-hunter);
+}
+.revenge-wait-art {
+  width: 72px;
+  height: 72px;
+  margin: 2px auto 12px;
+}
+.revenge-wait-art:empty { display: none; }
+.revenge-wait-art svg {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+  filter: drop-shadow(0 0 10px rgba(239,108,0,.35));
+}
+.revenge-wait-headline {
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 4px;
+  color: var(--role-hunter);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  padding-left: 4px;
+}
+
 /* DETECTIVE RESULT */
 .detective-result {
   background: var(--bg-card);
   border: 2px solid var(--role-detective);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 14px 16px;
   font-size: 15px;
   line-height: 1.5;
   animation: fadeIn 0.5s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+/* D3b: pixel magnifier icon in detective result */
+.detective-result svg { width: 18px; height: 18px; image-rendering: pixelated; flex-shrink: 0; }
 
 /* ACTION PANEL */
 .action-panel {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
 }
 .action-panel h3 { font-size: 16px; margin-bottom: 12px; }
@@ -533,17 +1107,18 @@ input::placeholder { color: var(--text-secondary); }
 .mafia-target-card {
   padding: 12px 14px;
   border: 2px solid var(--border);
-  border-radius: 14px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 8px;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
   background: var(--bg-elevated);
 }
 .mafia-target-card.idle { border-color: var(--border); }
-.mafia-target-card.suggested { border-color: rgba(233,30,99,0.3); }
-.mafia-target-card.partial-lock { border-color: rgba(233,30,99,0.6); background: rgba(233,30,99,0.08); }
+.mafia-target-card.suggested { border-color: rgba(232,163,61,0.3); }
+.mafia-target-card.partial-lock { border-color: rgba(232,163,61,0.6); background: rgba(232,163,61,0.08); }
 .mafia-target-card.unanimous {
   border-color: var(--primary);
-  box-shadow: 0 0 12px rgba(233,30,99,0.25);
+  box-shadow: 0 0 12px rgba(232,163,61,0.25);
   animation: unanimousPulse 2s ease-in-out infinite;
 }
 .mafia-target-card.objected {
@@ -555,8 +1130,8 @@ input::placeholder { color: var(--text-secondary); }
   opacity: 0.7;
 }
 @keyframes unanimousPulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(233,30,99,0.25); }
-  50% { box-shadow: 0 0 20px rgba(233,30,99,0.4); }
+  0%, 100% { box-shadow: 0 0 12px rgba(232,163,61,0.25); }
+  50% { box-shadow: 0 0 20px rgba(232,163,61,0.4); }
 }
 .mtc-header {
   display: flex;
@@ -571,9 +1146,11 @@ input::placeholder { color: var(--text-secondary); }
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--primary);
-  background: rgba(233,30,99,0.15);
+  background: rgba(232,163,61,0.15);
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  font-family: 'IBM Plex Mono', monospace;
 }
 .mtc-blocked-label {
   font-size: 11px;
@@ -583,7 +1160,8 @@ input::placeholder { color: var(--text-secondary); }
   color: var(--text-secondary);
   background: var(--bg-elevated);
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
 }
 .mtc-chips {
   display: flex;
@@ -619,13 +1197,14 @@ input::placeholder { color: var(--text-secondary); }
 }
 .mtc-btn {
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   font-size: 13px;
   font-weight: 600;
   padding: 10px 14px;
   min-height: 44px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: opacity 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   display: flex;
@@ -634,17 +1213,21 @@ input::placeholder { color: var(--text-secondary); }
   gap: 4px;
   flex: 1;
 }
+/* D3b: pixel icon + Silkscreen label inside mtc buttons */
+.mtc-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mtc-icon svg { width: 16px; height: 16px; image-rendering: pixelated; }
+.mtc-label { font-family: 'Silkscreen', monospace; font-size: 11px; font-weight: 400; letter-spacing: 0.5px; }
 .mtc-btn:active { transform: scale(0.97); opacity: 0.8; }
 .mtc-btn-suggest { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 .mtc-btn-lock { background: var(--primary); color: #fff; }
 .mtc-btn-lock.mtc-btn-disabled { background: var(--bg-card); color: var(--text-secondary); opacity: 0.5; cursor: not-allowed; }
 .mtc-btn-object { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); flex: 1; }
 .mtc-btn-unlock { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-.mtc-btn-remove-objection { background: var(--bg-card); color: #e53935; border: 1px solid rgba(229,57,53,0.3); }
+.mtc-btn-remove-objection { background: var(--bg-card); color: var(--danger-bright); border: 1px solid rgba(211,49,60,0.3); }
 
 /* Spectator (dead player) styles */
 .spectator-locked { color: var(--primary); font-weight: 600; }
-.spectator-kill-result { color: #d32f2f; font-weight: 600; }
+.spectator-kill-result { color: var(--danger-bright); font-weight: 600; }
 #spectator-night-log { margin-bottom: 12px; }
 .spectator-log-entry {
   font-size: 13px; padding: 6px 0;
@@ -658,33 +1241,36 @@ input::placeholder { color: var(--text-secondary); }
 /* Joker spectator status */
 .joker-spectator-status {
   font-size: 13px; padding: 8px 12px;
-  border-radius: 8px; margin-bottom: 8px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  margin-bottom: 8px;
   text-align: center; font-weight: 600;
 }
 .joker-spectator-status.deliberating {
-  background: rgba(156, 39, 176, 0.15);
-  color: #ce93d8;
-  border: 1px solid rgba(156, 39, 176, 0.3);
+  background: rgba(38, 198, 218, 0.15);
+  color: var(--role-joker);
+  border: 1px solid rgba(38, 198, 218, 0.3);
 }
 .joker-spectator-status.resolved {
-  background: rgba(156, 39, 176, 0.25);
-  color: #e1bee7;
-  border: 1px solid rgba(156, 39, 176, 0.5);
+  background: rgba(38, 198, 218, 0.25);
+  color: var(--role-joker);
+  border: 1px solid rgba(38, 198, 218, 0.5);
 }
 
 /* Single mafia target */
 .single-mafia-target {
   padding: 14px 16px;
   border: 2px solid var(--border);
-  border-radius: 14px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 8px;
   background: var(--bg-elevated);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, background 0.15s;
   font-weight: 500;
 }
-.single-mafia-target:active { border-color: var(--primary); background: rgba(233,30,99,0.08); }
-.single-mafia-target.selected { border-color: var(--primary); background: rgba(233,30,99,0.12); }
+.single-mafia-target:active { border-color: var(--primary); background: rgba(232,163,61,0.08); }
+.single-mafia-target.selected { border-color: var(--primary); background: rgba(232,163,61,0.12); }
 /* Animated narrator line */
 .narrator-line.animate-in {
   animation: narratorSlideIn 0.4s ease;
@@ -698,10 +1284,11 @@ input::placeholder { color: var(--text-secondary); }
   padding: 14px 16px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   margin-bottom: 6px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s;
   font-weight: 500;
 }
 .target-list li:not(:has(.mafia-icons)):active { background: var(--primary); }
@@ -709,12 +1296,19 @@ input::placeholder { color: var(--text-secondary); }
 .target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
 /* SLIDE-TO-CONFIRM */
 .slide-confirm { width: 100%; margin-top: 12px; }
+/* Pixel Noir slide (D1c) — stepped-corner track with a 2px stepped border
+   (frame = border color, inner = ink surface), per mockup screen 02. The INNER
+   .slide-track is the measured element AND the handle's offsetParent, so the
+   drag math stays internally consistent. */
+.slide-track-frame {
+  width: 100%;
+  background: var(--border);
+  padding: 2px;
+}
 .slide-track {
   position: relative;
   height: 56px;
-  border-radius: 28px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--bg);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -726,9 +1320,9 @@ input::placeholder { color: var(--text-secondary); }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 2px;
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 4px;
   text-transform: uppercase;
   color: var(--text-secondary);
   pointer-events: none;
@@ -740,44 +1334,61 @@ input::placeholder { color: var(--text-secondary); }
   top: 0;
   bottom: 0;
   width: 0;
-  border-radius: 28px 0 0 28px;
   z-index: 0;
   transition: width 0.15s ease;
 }
+/* Dithered leading edge — 6px conic checker tinted to the active role */
+.slide-fill::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background-image: conic-gradient(var(--slide-tint, var(--border)) 25%, transparent 25% 50%, var(--slide-tint, var(--border)) 50% 75%, transparent 75%);
+  background-size: 6px 6px;
+}
 .slide-confirm.dragging .slide-fill { transition: none; }
+/* Role-tinted fills — re-pointed at the token palette (D1c): the gradient and
+   the dither edge both derive from the role's CSS variable so a token change
+   can never leave the slide skin stale. */
 .slide-confirm.role-mafia .slide-fill {
-  background: linear-gradient(90deg, rgba(211,47,47,0.3), rgba(211,47,47,0.6));
+  --slide-tint: var(--role-mafia);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-mafia) 30%, transparent), color-mix(in srgb, var(--role-mafia) 60%, transparent));
 }
 .slide-confirm.role-doctor .slide-fill {
-  background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
+  --slide-tint: var(--role-doctor);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-doctor) 30%, transparent), color-mix(in srgb, var(--role-doctor) 60%, transparent));
 }
 .slide-confirm.role-detective .slide-fill {
-  background: linear-gradient(90deg, rgba(156,39,176,0.3), rgba(156,39,176,0.6));
+  --slide-tint: var(--role-detective);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-detective) 30%, transparent), color-mix(in srgb, var(--role-detective) 60%, transparent));
 }
-.slide-confirm.role-mafia .slide-fill.dripping::after {
+/* Existing mafia flavor — blood drip stays (existing animation, not new payoff) */
+.slide-confirm.role-mafia .slide-fill.dripping::before {
   content: "";
   position: absolute;
   right: -2px;
   top: 50%;
   width: 4px;
   height: 8px;
-  background: #d32f2f;
-  border-radius: 0 0 2px 2px;
+  background: var(--danger);
+  z-index: 1;
   animation: blood-drip 0.8s ease-in infinite;
 }
 @keyframes blood-drip {
   0% { transform: translateY(0); opacity: 1; }
   100% { transform: translateY(16px); opacity: 0; }
 }
+/* Handle — bordered pixel square carrying the role icon (mockup screen 02) */
 .slide-icon {
   position: absolute;
   left: 4px;
   top: 4px;
   width: 48px;
   height: 48px;
-  border-radius: 50%;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--slide-tint, var(--border));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -785,15 +1396,17 @@ input::placeholder { color: var(--text-secondary); }
   cursor: grab;
   transition: left 0.15s ease;
 }
+.slide-confirm.role-mafia .slide-icon { --slide-tint: var(--role-mafia); }
+.slide-confirm.role-doctor .slide-icon { --slide-tint: var(--role-doctor); }
+.slide-confirm.role-detective .slide-icon { --slide-tint: var(--role-detective); }
+.slide-confirm.role-joker_haunt .slide-icon { --slide-tint: var(--role-joker); }
+.slide-confirm.role-hunter_revenge .slide-icon { --slide-tint: var(--role-hunter); }
 .slide-confirm.dragging .slide-icon { transition: none; cursor: grabbing; }
 .slide-icon svg { width: 28px; height: 28px; image-rendering: pixelated; }
-.slide-confirm.confirmed .slide-track {
-  background: var(--success);
-  border-color: var(--success);
-}
+.slide-confirm.confirmed .slide-track-frame { background: var(--success); }
+.slide-confirm.confirmed .slide-track { background: var(--success); }
 .slide-confirm.confirmed .slide-label {
   color: #fff;
-  font-weight: 700;
 }
 .slide-confirm.confirmed .slide-fill { width: 100% !important; opacity: 0; }
 .slide-confirm.confirmed .slide-icon { opacity: 0; }
@@ -803,7 +1416,8 @@ input::placeholder { color: var(--text-secondary); }
 .vote-status {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
 }
 .vote-status h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
@@ -812,7 +1426,8 @@ input::placeholder { color: var(--text-secondary); }
 .voting-panel {
   background: var(--bg-card);
   border: 2px solid var(--primary);
-  border-radius: 20px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 24px;
   text-align: center;
 }
@@ -824,7 +1439,8 @@ input::placeholder { color: var(--text-secondary); }
 .admin-controls {
   background: var(--bg-card);
   border: 1px solid var(--primary);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 16px;
 }
 .admin-controls h3 { font-size: 16px; margin-bottom: 12px; color: var(--primary); }
@@ -833,28 +1449,103 @@ input::placeholder { color: var(--text-secondary); }
 .admin-buttons .btn { flex: 1; min-width: 0; }
 
 /* DEAD OVERLAY */
+/* ============================================================
+   D6 — DEATH POSTER (#dead-overlay; mockup screen 03)
+   The most-photographed screen. z-index 100 so the z-300 suspense
+   overlay still plays the death beat on top; this poster reveals
+   beneath it. Blood-glow radial ground + scanlines + vignette match
+   the D5 overlay language.
+   ============================================================ */
 .dead-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 42%, rgba(179,32,42,0.16) 0%, transparent 65%),
+    rgba(7,7,11,0.96);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 100;
   animation: fadeIn 1s ease;
+  cursor: pointer;
 }
-.skull { font-size: 120px; animation: pulse 2s ease-in-out infinite; }
+/* Scanlines on dead overlay */
+.dead-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.12) 3px 4px
+  );
+  z-index: 1;
+}
+/* Vignette on dead overlay */
+.dead-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.65) 100%);
+  z-index: 2;
+}
+/* The poster column sits above the texture pseudo-elements */
+.dead-poster {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 32px;
+  max-width: 430px;
+}
+/* D3b/D6: pixel art skull — the shared dramatic centerpiece (CARD_BACK_DEAD_ART),
+   NOT a per-player avatar. Static blood glow via drop-shadow (no animation on the
+   filter). Reuses the existing scale pulse (ceiling), not a new keyframe. */
+.dead-skull-art { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 30px; }
+.dead-skull-art svg { width: 132px; height: 132px; image-rendering: pixelated; filter: drop-shadow(0 0 28px rgba(179,32,42,0.45)); }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-.dead-text { font-size: 28px; font-weight: 800; color: var(--danger); text-transform: uppercase; letter-spacing: 4px; margin-top: 16px; }
-.death-message { color: var(--text-secondary); font-size: 14px; margin-top: 12px; padding: 0 32px; text-align: center; max-width: 350px; }
-.dead-dismiss-hint { color: var(--text-secondary); font-size: 13px; margin-top: 20px; opacity: 0.7; animation: pulse 2s ease-in-out infinite; }
+.dead-pre {
+  font-family: 'Silkscreen', monospace;
+  font-size: 13px;
+  letter-spacing: 9px;
+  color: var(--primary);
+  text-transform: uppercase;
+  padding-left: 9px;
+  margin-bottom: 12px;
+}
+.dead-text { font-size: 48px; font-weight: 700; color: var(--danger-bright); text-transform: uppercase; letter-spacing: 9px; padding-left: 9px; font-family: 'Silkscreen', monospace; }
+.death-message { color: var(--text-secondary); font-size: 14.5px; font-style: italic; margin-top: 20px; padding: 0 16px; text-align: center; max-width: 350px; }
+.dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
+.dead-note { color: #62626e; font-size: 13px; font-style: italic; margin-bottom: 26px; }
+.btn-watch {
+  background: #0c0c12;
+  border: 2px solid var(--border);
+  color: var(--text);
+  font-family: 'Silkscreen', monospace;
+  font-size: 11px;
+  letter-spacing: 3px;
+  padding: 15px 30px;
+  cursor: pointer;
+}
+.btn-watch:active { box-shadow: inset 0 -3px 0 rgba(0,0,0,0.35); }
+.dead-dismiss-hint { color: var(--text-secondary); font-size: 13px; margin-top: 18px; opacity: 0.7; animation: pulse 2s ease-in-out infinite; }
 
-/* JOKER WIN OVERLAY */
+/* ============================================================
+   D6 — JOKER WIN OVERLAY (#joker-win-overlay; its own element now,
+   no longer reuses the dead overlay). Clown centerpiece + amber
+   celebration. z-index 100, click-to-dismiss.
+   ============================================================ */
 .joker-win-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.88);
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(232,163,61,0.18) 0%, transparent 64%),
+    rgba(8,8,13,0.96);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -863,42 +1554,86 @@ input::placeholder { color: var(--text-secondary); }
   animation: fadeIn 0.8s ease;
   cursor: pointer;
 }
-.joker-trophy { font-size: 100px; animation: pulse 2s ease-in-out infinite; }
+.joker-win-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0px 3px, rgba(0,0,0,0.12) 3px 4px);
+  z-index: 1;
+}
+.joker-win-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.6) 100%);
+  z-index: 2;
+}
+.joker-poster {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 32px;
+  max-width: 430px;
+}
+/* D6: pixel CLOWN_ART centerpiece (set by showJokerWinOverlay). Amber celebration
+   glow via static drop-shadow; reuses the scale pulse (ceiling). */
+.joker-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 28px; }
+.joker-trophy svg { width: 120px; height: 120px; image-rendering: pixelated; filter: drop-shadow(0 0 26px rgba(232,163,61,0.45)); }
+.joker-win-pre {
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 7px;
+  color: var(--primary);
+  text-transform: uppercase;
+  padding-left: 7px;
+  margin-bottom: 12px;
+}
 .joker-win-title {
-  font-size: 36px;
-  font-weight: 800;
+  font-family: 'Silkscreen', monospace;
+  font-size: 38px;
+  font-weight: 700;
   color: var(--role-joker);
   text-transform: uppercase;
-  letter-spacing: 4px;
-  margin-top: 12px;
+  letter-spacing: 6px;
+  padding-left: 6px;
 }
 .joker-win-name {
   color: var(--text-secondary);
-  font-size: 16px;
-  margin-top: 8px;
+  font-size: 15px;
+  font-style: italic;
+  margin-top: 18px;
 }
+.joker-win-div { width: 130px; margin: 26px 0; opacity: 0.55; }
 .joker-win-hint {
   color: var(--text-secondary);
   font-size: 13px;
-  margin-top: 24px;
   opacity: 0.7;
   animation: pulse 2s ease-in-out infinite;
 }
 
-/* JOKER TROPHY BADGE (game over role reveal) */
+/* JOKER TROPHY BADGE (game over role reveal) — D3b: pixel art */
 .role-reveal-trophy {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
   margin-left: 6px;
 }
+.role-reveal-trophy svg { width: 16px; height: 16px; image-rendering: pixelated; }
 
-/* SLIDE CONFIRM - JOKER HAUNT */
+/* SLIDE CONFIRM - JOKER HAUNT (re-pointed at --role-joker token, D1c) */
 .slide-confirm.role-joker_haunt .slide-fill {
-  background: linear-gradient(90deg, rgba(33,150,243,0.3), rgba(33,150,243,0.6));
+  --slide-tint: var(--role-joker);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-joker) 30%, transparent), color-mix(in srgb, var(--role-joker) 60%, transparent));
 }
 
-/* SLIDE CONFIRM - HUNTER REVENGE (rgba of --role-hunter, like the other role skins) */
+/* SLIDE CONFIRM - HUNTER REVENGE (re-pointed at --role-hunter token, D1c) */
 .slide-confirm.role-hunter_revenge .slide-fill {
-  background: linear-gradient(90deg, rgba(239,108,0,0.3), rgba(239,108,0,0.6));
+  --slide-tint: var(--role-hunter);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-hunter) 30%, transparent), color-mix(in srgb, var(--role-hunter) 60%, transparent));
 }
 
 /* SETTINGS MODAL */
@@ -916,12 +1651,25 @@ input::placeholder { color: var(--text-secondary); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* 100vh fallback above for old WebKit; 100dvh for the real mobile viewport. */
   min-height: calc(100vh - 64px);
+  min-height: calc(100dvh - 64px);
   text-align: center;
   gap: 20px;
 }
-.gameover-content h1 { font-size: 36px; font-weight: 800; text-transform: uppercase; letter-spacing: 4px; }
+.gameover-content h1 { font-size: 36px; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; font-family: 'Silkscreen', monospace; }
 .gameover-content p { color: var(--text-secondary); font-size: 16px; padding: 0 16px; }
+
+/* D6: TROPHY_ART centerpiece, faction-tinted (same filter language as the D5
+   suspense beat-win-* trophy — base art is amber/gold, hue-rotate per faction;
+   no new grids). Reuses the existing scale pulse (ceiling), static glow only. */
+.gameover-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
+.gameover-trophy:empty { display: none; }
+.gameover-trophy svg { width: 92px; height: 92px; image-rendering: pixelated; }
+.gameover-trophy.win-neutral svg { filter: drop-shadow(0 0 20px rgba(232,163,61,0.40)); }
+.gameover-trophy.win-town svg { filter: hue-rotate(85deg) saturate(1.1) drop-shadow(0 0 20px rgba(56,142,60,0.40)); }
+.gameover-trophy.win-mafia svg { filter: hue-rotate(-35deg) saturate(1.4) drop-shadow(0 0 20px rgba(211,47,47,0.40)); }
+.gameover-trophy.win-joker svg { filter: hue-rotate(150deg) saturate(1.3) drop-shadow(0 0 20px rgba(38,198,218,0.40)); }
 
 /* MODAL */
 .modal {
@@ -935,7 +1683,13 @@ input::placeholder { color: var(--text-secondary); }
 }
 .modal-content {
   background: var(--bg-elevated);
-  border-radius: 20px 20px 0 0;
+  border-radius: 0;
+  /* Stepped corners top-only for bottom-sheet feel */
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
+    100% 100%, 0 100%
+  );
   width: 100%;
   max-width: 430px;
   max-height: 60vh;
@@ -946,13 +1700,71 @@ input::placeholder { color: var(--text-secondary); }
 .modal-header h3 { font-size: 18px; }
 .empty-text { text-align: center; color: var(--text-secondary); padding: 20px; }
 
+/* D8: IN-WORLD CONFIRM SHEET — noir bottom-sheet replacing native confirm().
+   Reuses the .modal/.modal-content bottom-sheet shell (stepped top corners,
+   430px column, scanline-free overlay). Both themes + the 3-way theme modes
+   inherit via the same tokens the settings sheet uses. */
+.confirm-sheet .modal-content {
+  padding: 22px 20px;
+  /* safe-area aware: keep the actions clear of the iOS home indicator */
+  padding-bottom: calc(22px + var(--safe-bottom));
+  /* brief slide-up entrance (collapsed under prefers-reduced-motion) */
+  animation: confirmSheetUp 0.2s ease both;
+}
+@keyframes confirmSheetUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* D8: reduced-motion — disable the confirm-sheet slide-up (no translate). Placed
+   AFTER the base rule above so it wins the cascade at equal specificity. */
+@media (prefers-reduced-motion: reduce) {
+  .confirm-sheet .modal-content { animation: none; }
+}
+.confirm-sheet-title {
+  font-family: 'Silkscreen', monospace;
+  font-size: 17px;
+  letter-spacing: 1px;
+  color: var(--primary);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.confirm-sheet-body {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+.confirm-sheet-actions {
+  display: flex;
+  gap: 10px;
+}
+/* Both halves flex evenly; min-width:0 lets the bare .btn (white-space:nowrap)
+   shrink below its content width so the wider labels ("FORCE DAWN") don't
+   overflow at 320px. Tighter horizontal padding + a hair smaller label keep the
+   widest Silkscreen label inside the 280px inner column at 320px. */
+.confirm-sheet-actions .btn-pxb,
+.confirm-sheet-actions > .btn { flex: 1 1 0; min-width: 0; }
+.confirm-sheet-actions .btn { width: 100%; padding-left: 12px; padding-right: 12px; font-size: 15px; }
+/* At very narrow widths the widest Silkscreen labels ("FORCE DAWN",
+   "LEAVE GAME", "CLOSE ROOM") still clip inside the button content box;
+   shrink the label + horizontal padding + letter-spacing so the worst case
+   fits inside the ~133px half-column at 320px. */
+@media (max-width: 360px) {
+  .confirm-sheet-actions .btn {
+    font-size: 12px;
+    padding-left: 6px;
+    padding-right: 6px;
+    letter-spacing: 0;
+  }
+}
+
 /* GAME HISTORY (Game Over) */
 .game-history { width: 100%; margin-bottom: 16px; text-align: left; }
 .game-history-round { font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-top: 12px; margin-bottom: 4px; }
 .game-history-round:first-child { margin-top: 0; }
 .game-history-item { font-size: 14px; padding: 4px 0; color: var(--text); }
 .game-history-item.kill, .game-history-item.joker_haunt { color: var(--role-mafia); }
-.game-history-item.execution { color: #ff9800; }
+.game-history-item.execution { color: var(--warning); }
 .game-history-item.save { color: var(--role-doctor); }
 .game-history-item.lover_death { color: var(--role-lover); }
 .game-history-item.hunter_revenge { color: var(--role-hunter); }
@@ -972,7 +1784,8 @@ input::placeholder { color: var(--text-secondary); }
   padding: 10px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   margin-bottom: 6px;
 }
 .role-reveal-item.dead { opacity: 0.5; }
@@ -992,7 +1805,9 @@ input::placeholder { color: var(--text-secondary); }
   text-transform: uppercase;
   letter-spacing: 1px;
   padding: 2px 10px;
-  border-radius: 8px;
+  border-radius: 0;
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  font-family: 'Silkscreen', monospace;
 }
 .role-reveal-role.mafia { background: var(--role-mafia); color: #fff; }
 .role-reveal-role.citizen { background: var(--role-citizen); color: #fff; }
@@ -1000,14 +1815,17 @@ input::placeholder { color: var(--text-secondary); }
 .role-reveal-role.detective { background: var(--role-detective); color: #fff; }
 .role-reveal-role.joker { background: var(--role-joker); color: #fff; }
 .role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }
-.role-reveal-lover { font-size: 12px; color: var(--role-lover); margin-left: 8px; }
+/* D3b: role-reveal-lover now has pixel heart art */
+.role-reveal-lover { display: inline-flex; align-items: center; gap: 3px; color: var(--role-lover); margin-left: 8px; font-size: 12px; }
+.role-reveal-lover svg { width: 12px; height: 12px; image-rendering: pixelated; }
 .role-reveal-dead { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
 
 /* EVENT HISTORY */
 .event-history {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 12px 16px;
 }
 .eh-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
@@ -1015,7 +1833,7 @@ input::placeholder { color: var(--text-secondary); }
   flex: 1;
   padding: 6px 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
@@ -1024,10 +1842,12 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 1px;
   cursor: pointer;
   transition: all 0.15s;
+  font-family: 'Silkscreen', monospace;
 }
 .eh-tab.active {
   background: var(--bg-elevated);
   color: var(--text);
+  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
 }
 .eh-panel { /* default visible */ }
 .player-status-list { font-size: 13px; line-height: 1.8; }
@@ -1038,12 +1858,15 @@ input::placeholder { color: var(--text-secondary); }
 .player-status-dot.alive { background: var(--success); }
 .player-status-dot.dead { background: var(--danger); }
 .player-status-name.dead { text-decoration: line-through; color: var(--text-secondary); }
+
 .mafia-tag {
   font-size: 10px; font-weight: 700; color: var(--role-mafia);
   border: 1px solid var(--role-mafia); border-radius: 4px;
   padding: 1px 5px; margin-left: auto; letter-spacing: 0.5px;
 }
-.detective-tag { margin-left: auto; font-size: 16px; line-height: 1; }
+/* D3b: detective-tag now hosts pixel thumbs art */
+.detective-tag { margin-left: auto; display: inline-flex; align-items: center; }
+.detective-tag svg { width: 16px; height: 16px; image-rendering: pixelated; }
 .event-history-list { font-size: 13px; line-height: 1.6; }
 .event-history-round {
   font-size: 11px;
@@ -1058,12 +1881,12 @@ input::placeholder { color: var(--text-secondary); }
 .event-item.kill, .event-item.joker_haunt { color: var(--danger); }
 .event-item.lover_death { color: var(--role-lover); }
 .event-item.save { color: var(--success); }
-.event-item.execution { color: #ff9800; }
+.event-item.execution { color: var(--warning); }
 .event-item.spared { color: var(--text-secondary); }
 .event-item.investigation_mafia { color: var(--danger); }
 .event-item.investigation_clear { color: var(--success); }
 
-/* SUSPENSE OVERLAY */
+/* SUSPENSE OVERLAY — z-index 300, topmost, NEVER change */
 .suspense-overlay {
   position: fixed;
   inset: 0;
@@ -1075,17 +1898,143 @@ input::placeholder { color: var(--text-secondary); }
   transition: opacity 0.8s ease;
 }
 .suspense-overlay.fade-out { opacity: 0; }
-.suspense-text {
-  font-size: 28px;
-  font-weight: 800;
-  color: #f5f5f5;
+/* Scanlines on suspense overlay (static, no animation) */
+.suspense-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px 3px,
+    rgba(0,0,0,0.12) 3px 4px
+  );
+  z-index: 1;
+}
+/* Vignette on suspense overlay */
+.suspense-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.65) 100%);
+  z-index: 2;
+}
+/* D5: staged composition — pre-line (amber Silkscreen) + pixel art centerpiece
+   + display text, all stacked above the scanline/vignette pseudo-elements
+   (z-index 3). Per-beat background washes ride the beat-* classes below. */
+.suspense-stage {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   padding: 0 32px;
+  max-width: 430px;
+}
+/* Amber Silkscreen pre-line — the "verdict label" voice. Empty by default so it
+   reserves no space until a beat sets it. */
+.suspense-pre {
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  letter-spacing: 6px;
+  color: var(--primary);
+  text-transform: uppercase;
+  padding-left: 6px; /* visual-center the tracked caps */
+}
+.suspense-pre:empty { display: none; }
+/* Pixel art centerpiece — static, pixelated, sized between the mockup's 96-120px.
+   The animation restart hack lives on .suspense-text only; the art does not
+   re-animate per beat (it cross-fades implicitly via innerHTML swap). */
+.suspense-art {
+  width: 112px;
+  height: 112px;
+  margin: 18px 0 22px;
+}
+.suspense-art:empty { display: none; }
+.suspense-art svg {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
+.suspense-text {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #f5f5f5;
+  text-align: center;
   animation: suspenseFadeIn 0.8s ease;
 }
 @keyframes suspenseFadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* D5 BEAT TINTS — static per-beat background washes layered behind the staged
+   content. The overlay base stays #000; each beat paints a radial wash (the
+   mockup's night/death/dawn ambience) plus an art recolor for the trophy.
+   Static only — no @keyframes added. */
+.suspense-overlay.beat-night {
+  background:
+    radial-gradient(ellipse 140% 70% at 50% -10%, #1b2452 0%, transparent 60%),
+    #0d1126;
+}
+.suspense-overlay.beat-dawn {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 30%, rgba(232,163,61,0.14) 0%, transparent 62%),
+    #0b0b10;
+}
+.suspense-overlay.beat-death,
+.suspense-overlay.beat-execution {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 42%, rgba(179,32,42,0.20) 0%, transparent 65%),
+    #07070b;
+}
+.suspense-overlay.beat-execution .suspense-art svg,
+.suspense-overlay.beat-death .suspense-art svg {
+  /* blood-cast the skull without recoloring the grid */
+  filter: drop-shadow(0 0 22px rgba(179,32,42,.40));
+}
+.suspense-overlay.beat-heartbreak {
+  background:
+    radial-gradient(ellipse 95% 60% at 50% 42%, rgba(156,39,176,0.16) 0%, transparent 64%),
+    #0a0710;
+}
+/* Game over — trophy recolored per winning faction via CSS filter (no new grid).
+   Base trophy art is amber/gold; hue-rotate + saturate shifts it per faction. */
+.suspense-overlay.beat-gameover,
+.suspense-overlay.beat-win-town,
+.suspense-overlay.beat-win-mafia,
+.suspense-overlay.beat-win-joker {
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(232,163,61,0.16) 0%, transparent 64%),
+    #08080d;
+}
+.suspense-overlay.beat-win-town {
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(56,142,60,0.18) 0%, transparent 64%),
+    #08080d;
+}
+.suspense-overlay.beat-win-town .suspense-art svg {
+  filter: hue-rotate(85deg) saturate(1.1) drop-shadow(0 0 20px rgba(56,142,60,.40));
+}
+.suspense-overlay.beat-win-mafia {
+  background:
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(211,47,47,0.18) 0%, transparent 64%),
+    #08080d;
+}
+.suspense-overlay.beat-win-mafia .suspense-art svg {
+  filter: hue-rotate(-35deg) saturate(1.4) drop-shadow(0 0 20px rgba(211,47,47,.40));
+}
+.suspense-overlay.beat-win-joker .suspense-art svg {
+  filter: hue-rotate(150deg) saturate(1.3) drop-shadow(0 0 20px rgba(38,198,218,.40));
+}
+/* town/mafia/joker winners keep amber-gold trophy with just a glow when neutral */
+.suspense-overlay.beat-gameover .suspense-art svg {
+  filter: drop-shadow(0 0 20px rgba(232,163,61,.40));
 }
 
 /* VOTE COUNT LABEL */
@@ -1156,7 +2105,8 @@ input::placeholder { color: var(--text-secondary); }
 /* READ-ONLY SETTINGS DISPLAY (player lobby) */
 .player-lobby-settings {
   background: var(--bg-card);
-  border-radius: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
   padding: 12px 16px;
   border: 1px solid var(--border);
   font-size: 14px;

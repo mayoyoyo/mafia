@@ -10,6 +10,8 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.svg">
   <link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg">
+  <link rel="preload" href="/fonts/silkscreen-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/libre-franklin-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/app.css">
   <title>Mafia</title>
 </head>
@@ -19,59 +21,16 @@
     <!-- AUTH SCREEN -->
     <div id="screen-auth" class="screen active">
       <div class="logo">
-        <div class="logo-icon">
-          <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-            <!-- Smoke trail -->
-            <rect x="12" y="6" width="1" height="1" fill="#aaa"/>
-            <rect x="13" y="5" width="1" height="1" fill="#888"/>
-            <rect x="14" y="4" width="1" height="1" fill="#555"/>
-            <!-- Fedora hat -->
-            <rect x="6" y="0" width="4" height="1" fill="#1a1a1a"/>
-            <rect x="5" y="1" width="6" height="1" fill="#222"/>
-            <rect x="5" y="2" width="6" height="1" fill="#222"/>
-            <rect x="3" y="3" width="10" height="1" fill="#2a2a2a"/>
-            <rect x="5" y="3" width="6" height="1" fill="#b71c1c"/>
-            <!-- Face - white, skinny -->
-            <rect x="6" y="4" width="4" height="1" fill="#fdd"/>
-            <!-- Eyes -->
-            <rect x="6" y="5" width="4" height="1" fill="#fdd"/>
-            <rect x="6" y="5" width="1" height="1" fill="#222"/>
-            <rect x="9" y="5" width="1" height="1" fill="#222"/>
-            <!-- Nose -->
-            <rect x="6" y="6" width="4" height="1" fill="#fdd"/>
-            <rect x="7" y="6" width="2" height="1" fill="#dbb"/>
-            <!-- Mouth + cigarette -->
-            <rect x="6" y="7" width="4" height="1" fill="#fdd"/>
-            <rect x="10" y="7" width="2" height="1" fill="#eee"/>
-            <rect x="12" y="7" width="1" height="1" fill="#e53935"/>
-            <!-- Chin -->
-            <rect x="6" y="8" width="4" height="1" fill="#fdd"/>
-            <!-- Suit collar + tie -->
-            <rect x="5" y="9" width="6" height="1" fill="#111"/>
-            <rect x="7" y="9" width="2" height="1" fill="#b71c1c"/>
-            <!-- Suit body + tie -->
-            <rect x="5" y="10" width="6" height="1" fill="#111"/>
-            <rect x="7" y="10" width="2" height="1" fill="#b71c1c"/>
-            <rect x="5" y="11" width="6" height="1" fill="#1a1a1a"/>
-            <rect x="7" y="11" width="2" height="1" fill="#b71c1c"/>
-            <rect x="6" y="12" width="4" height="1" fill="#1a1a1a"/>
-            <!-- Skinny legs -->
-            <rect x="6" y="13" width="2" height="1" fill="#111"/>
-            <rect x="8" y="13" width="2" height="1" fill="#111"/>
-            <!-- Shoes -->
-            <rect x="5" y="14" width="3" height="1" fill="#0a0a0a"/>
-            <rect x="8" y="14" width="3" height="1" fill="#0a0a0a"/>
-          </svg>
-        </div>
-        <h1>MAFIA</h1>
+        <div class="logo-icon" id="logo-icon-auth"></div>
+        <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="auth-form">
-        <input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off">
+        <div class="input-pxb"><input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off"></div>
         <div class="passcode-row">
-          <input type="tel" id="auth-passcode" placeholder="4-digit PIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric">
+          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4-digit PIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
         </div>
-        <button id="btn-login" class="btn btn-primary">Log In</button>
-        <button id="btn-register" class="btn btn-secondary">Create Account</button>
+        <button id="btn-login" class="btn btn-primary btn-large">Log In</button>
+        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc">Create Account</button></div>
       </div>
       <div id="auth-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
@@ -81,54 +40,11 @@
     <div id="screen-menu" class="screen">
       <!-- Pull to Refresh -->
       <div id="pull-refresh-menu" class="pull-refresh">
-        <div class="pull-refresh-spinner" id="pull-refresh-spinner-menu">&#8635;</div>
+        <div class="pull-refresh-spinner" id="pull-refresh-spinner-menu"></div>
       </div>
       <div class="logo logo-small">
-        <div class="logo-icon">
-          <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-            <!-- Smoke trail -->
-            <rect x="12" y="6" width="1" height="1" fill="#aaa"/>
-            <rect x="13" y="5" width="1" height="1" fill="#888"/>
-            <rect x="14" y="4" width="1" height="1" fill="#555"/>
-            <!-- Fedora hat -->
-            <rect x="6" y="0" width="4" height="1" fill="#1a1a1a"/>
-            <rect x="5" y="1" width="6" height="1" fill="#222"/>
-            <rect x="5" y="2" width="6" height="1" fill="#222"/>
-            <rect x="3" y="3" width="10" height="1" fill="#2a2a2a"/>
-            <rect x="5" y="3" width="6" height="1" fill="#b71c1c"/>
-            <!-- Face - white, skinny -->
-            <rect x="6" y="4" width="4" height="1" fill="#fdd"/>
-            <!-- Eyes -->
-            <rect x="6" y="5" width="4" height="1" fill="#fdd"/>
-            <rect x="6" y="5" width="1" height="1" fill="#222"/>
-            <rect x="9" y="5" width="1" height="1" fill="#222"/>
-            <!-- Nose -->
-            <rect x="6" y="6" width="4" height="1" fill="#fdd"/>
-            <rect x="7" y="6" width="2" height="1" fill="#dbb"/>
-            <!-- Mouth + cigarette -->
-            <rect x="6" y="7" width="4" height="1" fill="#fdd"/>
-            <rect x="10" y="7" width="2" height="1" fill="#eee"/>
-            <rect x="12" y="7" width="1" height="1" fill="#e53935"/>
-            <!-- Chin -->
-            <rect x="6" y="8" width="4" height="1" fill="#fdd"/>
-            <!-- Suit collar + tie -->
-            <rect x="5" y="9" width="6" height="1" fill="#111"/>
-            <rect x="7" y="9" width="2" height="1" fill="#b71c1c"/>
-            <!-- Suit body + tie -->
-            <rect x="5" y="10" width="6" height="1" fill="#111"/>
-            <rect x="7" y="10" width="2" height="1" fill="#b71c1c"/>
-            <rect x="5" y="11" width="6" height="1" fill="#1a1a1a"/>
-            <rect x="7" y="11" width="2" height="1" fill="#b71c1c"/>
-            <rect x="6" y="12" width="4" height="1" fill="#1a1a1a"/>
-            <!-- Skinny legs -->
-            <rect x="6" y="13" width="2" height="1" fill="#111"/>
-            <rect x="8" y="13" width="2" height="1" fill="#111"/>
-            <!-- Shoes -->
-            <rect x="5" y="14" width="3" height="1" fill="#0a0a0a"/>
-            <rect x="8" y="14" width="3" height="1" fill="#0a0a0a"/>
-          </svg>
-        </div>
-        <h1>MAFIA</h1>
+        <div class="logo-icon" id="logo-icon-menu"></div>
+        <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="header">
         <h2>Welcome, <span id="menu-username"></span></h2>
@@ -136,10 +52,10 @@
       </div>
       <div class="menu-buttons">
         <button id="btn-host" class="btn btn-primary btn-large">Host Game</button>
-        <button id="btn-join-show" class="btn btn-secondary btn-large">Join Game</button>
+        <div class="btn-pxb pxc"><button id="btn-join-show" class="btn btn-secondary btn-large pxc">Join Game</button></div>
       </div>
       <div id="join-section" class="join-section hidden">
-        <input type="text" id="join-code" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters">
+        <div class="input-pxb" style="flex:1"><input type="text" id="join-code" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
         <button id="btn-join" class="btn btn-primary">Join</button>
       </div>
       <div id="menu-error" class="error-msg"></div>
@@ -208,9 +124,20 @@
           <label class="toggle"><input type="checkbox" id="toggle-lovers"><span class="slider"></span></label>
         </div>
 
-        <div class="setting-row">
-          <span>Narrator Voice</span>
-          <select id="lobby-accent" class="accent-select"></select>
+        <div id="lobby-accent" class="accent-picker setting-row collapsed">
+          <span class="accent-picker-title">Narrator Voice</span>
+          <button type="button" class="accent-picker-toggle" id="accent-picker-toggle" aria-expanded="false">
+            <span class="accent-picker-current" id="accent-picker-current"></span>
+            <span class="accent-picker-caret" aria-hidden="true"></span>
+          </button>
+          <div class="accent-picker-expanded" id="accent-picker-expanded" hidden>
+            <div class="accent-picker-stage">
+              <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice"></button>
+              <span class="accent-picker-label" id="accent-picker-label"></span>
+              <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice"></button>
+            </div>
+            <p class="accent-picker-desc" id="accent-picker-desc"></p>
+          </div>
         </div>
 
       </div>
@@ -250,13 +177,15 @@
       <div class="game-header">
         <div class="phase-indicator" id="phase-indicator">Night</div>
         <div class="round-indicator">Round <span id="round-number">1</span></div>
-        <div id="day-timer" class="day-timer hidden">00:00</div>
-        <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
+        <div class="game-header-right">
+          <div id="day-timer" class="day-timer hidden">00:00</div>
+          <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
+        </div>
       </div>
 
       <!-- Pull to Refresh -->
       <div id="pull-refresh" class="pull-refresh">
-        <div class="pull-refresh-spinner" id="pull-refresh-spinner">&#8635;</div>
+        <div class="pull-refresh-spinner" id="pull-refresh-spinner"></div>
       </div>
 
       <!-- Role Card -->
@@ -266,7 +195,7 @@
             <div id="role-image" class="role-image"></div>
             <div id="role-name" class="role-name"></div>
             <div id="role-description" class="role-description"></div>
-            <div id="lover-badge" class="lover-badge hidden">&#10084; Lover</div>
+            <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lover</div>
             <div id="role-icon-mini" class="role-icon-mini"></div>
             <div id="role-mini-balloon" class="role-mini-balloon hidden">
               <svg viewBox="0 0 7 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
@@ -289,7 +218,6 @@
             <div class="card-back-label">MEMBERSHIP CARD</div>
           </div>
           <div class="peel-flap"></div>
-          <div id="peel-hint" class="peel-hint hidden">peel to reveal &#8600;</div>
         </div>
       </div>
 
@@ -297,7 +225,7 @@
       <div id="narrator-area" class="narrator-area">
         <div class="narrator-header">
           <span class="narrator-label">Narrator</span>
-          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript">&#128220;</button>
+          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript"></button>
         </div>
         <div id="narrator-messages" class="narrator-messages"></div>
       </div>
@@ -309,8 +237,12 @@
       </div>
 
       <!-- Hunter Revenge Wait (C5b: room-wide while the revenge gate is open;
-           the skip button shows for the admin only) -->
-      <div id="revenge-wait" class="awaiting-ready hidden">
+           the skip button shows for the admin only). D5 noir restyle: BOW
+           centerpiece + Silkscreen headline; show/hide logic is untouched
+           plumbing — only the painted chrome changed. -->
+      <div id="revenge-wait" class="awaiting-ready revenge-wait hidden">
+        <div id="revenge-wait-art" class="revenge-wait-art"></div>
+        <div class="revenge-wait-headline">THE HUNTER FALLS</div>
         <p id="revenge-wait-reveal"></p>
         <p>Waiting for the Hunter&#8230;</p>
         <button id="btn-skip-revenge" class="btn btn-danger btn-small hidden">Skip revenge</button>
@@ -327,10 +259,12 @@
         <ul id="action-targets" class="target-list"></ul>
         <button id="btn-decline-revenge" class="btn btn-secondary btn-small hidden">Decline revenge</button>
         <div id="slide-confirm" class="slide-confirm hidden">
-          <div class="slide-track">
-            <div class="slide-label" id="slide-label">slide to confirm</div>
-            <div class="slide-fill" id="slide-fill"></div>
-            <div class="slide-icon" id="slide-icon"></div>
+          <div class="slide-track-frame pxc">
+            <div class="slide-track pxc">
+              <div class="slide-label" id="slide-label">slide to confirm</div>
+              <div class="slide-fill" id="slide-fill"></div>
+              <div class="slide-icon pxc" id="slide-icon"></div>
+            </div>
           </div>
         </div>
         <div id="action-status" class="action-status"></div>
@@ -385,22 +319,6 @@
         <button id="btn-force-dawn" class="btn btn-primary">Force Dawn</button>
       </div>
 
-      <!-- Dead Overlay -->
-      <div id="dead-overlay" class="dead-overlay hidden">
-        <div id="dead-emoji" class="skull">&#128128;</div>
-        <p class="dead-text">You are dead</p>
-        <p id="death-message" class="death-message"></p>
-        <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
-      </div>
-
-      <!-- Joker Win Overlay (official mode — shows for everyone, dismissible) -->
-      <div id="joker-win-overlay" class="joker-win-overlay hidden">
-        <div class="joker-trophy">&#127942;</div>
-        <h2 class="joker-win-title">Joker Wins!</h2>
-        <p id="joker-win-name" class="joker-win-name"></p>
-        <p class="joker-win-hint">Tap to dismiss</p>
-      </div>
-
     </div>
 
     <!-- GAME OVER SCREEN -->
@@ -409,24 +327,69 @@
         <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave Room</button>
       </div>
       <div class="gameover-content">
+        <div id="gameover-trophy" class="gameover-trophy"></div>
         <h1 id="gameover-title"></h1>
         <p id="gameover-message"></p>
         <div id="game-history" class="game-history"></div>
         <div id="role-reveal" class="role-reveal"></div>
         <div id="gameover-buttons" class="gameover-buttons hidden">
           <button id="btn-play-again-same" class="btn btn-primary btn-large">Play Again</button>
-          <button id="btn-play-again-new" class="btn btn-secondary btn-large">New Settings</button>
+          <div class="btn-pxb pxc"><button id="btn-play-again-new" class="btn btn-secondary btn-large pxc">New Settings</button></div>
           <button id="btn-close-room" class="btn btn-danger btn-large">Close Room</button>
         </div>
         <div id="gameover-buttons-player" class="gameover-buttons hidden">
-          <button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large">Return to Lobby</button>
+          <div class="btn-pxb pxc"><button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large pxc">Return to Lobby</button></div>
         </div>
       </div>
     </div>
 
+    <!-- Dead Overlay (D6: death poster — mockup screen 03; z-index 100, reveals
+         BENEATH the z-300 suspense overlay so the death beat plays over it).
+         D9: lives at APP ROOT (sibling of #screen-game, like #suspense-overlay /
+         #confirm-sheet) — NOT inside #screen-game. #screen-game carries a
+         residual transform at rest (.screen-enter-game animation-fill-mode:both),
+         which would make this position:fixed overlay resolve against #screen-game
+         instead of the viewport and clip the poster. App-root placement
+         decouples it from ANY ancestor transform. JS reaches it by id, so the
+         move is transparent. -->
+    <div id="dead-overlay" class="dead-overlay hidden">
+      <div class="dead-poster">
+        <div id="dead-emoji" class="dead-skull-art"></div>
+        <p class="dead-pre">YOU ARE</p>
+        <p class="dead-text">DEAD</p>
+        <p id="death-message" class="death-message"></p>
+        <div class="dither-h dead-div"></div>
+        <p class="dead-note">stay quiet. you can still watch the town squirm.</p>
+        <button id="btn-watch-town" class="btn-watch pxc">WATCH THE TOWN</button>
+        <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
+      </div>
+    </div>
+
+    <!-- Joker Win Overlay (D6: real overlay — clown centerpiece + amber
+         celebration; targeted by showJokerWinOverlay; z-index 100). D9: at APP
+         ROOT for the same full-viewport reason as #dead-overlay above. -->
+    <div id="joker-win-overlay" class="joker-win-overlay hidden">
+      <div class="joker-poster">
+        <div class="joker-trophy" id="joker-trophy-art"></div>
+        <p class="joker-win-pre">THE LAST LAUGH</p>
+        <h2 class="joker-win-title">JOKER WINS</h2>
+        <p id="joker-win-name" class="joker-win-name"></p>
+        <div class="dither-h joker-win-div"></div>
+        <p class="joker-win-hint">Tap to dismiss</p>
+      </div>
+    </div>
+
     <!-- SUSPENSE OVERLAY -->
+    <!-- z-index 300, topmost; death overlays reveal BENEATH it. Staged
+         composition (D5): pre-line (amber Silkscreen) + pixel art centerpiece
+         + display text. #suspense-text KEEPS its id — the five beat writers
+         target it. -->
     <div id="suspense-overlay" class="suspense-overlay hidden">
-      <div id="suspense-text" class="suspense-text"></div>
+      <div class="suspense-stage">
+        <div id="suspense-pre" class="suspense-pre"></div>
+        <div id="suspense-art" class="suspense-art"></div>
+        <div id="suspense-text" class="suspense-text"></div>
+      </div>
     </div>
 
     <!-- SETTINGS MODAL -->
@@ -446,8 +409,12 @@
             <label class="toggle"><input type="checkbox" id="toggle-sound"><span class="slider"></span></label>
           </div>
           <div class="setting-row">
-            <span>Dark Mode</span>
-            <label class="toggle"><input type="checkbox" id="toggle-dark-mode" checked><span class="slider"></span></label>
+            <span>Theme</span>
+            <div id="theme-mode-control" class="theme-mode-control" role="group" aria-label="Theme">
+              <button type="button" class="theme-mode-btn" data-mode="dark" aria-pressed="false">Dark</button>
+              <button type="button" class="theme-mode-btn" data-mode="light" aria-pressed="false">Light</button>
+              <button type="button" class="theme-mode-btn" data-mode="dynamic" aria-pressed="false">Dynamic</button>
+            </div>
           </div>
           <div class="setting-row">
             <span>Hide Mafia Tag</span>
@@ -472,6 +439,18 @@
         </div>
         <div id="transcript-list" class="transcript-list"></div>
         <p id="transcript-empty" class="empty-text hidden">No messages yet</p>
+      </div>
+    </div>
+
+    <!-- D8: IN-WORLD CONFIRM SHEET (replaces native confirm() for the five admin actions) -->
+    <div id="confirm-sheet" class="modal confirm-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-sheet-title">
+      <div class="modal-content confirm-sheet-content">
+        <h3 id="confirm-sheet-title" class="confirm-sheet-title"></h3>
+        <p id="confirm-sheet-body" class="confirm-sheet-body"></p>
+        <div class="confirm-sheet-actions">
+          <div class="btn-pxb pxc"><button id="confirm-sheet-cancel" class="btn btn-secondary pxc">Cancel</button></div>
+          <button id="confirm-sheet-ok" class="btn btn-primary">Confirm</button>
+        </div>
       </div>
     </div>
 
