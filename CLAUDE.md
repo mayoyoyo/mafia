@@ -38,7 +38,7 @@ Use `TZ="America/Los_Angeles" date +"%Y%m%d%H%M"` to get the PST timestamp.
 - **When adding/changing/removing roles**, update the Role Roster tables in `README.md`
 
 ## Pixel Art
-- Role art and card back art defined as 10x10 grid arrays in `public/app.js`
+- Role art and card back art defined as 10x10 grid arrays in `public/pixel-art.js`
 - `pixelArtToSvg()` renders grids to inline SVGs with viewBox `0 0 10 10`
 - Favicon/logo SVGs in `public/icons/` use the same pixel art style but as raw SVG
 - `const _ = null` is used for transparent pixels in grid arrays

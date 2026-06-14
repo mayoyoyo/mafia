@@ -96,11 +96,10 @@
 .pxb > .in { width: 100%; height: 100%; }
 
 /* ---- Texture utilities (static — zero new animations) ---- */
-/* TODO(D3+): .scanlines / .vignette / .dither-h are unused as standalone utility
-   classes — screen/overlay texture is currently applied via element-scoped
-   ::after/::before (e.g. .screen.active::after). D3 (icon/divider work) and D5
-   (suspense compositions) will either wire these in or drop them; left in place
-   intentionally so D2 ambience work introduces no churn here. */
+/* NOTE: .scanlines / .vignette remain unused as standalone utility classes —
+   screen/overlay texture is applied via element-scoped ::after/::before
+   (e.g. .screen.active::after). Left in place intentionally as named utilities.
+   (.dither-h IS wired — the dead/joker-win overlay dividers in index.html.) */
 
 /* Scanlines: 1px line every 4px, pointer-events:none so it never blocks taps */
 .scanlines { position: relative; }
@@ -214,10 +213,9 @@
   --border: #3a3550;
   --primary: #f0ab43;
 }
-[data-theme="light"] body[data-phase="day"] {
-  /* Paper is already day — keep it, just sharpen amber accents. */
-  --primary: #b87d24;
-}
+/* Light base is already "day" (warm paper) — no day remap needed; the former
+   [data-theme="light"] body[data-phase="day"] block only re-set --primary to the
+   same value the base light theme already has, so it was a no-op and is dropped. */
 
 /* VOTING — bg stays phase-neutral dark; blood tint is SCOPED to the voting
    panel only (verdict beats own red later — don't flood the screen). */
@@ -616,7 +614,10 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 15px;
   color: var(--text);
   min-width: 0;
-  overflow-wrap: anywhere;
+  /* break-word (not anywhere) so a long Silkscreen accent label like
+     "TRANSYLVANIAN" wraps as a whole word instead of fracturing mid-word
+     at 320px. */
+  overflow-wrap: break-word;
 }
 .accent-picker-desc {
   margin: 0;
@@ -624,7 +625,14 @@ input::placeholder { color: var(--text-secondary); }
   font-style: italic;
   color: var(--text-secondary);
   text-align: center;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+/* At very narrow widths the ~153px gap between the two 44px arrows is just shy
+   of the longest label's intrinsic width ("TRANSYLVANIAN" ≈ 137px @15px), so it
+   wraps and break-word is forced to split the word. Shrink the Silkscreen label
+   a step so the whole word fits on one line and stays intact. */
+@media (max-width: 360px) {
+  .accent-picker-label { font-size: 13px; }
 }
 .counter { display: flex; align-items: center; gap: 12px; }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
@@ -878,9 +886,6 @@ input::placeholder { color: var(--text-secondary); }
   opacity: 0.8;
   transition: opacity 0.3s;
 }
-.peel-flap.hidden-flap {
-  opacity: 0;
-}
 .peel-flap.dragging {
   /* D7: spans the whole card; JS clips it to the live fold triangle.
      Card-stock underside gradient (lighter than the card-back face) reads as
@@ -892,6 +897,10 @@ input::placeholder { color: var(--text-secondary); }
   border: none;
   border-radius: 0;
   opacity: 1;
+  /* No opacity transition while dragging — the flap opacity is driven inline by
+     JS in lock-step with the card-back's instant crossfade; the resting 0.3s
+     transition would otherwise lag the back on fast drags. */
+  transition: none;
   filter: drop-shadow(-3px -3px 4px rgba(0,0,0,0.45));
   /* clip-path (the fold triangle) is set inline by the drag handler */
 }
@@ -1727,6 +1736,18 @@ input::placeholder { color: var(--text-secondary); }
 .confirm-sheet-actions .btn-pxb,
 .confirm-sheet-actions > .btn { flex: 1 1 0; min-width: 0; }
 .confirm-sheet-actions .btn { width: 100%; padding-left: 12px; padding-right: 12px; font-size: 15px; }
+/* At very narrow widths the widest Silkscreen labels ("FORCE DAWN",
+   "LEAVE GAME", "CLOSE ROOM") still clip inside the button content box;
+   shrink the label + horizontal padding + letter-spacing so the worst case
+   fits inside the ~133px half-column at 320px. */
+@media (max-width: 360px) {
+  .confirm-sheet-actions .btn {
+    font-size: 12px;
+    padding-left: 6px;
+    padding-right: 6px;
+    letter-spacing: 0;
+  }
+}
 
 /* GAME HISTORY (Game Over) */
 .game-history { width: 100%; margin-bottom: 16px; text-align: left; }

@@ -1162,10 +1162,6 @@
     flap.classList.remove("dragging");
     flap.style.clipPath = "";
     flap.style.opacity = "";
-    flap.style.left = "";
-    flap.style.top = "";
-    flap.style.right = "";
-    flap.style.bottom = "";
   }
 
   // ============================================================
@@ -1270,6 +1266,11 @@
         flap.style.clipPath =
           `polygon(${bx}% 100%, 100% ${ry}%, ${pxp}% ${pyp}%)`;
       } else {
+        // At exactly t=1 (s=2) both crease endpoints collapse to (0,0), so
+        // reflectAcrossLine hits its degenerate guard and P snaps back to
+        // (100,100) — the flap polygon degenerates to a sliver. Intentional and
+        // harmless: t>CAP has already crossfaded flap.style.opacity to 0, so the
+        // degenerate flap is invisible (the card-back's full reveal is what shows).
         back.style.clipPath =
           `polygon(0% 0%, ${rx}% 0%, 0% ${by}%)`;
         flap.style.clipPath =
@@ -1284,10 +1285,6 @@
       flap.classList.remove("dragging");
       flap.style.clipPath = "";
       flap.style.opacity = "";
-      flap.style.left = "";
-      flap.style.top = "";
-      flap.style.right = "";
-      flap.style.bottom = "";
       dragging = false;
       cardRect = null;
     }
@@ -3139,8 +3136,8 @@
       themeMode = saved;
     } else {
       const old = localStorage.getItem("mafia_dark_mode");
-      if (old === "true" || old === true) themeMode = "dark";
-      else if (old === "false" || old === false) themeMode = "light";
+      if (old === "true") themeMode = "dark";
+      else if (old === "false") themeMode = "light";
       else themeMode = "dynamic";
       localStorage.setItem("themeMode", themeMode);
     }
