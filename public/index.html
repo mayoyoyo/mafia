@@ -22,7 +22,7 @@
     <div id="screen-auth" class="screen active">
       <div class="logo">
         <div class="logo-icon" id="logo-icon-auth"></div>
-        <h1>MAFIA</h1>
+        <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="auth-form">
         <div class="input-pxb"><input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off"></div>
@@ -44,7 +44,7 @@
       </div>
       <div class="logo logo-small">
         <div class="logo-icon" id="logo-icon-menu"></div>
-        <h1>MAFIA</h1>
+        <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="header">
         <h2>Welcome, <span id="menu-username"></span></h2>
@@ -319,34 +319,6 @@
         <button id="btn-force-dawn" class="btn btn-primary">Force Dawn</button>
       </div>
 
-      <!-- Dead Overlay (D6: death poster — mockup screen 03; z-index 100, reveals
-           BENEATH the z-300 suspense overlay so the death beat plays over it) -->
-      <div id="dead-overlay" class="dead-overlay hidden">
-        <div class="dead-poster">
-          <div id="dead-emoji" class="dead-skull-art"></div>
-          <p class="dead-pre">YOU ARE</p>
-          <p class="dead-text">DEAD</p>
-          <p id="death-message" class="death-message"></p>
-          <div class="dither-h dead-div"></div>
-          <p class="dead-note">stay quiet. you can still watch the town squirm.</p>
-          <button id="btn-watch-town" class="btn-watch pxc">WATCH THE TOWN</button>
-          <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
-        </div>
-      </div>
-
-      <!-- Joker Win Overlay (D6: real overlay — clown centerpiece + amber
-           celebration; targeted by showJokerWinOverlay; z-index 100) -->
-      <div id="joker-win-overlay" class="joker-win-overlay hidden">
-        <div class="joker-poster">
-          <div class="joker-trophy" id="joker-trophy-art"></div>
-          <p class="joker-win-pre">THE LAST LAUGH</p>
-          <h2 class="joker-win-title">JOKER WINS</h2>
-          <p id="joker-win-name" class="joker-win-name"></p>
-          <div class="dither-h joker-win-div"></div>
-          <p class="joker-win-hint">Tap to dismiss</p>
-        </div>
-      </div>
-
     </div>
 
     <!-- GAME OVER SCREEN -->
@@ -368,6 +340,42 @@
         <div id="gameover-buttons-player" class="gameover-buttons hidden">
           <div class="btn-pxb pxc"><button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large pxc">Return to Lobby</button></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Dead Overlay (D6: death poster — mockup screen 03; z-index 100, reveals
+         BENEATH the z-300 suspense overlay so the death beat plays over it).
+         D9: lives at APP ROOT (sibling of #screen-game, like #suspense-overlay /
+         #confirm-sheet) — NOT inside #screen-game. #screen-game carries a
+         residual transform at rest (.screen-enter-game animation-fill-mode:both),
+         which would make this position:fixed overlay resolve against #screen-game
+         instead of the viewport and clip the poster. App-root placement
+         decouples it from ANY ancestor transform. JS reaches it by id, so the
+         move is transparent. -->
+    <div id="dead-overlay" class="dead-overlay hidden">
+      <div class="dead-poster">
+        <div id="dead-emoji" class="dead-skull-art"></div>
+        <p class="dead-pre">YOU ARE</p>
+        <p class="dead-text">DEAD</p>
+        <p id="death-message" class="death-message"></p>
+        <div class="dither-h dead-div"></div>
+        <p class="dead-note">stay quiet. you can still watch the town squirm.</p>
+        <button id="btn-watch-town" class="btn-watch pxc">WATCH THE TOWN</button>
+        <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
+      </div>
+    </div>
+
+    <!-- Joker Win Overlay (D6: real overlay — clown centerpiece + amber
+         celebration; targeted by showJokerWinOverlay; z-index 100). D9: at APP
+         ROOT for the same full-viewport reason as #dead-overlay above. -->
+    <div id="joker-win-overlay" class="joker-win-overlay hidden">
+      <div class="joker-poster">
+        <div class="joker-trophy" id="joker-trophy-art"></div>
+        <p class="joker-win-pre">THE LAST LAUGH</p>
+        <h2 class="joker-win-title">JOKER WINS</h2>
+        <p id="joker-win-name" class="joker-win-name"></p>
+        <div class="dither-h joker-win-div"></div>
+        <p class="joker-win-hint">Tap to dismiss</p>
       </div>
     </div>
 

@@ -297,6 +297,11 @@ html, body {
   }
 }
 /* Scanlines + vignette texture on all screens */
+/* z-9999/z-9998 here are SCREEN-SCOPED texture, confined to the active screen's
+   own stacking context (the screen establishes one via its enter-animation
+   transform/opacity); these big indices compete only with siblings INSIDE that
+   screen and stay BELOW the body-level z-300 #suspense-overlay (a later app-root
+   sibling) — they do NOT violate the z-300-topmost invariant. */
 .screen.active::after {
   content: '';
   position: fixed;
@@ -309,7 +314,8 @@ html, body {
   );
   z-index: 9999;
 }
-/* Vignette on auth and game screens */
+/* Vignette on auth and game screens (z-9998 — same screen-scoped reasoning as
+   the scanline ::after above; stays beneath the z-300 suspense overlay). */
 #screen-auth.active::before,
 #screen-game.active::before,
 #screen-gameover.active::before {
@@ -481,6 +487,9 @@ input::placeholder { color: var(--text-secondary); }
 }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
 .logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 700; font-family: 'Silkscreen', monospace; }
+/* Wordmark blood period (mockup .wordmark .dot) — subtle blood-red accent after
+   MAFIA, inherits the Silkscreen size; just recolored. */
+.wordmark-dot { color: var(--danger-bright); }
 .logo-small { padding: 24px 0 8px; }
 .logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
 .logo-small .logo-icon svg { width: 48px; height: 48px; }
