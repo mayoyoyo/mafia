@@ -968,16 +968,49 @@ input::placeholder { color: var(--text-secondary); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #1a1a2e;
-  border: 2px solid var(--border);
-  box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
-  /* clip-path set by JS during drag; default = full rectangle */
+  background: transparent;   /* fill + border are drawn by the two stepped layers below */
+  border: none;              /* override the shared .card-front,.card-back 2px box border */
+  z-index: 2;                /* sits above .card-front; also its own stacking context */
+  /* REVEAL MASK. clip-path is JS-driven during the peel (the fold polygon). The
+     RESTING value is a full rectangle on purpose: the noir stepped SHAPE is carried
+     by the ::before/::after layers (each with its own FIXED stepped clip-path), and
+     this mask intersects them. So at rest the card reads stepped; during the fold the
+     mask ∩ stepped-layer keeps the un-peeled corners stepped while the crease cuts
+     cleanly; and on release the peel clears the inline clip-path back to this rect,
+     restoring the stepped resting shape with no JS change and no rectangle leak. */
   clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
   transition: clip-path 0.3s ease;
-  z-index: 2;
 }
 .card-back.dragging {
   transition: none; /* disable snap-back animation during active drag */
+}
+/* BORDER layer — fills the full stepped outline with the card-edge colour. */
+.card-back::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: #3a3a5c;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  pointer-events: none;
+}
+/* SURFACE layer — same stepped outline inset 2px: the printed midnight card face,
+   with a faint scanline grain, an edge bevel, and the inner vignette darkening.
+   Both layers are clipped by the parent reveal mask, so they fold with the peel. */
+.card-back::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: -1;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,0.12) 3px 4px),
+    #1a1a2e;
+  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  box-shadow:
+    inset 2px 2px 0 0 rgba(255,255,255,0.05),
+    inset -2px -2px 0 0 rgba(0,0,0,0.28),
+    inset 0 0 30px rgba(0,0,0,0.5);
+  pointer-events: none;
 }
 .card-back-art { width: 64px; height: 64px; image-rendering: pixelated; margin-bottom: 12px; }
 .card-back-art svg { width: 64px; height: 64px; display: block; }
@@ -993,17 +1026,22 @@ input::placeholder { color: var(--text-secondary); }
   position: absolute;
   bottom: 0;
   right: 0;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   z-index: 3;
   pointer-events: none;
-  /* folded corner triangle via linear gradient */
-  background: linear-gradient(225deg, var(--bg-card) 50%, transparent 50%);
-  border-radius: 0 0 20px 0;
-  border-left: 2px solid var(--border);
-  border-top: 2px solid var(--border);
-  opacity: 0.8;
+  /* Resting dog-ear: the corner lifted just enough to show the pale card-stock
+     underside (reads as "peel here"). Light steel gradient = the back of the
+     lifted paper; hard 50% stop keeps a crisp fold crease. */
+  background: linear-gradient(225deg, #3a3a52 0%, #2d2d44 50%, transparent 50%);
+  /* Squared + stepped to sit inside the card's bottom-right notch (matches .pxc). */
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 0 100%);
+  border-left: 2px solid #23233a;
+  border-top: 2px solid #23233a;
+  opacity: 0.95;
   transition: opacity 0.3s;
+  filter: drop-shadow(-1px -1px 1.5px rgba(0,0,0,0.45));
 }
 .peel-flap.dragging {
   /* D7: spans the whole card; JS clips it to the live fold triangle.
