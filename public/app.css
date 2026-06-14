@@ -1503,6 +1503,13 @@ input::placeholder { color: var(--text-secondary); }
   pointer-events: none;
   z-index: 1;
 }
+/* "SLIDE TO INVESTIGATE" is the one label long enough to slide under the resting
+   knob; shrink just it (only one slider is ever on screen) so it stays centred and
+   clear of the knob without shortening the word. */
+.slide-confirm.role-detective .slide-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+}
 .slide-fill {
   position: absolute;
   left: 0;
