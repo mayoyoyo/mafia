@@ -2785,7 +2785,7 @@
     const list = $("admin-target-list");
     list.innerHTML = players
       .filter((p) => p.isAlive)
-      .map((p) => `<li data-id="${p.id}">${p.username}</li>`)
+      .map((p) => `<li data-id="${p.id}">${escapeHtml(p.username)}</li>`)
       .join("");
 
     list.querySelectorAll("li").forEach((li) => {
@@ -3885,7 +3885,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.3_202606100708";
-  const APP_VERSION_STAGING = "staging.17_202606131939";
+  const APP_VERSION_STAGING = "staging.18_202606131959";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
