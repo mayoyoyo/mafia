@@ -1234,7 +1234,15 @@ input::placeholder { color: var(--text-secondary); }
   gap: 8px;
 }
 /* D3b: pixel magnifier icon in detective result */
-.detective-result svg { width: 18px; height: 18px; image-rendering: pixelated; flex-shrink: 0; }
+.detective-result svg {
+  width: 18px; height: 18px; image-rendering: pixelated; flex-shrink: 0;
+  /* 1px ink outline so the glassy magnifier's silver rim reads on light paper too. */
+  filter:
+    drop-shadow(1px 0 0 rgba(0,0,0,0.55))
+    drop-shadow(-1px 0 0 rgba(0,0,0,0.55))
+    drop-shadow(0 1px 0 rgba(0,0,0,0.55))
+    drop-shadow(0 -1px 0 rgba(0,0,0,0.55));
+}
 
 /* ACTION PANEL */
 .action-panel {
@@ -1554,8 +1562,14 @@ input::placeholder { color: var(--text-secondary); }
   top: 4px;
   width: 48px;
   height: 48px;
-  background: var(--bg-card);
-  border: 2px solid var(--slide-tint, var(--border));
+  /* Solid role-colour knob — the knife rides on top. A darker-tint border + inset
+     bevel give it the pixel-button read; the icon drop-shadow (below) keeps the
+     blade crisp where the knife's own red guard would blend into a red fill. */
+  background: var(--slide-tint, var(--bg-card));
+  border: 2px solid color-mix(in srgb, var(--slide-tint, var(--border)) 60%, #000);
+  box-shadow:
+    inset 2px 2px 0 0 rgba(255,255,255,0.18),
+    inset -2px -2px 0 0 rgba(0,0,0,0.30);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1569,7 +1583,19 @@ input::placeholder { color: var(--text-secondary); }
 .slide-confirm.role-joker_haunt .slide-icon { --slide-tint: var(--role-joker); }
 .slide-confirm.role-hunter_revenge .slide-icon { --slide-tint: var(--role-hunter); }
 .slide-confirm.dragging .slide-icon { transition: none; cursor: grabbing; }
-.slide-icon svg { width: 28px; height: 28px; image-rendering: pixelated; }
+.slide-icon svg {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+  /* Crisp 1px ink outline (4 zero-blur shadows) so the icon silhouette reads on
+     a solid role-colour knob even when the art shares the knob's hue — e.g. the
+     detective magnifier is the exact role-detective purple. */
+  filter:
+    drop-shadow(1px 0 0 rgba(0,0,0,0.85))
+    drop-shadow(-1px 0 0 rgba(0,0,0,0.85))
+    drop-shadow(0 1px 0 rgba(0,0,0,0.85))
+    drop-shadow(0 -1px 0 rgba(0,0,0,0.85));
+}
 .slide-confirm.confirmed .slide-track-frame { background: var(--success); }
 .slide-confirm.confirmed .slide-track { background: var(--success); }
 .slide-confirm.confirmed .slide-label {
