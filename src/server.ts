@@ -1845,13 +1845,10 @@ function resolveNightAndTransition(game: Game): void {
     game.dayStartedAt = Date.now();
   }
 
-  // Send private doctor save message in official mode
-  if (nightResult.saved && nightResult.savedTargetId !== null && game.settings.doctorMode === "official") {
-    sendToUser(nightResult.savedTargetId, {
-      type: "doctor_save_private",
-      message: Narrator.doctorSaveVictim(),
-    });
-  }
+  // Official Mafia keeps the Doctor save ANONYMOUS: the saved victim is NOT
+  // privately told they were targeted (only the anonymous public "someone was
+  // saved" narration is broadcast at dawn). We intentionally send nothing to
+  // the victim here. (Narrator.doctorSaveVictim() is no longer sent.)
 
   // Send detective result privately (even if detective died this night)
   if (game.detectiveResult) {

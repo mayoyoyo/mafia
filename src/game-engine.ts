@@ -1668,7 +1668,18 @@ export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null
   const aliveNonMafia = alive.filter((p) => p.role !== "mafia" && p.role !== "joker");
 
   if (aliveMafia.length === 0) return "town";
-  if (aliveMafia.length >= aliveNonMafia.length) return "mafia";
+  if (aliveMafia.length >= aliveNonMafia.length) {
+    // Doctor-suppresses-parity (project-owner approved): while ANY Doctor is
+    // alive, hold off the Mafia parity-win so the night can resolve — the
+    // Doctor may block tonight's kill — and the day can play out. The Mafia
+    // win fires only once no Doctor remains. The Doctor's save is unlimited
+    // (no per-game cap; submitDoctorSave only forbids the same target on
+    // consecutive nights), so the gate is simply "an alive doctor". A lone
+    // Doctor vs lone Mafia stalemate is acceptable: the admin can end the game.
+    const aliveDoctor = alive.some((p) => p.role === "doctor");
+    if (aliveDoctor) return null;
+    return "mafia";
+  }
 
   return null;
 }

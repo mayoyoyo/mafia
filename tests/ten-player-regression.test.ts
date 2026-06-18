@@ -442,8 +442,12 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
       expect(day.round).toBe(1);
       expect(day.saved).toBe(true);
     }
-    // Private save notice goes to the saved player only (asserted globally below)
-    await waitSince(victimSaved, 0, (m) => m.type === "doctor_save_private", "doctor_save_private");
+    // Official mode: the saved victim is NEVER privately told they were
+    // targeted — no doctor_save_private is sent on the wire. The dawn has
+    // already resolved on every client, so settle briefly to catch any
+    // (wrongly-sent) private message, then assert the victim got none.
+    await Bun.sleep(100);
+    expect(victimSaved.inbox.filter((m) => m.type === "doctor_save_private").length).toBe(0);
     assertNoViolations("end of night 1");
 
     // ── Day 1: lynch mafia #1 ───────────────────────────────────────
@@ -514,10 +518,11 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
       expect(n).toBe(expectedDeaths.includes(p.userId) ? 1 : 0);
     }
 
-    // doctor_save_private reached only the saved player
+    // Official mode: doctor_save_private is never sent on the wire — no
+    // client (not even the saved player) is privately told about the save.
     for (const p of players) {
       const n = p.inbox.filter((m) => m.type === "doctor_save_private").length;
-      expect(n).toBe(p === victimSaved ? 1 : 0);
+      expect(n).toBe(0);
     }
 
     // Secrecy + win-timing invariants held on every message all game long

@@ -42,7 +42,8 @@ import { unlinkSync } from "node:fs";
  *      stream, and a different player dies).
  *   #6 "doctor save → plain execution → night lover cascade → town win"
  *      (B3-prep) — night 1: mafia kill blocked by the doctor (saved=true,
- *      doctor_save_private) → day 1: ordinary vote execution of a non-joker
+ *      anonymous — official mode sends no doctor_save_private to the victim)
+ *      → day 1: ordinary vote execution of a non-joker
  *      non-lover → night 2: mafia kills a lover, the partner cascades
  *      (ordering/labeling keyed on Death.cause) → day 2: vote executes the
  *      last mafia → town win, vote-path game_over with full role reveal.
@@ -1780,8 +1781,9 @@ const GAME_SETTINGS_6 = {
 };
 
 // Script: night 1 — mafia kill on P5 BLOCKED by the doctor's save on P5
-// (saved=true day, doctor_save_private to P5, nobody dies, and in official
-// doctor mode no `save` event enters the history) → day 1: ordinary vote
+// (saved=true day, nobody dies; in official doctor mode no `save` event
+// enters the history AND the saved victim is NOT privately told they were
+// targeted — no doctor_save_private on the wire) → day 1: ordinary vote
 // executes P5 (citizen, non-lover, non-joker; 4 yes / 2 no) → auto-night 2:
 // mafia kills lover P3, partner P4 cascades (night path: primary victim
 // first, then the lover, same source; the partner's you_died carries
@@ -2062,8 +2064,9 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
     "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
   ],
-  // P5 — citizen. Night 1: the only seat to get doctor_save_private (official
-  // doctor mode, before the day cue). Executed day 1 (plain execution),
+  // P5 — citizen. Night 1: the mafia's target, saved by the doctor — but in
+  // official mode the victim is NOT told (no doctor_save_private); the dawn
+  // shows only the anonymous saved=true. Executed day 1 (plain execution),
   // then the full dead-spectator stream of night 2: live mafia votes, the
   // doctor sub-phase (spectator_night_phase) and the doctor's pick.
   P5: [
@@ -2079,7 +2082,6 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "sound_cue mafia_close",
     "sound_cue doctor_open",
     "sound_cue doctor_close",
-    "doctor_save_private",
     "sound_cue day",
     "phase_change phase=day round=1 saved=true events=[]",
     "vote_called target=P5",
@@ -2138,14 +2140,15 @@ describe("golden game #6: doctor save, plain execution, night lover cascade, tow
 
     await waitFor(p2.ws, "doctor_targets", 10000);
     const doctorDonePromise = waitFor(p2.ws, "night_action_done", 6000);
-    const savePrivatePromise = waitFor(p5.ws, "doctor_save_private", 12000);
     send(p2.ws, { type: "doctor_save", targetId: p5.userId });
     await doctorDonePromise;
 
     await Promise.all(players.map(p =>
       waitMatch(p.ws, m => m.type === "phase_change" && m.phase === "day", 12000,
         `${p.seat} day-1 phase_change`)));
-    await savePrivatePromise; // already delivered before the day phase_change
+    // Official mode: the saved victim is NEVER privately told they were
+    // targeted — no doctor_save_private is sent on the wire (assertGoldens
+    // below pins P5's full sequence, which no longer contains it).
 
     // ── Day 1: plain execution of P5 (4 yes / 2 no) ─────────────────────
     const voteCalledPromise = waitFor(p0.ws, "vote_called", 6000);
