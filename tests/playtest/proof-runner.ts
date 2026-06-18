@@ -254,6 +254,9 @@ async function runProof(scenarioName: string): Promise<void> {
   console.log(`  MAFIA PROOF RUNNER — scenario: ${scenarioName}`);
   console.log("══════════════════════════════════════════════════════════════════");
   console.log("");
+  console.log("  WARNING: run this standalone — do NOT run `bun test` concurrently");
+  console.log("           (server starvation can drop the bot sockets).");
+  console.log("");
   console.log(`  >>> OPEN THIS URL IN YOUR BROWSER:   ${url}`);
   console.log("");
   console.log(`  1. Register a NEW account (any username, 4-digit passcode).`);
@@ -266,7 +269,21 @@ async function runProof(scenarioName: string): Promise<void> {
   console.log("");
 
   // Wait (poll admin's lobby_update) until the human joins → total players.
-  const finalLobby = await waitForLobbyCount(bots[0], total, 10 * 60 * 1000);
+  // Heartbeat every ~20s so the process is visibly alive while waiting on a human.
+  const waitStarted = Date.now();
+  const heartbeat = setInterval(() => {
+    const elapsed = Math.round((Date.now() - waitStarted) / 1000);
+    const lastLobby = bots[0].lastOf("lobby_update");
+    const seated = Array.isArray(lastLobby?.players) ? lastLobby.players.length : botSeats;
+    console.log(`[proof-runner] still waiting for the human to join... (${elapsed}s elapsed, ${seated}/${total} seated)`);
+  }, 20_000);
+
+  let finalLobby: WSMessage;
+  try {
+    finalLobby = await waitForLobbyCount(bots[0], total, 10 * 60 * 1000);
+  } finally {
+    clearInterval(heartbeat);
+  }
   console.log(`[proof-runner] Human joined — lobby now has ${total} players. Starting game…`);
 
   // Seat→userId resolver from the admin's lobby roster. The lobby_update.players
