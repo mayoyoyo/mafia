@@ -3971,7 +3971,7 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.3_202606100708";
+  const APP_VERSION = "v1.4_202606191044";
   const APP_VERSION_STAGING = "staging.24_202606191034";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
