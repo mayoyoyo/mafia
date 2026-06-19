@@ -563,7 +563,7 @@ const modeKeys = ["doctorMode", "jokerMode"] as const;
 // Compile-time exhaustiveness guard: if a key is added to GameSettings in
 // types.ts but not handled in sanitizeSettings, the assignment below becomes
 // a type error (true is not assignable to false).
-type _Covered = "mafiaCount" | (typeof boolKeys)[number] | (typeof modeKeys)[number] | "narrationAccent";
+type _Covered = "mafiaCount" | (typeof boolKeys)[number] | (typeof modeKeys)[number] | "narrationAccent" | "narratorGender";
 // compile error here means a GameSettings key is missing from sanitizeSettings
 const _exhaustive: Exclude<keyof GameSettings, _Covered> extends never ? true : false = true;
 void _exhaustive;
@@ -601,6 +601,12 @@ export function sanitizeSettings(input: unknown): Partial<GameSettings> {
   const accent = raw.narrationAccent;
   if (typeof accent === "string" && accent.length > 0 && accent.length <= 32) {
     out.narrationAccent = accent;
+  }
+
+  // Narrator gender: must be one of the two known values
+  const gender = raw.narratorGender;
+  if (gender === "male" || gender === "female") {
+    out.narratorGender = gender;
   }
 
   return out;

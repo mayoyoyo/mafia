@@ -278,18 +278,17 @@
    PIXEL NOIR — D2 + D5.5b: Phase ambience (token remaps on body[data-phase])
    Set/cleared by JS (applyPhaseChange, handleGameSync, showScreen).
 
-   D5.5b three-way-theme contract (spec §4 amendment): data-theme is the
-   EFFECTIVE base (dark|light) and is ALWAYS set by JS. The base-flipping NAVY
-   night takeover is now GATED to the dark base only — in forced-Light the base
-   stays paper at night (no navy takeover; only a subtle dusk accent). In Dynamic
-   the base flips to dark at night, so the dark-night remap below fires; in Dark
-   the base is pinned dark, so night still flavors navy within dark. The light-base
-   day remap is a no-op paper hold. The role card re-declares --bg-card/--border on
-   itself, so it stays dark through every phase remap.
+   Two-way-theme contract: data-theme is the EFFECTIVE base (dark|light) and is
+   ALWAYS set by JS (pinned to the user's Dark/Light pick). The base-flipping NAVY
+   night takeover is GATED to the dark base only — in Light the base stays paper at
+   night (no navy takeover; only a subtle dusk accent). In Dark the base is pinned
+   dark, so night still flavors navy within dark. The light-base day remap is a
+   no-op paper hold. The role card re-declares --bg-card/--border on itself, so it
+   stays dark through every phase remap.
    ============================================================ */
 
 /* NIGHT — deep navy, the whole room goes midnight together (mockup screen 02).
-   Gated to the DARK base: Dynamic (base flipped to dark) + forced-Dark. */
+   Gated to the DARK base. */
 [data-theme="dark"] body[data-phase="night"],
 :root:not([data-theme]) body[data-phase="night"] {
   --bg: #0d1126;
@@ -723,8 +722,14 @@ input::placeholder { color: var(--text-secondary); }
   touch-action: manipulation;
 }
 .accent-arrow:active { --pxb-surface: var(--border); }
-.accent-arrow-prev::before { content: "\25C0"; }
-.accent-arrow-next::before { content: "\25B6"; }
+/* Arrow glyphs (◀ ▶) live in the button's HTML text content, not on ::before:
+   ::before/::after are claimed by the pixel-bevel border+surface layers (both
+   z-index:-1, content:""), so a glyph placed there renders behind the opaque
+   surface and reads as an empty square. The text node sits above the surface. */
+.accent-arrow {
+  position: relative;
+  line-height: 1;
+}
 .accent-picker-label {
   flex: 1;
   text-align: center;
@@ -751,6 +756,57 @@ input::placeholder { color: var(--text-secondary); }
    a step so the whole word fits on one line and stays intact. */
 @media (max-width: 360px) {
   .accent-picker-label { font-size: 13px; }
+}
+/* NARRATOR GENDER TOGGLE (Male / Female) — sits under the accent picker in the
+   expanded Narrator Voice panel. Two-state segmented control styled to match the
+   theme-mode-control. Greyed/inert when the accent is "random" (.disabled). */
+.narrator-gender-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.narrator-gender-title {
+  font-family: 'Silkscreen', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.narrator-gender-control {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  overflow: hidden;
+}
+.narrator-gender-btn {
+  min-height: 32px;
+  padding: 7px 14px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: 'Silkscreen', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.narrator-gender-btn:last-child { border-right: none; }
+.narrator-gender-btn:hover { color: var(--text); }
+.narrator-gender-btn.active {
+  background: var(--primary);
+  color: #141008;
+}
+.narrator-gender-control.disabled {
+  opacity: 0.4;
+}
+.narrator-gender-control.disabled .narrator-gender-btn {
+  cursor: not-allowed;
+  pointer-events: none;
 }
 .counter { display: flex; align-items: center; gap: 12px; }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
@@ -817,10 +873,9 @@ input::placeholder { color: var(--text-secondary); }
 .toggle input:checked + .slider { background: var(--success); border-color: var(--success); }
 .toggle input:checked + .slider::before { transform: translateX(20px); }
 
-/* D5.5b: three-way theme preference — a noir segmented control (Dark/Light/
-   Dynamic). Replaces the old 2-state dark-mode toggle. The active option is
-   amber-filled with ink Silkscreen so it reads unambiguously as the selection.
-   Display-only pref — switching never touches game state. */
+/* Two-way theme preference — a noir segmented control (Dark/Light). The active
+   option is amber-filled with ink Silkscreen so it reads unambiguously as the
+   selection. Display-only pref — switching never touches game state. */
 .theme-mode-control {
   display: inline-flex;
   flex-shrink: 0;

@@ -132,11 +132,18 @@
           </button>
           <div class="accent-picker-expanded" id="accent-picker-expanded" hidden>
             <div class="accent-picker-stage">
-              <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice"></button>
+              <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice">&#9664;</button>
               <span class="accent-picker-label" id="accent-picker-label"></span>
-              <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice"></button>
+              <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice">&#9654;</button>
             </div>
             <p class="accent-picker-desc" id="accent-picker-desc"></p>
+            <div class="narrator-gender-row">
+              <span class="narrator-gender-title">Voice</span>
+              <div id="narrator-gender-control" class="narrator-gender-control" role="group" aria-label="Narrator gender">
+                <button type="button" class="narrator-gender-btn" data-gender="male" aria-pressed="false">Male</button>
+                <button type="button" class="narrator-gender-btn" data-gender="female" aria-pressed="false">Female</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -413,7 +420,6 @@
             <div id="theme-mode-control" class="theme-mode-control" role="group" aria-label="Theme">
               <button type="button" class="theme-mode-btn" data-mode="dark" aria-pressed="false">Dark</button>
               <button type="button" class="theme-mode-btn" data-mode="light" aria-pressed="false">Light</button>
-              <button type="button" class="theme-mode-btn" data-mode="dynamic" aria-pressed="false">Dynamic</button>
             </div>
           </div>
           <div class="setting-row">

@@ -819,6 +819,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     code: game.code,
     isAdmin: userId === game.adminId,
     narrationAccent: game.settings.narrationAccent,
+    narratorGender: game.settings.narratorGender,
     hide_mafia_tag: userPrefs.hide_mafia_tag,
     players: getPlayerInfo(game).map(p => ({ ...p, color: getUserPrefs(p.id).player_color })),
     role: rejoined.role!,

@@ -22,6 +22,7 @@ export interface GameSettings {
   enableLovers: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
+  narratorGender: "male" | "female";
   doctorMode: RuleMode;
   jokerMode: RuleMode;
 }
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableLovers: false,
   soundEnabled: false,
   narrationAccent: "classic",
+  narratorGender: "male",
   doctorMode: "official",
   jokerMode: "official",
 };
@@ -248,6 +250,7 @@ export type ServerMessage =
       code: string;
       isAdmin: boolean;
       narrationAccent: string;
+      narratorGender: "male" | "female";
       hide_mafia_tag: boolean;
       // Players
       players: PlayerInfo[];

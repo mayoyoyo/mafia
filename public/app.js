@@ -22,6 +22,15 @@
   let soundPlaying = false;
   let narrationData = null;
   let currentAccent = "classic";
+  // The narrator gender ("male" | "female"); combined with the accent it forms
+  // the audio dir key `<accent>-<gender>`. Ignored (randomized) when the accent
+  // is "random". Single writer is setGender(); synced via update_settings.
+  let currentGender = "male";
+  // When currentAccent is "random", this holds the concrete `<accent>-<gender>`
+  // key picked once per game/narration session (stable within a game). Cleared
+  // whenever the accent/gender changes or a new game starts, so each game
+  // re-rolls. Audio paths are always built from resolveAccent(), never "random".
+  let resolvedAccent = null;
   let narrationAudioCache = {};
   let currentAudio = null;
   let knownPlayers = [];
@@ -108,9 +117,8 @@
     // navigating to "game".
     if (name !== "game") {
       document.body.removeAttribute("data-phase");
-      // D5.5b: off the game screen there's no phase — re-evaluate the effective
-      // base (Dynamic keeps the last base / falls back to dark in the lobby).
-      applyEffectiveTheme(null);
+      // Off the game screen there's no phase — re-sync the pinned base + chrome.
+      applyEffectiveTheme();
     }
   }
 
@@ -359,6 +367,12 @@
         jokerJointWinner = false;
         previousPhase = null;
         pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
+        // Fresh game: re-roll the "random" narrator and re-preload so this
+        // game's cues all use the newly chosen voice (no-op for a real accent).
+        if (currentAccent === "random") {
+          resolvedAccent = null;
+          preloadNarrationAudio();
+        }
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
@@ -593,9 +607,11 @@
     }
 
     // 5. Restore accumulated state
+    if (msg.narratorGender) setGender(msg.narratorGender);
     if (msg.narrationAccent) {
-      currentAccent = msg.narrationAccent;
-      preloadNarrationAudio(currentAccent);
+      setAccent(msg.narrationAccent);
+      renderGenderToggle();
+      preloadNarrationAudio();
     }
     dayVoteCount = msg.dayVoteCount;
     narratorTranscript = msg.narratorHistory;
@@ -635,7 +651,7 @@
     // D2: rejoin must restore phase ambience — handleGameSync does NOT route
     // through applyPhaseChange, so set data-phase here (showScreen cleared it).
     document.body.setAttribute("data-phase", msg.phase);
-    // D5.5b: restore the effective base for the rejoined phase (Dynamic).
+    // Re-sync the pinned base + chrome for the rejoined phase ambience.
     applyEffectiveTheme();
     updateRoleCard();
     resetCardPeel();
@@ -970,6 +986,9 @@
   // The arrows cycle accents and fire the SAME update_settings wire call the
   // select fired; the server echo (updateSettingsUI) stays the only state writer.
   setupAccentPicker();
+  // Male/Female narrator-gender toggle (host screen). Fires update_settings on
+  // click; greyed/inert while the accent is "random" (gender is randomized).
+  setupGenderToggle();
 
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
@@ -1007,10 +1026,14 @@
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-hunter").checked = settings.enableHunter;
     $("toggle-lovers").checked = settings.enableLovers;
+    if (settings.narratorGender) setGender(settings.narratorGender);
     if (settings.narrationAccent) {
-      currentAccent = settings.narrationAccent;
+      setAccent(settings.narrationAccent);
       renderAccentPicker();
-      preloadNarrationAudio(currentAccent);
+      renderGenderToggle();
+      preloadNarrationAudio();
+    } else {
+      renderGenderToggle();
     }
     // Show/hide and sync mode sub-rows
     $("doctor-mode-row").classList.toggle("hidden", !settings.enableDoctor);
@@ -1642,7 +1665,7 @@
     // whole room shifts together (night→navy, day→warm, voting→blood accents).
     // Cleared centrally in showScreen() on every return-to-lobby/menu path.
     document.body.setAttribute("data-phase", msg.phase);
-    // D5.5b: re-evaluate the effective base for this phase (Dynamic flips here).
+    // Re-sync the pinned base + chrome (data-phase drives the CSS ambience remap).
     applyEffectiveTheme();
 
     const indicator = $("phase-indicator");
@@ -2832,9 +2855,8 @@
     // lights up while the vote is live; handleVoteResult/cancel revert to the
     // underlying phase. (game_sync rejoin mid-vote routes through here too.)
     document.body.setAttribute("data-phase", "voting");
-    // D5.5b: vote sub-state drives the dark base under Dynamic (pass the override
-    // since currentPhase is still the underlying day).
-    applyEffectiveTheme("voting");
+    // Re-sync the pinned base + chrome; data-phase="voting" drives the CSS ambience.
+    applyEffectiveTheme();
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
@@ -2896,7 +2918,7 @@
     // applyPhaseChange; a spared vote stays on day, which this restores.
     if (currentPhase) {
       document.body.setAttribute("data-phase", currentPhase);
-      // D5.5b: drop back to the live phase's effective base (Dynamic → day=light).
+      // Re-sync the pinned base + chrome for the restored phase ambience.
       applyEffectiveTheme();
     }
     lastVoteResult = msg;
@@ -3072,47 +3094,35 @@
   }
 
   // ============================================================
-  // D5.5b — THREE-WAY THEME PREFERENCE (Dark / Light / Dynamic)
-  // Pure client-local display pref (spec §4 amendment). NEVER sends a wire
-  // message and NEVER touches game state — switching is display-only.
+  // TWO-WAY THEME PREFERENCE (Dark / Light) — Dark is the default.
+  // Pure client-local display pref. NEVER sends a wire message and NEVER touches
+  // game state — switching is display-only. (The old "Dynamic" phase-driven base
+  // was removed; the base is now always the pinned mode.)
   // ----------------------------------------------------------------
   // EFFECTIVE BASE contract: data-theme (dark|light) is ALWAYS set and is the
-  // effective base. In Dynamic it's computed from the live phase (night/voting
-  // → dark, day → light, game_over/lobby → keep last / fall back to dark); in
-  // Dark/Light it's pinned. The §4 token remaps key on [data-theme]×[data-phase]
-  // in CSS — the "every phone goes midnight together" base-flip lives in Dynamic
-  // only; Dark stays dark always, forced-Light stays paper at night (the navy
-  // night takeover is gated to the dark base in app.css).
+  // pinned base. The §4 token remap still keys on [data-theme]×[data-phase] in
+  // CSS (e.g. the navy night takeover, gated to the dark base), so phase ambience
+  // still layers on top of whichever base the user picked.
   // ============================================================
-  let themeMode = "dynamic"; // dark | light | dynamic
-  let lastEffectiveTheme = "dark"; // remembered for game_over (keep last base)
+  let themeMode = "dark"; // dark | light
 
-  // Compute the effective base (dark|light) for a given phase under the current mode.
-  function effectiveTheme(phase) {
-    if (themeMode === "dark") return "dark";
-    if (themeMode === "light") return "light";
-    // dynamic: phase drives the base
-    if (phase === "night" || phase === "voting") return "dark";
-    if (phase === "day") return "light";
-    // game_over / lobby / boot (no phase): keep the last effective base, default dark
-    return lastEffectiveTheme || "dark";
+  // The effective base is simply the pinned mode (no phase logic anymore).
+  function effectiveTheme() {
+    return themeMode === "light" ? "light" : "dark";
   }
 
-  // Apply the effective base, set data-theme, sync chrome. phaseOverride lets the
-  // vote sub-state (which rides on a day phase but sets data-phase="voting") drive
-  // the dark base under Dynamic; callers without it use the live currentPhase.
-  function applyEffectiveTheme(phaseOverride) {
-    const phase = phaseOverride === undefined ? currentPhase : phaseOverride;
-    const eff = effectiveTheme(phase);
-    lastEffectiveTheme = eff;
-    document.documentElement.setAttribute("data-theme", eff);
+  // Apply the pinned base, set data-theme, sync chrome. Retains the optional
+  // phaseOverride arg so existing call sites stay valid (it's now ignored — the
+  // base no longer depends on the phase; data-phase still drives CSS ambience).
+  function applyEffectiveTheme() {
+    document.documentElement.setAttribute("data-theme", effectiveTheme());
     syncThemeColor();
   }
 
-  // Persist + apply a new mode immediately (re-evaluate for the current phase).
+  // Persist + apply a new mode immediately.
   function setThemeMode(mode) {
-    themeMode = mode;
-    localStorage.setItem("themeMode", mode);
+    themeMode = mode === "light" ? "light" : "dark";
+    localStorage.setItem("themeMode", themeMode);
     applyEffectiveTheme();
     updateThemeModeControl();
   }
@@ -3128,17 +3138,19 @@
     });
   }
 
-  // Initialize theme mode: prefer the new 'themeMode' pref; else MIGRATE the old
-  // 'mafia_dark_mode' (true → dark, false → light); else default Dynamic.
+  // Initialize theme mode: only "light" is honored as an alternative; anything
+  // else (including a legacy "dynamic" pref or the old 'mafia_dark_mode' flag)
+  // falls back to the dark default.
   (function initThemeMode() {
     const saved = localStorage.getItem("themeMode");
-    if (saved === "dark" || saved === "light" || saved === "dynamic") {
-      themeMode = saved;
+    if (saved === "light") {
+      themeMode = "light";
+    } else if (saved === "dark") {
+      themeMode = "dark";
     } else {
-      const old = localStorage.getItem("mafia_dark_mode");
-      if (old === "true") themeMode = "dark";
-      else if (old === "false") themeMode = "light";
-      else themeMode = "dynamic";
+      // Legacy "dynamic" / unset / old 'mafia_dark_mode' → fall back to dark,
+      // honoring only an explicit old light preference.
+      themeMode = localStorage.getItem("mafia_dark_mode") === "false" ? "light" : "dark";
       localStorage.setItem("themeMode", themeMode);
     }
     applyEffectiveTheme();
@@ -3564,7 +3576,7 @@
     if (ctx.state !== "running") ctx.resume();
     // Re-preload narration in case cache was lost
     if (Object.keys(narrationAudioCache).length === 0) {
-      preloadNarrationAudio(currentAccent);
+      preloadNarrationAudio();
     }
   }
 
@@ -3576,7 +3588,7 @@
     var ctx = getAudioContext();
     ctx.resume().then(function () {
       audioUnlocked = true;
-      preloadNarrationAudio(currentAccent);
+      preloadNarrationAudio();
     });
     document.removeEventListener("touchend", unlockAudio, true);
     document.removeEventListener("click", unlockAudio, true);
@@ -3739,9 +3751,49 @@
     }
   }
 
+  // Resolve the active selection to a concrete `<accent>-<gender>` audio dir key.
+  // For a real accent this is `${currentAccent}-${currentGender}`; for "random"
+  // it picks ONE random accent (of the 14 in narration.json cues) AND a random
+  // gender, caching the combined key in resolvedAccent so every cue in the game
+  // uses the same voice. The cache is cleared on accent/gender change / new game
+  // (see setAccent/setGender), so the next game re-rolls. Audio paths are ALWAYS
+  // built from this — never the literal "random" and never a bare accent.
+  function resolveAccent() {
+    if (currentAccent !== "random") return currentAccent + "-" + currentGender;
+    if (resolvedAccent) return resolvedAccent;
+    // Real accent keys come from cues (random has no cues entry).
+    const keys = narrationData ? Object.keys(narrationData.cues || {}) : [];
+    if (keys.length === 0) return null;
+    const accent = keys[Math.floor(Math.random() * keys.length)];
+    const gender = Math.random() < 0.5 ? "male" : "female";
+    resolvedAccent = accent + "-" + gender;
+    return resolvedAccent;
+  }
+
+  // Single writer for the active accent. Clears the random resolution when the
+  // selected accent key actually changes, so a new "random" selection (or a new
+  // game) re-rolls; reselecting the same key keeps the voice stable.
+  function setAccent(accent) {
+    if (accent && accent !== currentAccent) {
+      currentAccent = accent;
+      resolvedAccent = null;
+    }
+  }
+
+  // Single writer for the narrator gender. Clears the random resolution so a
+  // re-roll happens if needed; for a real accent it changes the resolved dir.
+  function setGender(gender) {
+    if ((gender === "male" || gender === "female") && gender !== currentGender) {
+      currentGender = gender;
+      resolvedAccent = null;
+    }
+  }
+
   // Fetch mp3 files and decode into AudioBuffers (bypasses HTML5 Audio entirely)
-  function preloadNarrationAudio(accent) {
+  function preloadNarrationAudio() {
     narrationAudioCache = {};
+    const accent = resolveAccent();
+    if (!accent) return; // narration.json not loaded yet — nothing to preload
     const ctx = getAudioContext();
     NARRATION_CUES.forEach((cue) => {
       fetch("/audio/" + accent + "/" + cue + ".mp3")
@@ -3829,6 +3881,40 @@
     wsSend({ type: "update_settings", settings: { narrationAccent: nextKey } });
   }
 
+  // Wire the Male/Female narrator-gender toggle once at boot. Like the accent
+  // arrows, clicking fires update_settings and lets the server echo
+  // (updateSettingsUI -> renderGenderToggle + preloadNarrationAudio) be the sole
+  // state writer. No-op while the accent is "random" (gender is randomized).
+  function setupGenderToggle() {
+    const ctrl = $("narrator-gender-control");
+    if (!ctrl) return;
+    ctrl.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-gender]");
+      if (!btn) return;
+      if (currentAccent === "random") return; // inert when randomized
+      const gender = btn.getAttribute("data-gender");
+      if (gender !== "male" && gender !== "female") return;
+      wsSend({ type: "update_settings", settings: { narratorGender: gender } });
+    });
+    renderGenderToggle();
+  }
+
+  // Paint the Male/Female toggle from currentGender + currentAccent. When the
+  // accent is "random" the gender is randomized per game, so the control is
+  // greyed/inert (disabled buttons, no active selection shown).
+  function renderGenderToggle() {
+    const ctrl = $("narrator-gender-control");
+    if (!ctrl) return;
+    const isRandom = currentAccent === "random";
+    ctrl.classList.toggle("disabled", isRandom);
+    ctrl.querySelectorAll("[data-gender]").forEach((b) => {
+      const on = !isRandom && b.getAttribute("data-gender") === currentGender;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.disabled = isRandom;
+    });
+  }
+
   // Paint the picker from currentAccent + narrationData. Called by the server-echo
   // path (updateSettingsUI) and at init once narration.json loads. Labels and
   // descriptions come from served JSON, so set them via textContent (no innerHTML).
@@ -3846,9 +3932,10 @@
     if (dsc) dsc.textContent = desc;       // expanded: wrapped description below
   }
 
-  // Kept for the init fetch call site below; now just paints the picker.
+  // Kept for the init fetch call site below; now paints the picker + gender toggle.
   function populateAccentSelector() {
     renderAccentPicker();
+    renderGenderToggle();
   }
 
   // Init: load narration data
@@ -3858,7 +3945,7 @@
       if (!data) return;
       narrationData = data;
       populateAccentSelector();
-      preloadNarrationAudio(currentAccent);
+      preloadNarrationAudio();
     })
     .catch(() => {});
 
@@ -3885,7 +3972,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.3_202606100708";
-  const APP_VERSION_STAGING = "staging.23_202606181515";
+  const APP_VERSION_STAGING = "staging.24_202606191034";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
