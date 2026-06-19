@@ -1,159 +1,186 @@
 // Mad-libs random elements
 const FOODS = [
-  "a half-eaten calzone", "a suspiciously warm burrito", "a gluten-free muffin",
-  "a questionable gas station sushi roll", "an entire rotisserie chicken",
-  "a single olive on a toothpick", "a melted popsicle", "a soggy cereal bowl",
-  "a pineapple pizza (controversial even in death)", "a stale fortune cookie",
+  "a cold cup of coffee", "a half-eaten supper", "a loaf of bread gone stale",
+  "a bottle with one swallow left", "a plate of food long since cold",
+  "a slice of pie nobody finished", "a candle burned down to nothing",
+  "a hand of cards", "a folded newspaper", "an unsmoked cigarette",
+  "a glass of whiskey, untouched", "a single match",
 ];
 
 const LOCATIONS = [
-  "behind the town dumpster", "in the haunted Costco parking lot",
-  "at the bottom of the town fountain", "inside a suspiciously large pothole",
-  "tangled in the town's Christmas lights (it's July)",
-  "in the drive-thru lane of a closed Wendy's", "under a pile of mismatched socks",
-  "in the ball pit at Chuck E. Cheese", "on top of the town's only traffic cone",
-  "halfway through the hedge maze nobody uses",
+  "in the alley behind the tailor's", "at the foot of the harbor stairs",
+  "in a doorway off the empty square", "under the dead streetlamp on Mercer Lane",
+  "by the fountain, face to the cobblestones", "on the landing of the old tenement",
+  "in the back room of the shuttered bar", "beneath the railway bridge",
+  "in the fog at the end of the pier", "by the loading dock, out of the light",
+  "in the stairwell of the boarding house", "at the corner where the gaslight had gone out",
 ];
 
 const TOOLS = [
-  "a rubber duck and a lot of determination", "an aggressive Roomba",
-  "a weaponized leaf blower", "a very judgmental cat",
-  "nothing but harsh words and a firm handshake", "a comically oversized mallet",
-  "a spork and sheer willpower", "a strongly worded letter",
-  "a cursed IKEA instruction manual", "a banana peel strategically placed",
+  "a knife, clean and quiet", "a length of wire", "a single shot, close range",
+  "something heavy and blunt", "a cord drawn tight", "a blade between the ribs",
+  "a pistol, the kind that doesn't echo", "an iron pipe",
+  "poison, slow and patient", "a straight razor", "a blow to the back of the head",
+  "their own scarf, used against them",
 ];
 
 const LAST_WORDS = [
-  '"Tell my WiFi... I loved her..."',
-  '"I should have... cleared my browser history..."',
-  '"At least I don\'t have to pay rent anymore..."',
-  '"Delete... my search history..."',
-  '"I knew that burrito was suspicious..."',
-  '"Was it something I said...?"',
-  '"My only regret... is not buying Bitcoin in 2010..."',
-  '"Rosebud... wait, wrong franchise..."',
-  '"I left the oven on..."',
-  '"Unsubscribe..."',
+  '"I should have left this town when I had the chance..."',
+  '"Tell them... it wasn\'t me..."',
+  '"I knew it would end like this..."',
+  '"You won\'t get away with..."',
+  '"The ledger... look in the ledger..."',
+  '"It was supposed to be a quiet night..."',
+  '"I never saw their face..."',
+  '"So that\'s how it is..."',
+  '"Cold... it\'s so cold..."',
+  '"Don\'t trust..."',
+  '"I should have run..."',
+  '"Lock the door behind me..."',
 ];
 
 const SAVE_METHODS = [
-  "a perfectly timed Heimlich maneuver", "an emergency supply of essential oils (they actually worked this time)",
-  "CPR learned entirely from a YouTube tutorial", "a conveniently placed mattress",
-  "a pocket defibrillator and a prayer", "sheer stubbornness and a Red Bull",
-  "a first-aid kit held together with duct tape", "a miracle smoothie recipe",
+  "a steady hand and a needle and thread", "pressure held until the bleeding stopped",
+  "a doctor who answered the door at this hour", "the right words and the wrong amount of luck",
+  "a man who knew where the bullet had to come out", "cold water and a colder nerve",
+  "the kind of medicine that asks no questions", "a heartbeat coaxed back from the edge",
+  "stubbornness, mostly, and a clean bandage", "the only hand in town that doesn't shake",
 ];
 
 const JOKER_HAUNT_KILL_MESSAGES = [
-  "{name} was found at dawn, pale as a ghost. It seems the Joker had the last laugh. {lastWords}",
-  "RIP {name}. Discovered {location} with a playing card pinned to their chest — the Joker. Revenge from beyond the grave.",
-  "{name} didn't survive the night. Witnesses say they heard cackling {location}. The Joker's ghost strikes.",
-  "The town wakes to find {name} {location}, haunted to death. A faint laugh echoes in the wind. {lastWords}",
-  "{name} has been claimed by the Joker's curse. Found {location}, clutching {food}. Even death couldn't stop the Joker.",
-  "A chill runs through the town. {name} was found {location}, taken by an unseen force. The Joker sends regards from the other side.",
-  "Pour one out for {name}, found {location}. Cause of death? Supernatural revenge via {tool}. The Joker's ghost is no joke.",
-  "It's a dark day. {name} was discovered {location}, haunted into oblivion. {lastWords} The Joker always gets the last laugh.",
+  "{name} was found at dawn, cold and grinning. A playing card sat on their chest — the Joker. {lastWords}",
+  "{name} did not see morning. Discovered {location}, a single card tucked into their coat. The Joker collects, even now.",
+  "{name} didn't survive the night. Those who passed the window swear they heard laughing {location}. No one was there.",
+  "The town wakes to find {name} {location}. A card pinned to the door, the lamp still burning. {lastWords}",
+  "{name} is gone. Found {location}, clutching {food}, a Joker card in the other hand. The dead keep their promises.",
+  "A cold settles over the street. {name} was found {location}, no sign of struggle, no sign of anyone. The Joker pays its debts.",
+  "{name} lies {location}. The murder weapon? {tool}. The signature? A single card. The Joker laughs from somewhere you can't follow.",
+  "It's a grim morning. {name} was discovered {location}, a Joker card weighing down their hand. {lastWords}",
 ];
 
 const EXECUTION_STYLES = [
-  "catapulted into the sunset", "voted off the island (wrong show, but same energy)",
-  "escorted out by an aggressive hall monitor", "yeeted into the void",
-  "dramatically slow-motion walked out the door", "given a one-star Yelp review of their existence",
-  "asked to leave the group chat permanently", "unfriended IRL",
+  "taken to the gallows at first light", "led from the square and not seen again",
+  "marched out past the silent crowd", "given to the rope as the town watched",
+  "walked to the edge of town and left there", "put down by the verdict of the room",
+  "handed over to the dark beyond the lamplight", "carried out, the matter closed",
 ];
 
 const NIGHT_KILL_MESSAGES = [
   "{name} was found {location}, taken out with {tool}. Their last words: {lastWords}",
-  "RIP {name}. Discovered {location} clutching {food}. The Mafia sends their regards.",
-  "Bad news: {name} is dead. Found {location} with evidence of {tool}. {lastWords}",
-  "{name} didn't survive the night. They were last seen {location} eating {food}. The Mafia strikes again.",
+  "{name} did not see the morning. Discovered {location}, clutching {food}. No one heard a thing.",
+  "{name} is dead. Found {location}, with evidence of {tool} near the body. {lastWords}",
+  "{name} didn't survive the night. Last seen {location}, eating {food}. The door was locked from the inside.",
   "The town wakes to find {name} {location}. Cause of death: {tool}. {lastWords}",
-  "{name} has been eliminated. Witnesses report seeing {tool} near {location}. They died holding {food}.",
-  "Pour one out for {name}, found {location}. The murder weapon? {tool}. Their legacy? {food} left uneaten.",
-  "It's a dark day. {name} was discovered {location}, done in by {tool}. {lastWords}",
+  "{name} is gone. The signs point to {tool} near {location}. They died holding {food}.",
+  "{name} was found {location}. The murder weapon? {tool}. On the table beside them, {food}, left uneaten.",
+  "It's a grim morning. {name} was discovered {location}, done in by {tool}. {lastWords}",
 ];
 
 const DOCTOR_SAVE_MESSAGES = [
-  "A miracle! {name} was found barely alive {location}, saved by {saveMethod}. The Doctor pulled through!",
-  "{name} cheated death tonight! The Doctor arrived just in time with {saveMethod}. They live to see another day.",
-  "The Mafia came for {name}, but the Doctor intervened with {saveMethod}. Not today, death. Not today.",
-  "Against all odds, {name} survived thanks to {saveMethod}. The Doctor's medical degree finally paid off.",
-  "{name} was on the brink, but {saveMethod} brought them back. The Doctor deserves a raise.",
+  "{name} was found barely breathing {location}, kept alive by {saveMethod}. The Doctor got there first.",
+  "{name} should be dead. Instead they're sitting up, pale and shaking, pulled back by {saveMethod}.",
+  "They came for {name} in the dark. The Doctor was already there, working by lamplight with {saveMethod}.",
+  "{name} survived the night by inches, owed entirely to {saveMethod}. Death will have to wait.",
+  "{name} was on the edge of it {location}. {saveMethod} was enough — just enough — to bring them back.",
 ];
 
 // Official mode: narrator hints someone survived but doesn't name who
 const DOCTOR_SAVE_OFFICIAL_MESSAGES = [
-  "The Mafia struck in the night, but someone was saved by a mysterious intervention. The Doctor works in silence.",
-  "Someone was targeted last night, but against all odds, they survived. The details remain a mystery.",
-  "The Mafia's plans were foiled — their target survived thanks to an unknown savior. No one knows who cheated death.",
-  "A life was saved in the shadows last night. The Doctor's work goes unnoticed... for now.",
-  "The night was not without incident, but someone lives to see another day. Who? Only the Doctor knows.",
+  "Someone was meant to die last night. A hand intervened in the dark, and they didn't. No name was left.",
+  "There was a target. There was blood on the cobblestones. And then there was a survivor. That's all anyone knows.",
+  "The killers' work was undone before dawn. One they marked still draws breath. Who, and by whose hand, stays a secret.",
+  "A life held on by a thread last night, and someone tied it off. The Doctor keeps quiet hours.",
+  "The night was not clean, but it took no one. Someone lives who shouldn't. Ask no questions.",
 ];
 
 // Private message sent to the victim in official mode
 const DOCTOR_SAVE_VICTIM_MESSAGES = [
-  "You were targeted by the Mafia last night, but the Doctor saved your life. You live to see another day.",
-  "Someone tried to kill you in the night, but a mysterious savior intervened. You survived.",
-  "The Mafia came for you, but you were saved. Consider yourself lucky — and watch your back.",
+  "They marked you last night. You're alive because someone reached you first. Say nothing, and watch the doors.",
+  "A knife had your name on it in the dark. It found someone steadier instead. You survived. Keep it to yourself.",
+  "You were meant to be the body at dawn. You aren't. Count yourself lucky, and stay out of the light.",
 ];
 
 const NO_KILL_MESSAGES = [
-  "The town wakes to an unusual calm. Everyone is alive. The Mafia must've had WiFi issues.",
-  "Dawn arrives peacefully. No blood was spilled. Did the Mafia oversleep? Classic.",
-  "A quiet night passes without incident. The Mafia apparently had better things to do, like laundry.",
-  "Nobody died! The Mafia must have gotten distracted by a Netflix binge. Lucky break, everyone.",
+  "Dawn comes, and no one is missing. The knives stayed in their sheaths tonight. No one says why.",
+  "Morning, and every door opens to a living face. Whatever was planned, it didn't happen. Not this time.",
+  "The town wakes whole. No blood, no body, no answer. The quiet feels like it's waiting for something.",
+  "A night passed and took nothing with it. The fog lifts on a street with all its people still on it.",
 ];
 
 const EXECUTION_MESSAGES = [
-  "The town has spoken. {name} is {executionStyle}. Justice — or perhaps injustice — is served.",
-  "By a show of thumbs, {name}'s fate is sealed. They have been {executionStyle}.",
-  "Democracy is brutal. {name} has been {executionStyle} by the will of the people.",
-  "The crowd's verdict echoes: {name} must go. They were promptly {executionStyle}.",
-  "{name} stands before the town one final time. The majority has spoken, and {name} is {executionStyle}.",
+  "The town has spoken. {name} is {executionStyle}. Whether it was justice, no one will ever be sure.",
+  "The vote is counted. {name}'s fate is sealed. They are {executionStyle}.",
+  "The room decides, and the decision is final. {name} has been {executionStyle}.",
+  "The verdict comes down hard. {name} must go, and so {name} is {executionStyle}.",
+  "{name} stands before the town one last time. The hands are raised, the matter settled. {name} is {executionStyle}.",
 ];
 
 const EXECUTION_SPARED_MESSAGES = [
-  "The vote falls short. {name} lives to see another night — lucky them (for now).",
-  "Not enough thumbs up (or down?). {name} is spared, though everyone's still side-eyeing them.",
-  "The town hesitates. {name} escapes today, but the group chat is buzzing with theories.",
-  "Plot armor activated! {name} survives the vote. The town will remember this.",
+  "The vote falls short. {name} walks free into another night, and watches their back the whole way.",
+  "Not enough hands went up. {name} is spared, though no one in the room has stopped watching them.",
+  "The town hesitates, and the moment passes. {name} lives. The suspicion does not go away.",
+  "The verdict won't hold. {name} survives the vote. The town will remember whose name came up.",
 ];
 
 const LOVER_DEATH_MESSAGES = [
-  "But wait — {name} clutches their chest and collapses! Turns out they were {lover}'s secret lover. Star-crossed and absolutely wrecked.",
-  "Tragedy strikes twice. {name}, bound to {lover} by the invisible thread of fate (and questionable matchmaking), falls dead. Romeo and Juliet, eat your hearts out.",
-  "And then, a gasp. {name} drops like a sack of potatoes — their heart literally broken by {lover}'s demise. The lovers' bond was real, and now both are really dead.",
-  "PLOT TWIST: {name} was {lover}'s lover! As {lover} falls, so does {name}. The universe said 'two for one special on tragedy today.'",
+  "Then {name} goes still too. They were {lover}'s, in secret, and a heart only breaks the once. Two coats left on two chairs.",
+  "{name} falls a breath after {lover} does. The thread between them was real, and it pulled tight at the end. Now there are two graves to dig.",
+  "{name} doesn't outlive {lover} by a minute. Whatever bound them, it held to the last. The town buries the pair together.",
+  "{name} was {lover}'s lover. As {lover} dies, {name} follows, without a sound. Some debts the heart pays in full.",
 ];
 
 const JOKER_WIN_MESSAGES = [
-  "PLOT TWIST! {name} throws back their head and CACKLES. You fools! You absolute buffoons! The Joker WANTED to be executed! Congratulations, you all played yourselves.",
-  "The crowd cheers... then freezes. {name} whips out a Joker card, does a little dance, and moonwalks into victory. Everyone else? Clowns. Actual clowns.",
-  "Wait — {name} is LAUGHING?! The Joker has bamboozled the entire town AND the Mafia. By executing them, you gave them exactly what they wanted. Slow clap for everyone.",
+  "{name} is already smiling as the rope goes taut. They wanted this. You gave it to them, and the joke was never yours to get.",
+  "The crowd quiets. {name} doesn't struggle, doesn't plead — just looks back at the room like it walked into a trap of its own making. The Joker came here to lose, and won.",
+  "{name} laughs, soft and final. The whole town fell for it, killers and innocents alike. They handed the Joker the one thing it ever asked for.",
 ];
 
 const TOWN_WIN_MESSAGES = [
-  "The last Mafia member falls. The town erupts in celebration — someone brought confetti! The Citizens win! Time for a pizza party.",
-  "Justice prevails! Every Mafia member has been found and eliminated. The town is safe once more. Citizens win! Group hug, everyone!",
-  "The shadow over the town lifts. With every Mafia member gone, peace returns at last. Victory for the Citizens! Now who left the fridge open?",
+  "The last of the Mafia falls. The street lamps come on early, and for the first time in a long time, no one is afraid to walk under them. The town wins.",
+  "Every killer has been named and dealt with. The fog burns off by noon and stays gone. The town is quiet again — quiet the right way. The town wins.",
+  "The shadow over the town lifts with the last of them gone. People sleep with the doors unlocked tonight, and nothing comes. The town wins.",
 ];
 
 const MAFIA_WIN_MESSAGES = [
-  "The town falls silent. The Mafia now runs this place. Everyone gets a horse head pillow. The Mafia wins!",
-  "It's over. The Mafia has grown too powerful, and honestly, their outfits are way better. The Mafia wins!",
-  "The citizens look around and realize they're outnumbered. The Mafia claims victory and immediately raises HOA fees!",
+  "The town goes quiet, and stays that way. The men who run it now don't raise their voices; they don't need to. The Mafia wins.",
+  "It's over. There aren't enough honest hands left to hold the line. The lamps stay dark on whichever streets they choose. The Mafia wins.",
+  "The survivors look around and understand: they're outnumbered, and they always were. Nobody argues with the new order. The Mafia wins.",
+];
+
+const HUNTER_REVEAL_MESSAGES = [
+  "{name} was the Hunter. With the last of their strength, they reach for the gun — and the whole room stops breathing...",
+  "{name} was the Hunter. They were never going to go quietly. The weapon comes up, slow and certain...",
+  "So that's what {name} was — the Hunter. The barrel rises one last time, and all at once nobody wants to be standing too close...",
+  "The truth comes out at the end: {name} was the Hunter. A steady aim on an unsteady hand, one round left. The town goes very quiet...",
+  "{name} was the Hunter. They aren't leaving the table alone. The hammer draws back, and the room holds still...",
+];
+
+const HUNTER_REVENGE_KILL_MESSAGES = [
+  "A single shot, and {name} goes down beside the Hunter. The dying take who they please.",
+  "One round leaves the chamber. {name} drops where they stood. The Hunter's aim held to the end.",
+  "{name} is the Hunter's last word. The shot was clean. There is nothing to argue with now.",
+  "The Hunter fires once. {name} doesn't get the chance to speak. The matter is closed for both of them.",
+  "{name} falls to the Hunter's parting shot. Two bodies now where there was one. The street goes silent again.",
+];
+
+const HUNTER_DECLINE_MESSAGES = [
+  "The Hunter lowers the gun. Whatever they had left, they keep it. No one else dies tonight.",
+  "The Hunter looks the room over, slow, and then sets the weapon down. Mercy, or just tiredness — they don't say.",
+  "No shot comes. The Hunter shoulders the gun and walks out into the fog, leaving the rest of them to wonder.",
+  "The barrel drops. The Hunter goes without firing, and the town is left alone with its suspicions.",
 ];
 
 const NIGHT_FALLS_MESSAGES = [
-  "The sun sets and shadows creep across the town. Night has fallen. Lock your doors... and maybe your fridge.",
-  "Darkness descends. The town sleeps, but not everyone rests peacefully. Someone is definitely up to no good.",
-  "Night falls like a curtain. Somewhere in the dark, plans are being made and snacks are being eaten...",
-  "The last light fades. Another night begins, and with it, the Mafia stirs. Everyone else? Anxiety stirs.",
+  "The sun goes down and the fog comes up to meet it. Night now. Lock your doors, and don't answer them.",
+  "Darkness settles over the town. Most of it sleeps. Some of it doesn't, and has reasons not to.",
+  "Night falls like a curtain drawn slow. Somewhere out past the last lamp, plans are already being made.",
+  "The last light goes out of the sky. Another night begins, and the wrong people are awake for it.",
 ];
 
 const DAY_BREAKS_MESSAGES = [
-  "The first rays of sunlight pierce the darkness. A new day dawns... but at what cost?",
-  "Morning comes. The rooster crows. The coffee is strong. But is everyone still here to drink it?",
-  "The sun rises on another day. Time to find out who survived and who... didn't make the cut.",
+  "Grey light comes up over the rooftops. A new day, and the first question is who's still here to see it.",
+  "Morning. The fog thins, the lamps go out one by one, and the town counts its people.",
+  "The sun comes up cold on another day. Time to find out what the night took, and who.",
 ];
 
 function pick(arr: string[]): string {
@@ -191,6 +218,9 @@ export const Narrator = {
   doctorSaveOfficial(): string {
     return pick(DOCTOR_SAVE_OFFICIAL_MESSAGES);
   },
+  // No longer sent: official Mafia must NOT privately reveal to the saved
+  // victim that they were targeted (server.ts dropped the doctor_save_private
+  // send). Kept for reference / potential non-official future use.
   doctorSaveVictim(): string {
     return pick(DOCTOR_SAVE_VICTIM_MESSAGES);
   },
@@ -220,6 +250,15 @@ export const Narrator = {
       lastWords: pick(LAST_WORDS),
       food: pick(FOODS),
     });
+  },
+  hunterReveal(name: string): string {
+    return fill(pick(HUNTER_REVEAL_MESSAGES), { name });
+  },
+  hunterRevengeKill(name: string): string {
+    return fill(pick(HUNTER_REVENGE_KILL_MESSAGES), { name });
+  },
+  hunterDecline(): string {
+    return pick(HUNTER_DECLINE_MESSAGES);
   },
   townWin(): string {
     return pick(TOWN_WIN_MESSAGES);

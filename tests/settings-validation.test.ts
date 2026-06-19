@@ -194,6 +194,55 @@ describe("M6c: poisoned persisted settings are repaired on load", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// C1 — enableHunter round-trips over the wire like every other toggle
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("C1: enableHunter toggle round-trip", () => {
+  // NB: the "5xxx" reg() args below are user passcode PINs (Program C's PIN namespace), not ports.
+  test("update_settings with enableHunter:true is reflected in settings_updated and lobby_update", async () => {
+    const admin = await reg(uniqueName(), "5001");
+    send(admin.ws, { type: "create_game" });
+    const lobbyPromise = waitFor(admin.ws, "lobby_update");
+    await waitFor(admin.ws, "game_created");
+    const freshLobby = await lobbyPromise;
+
+    // Fresh user, fresh game: defaults false on the wire
+    expect(freshLobby.settings.enableHunter).toBe(false);
+
+    const lobbyAfter = waitFor(admin.ws, "lobby_update");
+    send(admin.ws, { type: "update_settings", settings: { enableHunter: true } });
+    const updated = await waitFor(admin.ws, "settings_updated");
+    expect(updated.settings.enableHunter).toBe(true);
+    const lobby = await lobbyAfter;
+    expect(lobby.settings.enableHunter).toBe(true);
+
+    admin.ws.close();
+  }, 10000);
+
+  test("junk enableHunter values are dropped, not coerced", async () => {
+    const admin = await reg(uniqueName(), "5002");
+    send(admin.ws, { type: "create_game" });
+    await waitFor(admin.ws, "game_created");
+
+    // String "yes" must be dropped — stays at default false
+    send(admin.ws, { type: "update_settings", settings: { enableHunter: "yes" } });
+    const u1 = await waitFor(admin.ws, "settings_updated");
+    expect(u1.settings.enableHunter).toBe(false);
+
+    // Flip on legitimately, then junk must not flip it back off
+    send(admin.ws, { type: "update_settings", settings: { enableHunter: true } });
+    const u2 = await waitFor(admin.ws, "settings_updated");
+    expect(u2.settings.enableHunter).toBe(true);
+
+    send(admin.ws, { type: "update_settings", settings: { enableHunter: 0 } });
+    const u3 = await waitFor(admin.ws, "settings_updated");
+    expect(u3.settings.enableHunter).toBe(true);
+
+    admin.ws.close();
+  }, 10000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // L8 — register must cap username length
 // ═══════════════════════════════════════════════════════════════════════
 

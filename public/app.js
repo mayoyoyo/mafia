@@ -22,6 +22,15 @@
   let soundPlaying = false;
   let narrationData = null;
   let currentAccent = "classic";
+  // The narrator gender ("male" | "female"); combined with the accent it forms
+  // the audio dir key `<accent>-<gender>`. Ignored (randomized) when the accent
+  // is "random". Single writer is setGender(); synced via update_settings.
+  let currentGender = "male";
+  // When currentAccent is "random", this holds the concrete `<accent>-<gender>`
+  // key picked once per game/narration session (stable within a game). Cleared
+  // whenever the accent/gender changes or a new game starts, so each game
+  // re-rolls. Audio paths are always built from resolveAccent(), never "random".
+  let resolvedAccent = null;
   let narrationAudioCache = {};
   let currentAudio = null;
   let knownPlayers = [];
@@ -72,13 +81,45 @@
     game: $("screen-game"),
     gameover: $("screen-gameover"),
   };
+  // D8: tracks the currently-active screen so showScreen() can choose a
+  // threshold-specific enter animation (lobby→game, game→gameover).
+  let activeScreenName = null;
 
   // ============================================================
   // SCREEN MANAGEMENT
   // ============================================================
   function showScreen(name) {
-    Object.values(screens).forEach((s) => s.classList.remove("active"));
-    screens[name].classList.add("active");
+    // D8: screen transition — pick a purpose-built enter animation for the key
+    // narrative thresholds (lobby→game, game→gameover), else a generic soft
+    // enter. The animation classes are mutually exclusive; restart by removing
+    // then re-adding so a repeat navigation re-triggers. prefers-reduced-motion
+    // (CSS) collapses all of these to instant/opacity-only.
+    var prevName = activeScreenName;
+    var enterClass = "screen-enter";
+    if (prevName === "lobbyAdmin" || prevName === "lobbyPlayer") {
+      if (name === "game") enterClass = "screen-enter-game";
+    }
+    if (prevName === "game" && name === "gameover") enterClass = "screen-enter-gameover";
+
+    Object.values(screens).forEach((s) => {
+      s.classList.remove("active", "screen-enter", "screen-enter-game", "screen-enter-gameover");
+    });
+    var next = screens[name];
+    next.classList.add("active");
+    // Force a reflow so re-navigating to the same screen restarts the animation.
+    void next.offsetWidth;
+    next.classList.add(enterClass);
+    activeScreenName = name;
+    // D2: phase ambience is only valid on the in-game screen. Clearing it here
+    // is the single chokepoint that covers every leave/return-to-lobby/menu/
+    // room_closed/logout/game-over path (which all route through showScreen) —
+    // no stale midnight lobby. applyPhaseChange()/handleGameSync re-set it after
+    // navigating to "game".
+    if (name !== "game") {
+      document.body.removeAttribute("data-phase");
+      // Off the game screen there's no phase — re-sync the pinned base + chrome.
+      applyEffectiveTheme();
+    }
   }
 
   // ============================================================
@@ -116,6 +157,13 @@
   function wsSend(msg) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
+    } else {
+      // D9: frame silently dropped — surface it for debugging (no behavior change)
+      console.warn(
+        "[mafia] wsSend dropped frame (socket not OPEN):",
+        msg && msg.type,
+        "readyState=" + (ws ? ws.readyState : "none")
+      );
     }
   }
 
@@ -160,9 +208,52 @@
   // ============================================================
   // SERVER MESSAGE HANDLER
   // ============================================================
+  // Hold-and-replay gate lists (L5): one source of truth, three derived
+  // gates. HOLD_GATE_PROMPTS is the shared base — the night-action /
+  // spectator prompt types that must not dispatch while an overlay chain is
+  // animating. A new prompt case added to the dispatch switch below MUST
+  // also be added here (once), or the overlay chains will swallow it.
+  // The three gates differ deliberately:
+  //   suspense   — death beats only; the suspense overlay IS the death
+  //                reveal, prompts pass through it. A prompt that must wait
+  //                for the death reveal (e.g. a death-triggered revenge
+  //                prompt arriving mid dawn-suspense) needs its own entry in
+  //                SUSPENSE_GATE_TYPES; adding it to HOLD_GATE_PROMPTS alone
+  //                does NOT cover the suspense window.
+  //   transition — prompts + sound_cue (narration waits for the overlay)
+  //   narration  — prompts only (sound_cue IS the narration playing)
+  const HOLD_GATE_PROMPTS = [
+    "mafia_targets",
+    "doctor_targets",
+    "detective_targets",
+    "joker_haunt_targets",
+    "hunter_revenge_pending",
+    "hunter_revenge_targets",
+    "spectator_joker_deliberating",
+    "spectator_joker_resolved",
+  ];
+  // hunter_revenge_targets is the death-triggered revenge prompt the advisory
+  // above anticipates: it must also ride the suspense queue so it replays
+  // AFTER the death reveal (and after the chain-ending applyPhaseChange that
+  // would otherwise hide the just-rendered prompt). hunter_revenge_pending
+  // (the room-wide reveal + wait view, C5b) rides the same death-triggered
+  // flow and gets the identical treatment: the reveal must not render before
+  // the queued death beats replay, and applyPhaseChange's hide-all would
+  // stomp a wait view rendered mid-chain.
+  const SUSPENSE_GATE_TYPES = new Set(["player_died", "you_died", "joker_win_overlay", "hunter_revenge_pending", "hunter_revenge_targets"]);
+  const TRANSITION_GATE_TYPES = new Set(["sound_cue", ...HOLD_GATE_PROMPTS]);
+  const NARRATION_GATE_TYPES = new Set(HOLD_GATE_PROMPTS);
+  // Test handle: tests pin the exact membership of the derived gate lists.
+  // Not read by any app code.
+  window.__holdGateLists = Object.freeze({
+    suspense: Object.freeze([...SUSPENSE_GATE_TYPES]),
+    transition: Object.freeze([...TRANSITION_GATE_TYPES]),
+    narration: Object.freeze([...NARRATION_GATE_TYPES]),
+  });
+
   function handleServerMessage(msg) {
-    // During suspense, queue certain messages
-    if (suspenseActive && (msg.type === "player_died" || msg.type === "you_died" || msg.type === "joker_win_overlay")) {
+    // During suspense, queue the death beats
+    if (suspenseActive && SUSPENSE_GATE_TYPES.has(msg.type)) {
       suspenseQueue.push(msg);
       return;
     }
@@ -174,12 +265,12 @@
       return;
     }
     // During night/execution transition, queue sound_cues and night action prompts
-    if ((nightTransitionActive || executionTransitionActive) && (msg.type === "sound_cue" || msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
+    if ((nightTransitionActive || executionTransitionActive) && TRANSITION_GATE_TYPES.has(msg.type)) {
       nightTransitionQueue.push(msg);
       return;
     }
     // During night narration (sounds playing after overlay), hold night prompts until narration finishes
-    if (nightNarrationActive && (msg.type === "mafia_targets" || msg.type === "doctor_targets" || msg.type === "detective_targets" || msg.type === "joker_haunt_targets" || msg.type === "spectator_joker_deliberating" || msg.type === "spectator_joker_resolved")) {
+    if (nightNarrationActive && NARRATION_GATE_TYPES.has(msg.type)) {
       nightNarrationQueue.push(msg);
       return;
     }
@@ -264,7 +355,7 @@
         narratorTranscript = [];
         detectiveHistory = [];
         nightActionLocked = false;
-        jokerHauntActive = false;
+        deadActionActive = false;
         mafiaConfirmTarget = null;
         myMafiaVotes = [];
         mafiaObjectedTargets = {};
@@ -276,18 +367,25 @@
         jokerJointWinner = false;
         previousPhase = null;
         pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
+        // Fresh game: re-roll the "random" narrator and re-preload so this
+        // game's cues all use the newly chosen voice (no-op for a real accent).
+        if (currentAccent === "random") {
+          resolvedAccent = null;
+          preloadNarrationAudio();
+        }
         stopDayTimer();
         showScreen("game");
         updateRoleCard();
         // Card starts face-down
         resetCardPeel();
         $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_ART);
-        $("peel-hint").classList.remove("hidden");
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
         $("event-history-list").innerHTML = "";
         $("dead-overlay").classList.add("hidden");
+        $("joker-win-overlay").classList.add("hidden"); // D6: own element now
         $("dead-dismiss-hint").classList.add("hidden");
+        $("revenge-wait").classList.add("hidden"); // C5b: restart while gated
         // Show players tab from game start
         resetEventHistoryTabs("players");
         $("event-history").classList.remove("hidden");
@@ -328,8 +426,31 @@
         break;
 
       case "joker_haunt_targets":
-        jokerHauntActive = true;
+        deadActionActive = true;
         showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
+        break;
+
+      case "hunter_revenge_pending":
+        // C5b: the room-wide wait view — the public Hunter reveal plus a
+        // "waiting" status for everyone (panels are otherwise idle because
+        // the phase transition is deferred while the gate is open). On the
+        // hunter's own client this arrives just before hunter_revenge_targets,
+        // whose case below replaces the wait view with the prompt.
+        showRevengeWait(msg.hunterName);
+        break;
+
+      case "hunter_revenge_targets":
+        // The hunter is dead by definition here — the flag must be set
+        // before showNightAction's dead-guard runs (joker-haunt machinery).
+        deadActionActive = true;
+        // The hunter's own you_died overlay must not sit on top of the
+        // revenge prompt (same idea as the jokerWonOverlayShown skip below).
+        $("dead-overlay").classList.add("hidden");
+        $("dead-dismiss-hint").classList.add("hidden");
+        // The room-wide wait view (hunter_revenge_pending arrived just
+        // before this) gives way to the hunter's own prompt (C5b).
+        $("revenge-wait").classList.add("hidden");
+        showNightAction("Take your revenge", msg.players, "hunter_revenge");
         break;
 
       case "joker_win_overlay":
@@ -367,27 +488,27 @@
         break;
 
       case "spectator_mafia_update":
-        if (isDead && !jokerHauntActive) showSpectatorMafiaPanel(msg);
+        if (isDead && !deadActionActive) showSpectatorMafiaPanel(msg);
         break;
 
       case "spectator_kill_confirmed":
-        if (isDead && !jokerHauntActive) showSpectatorKillResult(msg);
+        if (isDead && !deadActionActive) showSpectatorKillResult(msg);
         break;
 
       case "spectator_night_phase":
-        if (isDead && !jokerHauntActive) showSpectatorNightPhase(msg);
+        if (isDead && !deadActionActive) showSpectatorNightPhase(msg);
         break;
 
       case "spectator_night_complete":
-        if (isDead && !jokerHauntActive) appendSpectatorLog(msg);
+        if (isDead && !deadActionActive) appendSpectatorLog(msg);
         break;
 
       case "spectator_joker_deliberating":
-        if (isDead && !jokerHauntActive) showJokerDeliberating();
+        if (isDead && !deadActionActive) showJokerDeliberating();
         break;
 
       case "spectator_joker_resolved":
-        if (isDead && !jokerHauntActive) showJokerResolved(msg.targetName);
+        if (isDead && !deadActionActive) showJokerResolved(msg.targetName);
         break;
 
       case "detective_result":
@@ -417,7 +538,8 @@
         // If joker win overlay is already showing, skip the death overlay
         if (!jokerWonOverlayShown) {
           $("dead-overlay").classList.remove("hidden");
-          $("dead-emoji").textContent = msg.isLoverDeath ? "\u{1F494}" : "\u{1F480}";
+          // D3b: pixel art skull or heartbreak art instead of emoji
+          $("dead-emoji").innerHTML = pixelArtToSvg(msg.isLoverDeath ? HEARTBREAK_ART : CARD_BACK_DEAD_ART);
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
@@ -432,6 +554,7 @@
         gameCode = null;
         isAdmin = false;
         pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
+        $("revenge-wait").classList.add("hidden"); // C5b: return-to-lobby while gated
         $("narrator-messages").innerHTML = "";
         $("role-reveal").innerHTML = "";
         $("event-history-list").innerHTML = "";
@@ -446,6 +569,11 @@
         myPlayerColor = msg.player_color;
         $("toggle-hide-mafia-tag").checked = hideMafiaTag;
         updatePlayerStatus();
+        break;
+
+      default:
+        // D9: unknown message type — surface frames the client silently ignores
+        console.warn("[mafia] unknown server message type:", msg.type, msg);
         break;
     }
   }
@@ -479,16 +607,18 @@
     }
 
     // 5. Restore accumulated state
+    if (msg.narratorGender) setGender(msg.narratorGender);
     if (msg.narrationAccent) {
-      currentAccent = msg.narrationAccent;
-      preloadNarrationAudio(currentAccent);
+      setAccent(msg.narrationAccent);
+      renderGenderToggle();
+      preloadNarrationAudio();
     }
     dayVoteCount = msg.dayVoteCount;
     narratorTranscript = msg.narratorHistory;
     detectiveHistory = msg.detectiveHistory || [];
     hasVoted = false;
     nightActionLocked = false;
-    jokerHauntActive = false;
+    deadActionActive = false;
     mafiaConfirmTarget = null;
     myMafiaVotes = [];
     mafiaObjectedTargets = {};
@@ -518,19 +648,34 @@
 
     // 8. Show game screen with role card (face-down by default, like fresh start)
     showScreen("game");
+    // D2: rejoin must restore phase ambience — handleGameSync does NOT route
+    // through applyPhaseChange, so set data-phase here (showScreen cleared it).
+    document.body.setAttribute("data-phase", msg.phase);
+    // Re-sync the pinned base + chrome for the rejoined phase ambience.
+    applyEffectiveTheme();
     updateRoleCard();
     resetCardPeel();
     $("card-back-art").innerHTML = pixelArtToSvg(isDead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
     $("dead-dismiss-hint").classList.add("hidden");
     $("round-number").textContent = msg.round;
 
-    // Phase indicator
+    // Phase indicator (D3b: pixel moon/sun art)
     const indicator = $("phase-indicator");
     indicator.className = `phase-indicator ${msg.phase}`;
-    indicator.textContent = msg.phase.toUpperCase();
+    if (msg.phase === "night") {
+      indicator.innerHTML = pixelArtToSvg(MOON_ART) + " " + msg.phase.toUpperCase();
+    } else if (msg.phase === "day" || msg.phase === "voting") {
+      indicator.innerHTML = pixelArtToSvg(SUN_ART) + " " + msg.phase.toUpperCase();
+    } else {
+      indicator.textContent = msg.phase.toUpperCase();
+    }
 
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
+    $("btn-decline-revenge").classList.add("hidden");
+    // C5b: gate-closed baseline (E10d — rejoin after resolution must leave
+    // no stale wait view); the pendingRevenge branch below re-shows it.
+    $("revenge-wait").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -594,7 +739,7 @@
         }
         if (na.jokerHauntPending) {
           // Dead joker with active haunt — show haunt view, not spectator view
-          jokerHauntActive = true;
+          deadActionActive = true;
           if (na.locked && na.targetName) {
             // Already chose — show confirmed state
             const panel = $("night-actions");
@@ -673,6 +818,17 @@
         totalVotes: vs.totalVotes,
         total: vs.total,
       });
+    }
+
+    // C5b: revenge-gate restore. pendingRevenge is the ONLY gate signal —
+    // never inferred from phase/subPhase (the gated game looks like an idle
+    // night or a cleared vote). Non-hunter: render the wait view (+ the skip
+    // control if admin). Hunter (isYou): render nothing here — the server
+    // re-sends hunter_revenge_targets right after game_sync and that case
+    // takes over (the jokerHauntPending treatment: the target list never
+    // rides game_sync).
+    if (msg.pendingRevenge && !msg.pendingRevenge.isYou) {
+      showRevengeWait(msg.pendingRevenge.hunterName);
     }
 
     // Show event history (always visible during game)
@@ -787,7 +943,7 @@
     }
   });
 
-  ["doctor", "detective", "joker", "lovers"].forEach((role) => {
+  ["doctor", "detective", "joker", "hunter", "lovers"].forEach((role) => {
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
@@ -825,9 +981,14 @@
     official: "Game continues \u2014 Joker can haunt a voter",
   });
 
-  $("lobby-accent").addEventListener("change", (e) => {
-    wsSend({ type: "update_settings", settings: { narrationAccent: e.target.value } });
-  });
+  // Narrator-voice picker (custom expandable control; replaces the native
+  // <select> whose long "label — description" options bled out of the panel).
+  // The arrows cycle accents and fire the SAME update_settings wire call the
+  // select fired; the server echo (updateSettingsUI) stays the only state writer.
+  setupAccentPicker();
+  // Male/Female narrator-gender toggle (host screen). Fires update_settings on
+  // click; greyed/inert while the accent is "random" (gender is randomized).
+  setupGenderToggle();
 
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
@@ -863,12 +1024,16 @@
     $("toggle-doctor").checked = settings.enableDoctor;
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
+    $("toggle-hunter").checked = settings.enableHunter;
     $("toggle-lovers").checked = settings.enableLovers;
+    if (settings.narratorGender) setGender(settings.narratorGender);
     if (settings.narrationAccent) {
-      currentAccent = settings.narrationAccent;
-      const sel = $("lobby-accent");
-      if (sel) sel.value = currentAccent;
-      preloadNarrationAudio(currentAccent);
+      setAccent(settings.narrationAccent);
+      renderAccentPicker();
+      renderGenderToggle();
+      preloadNarrationAudio();
+    } else {
+      renderGenderToggle();
     }
     // Show/hide and sync mode sub-rows
     $("doctor-mode-row").classList.toggle("hidden", !settings.enableDoctor);
@@ -956,6 +1121,7 @@
     if (settings.enableDoctor) roles.push(`Doctor (${settings.doctorMode === "official" ? "Official" : "House"})`);
     if (settings.enableDetective) roles.push("Detective");
     if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
+    if (settings.enableHunter) roles.push("Hunter");
     if (settings.enableLovers) roles.push("Lovers");
 
     container.innerHTML = `
@@ -1014,12 +1180,11 @@
     const back = card.querySelector(".card-back");
     back.classList.remove("dragging");
     back.style.clipPath = "";
+    back.style.opacity = "";
     const flap = card.querySelector(".peel-flap");
     flap.classList.remove("dragging");
-    flap.style.left = "";
-    flap.style.top = "";
-    flap.style.right = "";
-    flap.style.bottom = "";
+    flap.style.clipPath = "";
+    flap.style.opacity = "";
   }
 
   // ============================================================
@@ -1040,29 +1205,109 @@
       return dx >= 0 && dx <= GRAB_ZONE && dy >= 0 && dy <= GRAB_ZONE;
     }
 
+    // Reflect point C across the line through two endpoints E1,E2 (percent space).
+    // Used to place the lifted corner P = mirror of C=(100,100) across the crease.
+    // Returns [px,py]; degenerate (E1≈E2) returns C unchanged.
+    function reflectAcrossLine(cx, cy, x1, y1, x2, y2) {
+      const ex = x2 - x1, ey = y2 - y1;
+      const denom = ex * ex + ey * ey;
+      if (denom < 1e-9) return [cx, cy];
+      const a = ex * ex - ey * ey;
+      const b = 2 * ex * ey;
+      const rx = cx - x1, ry = cy - y1;
+      return [
+        x1 + (a * rx + b * ry) / denom,
+        y1 + (b * rx - a * ry) / denom,
+      ];
+    }
+
     function setPeel(clientX, clientY) {
       if (!cardRect) return;
+      // Raw drag distance from the bottom-right corner (0..1 of card extent).
+      // These are the SAME tracked quantities as before — only the RENDERING below
+      // changes (translating-crease fold instead of D7's corner-pivot fold). No
+      // gesture threshold reads these; release always snaps shut.
       const px = Math.max(0, Math.min(1, (cardRect.right - clientX) / cardRect.width));
       const py = Math.max(0, Math.min(1, (cardRect.bottom - clientY) / cardRect.height));
-      const cx = (1 - px) * 100;
-      const cy = (1 - py) * 100;
-      back.style.clipPath = `polygon(0% 0%, 100% 0%, 100% ${cy}%, ${cx}% ${cy}%, ${cx}% 100%, 0% 100%)`;
-      // Move peel-flap to follow the fold point
       flap.classList.add("dragging");
-      flap.style.right = "auto";
-      flap.style.bottom = "auto";
-      flap.style.left = `${cx}%`;
-      flap.style.top = `${cy}%`;
+      // D7.5: ONE normalized progress t∈[0,1] drives the whole fold (pure function
+      // of t → the close is just the reverse sweep). The diagonal pull is the single
+      // clean driver (mixed-axis folds go ragged); reuse D7's pow(.85) resistance
+      // curve, now reaching 1. pull along the diagonal: hypot(px,py)/SQRT2.
+      const pull = Math.min(1, Math.hypot(px, py) / Math.SQRT2);
+      const t = Math.pow(pull, 0.85);
+      // t=0 guard: no fold — full-rect back + degenerate flap (matches D7's no-fold).
+      // Clear any crossfade opacity left by a prior t>CAP frame: dragging back to the
+      // corner without releasing must restore the OPAQUE full-rect back, else the
+      // secret leaks through a transparent-but-full cover. (Mirrors the t<=CAP reset.)
+      if (t < 0.005) {
+        back.style.clipPath = "polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)";
+        flap.style.clipPath = "polygon(100% 100%, 100% 100%, 100% 100%)";
+        back.style.opacity = "";
+        flap.style.opacity = "";
+        return;
+      }
+      // TRANSLATING CREASE (docs/research/peel-full-card.md). s=t*2; s=1 is the old
+      // anti-diagonal / 50% line. Crease endpoints walk the edges; P = reflection of
+      // dragged corner C=(100,100) across the crease line through the two endpoints.
+      const s = t * 2;
+      // Crease endpoints: Bx,By on the lower/left walk, Rx,Ry on the right/top walk.
+      let bx, by, rx, ry;
+      if (s <= 1) {
+        // Phase A: endpoints on the bottom (Bx:100→0) & right (Ry:100→0) edges
+        // — reproduces D7's corner peek through t=0.5.
+        bx = 100 - 100 * s; by = 100;
+        rx = 100;           ry = 100 - 100 * s;
+      } else {
+        // Phase B: crease passed the anti-diagonal; endpoints climb the left
+        // (By:100→0) & top (Rx:100→0) edges so the fold sweeps to the top-left
+        // corner = 100% revealed.
+        const u = s - 1; // 0..1
+        bx = 0;             by = 100 - 100 * u;
+        rx = 100 - 100 * u; ry = 0;
+      }
+      const P = reflectAcrossLine(100, 100, bx, by, rx, ry);
+      const pxp = P[0], pyp = P[1];
+      // FALLBACK (brief): near the far corner the geometric flap can read ragged /
+      // invert. Cap the geometric peel at t≈0.9 and finish the last ~10% with an
+      // opacity cross-fade of the card-back ("card lays open") — cheap, zero
+      // geometry risk. Below the cap the flap is fully opaque (D7 behavior).
+      const CAP = 0.9;
+      if (t > CAP) {
+        const k = (t - CAP) / (1 - CAP); // 0..1 across the final 10%
+        back.style.opacity = String(1 - k);
+        flap.style.opacity = String(1 - k);
+      } else {
+        back.style.opacity = "";
+        flap.style.opacity = "";
+      }
+      // Visible card-back = card minus the swept corner region.
+      // Flap = folded triangle (crease endpoints + reflected corner P).
+      if (s <= 1) {
+        back.style.clipPath =
+          `polygon(0% 0%, 100% 0%, 100% ${ry}%, ${bx}% 100%, 0% 100%)`;
+        flap.style.clipPath =
+          `polygon(${bx}% 100%, 100% ${ry}%, ${pxp}% ${pyp}%)`;
+      } else {
+        // At exactly t=1 (s=2) both crease endpoints collapse to (0,0), so
+        // reflectAcrossLine hits its degenerate guard and P snaps back to
+        // (100,100) — the flap polygon degenerates to a sliver. Intentional and
+        // harmless: t>CAP has already crossfaded flap.style.opacity to 0, so the
+        // degenerate flap is invisible (the card-back's full reveal is what shows).
+        back.style.clipPath =
+          `polygon(0% 0%, ${rx}% 0%, 0% ${by}%)`;
+        flap.style.clipPath =
+          `polygon(0% ${by}%, ${rx}% 0%, ${pxp}% ${pyp}%)`;
+      }
     }
 
     function resetPeel() {
       back.classList.remove("dragging");
       back.style.clipPath = "";
+      back.style.opacity = "";
       flap.classList.remove("dragging");
-      flap.style.left = "";
-      flap.style.top = "";
-      flap.style.right = "";
-      flap.style.bottom = "";
+      flap.style.clipPath = "";
+      flap.style.opacity = "";
       dragging = false;
       cardRect = null;
     }
@@ -1074,7 +1319,6 @@
       e.preventDefault();
       dragging = true;
       back.classList.add("dragging");
-      $("peel-hint").classList.add("hidden");
       setPeel(touch.clientX, touch.clientY);
     }
 
@@ -1121,10 +1365,11 @@
     // Set role-specific icon and label
     const iconArt = role === "mafia" ? KNIFE_ART
       : role === "doctor" ? CROSS_ART
-      : role === "joker_haunt" ? CLOWN_ART : MAGNIFIER_ART;
+      : role === "joker_haunt" ? CLOWN_ART
+      : role === "hunter_revenge" ? BOW_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt" };
+    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt", hunter_revenge: "slide to avenge" };
     label.textContent = labels[role] || "slide to confirm";
 
     slideCallback = callback;
@@ -1137,6 +1382,16 @@
     slideCallback = null;
   }
 
+  // Test handle: happy-dom can't drive the pointer drag (zero-size layout
+  // rects), so client tests fire the armed confirm directly, mirroring the
+  // threshold branch of onEnd below. Not read by any app code.
+  window.__testFireSlideConfirm = () => {
+    if (!slideCallback) return;
+    const cb = slideCallback;
+    slideCallback = null;
+    cb();
+  };
+
   // Slide drag handlers
   (function () {
     const container = $("slide-confirm");
@@ -1146,6 +1401,12 @@
     let dragging = false;
     let startX = 0;
     let trackWidth = 0;
+    // iconWidth (handle size) and padding (resting inset) are MEASURED at
+    // drag-start from the live layout instead of hardcoded 48/4 — the D1c
+    // reskin changes the handle's box, and measuring keeps the drag
+    // thresholds locked to whatever the rendered geometry actually is. The
+    // handle is laid out (not display:none) whenever onStart can fire, so the
+    // reads are valid; see the getBoundingClientRect hit-test below.
     let iconWidth = 48;
     let padding = 4;
 
@@ -1160,6 +1421,12 @@
       if (dx < 0 || dx > iconRect.width || dy < 0 || dy > iconRect.height) return;
       e.preventDefault();
       dragging = true;
+      // Measure the live handle geometry while it is at rest (left:4px from
+      // setup/snap-back) — offsetWidth is the rendered handle box; the resting
+      // computed `left` is the symmetric track inset the math clamps against.
+      iconWidth = icon.offsetWidth || iconWidth;
+      const restingLeft = parseFloat(getComputedStyle(icon).left);
+      if (!Number.isNaN(restingLeft)) padding = restingLeft;
       startX = touch.clientX - icon.offsetLeft;
       const trackEl = container.querySelector(".slide-track");
       trackWidth = trackEl.offsetWidth;
@@ -1203,8 +1470,9 @@
         cb();
         setTimeout(() => hideSlideConfirm(), 400);
       } else {
-        // Snap back
-        icon.style.left = "4px";
+        // Snap back to the measured resting inset (matches the CSS left:4px,
+        // but stays locked to whatever the reskin's inset actually is).
+        icon.style.left = padding + "px";
         fill.style.width = "0";
         fill.classList.remove("dripping");
       }
@@ -1393,9 +1661,24 @@
     currentPhase = msg.phase;
     $("round-number").textContent = msg.round;
 
+    // D2: phase-ambient theming — remap CSS tokens via a body attribute so the
+    // whole room shifts together (night→navy, day→warm, voting→blood accents).
+    // Cleared centrally in showScreen() on every return-to-lobby/menu path.
+    document.body.setAttribute("data-phase", msg.phase);
+    // Re-sync the pinned base + chrome (data-phase drives the CSS ambience remap).
+    applyEffectiveTheme();
+
     const indicator = $("phase-indicator");
     indicator.className = `phase-indicator ${msg.phase}`;
-    indicator.textContent = msg.phase === "game_over" ? "GAME OVER" : msg.phase.toUpperCase();
+    // D3b: phase pill gets pixel moon/sun art alongside text
+    var phaseLabel = msg.phase === "game_over" ? "GAME OVER" : msg.phase.toUpperCase();
+    if (msg.phase === "night") {
+      indicator.innerHTML = pixelArtToSvg(MOON_ART) + " " + phaseLabel;
+    } else if (msg.phase === "day" || msg.phase === "voting") {
+      indicator.innerHTML = pixelArtToSvg(SUN_ART) + " " + phaseLabel;
+    } else {
+      indicator.textContent = phaseLabel;
+    }
 
     // Clear visible narrator for new phase (transcript preserves history)
     $("narrator-messages").innerHTML = "";
@@ -1416,6 +1699,10 @@
 
     // Hide all action panels
     $("night-actions").classList.add("hidden");
+    $("btn-decline-revenge").classList.add("hidden");
+    // C5b: the deferred phase_change IS the revenge-resolution signal — the
+    // room-wide wait view (and its admin skip control) comes down with it.
+    $("revenge-wait").classList.add("hidden");
     $("mafia-vote-status").classList.add("hidden");
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
@@ -1439,7 +1726,7 @@
       hasVoted = false;
       dayVoteCount = 0;
       nightActionLocked = false;
-      jokerHauntActive = false;
+      deadActionActive = false;
       clearDetectiveResult();
       $("mafia-vote-details").innerHTML = "";
       // Reset spectator night log and joker status for new night
@@ -1466,6 +1753,35 @@
   }
 
   // ============================================================
+  // SUSPENSE STAGE COMPOSITION (D5)
+  // ------------------------------------------------------------
+  // The five beat writers paint a staged composition into the suspense overlay
+  // (pre-line + pixel art + text) WITHOUT touching the timing/queue plumbing.
+  // setSuspenseStage only changes WHAT is painted; the writers own WHEN.
+  // art:  a 10x10 pixel grid (rendered via the existing pipeline) or null/"" to
+  //       clear the centerpiece. preText: amber Silkscreen pre-line, or "" to
+  //       clear it. beatClass: a single beat-tint class on the overlay (e.g.
+  //       "beat-death") or "" for none. All beat classes are reset first so no
+  //       beat inherits the previous beat's tint.
+  const SUSPENSE_BEAT_CLASSES = ["beat-night", "beat-dawn", "beat-death", "beat-execution", "beat-heartbreak", "beat-gameover", "beat-win-town", "beat-win-mafia", "beat-win-joker"];
+  function setSuspenseStage(art, preText, beatClass) {
+    const overlay = $("suspense-overlay");
+    const artEl = $("suspense-art");
+    const preEl = $("suspense-pre");
+    overlay.classList.remove(...SUSPENSE_BEAT_CLASSES);
+    if (beatClass) overlay.classList.add(beatClass);
+    // art grids are static (pixelArtToSvg over registry grids) — no user input
+    artEl.innerHTML = art ? pixelArtToSvg(art) : "";
+    // pre-line is fixed copy set by the writers (never a relayed username) —
+    // textContent keeps it XSS-inert regardless.
+    preEl.textContent = preText || "";
+  }
+  // Clear the stage when the overlay hides so the next beat starts blank.
+  function clearSuspenseStage() {
+    setSuspenseStage("", "", "");
+  }
+
+  // ============================================================
   // EXECUTION TRANSITION (vote result → night)
   // ============================================================
   function showExecutionTransition(voteResult, callback) {
@@ -1480,6 +1796,15 @@
       : "The vote was abstained.";
     const color = voteResult.executed ? "#d32f2f" : "#8e8e93";
 
+    // D5: staged composition — execution beat = skull + blood tint when a player
+    // hangs; abstain is a neutral verdict (no skull). Composition only; the text
+    // node and its timing are untouched.
+    if (voteResult.executed) {
+      setSuspenseStage(CARD_BACK_DEAD_ART, "THE VERDICT", "beat-execution");
+    } else {
+      setSuspenseStage("", "THE VERDICT", "");
+    }
+
     text.textContent = msg;
     text.style.color = color;
     text.style.animation = "none";
@@ -1492,6 +1817,7 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        clearSuspenseStage();
         executionTransitionActive = false;
         // no flushPendingGameOver here — all call sites chain into heartbreak/night, whose terminals flush
         callback();
@@ -1505,7 +1831,10 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
-    text.textContent = `\u{1F494} ${loverName} died of heartbreak.`;
+    // D5: heartbreak art migrated from the text node into the dedicated art slot.
+    // The text node now carries only the (XSS-safe via textContent) sentence.
+    setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
+    text.textContent = loverName + " died of heartbreak.";
     text.style.color = "#9c27b0";
     text.style.animation = "none";
     void text.offsetWidth;
@@ -1517,6 +1846,7 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        clearSuspenseStage();
         heartbreakTransitionActive = false;
         callback();
         flushPendingGameOver();
@@ -1555,6 +1885,8 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
+    // D5: nightfall = moon centerpiece, navy wash (beat-night tint).
+    setSuspenseStage(MOON_ART, "NIGHTFALL", "beat-night");
     text.textContent = pair[0];
     text.style.color = "";
     text.style.animation = "none";
@@ -1575,6 +1907,7 @@
         overlay.classList.add("hidden");
         overlay.classList.remove("fade-out");
         text.style.color = "";
+        clearSuspenseStage();
         nightTransitionActive = false;
         callback();
         // Replay queued night action prompts after applyPhaseChange
@@ -1600,10 +1933,14 @@
     const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
     const killEvent = roundEvents.find((e) => e.type === "kill");
     const victimName = killEvent ? killEvent.playerName : "Someone";
-    if (hasSave && hasKill) return { text: `\u{1F6E1}\uFE0F A life was saved... but ${victimName} didn't make it.`, color: "#2196f3" };
-    if (hasSave) return { text: "\u{1F6E1}\uFE0F The Doctor saved a life!", color: "#2196f3" };
-    if (hasKill) return { text: `\u{1F480} ${victimName} didn't survive the night.`, color: "#d32f2f" };
-    return { text: "\u{1F319} A peaceful night... somehow.", color: "#8e8e93" };
+    // D5: verdict returns an art GRID + plain text + tint, painted into the
+    // dedicated stage slots (the writer uses .textContent, so the relayed
+    // username never reaches innerHTML \u2014 strictly safer than the prior
+    // escapeHtml-into-innerHTML path).
+    if (hasSave && hasKill) return { art: CROSS_ART, text: `A life was saved... but ${victimName} didn\u2019t make it.`, color: "#2196f3", beatClass: "beat-dawn" };
+    if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "#2196f3", beatClass: "beat-dawn" };
+    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: `${victimName} didn\u2019t survive the night.`, color: "#d32f2f", beatClass: "beat-death" };
+    return { art: SUN_ART, text: "A peaceful night... somehow.", color: "#8e8e93", beatClass: "beat-dawn" };
   }
 
   function showSuspenseTransition(msg, callback) {
@@ -1615,6 +1952,9 @@
     const extraDelay = hasLoverDeath ? 2800 : 0;
 
     overlay.classList.remove("hidden", "fade-out");
+    // D5: dawn opens on the sun centerpiece; the verdict beat re-stages art per
+    // outcome (skull on a kill, cross on a save, sun on a peaceful night).
+    setSuspenseStage(SUN_ART, "DAWN", "beat-dawn");
     text.textContent = "The sun rises...";
     text.style.color = "";
     text.style.animation = "none";
@@ -1631,6 +1971,8 @@
 
     setTimeout(() => {
       const verdict = getNightVerdict(msg);
+      // D5: verdict carries an art grid + plain text + tint for the stage.
+      setSuspenseStage(verdict.art, "THE VERDICT", verdict.beatClass);
       text.textContent = verdict.text;
       text.style.color = verdict.color;
       text.style.animation = "none";
@@ -1640,7 +1982,10 @@
 
     if (hasLoverDeath) {
       setTimeout(() => {
-        text.textContent = `\u{1F494} ${msg.loverDeathName} died of heartbreak.`;
+        // D5: heartbreak art into the stage slot; text node carries the sentence
+        // (textContent — relayed name stays XSS-inert).
+        setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
+        text.textContent = msg.loverDeathName + " died of heartbreak.";
         text.style.color = "#9c27b0";
         text.style.animation = "none";
         void text.offsetWidth;
@@ -1656,6 +2001,7 @@
       overlay.classList.add("hidden");
       overlay.classList.remove("fade-out");
       text.style.color = "";
+      clearSuspenseStage();
       suspenseActive = false;
 
       // Apply the phase change
@@ -1672,12 +2018,20 @@
 
   function showDetectiveResult(msg) {
     const el = $("detective-result");
-    const text = msg.isMafia
-      ? `\u{1F50D} Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
-      : `\u{1F50D} Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
-    el.textContent = text;
+    // D3b: pixel magnifier icon instead of emoji
+    const magSvg = pixelArtToSvg(MAGNIFIER_ART);
+    const plainText = msg.isMafia
+      ? `Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
+      : `Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
+    // Escape server-relayed username before interpolating into innerHTML; transcript keeps the
+    // un-prefixed plain text (re-escaped at render via escapeHtml in the transcript view).
+    const safeName = escapeHtml(msg.targetName);
+    const htmlText = msg.isMafia
+      ? `Your investigation reveals: ${safeName} IS a member of the Mafia!`
+      : `Your investigation reveals: ${safeName} is NOT a member of the Mafia.`;
+    el.innerHTML = magSvg + " " + htmlText;
     el.classList.remove("hidden");
-    narratorTranscript.push(text);
+    narratorTranscript.push(plainText);
     detectiveHistory.push({
       round: parseInt($("round-number").textContent) || 1,
       targetName: msg.targetName,
@@ -1718,6 +2072,7 @@
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
       joker_haunt: "Haunted by the Joker",
+      hunter_revenge: "Shot by the Hunter",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -1789,7 +2144,7 @@
           <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
           ${showMafiaTag ? '<span class="mafia-tag">MAFIA</span>' : ''}
-          ${investigated ? (isMafia ? '<span class="detective-tag mafia">\u{1F44E}</span>' : '<span class="detective-tag clear">\u{1F44D}</span>') : ''}
+          ${investigated ? (isMafia ? '<span class="detective-tag mafia">' + pixelArtToSvg(THUMB_DOWN_ART) + '</span>' : '<span class="detective-tag clear">' + pixelArtToSvg(THUMB_UP_ART) + '</span>') : ''}
         </div>`;
       })
       .join("");
@@ -1818,7 +2173,13 @@
   // NIGHT ACTIONS
   // ============================================================
   let nightActionLocked = false; // true after doctor/detective confirm
-  let jokerHauntActive = false; // true while dead joker is choosing haunt target
+  // True while a dead player's own action is in progress (the joker haunt
+  // and the hunter revenge set it; any future dead-player action sets the
+  // same flag).
+  // Suppresses the spectator views and exempts showNightAction's dead-guard.
+  // Reset sites: the game_started case, the game_sync reset (handleGameSync),
+  // and applyPhaseChange's night branch.
+  let deadActionActive = false;
   let mafiaTargetPlayers = []; // the target list for re-rendering icons
   // M11: target of an in-flight maybe+lock pair. The pair is sent back-to-back
   // (the WS stream is ordered, so nothing can interleave) and further taps are
@@ -1835,8 +2196,9 @@
   }
 
   function showNightAction(title, players, actionType, disabledId) {
-    // Allow joker_haunt even when dead (joker haunts from beyond the grave)
-    if (isDead && actionType !== "joker_haunt") return;
+    // A dead player may only act while their own dead action is active
+    // (deadActionActive — joker haunting or hunter revenge from beyond the grave)
+    if (isDead && !deadActionActive) return;
 
     const panel = $("night-actions");
     panel.classList.remove("hidden");
@@ -1845,6 +2207,10 @@
     nightActionLocked = false;
 
     hideSlideConfirm();
+
+    // Decline affordance is exclusive to the hunter's revenge prompt
+    // (slide-confirm is reserved for the kill; declining is a plain button).
+    $("btn-decline-revenge").classList.toggle("hidden", actionType !== "hunter_revenge");
 
     const list = $("action-targets");
 
@@ -1869,10 +2235,10 @@
         })
         .join("");
 
-      // Doctor/Detective/Joker haunt: clicking selects visually, slide-to-confirm sends to server
+      // Doctor/Detective/Joker haunt/Hunter revenge: clicking selects visually, slide-to-confirm sends to server
       let selectedTargetId = null;
       let selectedName = null;
-      const slideRole = actionType === "joker_haunt" ? "joker_haunt" : myRole;
+      const slideRole = (actionType === "joker_haunt" || actionType === "hunter_revenge") ? actionType : myRole;
       list.querySelectorAll("li:not(.disabled)").forEach((li) => {
         li.addEventListener("click", () => {
           if (nightActionLocked) return;
@@ -1883,15 +2249,55 @@
           setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
-            // Keep jokerHauntActive true for the entire night (reset on phase change to day)
+            // Keep deadActionActive true for the entire night (reset when the next night begins)
             wsSend({ type: actionType, targetId: selectedTargetId });
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
+            // Action resolved: the hunter's decline affordance goes with it
+            // (no-op for every other action type; the button is already hidden)
+            $("btn-decline-revenge").classList.add("hidden");
           });
         });
       });
     }
   }
+
+  // C5b: the room-wide wait view while the revenge gate is open. The reveal
+  // is PUBLIC (HUNTER-DESIGN decision #10) — alive players, dead spectators
+  // and the admin all see who the Hunter is and wait for the shot. The admin
+  // (alive or dead — admin rights persist) additionally gets the force-skip
+  // safety net; showRevengeWait is the ONLY un-hide path, so re-toggling the
+  // button here keeps a stale skip control structurally impossible.
+  // Teardown sites (the wait view outlives no resolution): the
+  // hunter_revenge_targets case (the hunter's prompt replaces it), the
+  // game_started reset, the game_sync hide-all (re-shown by the
+  // pendingRevenge restore branch when the gate is still open),
+  // applyPhaseChange's hide-all (the deferred phase_change IS the
+  // resolution signal), handleGameOver, and room_closed.
+  function showRevengeWait(hunterName) {
+    $("revenge-wait-reveal").textContent = `${hunterName} was the Hunter!`;
+    $("btn-skip-revenge").classList.toggle("hidden", !isAdmin);
+    $("revenge-wait").classList.remove("hidden");
+  }
+
+  // Admin-only safety net for a stalled Hunter (the kitchen problem). The
+  // server resolves it as a decline; a click after the gate closed is a
+  // wire-silent no-op server-side, so no client-side locking is needed.
+  $("btn-skip-revenge").addEventListener("click", () => {
+    wsSend({ type: "force_skip_revenge" });
+  });
+
+  // C5a: declining the revenge shot is a plain button (slide-confirm is
+  // reserved for the kill). Only visible while the hunter_revenge prompt is
+  // up; null targetId is the wire shape for a decline.
+  $("btn-decline-revenge").addEventListener("click", () => {
+    if (nightActionLocked) return;
+    nightActionLocked = true;
+    wsSend({ type: "hunter_revenge", targetId: null });
+    $("btn-decline-revenge").classList.add("hidden");
+    hideSlideConfirm();
+    $("action-status").textContent = "You lower your bow.";
+  });
 
   function renderSingleMafiaTargets(list, players) {
     list.innerHTML = players
@@ -2025,7 +2431,8 @@
         } else if (cardState === "idle") {
           const nomBtn = document.createElement("button");
           nomBtn.className = "mtc-btn mtc-btn-suggest";
-          nomBtn.textContent = "\u{1F449} Nominate";
+          // D3b: pixel POINT icon + Silkscreen label — mechanics unchanged
+          nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
           nomBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (nightActionLocked) return;
@@ -2035,7 +2442,8 @@
 
           const spareBtn = document.createElement("button");
           spareBtn.className = "mtc-btn mtc-btn-object";
-          spareBtn.textContent = "\u{274C} Spare";
+          // D3b: pixel X icon + Silkscreen label
+          spareBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span><span class="mtc-label">Spare</span>';
           spareBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (nightActionLocked) return;
@@ -2060,13 +2468,15 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              lockBtn.textContent = "\u{1F512} Lock In";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
@@ -2080,13 +2490,15 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              lockBtn.textContent = "\u{1F512} Locked elsewhere";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              lockBtn.textContent = "\u{1F512} Lock In";
+              // D3b: pixel LOCK icon + Silkscreen label
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
@@ -2097,7 +2509,8 @@
           } else {
             const nomBtn = document.createElement("button");
             nomBtn.className = "mtc-btn mtc-btn-suggest";
-            nomBtn.textContent = "\u{1F449} Nominate";
+            // D3b: pixel POINT icon + Silkscreen label
+            nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
             nomBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (nightActionLocked) return;
@@ -2109,7 +2522,8 @@
           if (myVoteType !== "letsnot") {
             const objBtn = document.createElement("button");
             objBtn.className = "mtc-btn mtc-btn-object";
-            objBtn.textContent = "\u{274C}";
+            // D3b: pixel X icon (spare/object shorthand)
+            objBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span>';
             objBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (nightActionLocked) return;
@@ -2394,7 +2808,7 @@
     const list = $("admin-target-list");
     list.innerHTML = players
       .filter((p) => p.isAlive)
-      .map((p) => `<li data-id="${p.id}">${p.username}</li>`)
+      .map((p) => `<li data-id="${p.id}">${escapeHtml(p.username)}</li>`)
       .join("");
 
     list.querySelectorAll("li").forEach((li) => {
@@ -2407,20 +2821,42 @@
   }
 
   $("btn-force-dawn").addEventListener("click", () => {
-    if (confirm("Force dawn? Night actions will be skipped and no one will be killed.")) {
-      wsSend({ type: "force_dawn" });
-    }
+    showConfirmSheet(
+      "Force Dawn",
+      "Night actions will be skipped and no one will be killed.",
+      "Force Dawn",
+      () => { wsSend({ type: "force_dawn" }); },
+      { danger: true }
+    );
   });
 
   $("btn-end-day").addEventListener("click", () => {
-    if (confirm("End the day and transition to night?")) {
-      ensureAudioReady();
-      wsSend({ type: "end_day" });
-    }
+    showConfirmSheet(
+      "End Day",
+      "End the day and transition to night?",
+      "End Day",
+      () => {
+        // AUDIO GESTURE CHAIN (spec §10): ensureAudioReady() runs FIRST, here,
+        // synchronously inside the Confirm-button click handler's call stack —
+        // no await/microtask sits between the tap and this call, so iOS Safari
+        // keeps the user-gesture context that unlocks/plays night narration.
+        ensureAudioReady();
+        wsSend({ type: "end_day" });
+      }
+    );
   });
 
   function handleVoteCalled(msg, fromSync) {
     if (!fromSync) hasVoted = false;
+
+    // D2: an active execution ballot is the engine's "voting" sub-state, but the
+    // wire never broadcasts phase:"voting" (it arrives as vote_called over a
+    // day phase). Flip data-phase here so the blood tint scoped to .voting-panel
+    // lights up while the vote is live; handleVoteResult/cancel revert to the
+    // underlying phase. (game_sync rejoin mid-vote routes through here too.)
+    document.body.setAttribute("data-phase", "voting");
+    // Re-sync the pinned base + chrome; data-phase="voting" drives the CSS ambience.
+    applyEffectiveTheme();
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
@@ -2477,6 +2913,14 @@
 
   function handleVoteResult(msg) {
     $("voting-panel").classList.add("hidden");
+    // D2: ballot over — drop the voting tint back to the live phase (day). If an
+    // execution follows, the day/voting→night chain re-sets data-phase via
+    // applyPhaseChange; a spared vote stays on day, which this restores.
+    if (currentPhase) {
+      document.body.setAttribute("data-phase", currentPhase);
+      // Re-sync the pinned base + chrome for the restored phase ambience.
+      applyEffectiveTheme();
+    }
     lastVoteResult = msg;
 
     const resultText = msg.executed
@@ -2507,19 +2951,28 @@
     $("modal-transcript").classList.add("hidden");
   });
 
-  // Dead overlay click-to-dismiss (for all players)
+  // Dead overlay click-to-dismiss (for all players) — dismissing reveals the
+  // live room view (spectator panels) beneath. The "WATCH THE TOWN" button uses
+  // this same dismiss path; no new spectate flow is invented.
   $("dead-overlay").addEventListener("click", () => {
     $("dead-overlay").classList.add("hidden");
     $("dead-dismiss-hint").classList.add("hidden");
   });
 
-  // Joker win overlay (official mode — only visible to the joker, replaces death screen)
+  // Joker win overlay (D6: its own #joker-win-overlay, no longer reuses the dead
+  // overlay). Clown centerpiece + amber celebration staging. Click-to-dismiss
+  // reveals the room/gameover view beneath, same as the dead overlay.
+  $("joker-win-overlay").addEventListener("click", () => {
+    $("joker-win-overlay").classList.add("hidden");
+  });
+
   function showJokerWinOverlay(jokerName) {
-    // Show using the death overlay but with joker-specific content
-    $("dead-overlay").classList.remove("hidden");
-    $("dead-emoji").textContent = "\u{1F0CF}"; // joker card emoji
-    $("death-message").textContent = "You achieved a joint victory!";
-    $("dead-dismiss-hint").classList.remove("hidden");
+    $("joker-win-overlay").classList.remove("hidden");
+    $("joker-trophy-art").innerHTML = pixelArtToSvg(CLOWN_ART);
+    // Winner name comes from the existing payload field only.
+    $("joker-win-name").textContent = jokerName
+      ? `${jokerName} had the last laugh`
+      : "You achieved a joint victory!";
   }
 
   // Doctor save private notification (official mode)
@@ -2536,7 +2989,7 @@
   // ============================================================
   function openSettingsModal() {
     $("toggle-sound").checked = soundEnabled;
-    $("toggle-dark-mode").checked = document.documentElement.getAttribute("data-theme") !== "light";
+    updateThemeModeControl(); // D5.5b: reflect the active theme mode in the segmented control
     $("toggle-hide-mafia-tag").checked = hideMafiaTag;
     // Show room code for admin
     if (isAdmin && gameCode) {
@@ -2574,29 +3027,144 @@
     $("modal-settings").classList.add("hidden");
   }
 
+  // ============================================================
+  // D8: IN-WORLD CONFIRM SHEET (replaces native confirm())
+  // ============================================================
+  // CRITICAL audio-gesture contract (spec §10): native confirm() was
+  // SYNCHRONOUS — End Day's ensureAudioReady() ran in the SAME user gesture as
+  // the click. This sheet is async (the user taps Confirm later), so the
+  // Confirm-button click handler IS the user gesture. onConfirm() MUST be
+  // invoked SYNCHRONOUSLY from that listener — no await, no .then, no
+  // setTimeout — or iOS Safari loses the gesture context and night narration
+  // audio silently fails to unlock/play. The OK listener below is registered
+  // ONCE and calls the stored callback directly in-stack.
+  var _confirmOnConfirm = null;
+
+  function hideConfirmSheet() {
+    $("confirm-sheet").classList.add("hidden");
+    _confirmOnConfirm = null;
+  }
+
+  // showConfirmSheet(title, body, confirmLabel, onConfirm, opts?)
+  //   opts.danger=true → red Confirm button (destructive actions).
+  function showConfirmSheet(title, body, confirmLabel, onConfirm, opts) {
+    opts = opts || {};
+    $("confirm-sheet-title").textContent = title;
+    $("confirm-sheet-body").textContent = body;
+    var ok = $("confirm-sheet-ok");
+    ok.textContent = confirmLabel || "Confirm";
+    // danger styling: swap the amber primary for the blood-red danger fill.
+    ok.classList.toggle("btn-danger", !!opts.danger);
+    ok.classList.toggle("btn-primary", !opts.danger);
+    _confirmOnConfirm = onConfirm;
+    $("confirm-sheet").classList.remove("hidden");
+  }
+
+  // OK button: registered ONCE. Invokes the stored callback SYNCHRONOUSLY (real
+  // user gesture) so ensureAudioReady() inside an onConfirm keeps iOS audio
+  // unlocked. Do NOT make this async / await the callback / defer it.
+  $("confirm-sheet-ok").addEventListener("click", () => {
+    var cb = _confirmOnConfirm;
+    hideConfirmSheet();
+    if (cb) cb(); // SYNCHRONOUS — preserves the user-gesture call stack
+  });
+
+  $("confirm-sheet-cancel").addEventListener("click", hideConfirmSheet);
+
+  // Backdrop tap dismisses with no action.
+  $("confirm-sheet").addEventListener("click", (e) => {
+    if (e.target === $("confirm-sheet")) hideConfirmSheet();
+  });
+
   $("toggle-sound").addEventListener("change", (e) => {
     soundEnabled = e.target.checked;
     if (!soundEnabled) flushSoundQueue();
   });
 
   // Dark mode toggle
-  function applyTheme(dark) {
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  // D2: sync the browser-chrome <meta name="theme-color"> to the page bg so it
+  // tracks BOTH the theme AND the data-phase remap (night→navy, day→warm, etc.).
+  // Reading the computed --bg keeps one source of truth: the CSS cascade already
+  // resolves [data-theme] × [data-phase], so we just mirror the result.
+  function syncThemeColor() {
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", dark ? "#0a0a0a" : "#f0ebe1");
+    if (!meta) return;
+    const bg = getComputedStyle(document.body).getPropertyValue("--bg").trim();
+    if (bg) meta.setAttribute("content", bg);
   }
 
-  // Initialize theme from localStorage (dark by default)
-  const savedTheme = localStorage.getItem("mafia_dark_mode");
-  const darkMode = savedTheme === null ? true : savedTheme === "true";
-  $("toggle-dark-mode").checked = darkMode;
-  if (!darkMode) applyTheme(false);
+  // ============================================================
+  // TWO-WAY THEME PREFERENCE (Dark / Light) — Dark is the default.
+  // Pure client-local display pref. NEVER sends a wire message and NEVER touches
+  // game state — switching is display-only. (The old "Dynamic" phase-driven base
+  // was removed; the base is now always the pinned mode.)
+  // ----------------------------------------------------------------
+  // EFFECTIVE BASE contract: data-theme (dark|light) is ALWAYS set and is the
+  // pinned base. The §4 token remap still keys on [data-theme]×[data-phase] in
+  // CSS (e.g. the navy night takeover, gated to the dark base), so phase ambience
+  // still layers on top of whichever base the user picked.
+  // ============================================================
+  let themeMode = "dark"; // dark | light
 
-  $("toggle-dark-mode").addEventListener("change", (e) => {
-    const isDark = e.target.checked;
-    localStorage.setItem("mafia_dark_mode", String(isDark));
-    applyTheme(isDark);
-  });
+  // The effective base is simply the pinned mode (no phase logic anymore).
+  function effectiveTheme() {
+    return themeMode === "light" ? "light" : "dark";
+  }
+
+  // Apply the pinned base, set data-theme, sync chrome. Retains the optional
+  // phaseOverride arg so existing call sites stay valid (it's now ignored — the
+  // base no longer depends on the phase; data-phase still drives CSS ambience).
+  function applyEffectiveTheme() {
+    document.documentElement.setAttribute("data-theme", effectiveTheme());
+    syncThemeColor();
+  }
+
+  // Persist + apply a new mode immediately.
+  function setThemeMode(mode) {
+    themeMode = mode === "light" ? "light" : "dark";
+    localStorage.setItem("themeMode", themeMode);
+    applyEffectiveTheme();
+    updateThemeModeControl();
+  }
+
+  // Reflect the active mode in the segmented control (if present in the DOM).
+  function updateThemeModeControl() {
+    const seg = document.getElementById("theme-mode-control");
+    if (!seg) return;
+    seg.querySelectorAll("[data-mode]").forEach((b) => {
+      const on = b.getAttribute("data-mode") === themeMode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  // Initialize theme mode: only "light" is honored as an alternative; anything
+  // else (including a legacy "dynamic" pref or the old 'mafia_dark_mode' flag)
+  // falls back to the dark default.
+  (function initThemeMode() {
+    const saved = localStorage.getItem("themeMode");
+    if (saved === "light") {
+      themeMode = "light";
+    } else if (saved === "dark") {
+      themeMode = "dark";
+    } else {
+      // Legacy "dynamic" / unset / old 'mafia_dark_mode' → fall back to dark,
+      // honoring only an explicit old light preference.
+      themeMode = localStorage.getItem("mafia_dark_mode") === "false" ? "light" : "dark";
+      localStorage.setItem("themeMode", themeMode);
+    }
+    applyEffectiveTheme();
+  })();
+
+  // Wire the segmented control (3 buttons). Display-only: no wire, no game state.
+  const themeModeControl = document.getElementById("theme-mode-control");
+  if (themeModeControl) {
+    themeModeControl.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-mode]");
+      if (!btn) return;
+      setThemeMode(btn.getAttribute("data-mode"));
+    });
+  }
 
   $("toggle-hide-mafia-tag").addEventListener("change", (e) => {
     hideMafiaTag = e.target.checked;
@@ -2605,22 +3173,34 @@
   });
 
   $("btn-end-game").addEventListener("click", () => {
-    if (confirm("Are you sure you want to end the game?")) {
-      wsSend({ type: "end_game" });
-      closeSettingsModal();
-    }
+    showConfirmSheet(
+      "End Game",
+      "Are you sure you want to end the game?",
+      "End Game",
+      () => {
+        wsSend({ type: "end_game" });
+        closeSettingsModal();
+      },
+      { danger: true }
+    );
   });
 
   $("btn-settings-leave").addEventListener("click", () => {
-    if (confirm("Leave the game? You can rejoin later with the same room code.")) {
-      wsSend({ type: "leave_game" });
-      localStorage.removeItem("mafia_game_code");
-      $("event-history").classList.add("hidden");
-      gameCode = null;
-      isAdmin = false;
-      closeSettingsModal();
-      showScreen("menu");
-    }
+    showConfirmSheet(
+      "Leave Game",
+      "Leave the game? You can rejoin later with the same room code.",
+      "Leave Game",
+      () => {
+        wsSend({ type: "leave_game" });
+        localStorage.removeItem("mafia_game_code");
+        $("event-history").classList.add("hidden");
+        gameCode = null;
+        isAdmin = false;
+        closeSettingsModal();
+        showScreen("menu");
+      },
+      { danger: true }
+    );
   });
 
   // ============================================================
@@ -2629,6 +3209,8 @@
 
   function handleGameOver(msg) {
     $("dead-overlay").classList.add("hidden");
+    $("joker-win-overlay").classList.add("hidden"); // D6: own element now
+    $("revenge-wait").classList.add("hidden"); // C5b: e.g. force-end while gated
     closeSettingsModal();
 
     // Reset gameplay state but keep gameCode/isAdmin for Play Again
@@ -2656,6 +3238,17 @@
 
   function showGameOverScreen(msg, admin) {
     showScreen("gameover");
+    // D6: TROPHY_ART centerpiece, recolored per winning faction via a CSS filter
+    // class (reuses the D5 faction-tint approach — no new grids). Force-ended
+    // games have no winner → neutral trophy.
+    const trophyEl = $("gameover-trophy");
+    trophyEl.innerHTML = pixelArtToSvg(TROPHY_ART);
+    const winClass =
+      msg.forceEnded ? "win-neutral" :
+      msg.winner === "town" ? "win-town" :
+      msg.winner === "mafia" ? "win-mafia" :
+      msg.winner === "joker" ? "win-joker" : "win-neutral";
+    trophyEl.className = "gameover-trophy " + winClass;
     const titles = {
       town: "Citizens Win!",
       mafia: "Mafia Wins!",
@@ -2677,6 +3270,18 @@
     renderGameHistory();
   }
 
+  // Game-over history label map (death causes → readable text).
+  const GAME_HISTORY_LABELS = {
+    kill: "Killed by the Mafia",
+    save: "Saved by the Doctor",
+    execution: "Executed by vote",
+    lover_death: "Died of heartbreak",
+    joker_haunt: "Haunted by the Joker",
+    hunter_revenge: "Shot by the Hunter",
+  };
+  // Test handle: pins the game-over history labels. Not read by any app code.
+  window.__gameOverHistoryLabels = GAME_HISTORY_LABELS;
+
   function renderGameHistory() {
     const container = $("game-history");
     container.innerHTML = "";
@@ -2684,17 +3289,11 @@
     const events = lastGameEvents.filter((e) => e.type !== "spared");
     if (events.length === 0) return;
 
-    const LABELS = {
-      kill: "Killed by the Mafia",
-      save: "Saved by the Doctor",
-      execution: "Executed by vote",
-      lover_death: "Died of heartbreak",
-      joker_haunt: "Haunted by the Joker",
-    };
+    const LABELS = GAME_HISTORY_LABELS;
 
     // Group by round, split night vs day
-    // Night events: kill, save, lover_death following a kill
-    // Day events: execution, lover_death following an execution
+    // Night events: kill, save, lover_death/hunter_revenge following a kill
+    // Day events: execution, lover_death/hunter_revenge following an execution
     const grouped = {};
     let lastPhase = "night";
     for (const ev of events) {
@@ -2705,7 +3304,11 @@
       } else if (ev.type === "execution") {
         grouped[ev.round].day.push(ev);
         lastPhase = "day";
-      } else if (ev.type === "lover_death") {
+      } else if (ev.type === "lover_death" || ev.type === "hunter_revenge") {
+        // No phase field (DeathEventType, like joker_haunt): follow the death
+        // that triggered it via lastPhase — dawn-gate revenge rides the night
+        // kill, vote-gate revenge rides the day execution. Same precedent as
+        // lover_death.
         grouped[ev.round][lastPhase].push(ev);
       }
     }
@@ -2754,6 +3357,14 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
+    // D5: trophy centerpiece, recolored per winning faction via a beat-win-*
+    // CSS class (filter recolor — no new grids). The trophy holds from the
+    // opening line through the winner reveal.
+    const winBeat =
+      msg.winner === "town" ? "beat-win-town" :
+      msg.winner === "mafia" ? "beat-win-mafia" :
+      msg.winner === "joker" ? "beat-win-joker" : "beat-gameover";
+    setSuspenseStage(TROPHY_ART, "FINAL VERDICT", winBeat);
     text.textContent = "The game is over...";
     text.style.color = "";
     text.style.animation = "none";
@@ -2791,6 +3402,7 @@
       overlay.classList.add("hidden");
       overlay.classList.remove("fade-out");
       text.style.color = "";
+      clearSuspenseStage();
       revealRolesStaggered(msg.players, admin);
     }, 4800);
   }
@@ -2822,9 +3434,10 @@
     container.innerHTML = sorted
       .map((p) => {
         const dead = !p.isAlive;
-        const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">\u2764 ${escapeHtml(loverPairs[p.id])}</span>` : "";
+        // D3b: pixel art icons instead of emoji
+        const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
-        const trophyText = (jokerJointWinner && p.role === "joker") ? '<span class="role-reveal-trophy">\uD83C\uDFC6</span>' : "";
+        const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
         return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
           <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
@@ -2898,9 +3511,13 @@
   });
 
   $("btn-close-room").addEventListener("click", () => {
-    if (confirm("Close room? All players will be removed.")) {
-      wsSend({ type: "close_room" });
-    }
+    showConfirmSheet(
+      "Close Room",
+      "All players will be removed.",
+      "Close Room",
+      () => { wsSend({ type: "close_room" }); },
+      { danger: true }
+    );
   });
 
   // ============================================================
@@ -2959,7 +3576,7 @@
     if (ctx.state !== "running") ctx.resume();
     // Re-preload narration in case cache was lost
     if (Object.keys(narrationAudioCache).length === 0) {
-      preloadNarrationAudio(currentAccent);
+      preloadNarrationAudio();
     }
   }
 
@@ -2971,7 +3588,7 @@
     var ctx = getAudioContext();
     ctx.resume().then(function () {
       audioUnlocked = true;
-      preloadNarrationAudio(currentAccent);
+      preloadNarrationAudio();
     });
     document.removeEventListener("touchend", unlockAudio, true);
     document.removeEventListener("click", unlockAudio, true);
@@ -3134,9 +3751,49 @@
     }
   }
 
+  // Resolve the active selection to a concrete `<accent>-<gender>` audio dir key.
+  // For a real accent this is `${currentAccent}-${currentGender}`; for "random"
+  // it picks ONE random accent (of the 14 in narration.json cues) AND a random
+  // gender, caching the combined key in resolvedAccent so every cue in the game
+  // uses the same voice. The cache is cleared on accent/gender change / new game
+  // (see setAccent/setGender), so the next game re-rolls. Audio paths are ALWAYS
+  // built from this — never the literal "random" and never a bare accent.
+  function resolveAccent() {
+    if (currentAccent !== "random") return currentAccent + "-" + currentGender;
+    if (resolvedAccent) return resolvedAccent;
+    // Real accent keys come from cues (random has no cues entry).
+    const keys = narrationData ? Object.keys(narrationData.cues || {}) : [];
+    if (keys.length === 0) return null;
+    const accent = keys[Math.floor(Math.random() * keys.length)];
+    const gender = Math.random() < 0.5 ? "male" : "female";
+    resolvedAccent = accent + "-" + gender;
+    return resolvedAccent;
+  }
+
+  // Single writer for the active accent. Clears the random resolution when the
+  // selected accent key actually changes, so a new "random" selection (or a new
+  // game) re-rolls; reselecting the same key keeps the voice stable.
+  function setAccent(accent) {
+    if (accent && accent !== currentAccent) {
+      currentAccent = accent;
+      resolvedAccent = null;
+    }
+  }
+
+  // Single writer for the narrator gender. Clears the random resolution so a
+  // re-roll happens if needed; for a real accent it changes the resolved dir.
+  function setGender(gender) {
+    if ((gender === "male" || gender === "female") && gender !== currentGender) {
+      currentGender = gender;
+      resolvedAccent = null;
+    }
+  }
+
   // Fetch mp3 files and decode into AudioBuffers (bypasses HTML5 Audio entirely)
-  function preloadNarrationAudio(accent) {
+  function preloadNarrationAudio() {
     narrationAudioCache = {};
+    const accent = resolveAccent();
+    if (!accent) return; // narration.json not loaded yet — nothing to preload
     const ctx = getAudioContext();
     NARRATION_CUES.forEach((cue) => {
       fetch("/audio/" + accent + "/" + cue + ".mp3")
@@ -3165,17 +3822,120 @@
     }
   }
 
-  function populateAccentSelector() {
-    const sel = $("lobby-accent");
-    if (!sel || !narrationData) return;
-    sel.innerHTML = "";
-    for (const [key, info] of Object.entries(narrationData.accents)) {
-      const opt = document.createElement("option");
-      opt.value = key;
-      opt.textContent = info.label + " — " + info.description;
-      sel.appendChild(opt);
+  // ============================================================
+  // NARRATOR-VOICE PICKER (custom expandable control)
+  // ============================================================
+  // Ordered accent keys, derived from narrationData. The arrows cycle this list
+  // (wrapping at both ends). currentAccent is NOT written locally as truth — each
+  // arrow press fires update_settings and the server echo (updateSettingsUI ->
+  // renderAccentPicker + preloadNarrationAudio) remains the single state writer.
+  function accentKeys() {
+    return narrationData ? Object.keys(narrationData.accents) : [];
+  }
+
+  // Wire the picker's expand/collapse and arrow handlers once at boot. Idempotent
+  // markup is in index.html; this only attaches listeners.
+  function setupAccentPicker() {
+    const root = $("lobby-accent");
+    if (!root) return;
+    const toggle = $("accent-picker-toggle");
+    const expanded = $("accent-picker-expanded");
+
+    const setExpanded = (open) => {
+      root.classList.toggle("collapsed", !open);
+      root.classList.toggle("expanded", open);
+      if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (expanded) expanded.hidden = !open;
+    };
+
+    // Tapping the collapsed row (or the affordance again) toggles open/closed.
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        setExpanded(root.classList.contains("collapsed"));
+      });
     }
-    sel.value = currentAccent;
+    // Collapse behavior: tapping outside the picker closes it (keeps the panel
+    // tidy and prevents the expanded stage from lingering). Documented choice.
+    document.addEventListener("click", (e) => {
+      if (root.classList.contains("collapsed")) return;
+      if (!root.contains(e.target)) setExpanded(false);
+    });
+
+    const prev = $("accent-arrow-prev");
+    const next = $("accent-arrow-next");
+    if (prev) prev.addEventListener("click", () => cycleAccent(-1));
+    if (next) next.addEventListener("click", () => cycleAccent(1));
+
+    renderAccentPicker();
+  }
+
+  // Step to the prev/next accent (wrap around the ends) and IMMEDIATELY send the
+  // same update_settings call the old <select> sent. No local state write — the
+  // displayed accent updates when the server echo lands in updateSettingsUI.
+  function cycleAccent(dir) {
+    const keys = accentKeys();
+    if (keys.length === 0) return;
+    let idx = keys.indexOf(currentAccent);
+    if (idx === -1) idx = 0;
+    const nextKey = keys[(idx + dir + keys.length) % keys.length];
+    wsSend({ type: "update_settings", settings: { narrationAccent: nextKey } });
+  }
+
+  // Wire the Male/Female narrator-gender toggle once at boot. Like the accent
+  // arrows, clicking fires update_settings and lets the server echo
+  // (updateSettingsUI -> renderGenderToggle + preloadNarrationAudio) be the sole
+  // state writer. No-op while the accent is "random" (gender is randomized).
+  function setupGenderToggle() {
+    const ctrl = $("narrator-gender-control");
+    if (!ctrl) return;
+    ctrl.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-gender]");
+      if (!btn) return;
+      if (currentAccent === "random") return; // inert when randomized
+      const gender = btn.getAttribute("data-gender");
+      if (gender !== "male" && gender !== "female") return;
+      wsSend({ type: "update_settings", settings: { narratorGender: gender } });
+    });
+    renderGenderToggle();
+  }
+
+  // Paint the Male/Female toggle from currentGender + currentAccent. When the
+  // accent is "random" the gender is randomized per game, so the control is
+  // greyed/inert (disabled buttons, no active selection shown).
+  function renderGenderToggle() {
+    const ctrl = $("narrator-gender-control");
+    if (!ctrl) return;
+    const isRandom = currentAccent === "random";
+    ctrl.classList.toggle("disabled", isRandom);
+    ctrl.querySelectorAll("[data-gender]").forEach((b) => {
+      const on = !isRandom && b.getAttribute("data-gender") === currentGender;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.disabled = isRandom;
+    });
+  }
+
+  // Paint the picker from currentAccent + narrationData. Called by the server-echo
+  // path (updateSettingsUI) and at init once narration.json loads. Labels and
+  // descriptions come from served JSON, so set them via textContent (no innerHTML).
+  function renderAccentPicker() {
+    const root = $("lobby-accent");
+    if (!root || !narrationData) return;
+    const info = narrationData.accents[currentAccent];
+    const label = info ? info.label : currentAccent;
+    const desc = info ? info.description : "";
+    const cur = $("accent-picker-current");
+    const lbl = $("accent-picker-label");
+    const dsc = $("accent-picker-desc");
+    if (cur) cur.textContent = label;      // collapsed row: label only (no bleed)
+    if (lbl) lbl.textContent = label;      // expanded: prominent label
+    if (dsc) dsc.textContent = desc;       // expanded: wrapped description below
+  }
+
+  // Kept for the init fetch call site below; now paints the picker + gender toggle.
+  function populateAccentSelector() {
+    renderAccentPicker();
+    renderGenderToggle();
   }
 
   // Init: load narration data
@@ -3185,7 +3945,7 @@
       if (!data) return;
       narrationData = data;
       populateAccentSelector();
-      preloadNarrationAudio(currentAccent);
+      preloadNarrationAudio();
     })
     .catch(() => {});
 
@@ -3211,12 +3971,57 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.3_202606100708";
-  const APP_VERSION_STAGING = "staging.14_202606100708";
+  const APP_VERSION = "v1.4_202606191044";
+  const APP_VERSION_STAGING = "staging.24_202606191034";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
   $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
+
+  // D3b: Mascot single-sourcing — render MASCOT_ART into both logo containers
+  (function() {
+    var mascotSvg = pixelArtToSvg(MASCOT_ART, 16);
+    var authIcon = document.getElementById("logo-icon-auth");
+    var menuIcon = document.getElementById("logo-icon-menu");
+    if (authIcon) authIcon.innerHTML = mascotSvg;
+    if (menuIcon) menuIcon.innerHTML = mascotSvg;
+  })();
+
+  // D3b: Wire pixel icons into all static emoji/entity sites
+  (function() {
+    // D3.5: settings gear buttons reverted to stock &#9881; (user amendment §3.3 extension).
+    // GEAR_ART stays in the registry (pixel-art.js) but is not injected at these sites.
+
+    // Scroll icon into transcript button
+    var scrollSvg = pixelArtToSvg(SCROLL_ART);
+    var transcriptBtn = document.getElementById("btn-transcript");
+    if (transcriptBtn) transcriptBtn.innerHTML = scrollSvg;
+
+    // Refresh icon into pull-refresh spinners
+    var refreshSvg = pixelArtToSvg(REFRESH_ART);
+    ["pull-refresh-spinner-menu", "pull-refresh-spinner"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.innerHTML = refreshSvg;
+    });
+
+    // Skull into dead overlay (default state — JS also updates on you_died)
+    var deadEl = document.getElementById("dead-emoji");
+    if (deadEl) deadEl.innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+
+    // Clown into joker win overlay (D6: default state — showJokerWinOverlay also
+    // (re)sets it on every show). The container id keeps "joker-trophy-art".
+    var trophyEl = document.getElementById("joker-trophy-art");
+    if (trophyEl) trophyEl.innerHTML = pixelArtToSvg(CLOWN_ART);
+
+    // Heart icon into lover-badge
+    var loverIcon = document.querySelector(".lover-badge-icon");
+    if (loverIcon) loverIcon.innerHTML = pixelArtToSvg(HEART_ART);
+
+    // D5: BOW centerpiece into the hunter revenge-wait panel (static — the
+    // reveal name + show/hide are owned by the C5b plumbing, untouched here).
+    var revengeArt = document.getElementById("revenge-wait-art");
+    if (revengeArt) revengeArt.innerHTML = pixelArtToSvg(BOW_ART);
+  })();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

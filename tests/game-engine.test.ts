@@ -8,6 +8,7 @@ import {
   sanitizeSettings,
 } from "../src/game-engine";
 import type { Game } from "../src/types";
+import { DEFAULT_SETTINGS } from "../src/types";
 
 function setupGame(playerCount: number, settings?: Partial<import("../src/types").GameSettings>): Game {
   const game = createGame(1, "Admin");
@@ -110,6 +111,86 @@ describe("Role Assignment", () => {
     startGame(game);
     const jokers = getAliveByRole(game, "joker");
     expect(jokers.length).toBe(1);
+    removeGame(game.code);
+  });
+
+  test("assigns hunter when enabled (C1)", () => {
+    const game = setupGame(5, { enableHunter: true });
+    startGame(game);
+    const hunters = getAliveByRole(game, "hunter");
+    expect(hunters.length).toBe(1);
+    removeGame(game.code);
+  });
+
+  test("no hunter dealt by default or when explicitly disabled (C1)", () => {
+    const gameDefault = setupGame(6);
+    startGame(gameDefault);
+    expect(getAliveByRole(gameDefault, "hunter").length).toBe(0);
+    removeGame(gameDefault.code);
+
+    const gameOff = setupGame(8, { enableHunter: false, enableDoctor: true, enableDetective: true, enableJoker: true });
+    startGame(gameOff);
+    expect(getAliveByRole(gameOff, "hunter").length).toBe(0);
+    removeGame(gameOff.code);
+  });
+
+  test("hunter deals after joker: at 4 players with all specials on, hunter is the dropped special (C1, inherited no-floor behavior)", () => {
+    // Deal order: mafia (clamped) → doctor → detective → joker → hunter → citizen fill.
+    // 4 players exhaust the slots at joker — hunter, being last in the special
+    // order, is silently not dealt. Pins the engine's inherited no-floor rule.
+    const game = setupGame(4, { mafiaCount: 1, enableDoctor: true, enableDetective: true, enableJoker: true, enableHunter: true });
+    startGame(game);
+    expect(getAliveByRole(game, "mafia").length).toBe(1);
+    expect(getAliveByRole(game, "doctor").length).toBe(1);
+    expect(getAliveByRole(game, "detective").length).toBe(1);
+    expect(getAliveByRole(game, "joker").length).toBe(1);
+    expect(getAliveByRole(game, "hunter").length).toBe(0);
+    expect(getAliveByRole(game, "citizen").length).toBe(0);
+    removeGame(game.code);
+  });
+
+  test("hunter deals before citizen fill: at 5 players with all specials on, hunter takes the last slot (C1)", () => {
+    const game = setupGame(5, { mafiaCount: 1, enableDoctor: true, enableDetective: true, enableJoker: true, enableHunter: true });
+    startGame(game);
+    expect(getAliveByRole(game, "hunter").length).toBe(1);
+    expect(getAliveByRole(game, "citizen").length).toBe(0);
+    removeGame(game.code);
+  });
+
+  test("hunter slots into the freed slot when joker is off (C1)", () => {
+    const game = setupGame(4, { mafiaCount: 1, enableDoctor: true, enableDetective: true, enableJoker: false, enableHunter: true });
+    startGame(game);
+    expect(getAliveByRole(game, "joker").length).toBe(0);
+    expect(getAliveByRole(game, "hunter").length).toBe(1);
+    expect(getAliveByRole(game, "citizen").length).toBe(0);
+    removeGame(game.code);
+  });
+
+  test("mafia clamp is unaffected by hunter; hunter consumes a post-mafia slot (C1)", () => {
+    // 6 players, mafiaCount 2 (= floor(6/3), unclamped) + hunter
+    const game = setupGame(6, { mafiaCount: 2, enableHunter: true });
+    startGame(game);
+    expect(getAliveByRole(game, "mafia").length).toBe(2);
+    expect(getAliveByRole(game, "hunter").length).toBe(1);
+    expect(getAliveByRole(game, "citizen").length).toBe(3);
+    removeGame(game.code);
+
+    // 4 players, mafiaCount 5 → clamp to floor(4/3)=1 runs FIRST; hunter then
+    // consumes one post-mafia slot like every other special.
+    const clamped = setupGame(4, { mafiaCount: 5, enableHunter: true });
+    startGame(clamped);
+    expect(getAliveByRole(clamped, "mafia").length).toBe(1);
+    expect(getAliveByRole(clamped, "hunter").length).toBe(1);
+    expect(getAliveByRole(clamped, "citizen").length).toBe(2);
+    removeGame(clamped.code);
+  });
+
+  test("hunter is single-variant: pixel-art variant 0 (C1)", () => {
+    const game = setupGame(5, { enableHunter: true });
+    startGame(game);
+    const hunter = getAliveByRole(game, "hunter")[0];
+    expect(hunter).toBeDefined();
+    expect(hunter.variant).toBe(0);
     removeGame(game.code);
   });
 
@@ -456,6 +537,13 @@ describe("Settings", () => {
     expect(mafia.length).toBe(1);
     removeGame(game.code);
   });
+
+  test("enableHunter defaults to false (C1)", () => {
+    expect(DEFAULT_SETTINGS.enableHunter).toBe(false);
+    const game = createGame(1, "Admin");
+    expect(game.settings.enableHunter).toBe(false);
+    removeGame(game.code);
+  });
 });
 
 describe("sanitizeSettings edge bounds", () => {
@@ -486,6 +574,13 @@ describe("sanitizeSettings edge bounds", () => {
   test("booleans are strict: truthy strings dropped, real booleans kept", () => {
     expect(sanitizeSettings({ enableDoctor: "yes" })).toEqual({});
     expect(sanitizeSettings({ enableDoctor: true }).enableDoctor).toBe(true);
+  });
+
+  test("enableHunter round-trips real booleans and drops junk (C1)", () => {
+    expect(sanitizeSettings({ enableHunter: true }).enableHunter).toBe(true);
+    expect(sanitizeSettings({ enableHunter: false }).enableHunter).toBe(false);
+    expect(sanitizeSettings({ enableHunter: "yes" })).toEqual({});
+    expect(sanitizeSettings({ enableHunter: 1 })).toEqual({});
   });
 });
 
@@ -855,7 +950,7 @@ describe("advanceNightSubPhase", () => {
     const game = setupNightGame(4);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     transitionToDay(game);
     expect(game.nightSubPhase).toBeNull();
     removeGame(game.code);
@@ -865,7 +960,7 @@ describe("advanceNightSubPhase", () => {
     const game = setupNightGame(4);
     const mafia = getAliveByRole(game, "mafia");
     const citizens = getAliveByRole(game, "citizen");
-    submitMafiaVote(game, mafia[0].id, citizens[0].id);
+    submitMafiaVote(game, mafia[0].id, citizens[0].id, "maybe");
     transitionToDay(game);
     endDay(game);
     expect(game.nightSubPhase).toBe("mafia");
@@ -1089,6 +1184,22 @@ describe("awaitingNarratorReady cleared on forced transitions (L2)", () => {
     forceEndGame(game);
     expect(game.phase).toBe("game_over");
     expect(game.awaitingNarratorReady).toBe(false);
+    removeGame(game.code);
+  });
+
+  test("forceEndGame clears pendingRevenge (the hand-clear line, by hand like awaitingNarratorReady)", () => {
+    const game = setupGame(4);
+    startGame(game);
+    // Nothing in Program B production code opens the gate — hand-open it to
+    // pin that forceEndGame's hand-clear actually fires (forceEndGame is the
+    // one forced transition no reset table reaches). This line becomes
+    // load-bearing the moment Program C relaxes the always-null invariant to
+    // the phase-scoped form (HUNTER-DESIGN §4).
+    game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
+
+    forceEndGame(game);
+    expect(game.phase).toBe("game_over");
+    expect(game.pendingRevenge).toBeNull();
     removeGame(game.code);
   });
 

@@ -442,8 +442,12 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
       expect(day.round).toBe(1);
       expect(day.saved).toBe(true);
     }
-    // Private save notice goes to the saved player only (asserted globally below)
-    await waitSince(victimSaved, 0, (m) => m.type === "doctor_save_private", "doctor_save_private");
+    // Official mode: the saved victim is NEVER privately told they were
+    // targeted — no doctor_save_private is sent on the wire. The dawn has
+    // already resolved on every client, so settle briefly to catch any
+    // (wrongly-sent) private message, then assert the victim got none.
+    await Bun.sleep(100);
+    expect(victimSaved.inbox.filter((m) => m.type === "doctor_save_private").length).toBe(0);
     assertNoViolations("end of night 1");
 
     // ── Day 1: lynch mafia #1 ───────────────────────────────────────
@@ -514,13 +518,527 @@ describe("10-player full game (2 mafia + doctor + detective + joker)", () => {
       expect(n).toBe(expectedDeaths.includes(p.userId) ? 1 : 0);
     }
 
-    // doctor_save_private reached only the saved player
+    // Official mode: doctor_save_private is never sent on the wire — no
+    // client (not even the saved player) is privately told about the save.
     for (const p of players) {
       const n = p.inbox.filter((m) => m.type === "doctor_save_private").length;
-      expect(n).toBe(p === victimSaved ? 1 : 0);
+      expect(n).toBe(0);
     }
 
     // Secrecy + win-timing invariants held on every message all game long
     assertNoViolations("end of game");
+  }, 90000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// C8c — Standing 10-player HUNTER-variant full-game WS regression gate.
+//
+// A SECOND full game in the standing gate (HUNTER-DESIGN §9, "10-player
+// regression gate extension"): settings 2 mafia + doctor + detective +
+// joker + hunter, lovers OFF (10p ⇒ 4 citizens). It proves the Hunter's
+// two-stage dawn end-to-end over real WebSockets, so every future task's
+// full-suite gate now includes a complete hunter game.
+//
+// SELF-CONTAINED by design: its own server process (a SECOND port in the
+// 8600-8999 band, re-rolled to differ from the first game's), its own DB
+// path, its own module-level state (all `*H` suffixed). It shares no state
+// with the game above — the existing game's harness/state/assertions are
+// untouched. Because it spawns its own server, it pulls the fixed-deal seam
+// forward (MAFIA_FIXED_DEAL, §9 "pull the fixed-deal seam forward if random
+// deals block") for a fully deterministic deal: the Hunter is dealt in join
+// order so the night-1 mafia kill always lands on it (the spec's preferred
+// "kill" path — no day-1-lynch fallback needed under a fixed deal).
+//
+// Deal (join order, indices 0..9):
+//   0 citizen(admin) 1 mafia 2 mafia 3 doctor 4 detective
+//   5 joker 6 hunter 7 citizen 8 citizen 9 citizen
+//   ⇒ 2 mafia + doctor + detective + joker + hunter + 4 citizens.
+//
+// Script (deterministic natural TOWN win in two phases):
+//   Night 1: mafia consensus-kill the HUNTER; doctor saves a citizen (miss,
+//            so the kill lands), detective investigates mafia #1 (isMafia
+//            true). The Hunter dies → two-stage dawn: deaths announced →
+//            hunter_revenge_pending (public reveal) → hunter_revenge_targets
+//            (to the hunter alone) → Hunter shoots mafia #1 → deferred
+//            phase_change to day 1 (win check lands post-revenge: 1 mafia
+//            still alive, no win).
+//   Day 1:   admin calls vote on mafia #2, all alive approve → lynched →
+//            0 mafia alive → game_over winner "town".
+//
+// E13 (role secrecy until death): BEFORE the hunter dies, no message to any
+// client carries role:"hunter" for any player, and neither hunter_revenge_*
+// type appears; AFTER death the reveal is ONLY via hunter_revenge_pending +
+// narrator prose. Usernames use the "hp_" scheme (no "hunter" substring), so
+// a literal-"hunter" sweep is unambiguous.
+// ═══════════════════════════════════════════════════════════════════════
+
+let serverProcH: ReturnType<typeof Bun.spawn>;
+// Second port in the same 8600-8999 band, re-rolled to differ from the first
+// game's PORT so the two servers never collide.
+let PORT_H = 8600 + Math.floor(Math.random() * 400);
+while (PORT_H === PORT) PORT_H = 8600 + Math.floor(Math.random() * 400);
+const WS_URL_H = `ws://localhost:${PORT_H}/ws`;
+const DB_PATH_H = `/tmp/mafia-ten-player-hunter-${Date.now()}-${PORT_H}.db`;
+
+// Fixed deal in join order (see header). Hunter at index 6.
+const HUNTER_DEAL = {
+  roles: [
+    "citizen", "mafia", "mafia", "doctor", "detective",
+    "joker", "hunter", "citizen", "citizen", "citizen",
+  ],
+};
+
+const playersH: TestPlayer[] = [];
+const violationsH: string[] = [];
+const deadH = new Set<number>();
+const aliveH = () => playersH.filter((p) => !deadH.has(p.userId));
+let gameOverAllowedH = false; // flipped just before the final lynch
+let hunterRevealedH = false;  // flipped when hunter_revenge_pending first seen
+
+// ── Invariant checker (mirrors the game above; adds the E13 hunter sweep) ──
+
+function checkMessageH(p: TestPlayer, m: any): void {
+  const tag = `[H ${p.username} role=${p.role ?? "?"}] msg=${m.type}`;
+
+  if (p.role !== "mafia" && deepHasKey(m, "mafiaTeam")) {
+    violationsH.push(`${tag}: mafiaTeam leaked to non-mafia client`);
+  }
+  if (p.role !== "detective" && deepHasKey(m, "detectiveHistory")) {
+    violationsH.push(`${tag}: detectiveHistory leaked to non-detective client`);
+  }
+  if (m.type === "detective_result" && p.role !== "detective") {
+    violationsH.push(`${tag}: detective_result sent to non-detective client`);
+  }
+  if (MAFIA_ONLY_TYPES.has(m.type) && p.role !== "mafia") {
+    violationsH.push(`${tag}: mafia-only message sent to non-mafia client`);
+  }
+  if (DOCTOR_ONLY_TYPES.has(m.type) && p.role !== "doctor") {
+    violationsH.push(`${tag}: doctor-only message sent to non-doctor client`);
+  }
+  if (DETECTIVE_ONLY_TYPES.has(m.type) && p.role !== "detective") {
+    violationsH.push(`${tag}: detective-only message sent to non-detective client`);
+  }
+  if (m.type !== "game_over") {
+    findRoleLeaksInto(m, p, tag, violationsH);
+  }
+  findNamedSaveEventsInto(m, tag, violationsH);
+  if (m.type === "game_over" && !gameOverAllowedH) {
+    violationsH.push(`${tag}: game_over arrived before the last mafia died`);
+  }
+
+  // ── E13: role secrecy until the Hunter's death ───────────────────────
+  // hunter_revenge_pending IS the reveal (the recorder flips hunterRevealedH
+  // on it, BEFORE this checker runs for that same message — see regPlayerH).
+  // So from the reveal onward the hunter signal is allowed; strictly before
+  // it, NO message may carry the literal role "hunter" — EXCEPT this client's
+  // OWN game_started, which legitimately tells a client (only) its own role
+  // and carries no username. The hunter-only target prompt must not have
+  // arrived yet either (usernames are "hp_*", never "hunter", so the role
+  // sweep is unambiguous).
+  if (!hunterRevealedH) {
+    const ownRoleSignal = m.type === "game_started"; // role = recipient's own, no username
+    if (!ownRoleSignal && deepHasRoleHunter(m)) {
+      violationsH.push(`${tag}: role "hunter" leaked before the Hunter's death`);
+    }
+    if (m.type === "hunter_revenge_targets") {
+      violationsH.push(`${tag}: hunter_revenge_targets arrived before the reveal`);
+    }
+  }
+}
+
+/** Like findRoleLeaks, but pushes into an explicit sink (per-game isolation). */
+function findRoleLeaksInto(node: any, p: TestPlayer, tag: string, sink: string[]): void {
+  if (Array.isArray(node)) { for (const v of node) findRoleLeaksInto(v, p, tag, sink); return; }
+  if (node === null || typeof node !== "object") return;
+  if (typeof node.username === "string" && node.username !== p.username && node.role != null) {
+    sink.push(`${tag}: role "${node.role}" of player "${node.username}" leaked pre-game_over`);
+  }
+  for (const [k, v] of Object.entries(node)) {
+    if (k === "gameOver") continue;
+    findRoleLeaksInto(v, p, tag, sink);
+  }
+}
+
+function findNamedSaveEventsInto(node: any, tag: string, sink: string[]): void {
+  if (Array.isArray(node)) { for (const v of node) findNamedSaveEventsInto(v, tag, sink); return; }
+  if (node === null || typeof node !== "object") return;
+  if (node.type === "save" && typeof node.playerName === "string") {
+    sink.push(`${tag}: named save event leaked ("${node.playerName}") in official doctor mode`);
+  }
+  for (const v of Object.values(node)) findNamedSaveEventsInto(v, tag, sink);
+}
+
+/** True if any node carries a literal role:"hunter" (a PlayerInfo-style leak). */
+function deepHasRoleHunter(node: any): boolean {
+  if (Array.isArray(node)) return node.some(deepHasRoleHunter);
+  if (node === null || typeof node !== "object") return false;
+  if (node.role === "hunter") return true;
+  return Object.values(node).some(deepHasRoleHunter);
+}
+
+function assertNoViolationsH(stage: string): void {
+  if (violationsH.length > 0) {
+    throw new Error(`Invariant violations detected by ${stage}:\n  ${violationsH.join("\n  ")}`);
+  }
+}
+
+// ── Low-level helpers (own socket open + register against the H server) ──
+
+function openWS_H(): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(WS_URL_H);
+    const t = setTimeout(() => reject(new Error("WS open timeout")), 3000);
+    ws.onopen = () => { clearTimeout(t); resolve(ws); };
+    ws.onerror = () => { clearTimeout(t); reject(new Error("WS open error")); };
+  });
+}
+
+let userCounterH = 0;
+const tsH = Date.now();
+function uniqueNameH() { return `hp_${tsH}_${++userCounterH}`; }
+
+async function regPlayerH(): Promise<TestPlayer> {
+  const ws = await openWS_H();
+  const p: TestPlayer = { ws, userId: -1, username: uniqueNameH(), inbox: [] };
+  ws.addEventListener("message", (e: MessageEvent) => {
+    const m = JSON.parse(e.data);
+    if (m.type === "game_started" && p.role === undefined) p.role = m.role;
+    if (m.type === "hunter_revenge_pending") hunterRevealedH = true;
+    p.inbox.push(m);
+    checkMessageH(p, m);
+  });
+  send(ws, { type: "register", username: p.username, passcode: String(4000 + userCounterH) });
+  const r = await waitSince(p, 0, (m) => m.type === "registered", "registered", 5000);
+  p.userId = r.userId;
+  return p;
+}
+
+// ── Server lifecycle ─────────────────────────────────────────────────────
+
+beforeAll(async () => {
+  serverProcH = Bun.spawn(["bun", "run", "src/server.ts"], {
+    env: {
+      ...process.env,
+      PORT: String(PORT_H),
+      DATABASE_PATH: DB_PATH_H,
+      MAFIA_FIXED_DEAL: JSON.stringify(HUNTER_DEAL),
+    },
+    cwd: import.meta.dir + "/..",
+    stdout: "ignore", stderr: "ignore",
+  });
+  for (let i = 0; i < 30; i++) {
+    try {
+      const ws = new WebSocket(WS_URL_H);
+      await new Promise<void>((ok, fail) => {
+        ws.onopen = () => { ws.close(); ok(); };
+        ws.onerror = () => fail();
+      });
+      return;
+    } catch { await Bun.sleep(200); }
+  }
+  throw new Error("Hunter-variant server failed to start");
+});
+
+afterAll(() => {
+  for (const p of playersH) { try { p.ws.close(); } catch {} }
+  try { serverProcH?.kill(); } catch {}
+  for (const f of [DB_PATH_H, `${DB_PATH_H}-wal`, `${DB_PATH_H}-shm`]) {
+    try { unlinkSync(f); } catch {}
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// The hunter-variant regression gate
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("10-player full game (hunter variant: 2 mafia + doctor + detective + joker + hunter)", () => {
+  test("night-1 mafia kill on the Hunter triggers the two-stage revenge dawn, then a natural town win", async () => {
+    // ── Lobby: register 10, admin creates, 9 join ──────────────────
+    for (let i = 0; i < 10; i++) playersH.push(await regPlayerH());
+    const admin = playersH[0];
+
+    const createMark = admin.inbox.length;
+    send(admin.ws, { type: "create_game" });
+    const created = await waitSince(admin, createMark, (m) => m.type === "game_created", "game_created");
+    const code = created.code;
+
+    for (let i = 1; i < 10; i++) {
+      const jm = playersH[i].inbox.length;
+      send(playersH[i].ws, { type: "join_game", code });
+      await waitSince(playersH[i], jm, (m) => m.type === "game_joined", "game_joined");
+    }
+
+    const sm = admin.inbox.length;
+    send(admin.ws, {
+      type: "update_settings",
+      settings: {
+        mafiaCount: 2,
+        enableDoctor: true,
+        enableDetective: true,
+        enableJoker: true,
+        enableHunter: true,
+        enableLovers: false,
+        doctorMode: "official",
+        jokerMode: "official",
+      },
+    });
+    await waitSince(admin, sm, (m) => m.type === "settings_updated", "settings_updated");
+    await Bun.sleep(100); // let the follow-up lobby_update settle on the other 9
+
+    // ── Start: roles come from the FIXED DEAL (join order) ─────────
+    const startMarks = playersH.map((p) => p.inbox.length);
+    send(admin.ws, { type: "start_game" });
+    const started = await Promise.all(playersH.map((p, i) =>
+      waitSince(p, startMarks[i], (m) => m.type === "game_started", "game_started")));
+
+    await Promise.all(playersH.map((p, i) =>
+      waitSince(p, startMarks[i],
+        (m) => m.type === "phase_change" && m.phase === "night" && m.round === 1,
+        "initial night phase_change")));
+    await waitSince(admin, startMarks[0], (m) => m.type === "awaiting_ready", "awaiting_ready");
+
+    // Deal landed exactly as specified (join order ↔ HUNTER_DEAL)
+    const roleByIndex = playersH.map((p) => p.role);
+    expect(roleByIndex).toEqual([
+      "citizen", "mafia", "mafia", "doctor", "detective",
+      "joker", "hunter", "citizen", "citizen", "citizen",
+    ]);
+
+    const mafias = playersH.filter((p) => p.role === "mafia");
+    const doctor = playersH.find((p) => p.role === "doctor")!;
+    const detective = playersH.find((p) => p.role === "detective")!;
+    const joker = playersH.find((p) => p.role === "joker")!;
+    const hunter = playersH.find((p) => p.role === "hunter")!;
+    const citizens = playersH.filter((p) => p.role === "citizen");
+    expect(mafias.length).toBe(2);
+    expect(doctor).toBeDefined();
+    expect(detective).toBeDefined();
+    expect(joker).toBeDefined();
+    expect(hunter).toBeDefined();
+    expect(citizens.length).toBe(4); // admin + 3 others
+
+    // Each mafia client's mafiaTeam matches the dealt mafia set
+    const mafiaNames = mafias.map((m) => m.username).sort();
+    for (const m of mafias) {
+      const gs = started[playersH.indexOf(m)];
+      expect([...(gs.mafiaTeam ?? [])].sort()).toEqual(mafiaNames);
+    }
+    // E13: BEFORE any death, nothing has revealed the hunter (no reveal seen,
+    // and the secrecy sweep has flagged nothing).
+    expect(hunterRevealedH).toBe(false);
+    assertNoViolationsH("game start");
+
+    // A citizen who is NOT the admin — the doctor's (missed) save target
+    const saveDecoy = citizens.find((c) => c !== admin)!;
+    expect(saveDecoy).toBeDefined();
+
+    // ── Night 1: mafia consensus-kill the HUNTER ───────────────────
+    const mafiaPromptMarks = mafias.map((m) => m.inbox.length);
+    send(admin.ws, { type: "narrator_ready" });
+    const prompts = await Promise.all(mafias.map((m, i) =>
+      waitSince(m, mafiaPromptMarks[i], (x) => x.type === "mafia_targets", "mafia_targets")));
+    for (const pr of prompts) {
+      expect(pr.players.length).toBe(8); // all alive non-mafia (hunter included)
+      expect(pr.players.some((t: any) => t.id === hunter.userId)).toBe(true);
+      expect(pr.players.some((t: any) => mafiaNames.includes(t.username))).toBe(false);
+      // E13: the target list is role-free (toTargetInfo carries no role)
+      expect(pr.players.some((t: any) => t.role != null)).toBe(false);
+    }
+
+    const allMarks = playersH.map((p) => p.inbox.length);
+    const docMark = doctor.inbox.length;
+    const detMark = detective.inbox.length;
+    const hunterMark = hunter.inbox.length;
+    const mafiaMarks = mafias.map((m) => m.inbox.length);
+
+    // Mafia consensus on the HUNTER
+    for (const m of mafias) {
+      send(m.ws, { type: "mafia_vote", targetId: hunter.userId, voteType: "maybe" });
+      send(m.ws, { type: "mafia_vote", targetId: hunter.userId, voteType: "lock" });
+    }
+    await Promise.all(mafias.map((m, i) =>
+      waitSince(m, mafiaMarks[i],
+        (x) => x.type === "mafia_confirm_ready" && x.targetId === hunter.userId,
+        "mafia_confirm_ready")));
+    send(mafias[0].ws, { type: "confirm_mafia_kill" });
+
+    // Doctor saves a citizen decoy (NOT the hunter) → the kill lands
+    const docTargets = await waitSince(doctor, docMark, (m) => m.type === "doctor_targets", "doctor_targets");
+    expect(docTargets.players.some((t: any) => t.id === saveDecoy.userId)).toBe(true);
+    send(doctor.ws, { type: "doctor_save", targetId: saveDecoy.userId });
+
+    // Detective investigates mafia #1 → isMafia true
+    const detTargets = await waitSince(detective, detMark, (m) => m.type === "detective_targets", "detective_targets");
+    expect(detTargets.players.some((t: any) => t.id === detective.userId)).toBe(false); // never self
+    send(detective.ws, { type: "detective_investigate", targetId: mafias[0].userId });
+    const detRes = await waitSince(detective, detMark, (m) => m.type === "detective_result", "detective_result");
+    expect(detRes.targetName).toBe(mafias[0].username);
+    expect(detRes.isMafia).toBe(true);
+
+    // STAGE 1 of the two-stage dawn: the Hunter's death is announced to ALL
+    // clients (player_died) before any reveal.
+    await Promise.all(playersH.map((p, i) =>
+      waitSince(p, allMarks[i],
+        (m) => m.type === "player_died" && m.playerId === hunter.userId,
+        `player_died(hunter ${hunter.username})`)));
+    deadH.add(hunter.userId);
+    // The hunter privately learns of their own death
+    await waitSince(hunter, hunterMark, (m) => m.type === "you_died", "you_died(hunter)");
+
+    // STAGE 2a: hunter_revenge_pending (the public reveal) reaches EVERY
+    // client, naming the hunter — and this is the FIRST message anywhere to
+    // tie the hunter to the role (E13: the recorder flips hunterRevealedH).
+    const pendings = await Promise.all(playersH.map((p, i) =>
+      waitSince(p, allMarks[i], (m) => m.type === "hunter_revenge_pending", "hunter_revenge_pending")));
+    for (const pen of pendings) {
+      expect(pen.hunterName).toBe(hunter.username);
+    }
+    expect(hunterRevealedH).toBe(true);
+
+    // STAGE 2b: the living-target list goes to the HUNTER ALONE (role-free),
+    // and to nobody else.
+    const targetsMsg = await waitSince(hunter, hunterMark, (m) => m.type === "hunter_revenge_targets", "hunter_revenge_targets");
+    expect(targetsMsg.players.some((t: any) => t.id === mafias[0].userId)).toBe(true); // a valid victim
+    expect(targetsMsg.players.some((t: any) => t.id === hunter.userId)).toBe(false);   // never self (dead)
+    expect(targetsMsg.players.some((t: any) => t.role != null)).toBe(false);           // role-free
+    for (const p of playersH) {
+      if (p === hunter) continue;
+      expect(p.inbox.filter((m) => m.type === "hunter_revenge_targets").length).toBe(0);
+    }
+
+    // The gate deferred the dawn: no day phase_change and no game_over yet
+    for (const p of playersH) {
+      expect(p.inbox.some((m) => m.type === "phase_change" && m.phase === "day")).toBe(false);
+      expect(p.inbox.filter((m) => m.type === "game_over").length).toBe(0);
+    }
+    assertNoViolationsH("revenge gate open");
+
+    // ── Revenge: the Hunter shoots mafia #1 ─────────────────────────
+    const revengeMarks = playersH.map((p) => p.inbox.length);
+    send(hunter.ws, { type: "hunter_revenge", targetId: mafias[0].userId });
+
+    // The revenge kill is announced to ALL clients
+    await Promise.all(playersH.map((p, i) =>
+      waitSince(p, revengeMarks[i],
+        (m) => m.type === "player_died" && m.playerId === mafias[0].userId,
+        `player_died(revenge ${mafias[0].username})`)));
+    deadH.add(mafias[0].userId);
+    await waitSince(mafias[0], revengeMarks[playersH.indexOf(mafias[0])], (m) => m.type === "you_died", "you_died(revenge victim)");
+
+    // The DEFERRED dawn now completes: phase_change to day 1 (win check ran
+    // POST-revenge — 1 mafia still alive, so NO win yet).
+    const dayMsgs = await Promise.all(playersH.map((p, i) =>
+      waitSince(p, revengeMarks[i],
+        (m) => m.type === "phase_change" && m.phase === "day" && m.round === 1,
+        "deferred day phase_change")));
+    for (const day of dayMsgs) {
+      expect(day.saved).toBeFalsy(); // the kill landed (doctor missed)
+    }
+    for (const p of playersH) {
+      expect(p.inbox.filter((m) => m.type === "game_over").length).toBe(0); // not over yet
+    }
+    assertNoViolationsH("end of revenge dawn");
+
+    // ── Day 1: lynch mafia #2 → 0 mafia alive → natural town win ───
+    const lynchMarks = playersH.map((p) => p.inbox.length);
+    const mafia2 = mafias[1];
+    send(admin.ws, { type: "call_vote", targetId: mafia2.userId });
+    await Promise.all(playersH.map((p, i) =>
+      waitSince(p, lynchMarks[i],
+        (m) => m.type === "vote_called" && m.targetId === mafia2.userId,
+        "vote_called(mafia2)")));
+
+    gameOverAllowedH = true; // the recorder flags any earlier game_over
+    for (const v of aliveH()) send(v.ws, { type: "cast_vote", approve: true });
+
+    const results = await Promise.all(playersH.map((p, i) =>
+      waitSince(p, lynchMarks[i], (m) => m.type === "vote_result", "vote_result")));
+    for (const r of results) {
+      expect(r.targetName).toBe(mafia2.username);
+      expect(r.executed).toBe(true);
+      expect("votesFor" in r).toBe(false);   // M12: tallies never wired
+      expect("votesAgainst" in r).toBe(false);
+    }
+
+    await Promise.all(playersH.map((p, i) =>
+      waitSince(p, lynchMarks[i],
+        (m) => m.type === "player_died" && m.playerId === mafia2.userId,
+        `player_died(mafia2 ${mafia2.username})`)));
+    deadH.add(mafia2.userId);
+
+    const overs = await Promise.all(playersH.map((p, i) =>
+      waitSince(p, lynchMarks[i], (m) => m.type === "game_over", "game_over")));
+    for (const over of overs) {
+      expect(over.winner).toBe("town");      // 0 mafia alive
+      expect(over.forceEnded).toBeFalsy();   // a NATURAL win, no force-end
+    }
+
+    // ── Whole-game invariants over every client's full message log ──
+    // game_over reveal matches the roles each client privately discovered
+    for (const p of playersH) {
+      const gos = p.inbox.filter((m) => m.type === "game_over");
+      expect(gos.length).toBe(1);
+      for (const q of playersH) {
+        const entry = (gos[0].players ?? []).find((r: any) => r.username === q.username);
+        expect(entry?.role).toBe(q.role);
+      }
+    }
+
+    // Phase progression is coherent and identical for all clients:
+    // a SINGLE day after the gated night, then the win.
+    for (const p of playersH) {
+      const seq = p.inbox
+        .filter((m) => m.type === "phase_change")
+        .map((m) => [m.phase, m.round]);
+      expect(seq).toEqual([
+        ["night", 1], ["day", 1],
+        ["game_over", 1],
+      ]);
+    }
+
+    // Death order identical for every client: hunter (night kill), mafia #1
+    // (revenge), mafia #2 (lynch). The revenge death sorts AFTER the hunter
+    // and BEFORE the win — proving the post-revenge win timing.
+    const expectedDeaths = [hunter.userId, mafias[0].userId, mafia2.userId];
+    for (const p of playersH) {
+      const deaths = p.inbox.filter((m) => m.type === "player_died").map((m) => m.playerId);
+      expect(deaths).toEqual(expectedDeaths);
+    }
+
+    // you_died went to exactly the three dead players, once each
+    for (const p of playersH) {
+      const n = p.inbox.filter((m) => m.type === "you_died").length;
+      expect(n).toBe(expectedDeaths.includes(p.userId) ? 1 : 0);
+    }
+
+    // hunter_revenge_pending broadcast once to everyone; hunter_revenge_targets
+    // to the hunter alone, once.
+    for (const p of playersH) {
+      expect(p.inbox.filter((m) => m.type === "hunter_revenge_pending").length).toBe(1);
+      expect(p.inbox.filter((m) => m.type === "hunter_revenge_targets").length)
+        .toBe(p === hunter ? 1 : 0);
+    }
+
+    // E13 (final form): across EVERY message every client ever received, the
+    // literal role:"hunter" leak NEVER appears except inside (a) the hunter's
+    // OWN game_started (its own role; no other client's game_started carries
+    // it) and (b) the end-of-game reveal (game_over). The pre-reveal sweep
+    // already ran live in the recorder; this re-confirms there is no OTHER
+    // carrier — and in particular that no NON-hunter client's game_started
+    // ever carried role:"hunter".
+    for (const p of playersH) {
+      for (const m of p.inbox) {
+        if (m.type === "game_over") continue;
+        if (m.type === "game_started") {
+          // Only the hunter's own game_started may carry role:"hunter".
+          expect(deepHasRoleHunter(m)).toBe(p === hunter);
+          continue;
+        }
+        expect(deepHasRoleHunter(m)).toBe(false);
+      }
+    }
+
+    // Secrecy + win-timing invariants held on every message all game long
+    assertNoViolationsH("end of game");
   }, 90000);
 });

@@ -5,3 +5,7 @@ node_modules/
 dist/
 .DS_Store
 .claude/
+.playwright-mcp/
+# Scratch screenshots dropped at repo root (e.g. d9-*.png) — root-only so the
+# tracked docs/mockups/pixel-noir/*.png renders are unaffected.
+/*.png

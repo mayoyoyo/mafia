@@ -9,6 +9,7 @@ import { loadClientApp, unloadClientApp } from "./helpers/client-harness";
 // harness has registered happy-dom globals.
 declare const document: any;
 declare const localStorage: any;
+declare const window: any;
 
 const { ws, serverSays } = loadClientApp();
 
@@ -265,5 +266,58 @@ describe("L6: corrupt mafia_user localStorage", () => {
     expect(ws.sent.slice(from)).toEqual([
       { type: "login", username: "Mafioso", passcode: "1234" },
     ]);
+  });
+});
+
+// B0d (audit D9): client-side debug logs — console.warn only, zero behavior
+// change. app.js resolves `console` through with(window), so spying on
+// window.console.warn captures both log sites.
+describe("B0d/D9: client console logging", () => {
+  function spyWarn(): { warns: any[][]; restore: () => void } {
+    const warns: any[][] = [];
+    const orig = window.console.warn;
+    window.console.warn = (...args: any[]) => { warns.push(args); };
+    return { warns, restore: () => { window.console.warn = orig; } };
+  }
+
+  test("unknown server message type hits the default branch and warns", () => {
+    const { warns, restore } = spyWarn();
+    try {
+      serverSays({ type: "definitely_not_a_real_type", payload: 1 });
+    } finally {
+      restore();
+    }
+    expect(warns.length).toBe(1);
+    expect(warns[0].join(" ")).toContain("unknown server message type");
+    expect(warns[0]).toContain("definitely_not_a_real_type");
+  });
+
+  test("known message types do not hit the default branch", () => {
+    const { warns, restore } = spyWarn();
+    try {
+      serverSays({ type: "sound_cue", sound: "night" });
+    } finally {
+      restore();
+    }
+    expect(warns).toEqual([]);
+  });
+
+  test("wsSend on a non-OPEN socket drops the frame and warns", () => {
+    const { warns, restore } = spyWarn();
+    const from = ws.sent.length;
+    // logged_in with a stored game code auto-sends join_game through wsSend
+    localStorage.setItem("mafia_game_code", "QQQQ");
+    ws.readyState = 3; // CLOSED
+    try {
+      serverSays({ type: "logged_in", userId: 77, username: "Dropper", hide_mafia_tag: false, player_color: "#fff" });
+    } finally {
+      restore();
+      ws.readyState = 1; // restore OPEN for any later tests
+      localStorage.removeItem("mafia_game_code");
+    }
+    expect(ws.sent.length).toBe(from); // join_game frame never reached the socket
+    expect(warns.length).toBe(1);
+    expect(warns[0].join(" ")).toContain("dropped frame");
+    expect(warns[0]).toContain("join_game");
   });
 });

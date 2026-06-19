@@ -399,3 +399,28 @@ describe("L7: cast_vote guard (no broadcast outside voting phase)", () => {
     for (const p of players) p.ws.close();
   }, 15000);
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// C1 (B8 finding) — start_game must be a silent no-op outside the lobby
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("C1: start_game guard (no-op outside lobby)", () => {
+  test("start_game during NIGHT is silently ignored: no error, no re-deal, no phase_change", async () => {
+    // Game just started — we are in night phase
+    const { code, players } = await setupAndStart(4);
+    const admin = players[0];
+
+    // Rationale: see the C1 (B8 finding) comment on the start_game lobby
+    // guard in src/server.ts.
+    const collector = collectFor(admin.ws, 1500);
+    send(admin.ws, { type: "start_game" });
+
+    const msgs = await collector;
+    expect(msgs.filter(m => m.type === "error").length).toBe(0);
+    expect(msgs.filter(m => m.type === "game_started").length).toBe(0);
+    expect(msgs.filter(m => m.type === "phase_change").length).toBe(0);
+    expect(msgs.filter(m => m.type === "awaiting_ready").length).toBe(0);
+
+    for (const p of players) p.ws.close();
+  }, 10000);
+});

@@ -1,4 +1,4 @@
-export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker";
+export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker" | "hunter";
 
 export interface Player {
   id: number;
@@ -18,9 +18,11 @@ export interface GameSettings {
   enableDoctor: boolean;
   enableDetective: boolean;
   enableJoker: boolean;
+  enableHunter: boolean;
   enableLovers: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
+  narratorGender: "male" | "female";
   doctorMode: RuleMode;
   jokerMode: RuleMode;
 }
@@ -30,16 +32,91 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableDoctor: false,
   enableDetective: false,
   enableJoker: false,
+  enableHunter: false,
   enableLovers: false,
   soundEnabled: false,
   narrationAccent: "classic",
+  narratorGender: "male",
   doctorMode: "official",
   jokerMode: "official",
 };
 
 export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 
+// ── B3 (audit P2): source-carrying death records ────────────────────────
+// Every death in the game flows through the applyDeath funnel as one of
+// these; (source, cause) is the single derivation input for the public
+// event label (deriveDeathEventType in game-engine.ts).
+// "hunter_revenge" (C2a): the Hunter's dying shot — applied by
+// submitHunterRevenge AFTER the triggering resolution, never inside it.
+export type KillSource = "mafia" | "joker_haunt" | "execution" | "hunter_revenge";
+export type DeathCause = "direct" | "lover_cascade";
+export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death" | "hunter_revenge";
+
+export interface Death {
+  player: Player;
+  source: KillSource;
+  cause: DeathCause;
+  message: string;
+  /** Derived from (source, cause) in exactly one place (deriveDeathEventType). */
+  eventType: DeathEventType;
+}
+
 export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
+
+// ── B7 (audit P8): sound-cue typing — derived, not hand-synced ──────────
+/** The night sub-phases that emit open/close narration cues — "resolving" is silent. */
+export type CueSubPhase = Exclude<NightSubPhase, "resolving">;
+
+/**
+ * Every cue the server can send. The per-sub-phase open/close pairs are
+ * DERIVED from NightSubPhase via template literals, so a new cue-emitting
+ * sub-phase extends the union automatically; the three standalone cues
+ * ("night"/"day"/"everyone_close") have no sub-phase and stay enumerated.
+ */
+export type SoundCue =
+  | "night"
+  | "day"
+  | "everyone_close"
+  | `${CueSubPhase}_open`
+  | `${CueSubPhase}_close`;
+
+/**
+ * Typed producer for the per-sub-phase cues — replaces the three `as any`
+ * casts at the server's cue-send sites (audit P8), so a misspelled cue or
+ * a non-cue sub-phase ("resolving") is a compile error, not a cue the
+ * client silently skips.
+ */
+export function subPhaseCue(phase: CueSubPhase, edge: "open" | "close"): SoundCue {
+  return `${phase}_${edge}`;
+}
+
+// ── B4a (audit P5): the round epilogue + Hunter revenge gate ────────────
+/**
+ * Options for concludeRound (game-engine.ts), the single win-check/
+ * auto-transition epilogue. Doubles as the resume payload stored on
+ * PendingRevenge — when the Hunter gate defers an epilogue, these are the
+ * exact options the resume re-enters concludeRound with (HUNTER-DESIGN §3.1).
+ */
+export interface ConcludeRoundOptions {
+  /** true when the flow is an execution → night auto-transition (resolveVote). */
+  autoNight: boolean;
+  /** Official-joker-lynch carve-out only: the haunt night must keep the captured voters. */
+  preserveHauntVoters?: boolean;
+}
+
+/**
+ * The Hunter revenge gate (HUNTER-DESIGN §3.1) — PLAIN DATA, never a
+ * server-held closure (closure-held gate state is un-rejoinable; audit D3).
+ * Opened by concludeRound's trigger-queue consume when a Hunter died this
+ * resolution (C2a — notifyDeathTriggers only QUEUES; the gate is set past
+ * the caller's reset boundary); submitHunterRevenge clears it and resumes
+ * concludeRound with `resume`. assertInvariants pins the §4 phase scoping.
+ */
+export interface PendingRevenge {
+  hunterId: number;
+  resume: ConcludeRoundOptions;
+}
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
 
@@ -89,6 +166,8 @@ export interface Game {
   nightSubPhase: NightSubPhase | null;
   // Begin Night gate (game start / restart only)
   awaitingNarratorReady: boolean;
+  // Hunter revenge gate (B4a pre-plumbing): ALWAYS null in Program B.
+  pendingRevenge: PendingRevenge | null;
 }
 
 // WebSocket message types
@@ -106,6 +185,10 @@ export type ClientMessage =
   | { type: "doctor_save"; targetId: number }
   | { type: "detective_investigate"; targetId: number }
   | { type: "joker_haunt"; targetId: number }
+  // C3a (HUNTER-DESIGN §3.2): revenge resolution — hunter only; null = decline
+  | { type: "hunter_revenge"; targetId: number | null }
+  // C3a: admin only (rights retained dead or alive); resolves as decline
+  | { type: "force_skip_revenge" }
   | { type: "call_vote"; targetId: number }
   | { type: "abstain_vote" }
   | { type: "cancel_vote" }
@@ -138,6 +221,10 @@ export type ServerMessage =
   | { type: "detective_targets"; players: PlayerInfo[] }
   | { type: "detective_result"; targetName: string; isMafia: boolean }
   | { type: "joker_haunt_targets"; players: PlayerInfo[] }
+  // C3a (HUNTER-DESIGN §3.3): to the hunter when the gate opens (re-sent on rejoin — C4)
+  | { type: "hunter_revenge_targets"; players: PlayerInfo[] }
+  // C3a: broadcast to the whole room when the gate opens — this IS the public reveal
+  | { type: "hunter_revenge_pending"; hunterName: string }
   | { type: "joker_win_overlay"; jokerName: string }
   | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number }
@@ -147,11 +234,11 @@ export type ServerMessage =
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
-  | { type: "sound_cue"; sound: "night" | "day" | "everyone_close" | "mafia_open" | "mafia_close" | "doctor_open" | "doctor_close" | "detective_open" | "detective_close" }
+  | { type: "sound_cue"; sound: SoundCue }
   | { type: "awaiting_ready" }
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
-  | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null; kills?: Array<{ name: string; source: "mafia" | "joker_haunt" }> }
+  | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null; kills?: Array<{ name: string; source: KillSource }> }
   | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "resolving"; isRoleAlive: boolean }
   | { type: "spectator_night_complete"; phase: string; targetName: string | null; alive: boolean }
   | { type: "spectator_joker_deliberating" }
@@ -163,6 +250,7 @@ export type ServerMessage =
       code: string;
       isAdmin: boolean;
       narrationAccent: string;
+      narratorGender: "male" | "female";
       hide_mafia_tag: boolean;
       // Players
       players: PlayerInfo[];
@@ -222,6 +310,18 @@ export type ServerMessage =
         revealPlayers: PlayerInfo[];
         jokerJointWinner?: boolean;
       } | null;
+      // Revenge gate (C4, HUNTER-DESIGN §3.4 — the H4 lesson): present
+      // whenever the gate is open, for EVERY rejoiner (the reveal is
+      // public); the key is OMITTED entirely while the gate is closed
+      // (the detectiveHistory/mafiaTeam optional-only absence pattern —
+      // keeps the gate-closed payload byte-identical to pre-Hunter
+      // syncs). isYou is true when the rejoiner IS the hunter: their
+      // private target list never rides game_sync — it is re-sent as a
+      // separate hunter_revenge_targets message right after the sync.
+      pendingRevenge?: {
+        hunterName: string;
+        isYou: boolean;
+      };
     };
 
 export interface PlayerInfo {
@@ -237,9 +337,16 @@ export interface PlayerInfo {
 
 export interface GameEvent {
   round: number;
-  type: "kill" | "save" | "execution" | "lover_death" | "spared" | "joker_haunt";
+  // Structurally DeathEventType plus the two non-death labels — the death
+  // labels are reused, not re-listed (compile-time identical union).
+  type: DeathEventType | "save" | "spared";
   playerName: string;
   detail?: string;
+  // B3 (audit P2): additive wire fields, present on death events only. The
+  // client's label maps can collapse onto these later (deferred graft) —
+  // until then they are ignored by the client and by the golden summarizer.
+  cause?: DeathCause;
+  source?: KillSource;
 }
 
 export interface WSClient {
