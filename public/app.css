@@ -61,6 +61,7 @@
   --role-joker: #26c6da;
   --role-hunter: #ef6c00;
   --role-lover: #e91e63;
+  --role-godfather: #c9a227;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -1122,6 +1123,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.detective .card-front { border-color: var(--role-detective); }
 .role-card.joker .card-front { border-color: var(--role-joker); }
 .role-card.hunter .card-front { border-color: var(--role-hunter); }
+.role-card.godfather .card-front { border-color: var(--role-godfather); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
 .role-name { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; font-family: 'Silkscreen', monospace; }
@@ -1131,6 +1133,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.detective .role-name { color: var(--role-detective); }
 .role-card.joker .role-name { color: var(--role-joker); }
 .role-card.hunter .role-name { color: var(--role-hunter); }
+.role-card.godfather .role-name { color: var(--role-godfather); }
 .role-description { color: var(--text-secondary); font-size: 14px; margin-top: 8px; }
 .lover-badge {
   display: inline-block;
@@ -2065,6 +2068,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-reveal-role.detective { background: var(--role-detective); color: #fff; }
 .role-reveal-role.joker { background: var(--role-joker); color: #fff; }
 .role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }
+.role-reveal-role.godfather { background: var(--role-godfather); color: #fff; }
 /* D3b: role-reveal-lover now has pixel heart art */
 .role-reveal-lover { display: inline-flex; align-items: center; gap: 3px; color: var(--role-lover); margin-left: 8px; font-size: 12px; }
 .role-reveal-lover svg { width: 12px; height: 12px; image-rendering: pixelated; }
@@ -2111,6 +2115,9 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 10px; font-weight: 700; color: var(--role-mafia);
   border: 1px solid var(--role-mafia); border-radius: 4px;
   padding: 1px 5px; margin-left: auto; letter-spacing: 0.5px;
+}
+.mafia-tag.godfather-tag {
+  color: var(--role-godfather); border-color: var(--role-godfather);
 }
 /* D3b: detective-tag now hosts pixel thumbs art */
 .detective-tag { margin-left: auto; display: inline-flex; align-items: center; }

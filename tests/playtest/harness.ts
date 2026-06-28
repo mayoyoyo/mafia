@@ -379,6 +379,8 @@ export interface ScenarioSpec {
   roles: Role[];
   /** Optional lover pair (join-order indices). */
   lovers?: [number, number];
+  /** Optional Godfather pin (join-order index of the mafioso to flag). */
+  godfather?: number;
   /** Optional lobby settings to apply (admin) before start_game. */
   settings?: Record<string, unknown>;
   /** Whether the admin should send narrator_ready automatically after start. Default false (let the timeline do it). */
@@ -416,7 +418,11 @@ export async function runScenario(spec: ScenarioSpec): Promise<ScenarioResult> {
   const runId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
   const prefix = spec.namePrefix ?? "bot";
 
-  const fixedDeal = JSON.stringify({ roles: spec.roles, ...(spec.lovers ? { lovers: spec.lovers } : {}) });
+  const fixedDeal = JSON.stringify({
+    roles: spec.roles,
+    ...(spec.lovers ? { lovers: spec.lovers } : {}),
+    ...(spec.godfather != null ? { godfather: spec.godfather } : {}),
+  });
 
   const serverProc = Bun.spawn(["bun", "run", SERVER_ENTRY], {
     env: { ...process.env, PORT: String(port), DATABASE_PATH: dbPath, MAFIA_FIXED_DEAL: fixedDeal },

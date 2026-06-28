@@ -7,6 +7,7 @@ export interface Player {
   isAlive: boolean;
   isLover: boolean;
   loverId: number | null; // the other lover's player id
+  isGodfather: boolean; // mafia-aligned; reads INNOCENT to the Detective (role stays "mafia")
   connected: boolean;
   variant: number; // pixel art variant index
 }
@@ -20,6 +21,7 @@ export interface GameSettings {
   enableJoker: boolean;
   enableHunter: boolean;
   enableLovers: boolean;
+  enableGodfather: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
   narratorGender: "male" | "female";
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableJoker: false,
   enableHunter: false,
   enableLovers: false,
+  enableGodfather: false,
   soundEnabled: false,
   narrationAccent: "classic",
   narratorGender: "male",
@@ -212,7 +215,7 @@ export type ServerMessage =
   | { type: "game_joined"; code: string; isAdmin: boolean }
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
-  | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
+  | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[]; isGodfather?: boolean; godfatherName?: string }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
   | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
@@ -276,6 +279,9 @@ export type ServerMessage =
       eventHistory: GameEvent[];
       // Mafia team (only for mafia players)
       mafiaTeam?: string[];
+      // Godfather plumbing: isGodfather on the godfather's own sync; godfatherName on every mafia sync
+      isGodfather?: boolean;
+      godfatherName?: string;
       // Night action (null if not in night or dead or no action needed)
       nightAction: {
         locked: boolean;
@@ -333,6 +339,7 @@ export interface PlayerInfo {
   role?: Role;
   isLover?: boolean;
   loverId?: number;
+  isGodfather?: boolean;
 }
 
 export interface GameEvent {

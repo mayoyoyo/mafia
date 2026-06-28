@@ -41,6 +41,7 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     isAlive: true,
     isLover: false,
     loverId: null,
+    isGodfather: false,
     connected: true,
     variant: 0,
   };
@@ -145,6 +146,7 @@ const GAME_RESETS = {
       player.isLover = false;
       player.loverId = null;
       player.variant = 0;
+      player.isGodfather = false;
     }
   },
   lastDoctorTarget: (g: Game) => { g.lastDoctorTarget = null; },
@@ -533,6 +535,7 @@ export function addPlayer(game: Game, userId: number, username: string): Player 
     isAlive: true,
     isLover: false,
     loverId: null,
+    isGodfather: false,
     connected: true,
     variant: 0,
   };
@@ -557,7 +560,7 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
 }
 
 // Keys handled by sanitizeSettings, grouped by validation strategy.
-const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableLovers", "soundEnabled"] as const;
+const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableLovers", "enableGodfather", "soundEnabled"] as const;
 const modeKeys = ["doctorMode", "jokerMode"] as const;
 
 // Compile-time exhaustiveness guard: if a key is added to GameSettings in
@@ -618,7 +621,7 @@ export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
     username: p.username,
     isAlive: p.isAlive,
     isAdmin: p.id === game.adminId,
-    ...(includeRoles ? { role: p.role ?? undefined, isLover: p.isLover, loverId: p.loverId ?? undefined } : {}),
+    ...(includeRoles ? { role: p.role ?? undefined, isLover: p.isLover, loverId: p.loverId ?? undefined, isGodfather: p.isGodfather } : {}),
   }));
 }
 
@@ -707,6 +710,7 @@ export function getAliveByRole(game: Game, role: Role): Player[] {
 export interface FixedDeal {
   roles: Role[];             // role for the i-th player in join order
   lovers?: [number, number]; // join-order indices of the lover pair
+  godfather?: number;        // join-order index of the mafioso to flag as Godfather
 }
 
 let fixedDeal: FixedDeal | null = process.env.MAFIA_FIXED_DEAL
@@ -727,8 +731,16 @@ function assignFixedRoles(game: Game, deal: FixedDeal): number {
 
   let mafiaCount = 0;
   for (let i = 0; i < playerIds.length; i++) {
-    game.players.get(playerIds[i])!.role = deal.roles[i];
+    const p = game.players.get(playerIds[i])!;
+    p.role = deal.roles[i];
+    p.isGodfather = false; // fixed path never touches flags otherwise — reset before pinning
     if (deal.roles[i] === "mafia") mafiaCount++;
+  }
+
+  // Deterministically pin the Godfather by join-order index (test seam).
+  if (deal.godfather != null) {
+    const gf = game.players.get(playerIds[deal.godfather]);
+    if (gf && gf.role === "mafia") gf.isGodfather = true;
   }
 
   // Same variant scheme as the random path, with mafiaVariant pinned to 0
@@ -826,6 +838,16 @@ function assignRoles(game: Game): number {
     p1.loverId = lover2;
     p2.isLover = true;
     p2.loverId = lover1;
+  }
+
+  // Godfather: promote ONE random mafioso (replaces a mafia slot — count stays
+  // constant). Only when 2+ effective mafia (at 1 mafia the Detective could
+  // never find anyone). Reads INNOCENT to the Detective; mafia in all else.
+  if (settings.enableGodfather && mafiaCount >= 2) {
+    const mafias = Array.from(game.players.values()).filter((p) => p.role === "mafia");
+    if (mafias.length >= 2) {
+      mafias[Math.floor(Math.random() * mafias.length)].isGodfather = true;
+    }
   }
 
   return mafiaCount;
@@ -988,7 +1010,8 @@ export function submitDetectiveInvestigation(game: Game, detectiveId: number, ta
   if (!target || !target.isAlive) return null;
 
   game.detectiveTarget = targetId;
-  const isMafia = target.role === "mafia";
+  // The Godfather (role stays "mafia") reads INNOCENT — the role's sole mechanic.
+  const isMafia = target.role === "mafia" && !target.isGodfather;
   game.detectiveResult = { targetId, isMafia };
   game.detectiveHistory.push({ round: game.round, targetName: target.username, isMafia });
   return { isMafia, targetName: target.username };

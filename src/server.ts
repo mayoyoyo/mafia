@@ -839,7 +839,14 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
       mafiaTeam: Array.from(game.players.values())
         .filter(p => p.role === "mafia")
         .map(p => p.username),
+      // Every rejoining mafia keeps knowing who the Godfather is.
+      ...(() => {
+        const gf = Array.from(game.players.values()).find(p => p.isGodfather)?.username;
+        return gf ? { godfatherName: gf } : {};
+      })(),
     } : {}),
+    // The Godfather keeps their own card on rejoin.
+    ...(rejoined.isGodfather ? { isGodfather: true } : {}),
     nightAction,
     voteState,
     gameOver,
@@ -1227,6 +1234,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const mafiaNames = Array.from(game.players.values())
         .filter(p => p.role === "mafia")
         .map(p => p.username);
+      // Godfather (if any): every mafia learns who it is; the godfather learns they are it.
+      const godfatherName = Array.from(game.players.values()).find(p => p.isGodfather)?.username;
 
       // Send each player their role
       for (const [playerId, player] of game.players) {
@@ -1236,6 +1245,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           isLover: player.isLover,
           variant: player.variant,
           ...(player.role === "mafia" ? { mafiaTeam: mafiaNames } : {}),
+          ...(player.role === "mafia" && godfatherName ? { godfatherName } : {}),
+          ...(player.isGodfather ? { isGodfather: true } : {}),
         });
       }
 
@@ -1716,6 +1727,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const mafiaNames2 = Array.from(game.players.values())
         .filter(p => p.role === "mafia")
         .map(p => p.username);
+      const godfatherName2 = Array.from(game.players.values()).find(p => p.isGodfather)?.username;
 
       // Send each player their new role
       for (const [playerId, player] of game.players) {
@@ -1725,6 +1737,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           isLover: player.isLover,
           variant: player.variant,
           ...(player.role === "mafia" ? { mafiaTeam: mafiaNames2 } : {}),
+          ...(player.role === "mafia" && godfatherName2 ? { godfatherName: godfatherName2 } : {}),
+          ...(player.isGodfather ? { isGodfather: true } : {}),
         });
       }
 

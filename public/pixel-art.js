@@ -218,6 +218,18 @@
         [_,_,"#222","#222",_,_,"#222","#222",_,_],
       ],
     ],
+    godfather: [
+      [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+      [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
+      [_,"#c9a227","#c9a227","#c9a227","#c9a227","#c9a227","#c9a227","#c9a227","#c9a227",_],
+      ["#333","#333","#333","#333","#333","#333","#333","#333","#333","#333"],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+      [_,_,"#fdd","#fdd","#a62","#a62","#fdd","#fdd",_,_],
+      [_,_,"#222","#222","#fff","#fff","#222","#222",_,_],
+      [_,_,"#222","#fff","#d00","#d00","#fff","#222",_,_],
+      [_,_,"#222","#222","#c9a227","#d00","#222","#222",_,_],
+    ],
   };
 
   // Card back: mafioso + civilian side by side
@@ -557,6 +569,7 @@
     detective: "You are the Detective. Each night, investigate one player to discover if they are Mafia.",
     joker: "You are the Joker. Win by getting yourself executed during the day vote.",
     hunter: "You are the Hunter. If you die, you may take one player down with you.",
+    godfather: "You are the Godfather. You run the Mafia and appear INNOCENT to the Detective. Win with the Mafia.",
   };
 
   var ROLE_COLORS = {
@@ -566,6 +579,7 @@
     detective: "detective",
     joker: "joker",
     hunter: "hunter",
+    godfather: "godfather",
   };
 
   // Expose on window for app.js

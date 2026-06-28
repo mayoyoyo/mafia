@@ -10,6 +10,7 @@
   let gameCode = null;
   let isAdmin = false;
   let myRole = null;
+  let myIsGodfather = false;
   let isLover = false;
   let isDead = false;
   let jokerWonOverlayShown = false;
@@ -36,6 +37,7 @@
   let knownPlayers = [];
   let deathOrderCounter = 0;
   let mafiaTeam = [];
+  let godfatherName = null;
   let dayVoteCount = 0;
   let suspenseActive = false;
   let suspenseQueue = [];
@@ -344,9 +346,11 @@
 
       case "game_started":
         myRole = msg.role;
+        myIsGodfather = !!msg.isGodfather;
         isLover = msg.isLover;
         myVariant = msg.variant || 0;
         mafiaTeam = msg.mafiaTeam || [];
+        godfatherName = msg.godfatherName || null;
         isDead = false;
         jokerWonOverlayShown = false;
         // Fresh game start — reset all state
@@ -591,9 +595,11 @@
 
     // 3. Set role
     myRole = msg.role;
+    myIsGodfather = !!msg.isGodfather;
     isLover = msg.isLover;
     myVariant = msg.variant;
     mafiaTeam = msg.mafiaTeam || [];
+    godfatherName = msg.godfatherName || null;
     isDead = msg.isDead;
 
     // 4. Set phase
@@ -943,7 +949,7 @@
     }
   });
 
-  ["doctor", "detective", "joker", "hunter", "lovers"].forEach((role) => {
+  ["doctor", "detective", "joker", "hunter", "lovers", "godfather"].forEach((role) => {
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
@@ -1026,6 +1032,7 @@
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-hunter").checked = settings.enableHunter;
     $("toggle-lovers").checked = settings.enableLovers;
+    $("toggle-godfather").checked = settings.enableGodfather;
     if (settings.narratorGender) setGender(settings.narratorGender);
     if (settings.narrationAccent) {
       setAccent(settings.narrationAccent);
@@ -1123,6 +1130,7 @@
     if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
     if (settings.enableHunter) roles.push("Hunter");
     if (settings.enableLovers) roles.push("Lovers");
+    if (settings.enableGodfather) roles.push("Godfather");
 
     container.innerHTML = `
       <div class="lobby-settings-row">
@@ -1144,14 +1152,17 @@
   // Pixel art data loaded from pixel-art.js (window globals)
 
   function updateRoleCard() {
+    // Display-only role: the Godfather sees a distinct card but myRole stays
+    // "mafia" so the mafia night-action UI keeps gating correctly.
+    const displayRole = myIsGodfather ? "godfather" : myRole;
     const card = $("role-card");
-    card.className = `role-card ${ROLE_COLORS[myRole] || ""}`;
-    $("role-name").textContent = myRole ? myRole.toUpperCase() : "";
-    $("role-description").textContent = ROLE_DESCRIPTIONS[myRole] || "";
+    card.className = `role-card ${ROLE_COLORS[displayRole] || ""}`;
+    $("role-name").textContent = displayRole ? displayRole.toUpperCase() : "";
+    $("role-description").textContent = ROLE_DESCRIPTIONS[displayRole] || "";
     // Pixel art role image
     const imgEl = $("role-image");
-    if (myRole) {
-      imgEl.innerHTML = getRoleImage(myRole, myVariant);
+    if (displayRole) {
+      imgEl.innerHTML = getRoleImage(displayRole, myVariant);
     } else {
       imgEl.innerHTML = "";
     }
@@ -1162,8 +1173,8 @@
     }
     // Mini role icon in bottom-right of card-front for quick-peek
     const miniEl = $("role-icon-mini");
-    if (myRole) {
-      miniEl.innerHTML = getRoleImage(myRole, myVariant);
+    if (displayRole) {
+      miniEl.innerHTML = getRoleImage(displayRole, myVariant);
     } else {
       miniEl.innerHTML = "";
     }
@@ -2138,12 +2149,14 @@
         const dotStyle = p.isAlive && p.color ? `style="background:${p.color}"` : '';
         const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
         const showMafiaTag = isMafiaTeammate && !hideMafiaTag;
+        // The mafia (incl. the Godfather themselves) know who the Godfather is.
+        const isGodfatherMember = godfatherName != null && p.username === godfatherName;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
         return `<div class="player-status-item">
           <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
-          ${showMafiaTag ? '<span class="mafia-tag">MAFIA</span>' : ''}
+          ${showMafiaTag ? (isGodfatherMember ? '<span class="mafia-tag godfather-tag">&#128081; GODFATHER</span>' : '<span class="mafia-tag">MAFIA</span>') : ''}
           ${investigated ? (isMafia ? '<span class="detective-tag mafia">' + pixelArtToSvg(THUMB_DOWN_ART) + '</span>' : '<span class="detective-tag clear">' + pixelArtToSvg(THUMB_UP_ART) + '</span>') : ''}
         </div>`;
       })
@@ -3216,8 +3229,10 @@
     // Reset gameplay state but keep gameCode/isAdmin for Play Again
     const savedIsAdmin = isAdmin;
     myRole = null;
+    myIsGodfather = false;
     isLover = false;
     mafiaTeam = [];
+    godfatherName = null;
     isDead = false;
     jokerWonOverlayShown = false;
     currentPhase = null;
@@ -3438,9 +3453,11 @@
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
         const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
-        return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
+        // The Godfather reveals as "GODFATHER" (role stays "mafia" under the hood).
+        const revealRole = p.isGodfather ? "godfather" : (p.role || "?");
+        return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${revealRole}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
-          <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
+          <span class="role-reveal-role ${revealRole}">${revealRole.toUpperCase()}</span>
           ${trophyText}
           ${loverText}
           ${deadText}
@@ -3456,8 +3473,9 @@
       return;
     }
 
-    // Find the boundary between non-mafia and mafia
-    const firstMafiaIdx = items.findIndex((el) => el.dataset.role === "mafia");
+    // Find the boundary between non-mafia and mafia (the Godfather sorts into
+    // the mafia block but carries data-role="godfather", so match both).
+    const firstMafiaIdx = items.findIndex((el) => el.dataset.role === "mafia" || el.dataset.role === "godfather");
     const DELAY_PER_CARD = 300;
     const PAUSE_BEFORE_MAFIA = 800;
 
@@ -3499,6 +3517,8 @@
     $("event-history").classList.add("hidden");
     narratorTranscript = [];
     mafiaTeam = [];
+    godfatherName = null;
+    myIsGodfather = false;
     resetEventHistoryTabs();
     closeSettingsModal();
     gameCode = null;
