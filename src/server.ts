@@ -6,7 +6,7 @@ import {
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
   submitJokerHaunt, getJokerHauntTargets, assertInvariants, assertPhaseEdge,
-  toTargetInfo, projectGameOver, submitHunterRevenge,
+  toTargetInfo, projectGameOver, submitHunterRevenge, submitVigilanteShoot,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
@@ -318,6 +318,26 @@ function sendDetectivePrompts(game: Game): void {
   }, getHauntingJokerId(game));
 }
 
+function sendVigilantePrompts(game: Game): void {
+  const aliveVig = getAliveByRole(game, "vigilante");
+  const actionable = aliveVig.filter((v) => !v.vigilanteBulletUsed);
+  if (actionable.length > 0) {
+    for (const v of actionable) {
+      // D3: the vigilante may NOT target themselves — exclude self from the list.
+      const targets = getAlivePlayers(game)
+        .filter((p) => p.id !== v.id)
+        .map((p) => toTargetInfo(p, game));
+      sendToUser(v.id, { type: "vigilante_targets", players: targets, bulletUsed: false });
+    }
+  }
+  // Notify dead players about the vigilante sub-phase (exclude haunting joker).
+  sendToDeadPlayers(game, {
+    type: "spectator_night_phase",
+    subPhase: "vigilante",
+    isRoleAlive: actionable.length > 0,
+  }, getHauntingJokerId(game));
+}
+
 function sendJokerHauntPrompts(game: Game): void {
   // Find the dead joker
   const joker = Array.from(game.players.values()).find(p => p.role === "joker" && !p.isAlive);
@@ -361,7 +381,7 @@ function handleSubPhaseAdvance(game: Game): void {
       if (!getGame(game.code)) return;
       broadcastToGame(game.code, { type: "sound_cue", sound: subPhaseCue(nextPhase, "open") });
       // Notify dead players that this role is dead (exclude haunting joker)
-      if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
+      if (result.nextPhase === "doctor" || result.nextPhase === "detective" || result.nextPhase === "vigilante") {
         sendToDeadPlayers(game, {
           type: "spectator_night_phase",
           subPhase: result.nextPhase,
@@ -377,7 +397,7 @@ function handleSubPhaseAdvance(game: Game): void {
       armNightTimer(game, "fake_advance", fakeDelay, () => {
         if (!getGame(game.code)) return;
         // Notify dead players that this fake sub-phase completed (role is dead, exclude haunting joker)
-        if (result.nextPhase === "doctor" || result.nextPhase === "detective") {
+        if (result.nextPhase === "doctor" || result.nextPhase === "detective" || result.nextPhase === "vigilante") {
           sendToDeadPlayers(game, {
             type: "spectator_night_complete",
             phase: result.nextPhase,
@@ -402,6 +422,8 @@ function handleSubPhaseAdvance(game: Game): void {
       sendDoctorPrompts(game);
     } else if (result.nextPhase === "detective") {
       sendDetectivePrompts(game);
+    } else if (result.nextPhase === "vigilante") {
+      sendVigilantePrompts(game);
     }
   });
 }
@@ -549,8 +571,8 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
 }
 
 function buildSpectatorLog(game: Game): Array<{ phase: string; targetName: string | null; alive: boolean }> {
-  // Sub-phase order: mafia=0, doctor=1, detective=2, resolving=3
-  const phaseOrder = ["mafia", "doctor", "detective", "resolving"];
+  // Sub-phase order: mafia=0, doctor=1, detective=2, vigilante=3, resolving=4
+  const phaseOrder = ["mafia", "doctor", "detective", "vigilante", "resolving"];
   const currentIdx = phaseOrder.indexOf(game.nightSubPhase || "mafia");
   const log: Array<{ phase: string; targetName: string | null; alive: boolean }> = [];
 
@@ -578,6 +600,15 @@ function buildSpectatorLog(game: Game): Array<{ phase: string; targetName: strin
         log.push({ phase: "detective", targetName: investigated ? investigated.username : null, alive: true });
       } else if (!detectiveAlive) {
         log.push({ phase: "detective", targetName: null, alive: false });
+      }
+    } else if (phase === "vigilante") {
+      if (!game.settings.enableVigilante) continue;
+      const actionable = getAliveByRole(game, "vigilante").some((v) => !v.vigilanteBulletUsed);
+      if (actionable && game.vigilanteTarget !== null) {
+        const shot = game.players.get(game.vigilanteTarget);
+        log.push({ phase: "vigilante", targetName: shot ? shot.username : null, alive: true });
+      } else if (!actionable) {
+        log.push({ phase: "vigilante", targetName: null, alive: false });
       }
     }
   }
@@ -659,10 +690,12 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         spectatorLog,
         ...jokerStatus,
       };
-    } else if (game.nightSubPhase === "doctor" || game.nightSubPhase === "detective") {
+    } else if (game.nightSubPhase === "doctor" || game.nightSubPhase === "detective" || game.nightSubPhase === "vigilante") {
       const isRoleAlive = game.nightSubPhase === "doctor"
         ? getAliveByRole(game, "doctor").length > 0
-        : getAliveByRole(game, "detective").length > 0;
+        : game.nightSubPhase === "detective"
+          ? getAliveByRole(game, "detective").length > 0
+          : getAliveByRole(game, "vigilante").some((v) => !v.vigilanteBulletUsed);
       nightAction = {
         locked: false,
         targetName: null,
@@ -782,6 +815,31 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
         };
       }
       // else nightAction stays null (waiting for their turn)
+    } else if (rejoined.role === "vigilante" && game.nightSubPhase === "vigilante") {
+      const usable = !rejoined.vigilanteBulletUsed;
+      const locked = game.vigilanteTarget !== null || !usable;
+      // D3: targets exclude the vigilante themselves.
+      const targets = (usable && game.vigilanteTarget === null)
+        ? getAlivePlayers(game).filter((p) => p.id !== rejoined.id).map((p) => toTargetInfo(p, game))
+        : [];
+      nightAction = {
+        locked, targets,
+        targetName: game.vigilanteTarget !== null ? (game.players.get(game.vigilanteTarget)?.username ?? null) : null,
+        voterTargets: {}, lockedTarget: null, objectedTargets: {}, aliveMafiaCount: 0, lastDoctorTarget: null,
+      };
+    } else if (rejoined.role === "vigilante" && game.nightSubPhase !== "vigilante") {
+      // Vigilante sub-phase hasn't started or is done — show locked if a shot was fired this night, null otherwise.
+      if (game.vigilanteTarget !== null) {
+        nightAction = {
+          locked: true,
+          targetName: game.players.get(game.vigilanteTarget)?.username ?? null,
+          targets: [],
+          voterTargets: {}, lockedTarget: null,
+          objectedTargets: {}, aliveMafiaCount: 0,
+          lastDoctorTarget: null,
+        };
+      }
+      // else nightAction stays null (waiting for their turn / spent)
     }
   }
 
@@ -847,6 +905,8 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     } : {}),
     // The Godfather keeps their own card on rejoin.
     ...(rejoined.isGodfather ? { isGodfather: true } : {}),
+    // The Vigilante keeps their spent-bullet indicator on rejoin (own screen only).
+    ...(rejoined.role === "vigilante" ? { vigilanteBulletUsed: rejoined.vigilanteBulletUsed } : {}),
     nightAction,
     voteState,
     gameOver,
@@ -909,6 +969,7 @@ const REVENGE_GATE_REJECTED: Record<ClientMessage["type"], boolean> = {
   confirm_mafia_kill: true,
   doctor_save: true,
   detective_investigate: true,
+  vigilante_shoot: true,
   joker_haunt: true,
   narrator_ready: true,
   start_game: true,
@@ -1361,6 +1422,37 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         }, getHauntingJokerId(game));
 
         // Advance to resolving
+        handleSubPhaseAdvance(game);
+      }
+      break;
+    }
+
+    case "vigilante_shoot": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game || game.nightSubPhase !== "vigilante") return;
+      if (game.awaitingNarratorReady) return;
+      // M6 hygiene: accept only null (hold fire) or a numeric target id.
+      const targetId = msg.targetId;
+      if (targetId !== null && typeof targetId !== "number") return;
+
+      const ok = submitVigilanteShoot(game, client.userId, targetId);
+      if (ok) {
+        sendToUser(client.userId, {
+          type: "night_action_done",
+          message: targetId === null
+            ? "You hold your fire and keep your bullet."
+            : "You have taken your shot. Your bullet is spent.",
+        });
+        // Notify dead players that the vigilante sub-phase completed (exclude haunting joker).
+        const tgt = targetId !== null ? game.players.get(targetId) : null;
+        sendToDeadPlayers(game, {
+          type: "spectator_night_complete",
+          phase: "vigilante",
+          targetName: tgt ? tgt.username : null,
+          alive: true,
+        }, getHauntingJokerId(game));
+
         handleSubPhaseAdvance(game);
       }
       break;

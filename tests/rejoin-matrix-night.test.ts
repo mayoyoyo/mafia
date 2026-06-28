@@ -220,6 +220,8 @@ async function rejoinBuffered(player: TestPlayer, code: string, settleMs = 700):
 function assertRoleSecrecy(sync: any) {
   if (sync.role !== "mafia") expect(sync.mafiaTeam).toBeUndefined();
   if (sync.role !== "detective") expect(sync.detectiveHistory).toBeUndefined();
+  // The vigilante's own-screen bullet indicator must never leak to anyone else.
+  if (sync.role !== "vigilante") expect(sync.vigilanteBulletUsed).toBeUndefined();
 }
 
 /** Drive mafia consensus + confirm: maybe → lock for each alive mafia, then one confirms. */
@@ -647,4 +649,67 @@ describe("E. Alive joker rejoin at night", () => {
 
     closeAll(players);
   }, 20000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// F. Vigilante rejoin during the vigilante sub-phase (own-screen bullet state)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("F. Vigilante rejoin at night", () => {
+  test("fresh-bullet rejoin is unlocked + self-excluded; post-shot rejoin reports the spent bullet; non-vigilante never sees the flag", async () => {
+    // 5 players: 1 mafia, 1 vigilante, 3 citizens. Only the vigilante is
+    // enabled, so the night order is mafia -> vigilante -> resolving.
+    const { code, players } = await setupGame(5, { mafiaCount: 1, enableVigilante: true });
+    const admin = players[0];
+    const mafia = players.find(p => p.role === "mafia")!;
+    const vigilante = players.find(p => p.role === "vigilante")!;
+    const citizens = players.filter(p => p.role === "citizen");
+    expect(vigilante).toBeDefined();
+    expect(citizens.length).toBe(3);
+
+    // Complete the mafia sub-phase so the night advances to the vigilante phase.
+    const vigTargetsPromise = waitFor(vigilante.ws, "vigilante_targets", 8000);
+    const killTarget = citizens.find(c => c.userId !== admin.userId)!;
+    await mafiaKill([mafia], killTarget);
+    const livePrompt = await vigTargetsPromise;
+    expect(livePrompt.bulletUsed).toBe(false);
+    // D3: the vigilante is never offered itself in the live prompt.
+    expect(livePrompt.players.every((t: any) => t.id !== vigilante.userId)).toBe(true);
+
+    // F1: rejoin with a FRESH bullet during the vigilante sub-phase.
+    const sync1 = await rejoin(vigilante, code);
+    expect(sync1.phase).toBe("night");
+    expect(sync1.nightSubPhase).toBe("vigilante");
+    expect(sync1.role).toBe("vigilante");
+    expect(sync1.vigilanteBulletUsed).toBe(false);
+    expect(sync1.nightAction).not.toBeNull();
+    expect(sync1.nightAction.locked).toBe(false);
+    expect(sync1.nightAction.targetName).toBeNull();
+    expect(sync1.nightAction.targets.length).toBeGreaterThan(0);
+    // D3: rejoin target list also excludes self.
+    expect(sync1.nightAction.targets.every((t: any) => t.id !== vigilante.userId)).toBe(true);
+    assertRoleSecrecy(sync1);
+
+    // Fire on the fresh socket (friendly-fire a citizen so the game continues
+    // to day and the post-shot rejoin state is deterministic).
+    const shootTarget = citizens.find(c => c.userId !== killTarget.userId && c.userId !== admin.userId)
+      ?? citizens.find(c => c.userId !== killTarget.userId)!;
+    send(vigilante.ws, { type: "vigilante_shoot", targetId: shootTarget.userId });
+    await waitFor(vigilante.ws, "night_action_done", 6000);
+
+    // F2: rejoin AFTER firing — the spent bullet rides every rejoin payload.
+    const sync2 = await rejoin(vigilante, code);
+    expect(sync2.role).toBe("vigilante");
+    expect(sync2.vigilanteBulletUsed).toBe(true);
+    assertRoleSecrecy(sync2);
+
+    // F3: a non-vigilante rejoiner NEVER carries vigilanteBulletUsed.
+    const other = citizens.find(c => c.userId !== killTarget.userId && c.userId !== shootTarget.userId && c.userId !== admin.userId)
+      ?? mafia;
+    const sync3 = await rejoin(other, code);
+    expect(sync3.vigilanteBulletUsed).toBeUndefined();
+    assertRoleSecrecy(sync3);
+
+    closeAll(players);
+  }, 40000);
 });

@@ -211,6 +211,16 @@ export class PlaytestClient {
     return p;
   }
 
+  /**
+   * Vigilante shoot (targetId === null = hold fire / keep the bullet).
+   * Resolves on night_action_done (sent for both a real shot and a pass).
+   */
+  async vigilanteShoot(targetId: number | null): Promise<WSMessage> {
+    const p = this.waitFor("night_action_done");
+    this.send({ type: "vigilante_shoot", targetId });
+    return p;
+  }
+
   /** Joker haunt (official mode). */
   jokerHaunt(targetId: number): void {
     this.send({ type: "joker_haunt", targetId });

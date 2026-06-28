@@ -120,6 +120,11 @@
         </div>
 
         <div class="setting-row">
+          <span>Vigilante</span>
+          <label class="toggle"><input type="checkbox" id="toggle-vigilante"><span class="slider"></span></label>
+        </div>
+
+        <div class="setting-row">
           <span>Lovers</span>
           <label class="toggle"><input type="checkbox" id="toggle-lovers"><span class="slider"></span></label>
         </div>
@@ -208,6 +213,7 @@
             <div id="role-name" class="role-name"></div>
             <div id="role-description" class="role-description"></div>
             <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lover</div>
+            <div id="bullet-indicator" class="bullet-indicator hidden"><span id="bullet-status"></span></div>
             <div id="role-icon-mini" class="role-icon-mini"></div>
             <div id="role-mini-balloon" class="role-mini-balloon hidden">
               <svg viewBox="0 0 7 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
@@ -270,6 +276,7 @@
         <div id="joker-spectator-status" class="joker-spectator-status hidden"></div>
         <ul id="action-targets" class="target-list"></ul>
         <button id="btn-decline-revenge" class="btn btn-secondary btn-small hidden">Decline revenge</button>
+        <button id="btn-vigilante-pass" class="btn btn-secondary btn-small hidden">Hold fire</button>
         <div id="slide-confirm" class="slide-confirm hidden">
           <div class="slide-track-frame pxc">
             <div class="slide-track pxc">

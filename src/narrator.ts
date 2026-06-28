@@ -76,6 +76,14 @@ const NIGHT_KILL_MESSAGES = [
   "It's a grim morning. {name} was discovered {location}, done in by {tool}. {lastWords}",
 ];
 
+const VIGILANTE_KILL_MESSAGES = [
+  "A single gunshot rang out in the dark. {name} did not see the dawn. {lastWords}",
+  "The Vigilante's lone bullet found {name} {location}. One shot, no echo.",
+  "{name} was gunned down in the night, {location}. Someone in this town keeps a pistol and their own counsel.",
+  "{name} is dead — a clean shot, close range, no killer to be found. The Vigilante answers to no one.",
+  "It's a grim morning. {name} was discovered {location}, a single bullet and no witnesses. {lastWords}",
+];
+
 const DOCTOR_SAVE_MESSAGES = [
   "{name} was found barely breathing {location}, kept alive by {saveMethod}. The Doctor got there first.",
   "{name} should be dead. Instead they're sitting up, pale and shaking, pulled back by {saveMethod}.",
@@ -259,6 +267,13 @@ export const Narrator = {
   },
   hunterDecline(): string {
     return pick(HUNTER_DECLINE_MESSAGES);
+  },
+  vigilanteShotKill(name: string): string {
+    return fill(pick(VIGILANTE_KILL_MESSAGES), {
+      name,
+      location: pick(LOCATIONS),
+      lastWords: pick(LAST_WORDS),
+    });
   },
   townWin(): string {
     return pick(TOWN_WIN_MESSAGES);

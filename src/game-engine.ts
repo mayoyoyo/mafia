@@ -44,6 +44,7 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     isGodfather: false,
     connected: true,
     variant: 0,
+    vigilanteBulletUsed: false,
   };
 
   const game: Game = {
@@ -59,6 +60,7 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     mafiaTarget: null,
     doctorTarget: null,
     detectiveTarget: null,
+    vigilanteTarget: null,
     lastDoctorTarget: null,
     jokerHauntTarget: null,
     jokerHauntVoters: [],
@@ -112,6 +114,7 @@ const NIGHT_RESETS = {
   mafiaTarget: (g: Game) => { g.mafiaTarget = null; },
   doctorTarget: (g: Game) => { g.doctorTarget = null; },
   detectiveTarget: (g: Game) => { g.detectiveTarget = null; },
+  vigilanteTarget: (g: Game) => { g.vigilanteTarget = null; },
   jokerHauntTarget: (g: Game) => { g.jokerHauntTarget = null; },
   jokerHauntVoters: (g: Game) => { g.jokerHauntVoters = []; },
   nightSubPhase: (g: Game) => { g.nightSubPhase = null; },
@@ -147,6 +150,10 @@ const GAME_RESETS = {
       player.loverId = null;
       player.variant = 0;
       player.isGodfather = false;
+      // CRITICAL (same reset-leak class as isGodfather): a spent bullet must
+      // not survive a Play Again — without this a previous vigilante's flag
+      // would leak onto whoever holds the seat in the next game.
+      player.vigilanteBulletUsed = false;
     }
   },
   lastDoctorTarget: (g: Game) => { g.lastDoctorTarget = null; },
@@ -538,6 +545,7 @@ export function addPlayer(game: Game, userId: number, username: string): Player 
     isGodfather: false,
     connected: true,
     variant: 0,
+    vigilanteBulletUsed: false,
   };
 
   game.players.set(userId, player);
@@ -560,7 +568,7 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
 }
 
 // Keys handled by sanitizeSettings, grouped by validation strategy.
-const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableLovers", "enableGodfather", "soundEnabled"] as const;
+const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableVigilante", "enableLovers", "enableGodfather", "soundEnabled"] as const;
 const modeKeys = ["doctorMode", "jokerMode"] as const;
 
 // Compile-time exhaustiveness guard: if a key is added to GameSettings in
@@ -807,6 +815,11 @@ function assignRoles(game: Game): number {
     idx++;
   }
 
+  if (settings.enableVigilante && idx < totalPlayers) {
+    game.players.get(playerIds[idx])!.role = "vigilante";
+    idx++;
+  }
+
   // Rest are citizens
   while (idx < totalPlayers) {
     game.players.get(playerIds[idx])!.role = "citizen";
@@ -823,7 +836,7 @@ function assignRoles(game: Game): number {
       player.variant = citizenVariantIdx % 8;
       citizenVariantIdx++;
     } else {
-      player.variant = 0; // doctor, detective, joker, hunter have single variant
+      player.variant = 0; // doctor, detective, joker, hunter, vigilante have single variant
     }
   }
 
@@ -1033,6 +1046,29 @@ export function submitJokerHaunt(game: Game, jokerId: number, targetId: number):
   return true;
 }
 
+/**
+ * The Vigilante's one-shot night kill. `targetId === null` is a PASS (hold
+ * fire — keep the bullet, advance the phase). A real shot commits the target
+ * to game.vigilanteTarget (resolved at dawn by resolveNight) AND spends the
+ * bullet at submit time — so choosing to shoot consumes the bullet even when
+ * the Doctor blocks the kill (D1). Guards: alive vigilante, unused bullet,
+ * alive non-self target (self-shot FORBIDDEN — D3; friendly fire on OTHER
+ * town is allowed). Returns false (no state change) on any rejection.
+ */
+export function submitVigilanteShoot(game: Game, vigilanteId: number, targetId: number | null): boolean {
+  if (game.phase !== "night" || game.nightSubPhase !== "vigilante") return false;
+  const vig = game.players.get(vigilanteId);
+  if (!vig || vig.role !== "vigilante" || !vig.isAlive) return false;
+  if (vig.vigilanteBulletUsed) return false; // one bullet per game
+  if (targetId === null) return true;        // PASS: keep the bullet, advance
+  if (targetId === vigilanteId) return false; // D3: no self-shot
+  const target = game.players.get(targetId);
+  if (!target || !target.isAlive) return false;
+  game.vigilanteTarget = targetId;
+  vig.vigilanteBulletUsed = true; // consume at submit time (survives a doctor block)
+  return true;
+}
+
 export function getJokerHauntTargets(game: Game): PlayerInfo[] {
   return game.jokerHauntVoters
     .map(id => game.players.get(id))
@@ -1057,6 +1093,7 @@ export function deriveDeathEventType(source: KillSource, cause: DeathCause): Dea
     case "joker_haunt": return "joker_haunt";
     case "execution": return "execution";
     case "hunter_revenge": return "hunter_revenge";
+    case "vigilante": return "vigilante_shot";
   }
 }
 
@@ -1192,7 +1229,7 @@ export interface SubPhaseAdvanceResult {
 
 export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
   const current = game.nightSubPhase;
-  const phases: NightSubPhase[] = ["mafia", "doctor", "detective", "resolving"];
+  const phases: NightSubPhase[] = ["mafia", "doctor", "detective", "vigilante", "resolving"];
   const currentIdx = current ? phases.indexOf(current) : -1;
 
   // Try each subsequent phase after current
@@ -1228,6 +1265,17 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
       // alive + enabled → real sub-phase
       game.nightSubPhase = "detective";
       return { nextPhase: "detective", isFake: false };
+    }
+
+    if (candidate === "vigilante") {
+      if (!game.settings.enableVigilante) continue; // disabled → skip entirely
+      // Phantom whenever NOT actionable: the "open eyes" phase runs EVERY night
+      // the role is enabled (even when the vigilante is dead or out of ammo) so
+      // its state can't be inferred. Actionable = a living vigilante with an
+      // unused bullet exists.
+      const actionable = getAliveByRole(game, "vigilante").some((v) => !v.vigilanteBulletUsed);
+      game.nightSubPhase = "vigilante";
+      return { nextPhase: "vigilante", isFake: !actionable };
     }
 
 }
@@ -1266,6 +1314,16 @@ export function resolveNight(game: Game): NightResult {
     intents.push({
       targetId: game.mafiaTarget, source: "mafia",
       deathMessage: (v) => Narrator.nightKill(v.username),
+    });
+  }
+  // Vigilante shot resolves AFTER the mafia kill, BEFORE the joker haunt. A
+  // doctor save on this target (and not the mafia's) blocks it (one save, one
+  // source); the shooter may already be dead tonight — the field is read, not
+  // the shooter's liveness (D2 simultaneity).
+  if (game.vigilanteTarget !== null) {
+    intents.push({
+      targetId: game.vigilanteTarget, source: "vigilante",
+      deathMessage: (v) => Narrator.vigilanteShotKill(v.username),
     });
   }
   if (game.jokerHauntTarget !== null) {

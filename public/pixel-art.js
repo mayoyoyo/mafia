@@ -58,6 +58,21 @@
       [_,_,"#574","#e60","#574","#574","#e60","#574",_,_],
       [_,_,"#653","#653",_,_,"#653","#653",_,_],
     ],
+    // Vigilante: black wide-brim hat, determined face, dark coat with a gold
+    // star badge (#fb0), a silver revolver at the right hip (#888/#ddd/#555),
+    // three red bullets on the belt (#f00), dark boots.
+    vigilante: [
+      [_,_,_,"#222","#222","#222","#222",_,_,_],
+      [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+      [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#222","#fb0","#222","#222","#222","#222",_,_],
+      [_,_,"#222","#222","#222","#222","#888","#888","#ddd",_],
+      ["#f00","#f00","#f00","#222","#222","#222","#555","#888",_,_],
+      [_,_,"#333","#333",_,_,"#333","#333",_,_],
+    ],
     citizen: [
       // 0: farmer
       [
@@ -342,6 +357,21 @@
     [_,_,_,_,_,_,_,_,_,_],
   ];
 
+  // Bullet/cartridge icon for the vigilante shoot slide-to-confirm: a brass
+  // casing (#fb0/#fc0) with a copper tip (#e94/#c83/#a52) pointing right.
+  var BULLET_ART = [
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+    ["#fb0","#fb0","#fb0","#fb0","#fb0","#c83","#c83","#a52",_,_],
+    ["#fc0","#fb0","#fb0","#fb0","#fb0","#e94","#c83","#a52","#a52",_],
+    ["#fc0","#fb0","#fb0","#fb0","#fb0","#e94","#c83","#a52","#a52",_],
+    ["#fb0","#fb0","#fb0","#fb0","#fb0","#c83","#c83","#a52",_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+  ];
+
   // 8-bit clown icon for joker haunt slide-to-confirm
   var CLOWN_ART = [
     [_,_,"#e53",_,_,_,_,"#e53",_,_],
@@ -569,6 +599,7 @@
     detective: "You are the Detective. Each night, investigate one player to discover if they are Mafia.",
     joker: "You are the Joker. Win by getting yourself executed during the day vote.",
     hunter: "You are the Hunter. If you die, you may take one player down with you.",
+    vigilante: "You are the Vigilante. You have ONE bullet for the entire game. Each night you may shoot one player — or hold your fire and keep the bullet. Friendly fire is allowed.",
     godfather: "You are the Godfather. You run the Mafia and appear INNOCENT to the Detective. Win with the Mafia.",
   };
 
@@ -579,6 +610,7 @@
     detective: "detective",
     joker: "joker",
     hunter: "hunter",
+    vigilante: "vigilante",
     godfather: "godfather",
   };
 
@@ -593,6 +625,7 @@
   window.MAGNIFIER_ART = MAGNIFIER_ART;
   window.CLOWN_ART = CLOWN_ART;
   window.BOW_ART = BOW_ART;
+  window.BULLET_ART = BULLET_ART;
   window.TROPHY_ART = TROPHY_ART;
   window.GEAR_ART = GEAR_ART;
   window.SCROLL_ART = SCROLL_ART;

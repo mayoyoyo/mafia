@@ -11,6 +11,7 @@
   let isAdmin = false;
   let myRole = null;
   let myIsGodfather = false;
+  let vigilanteBulletUsed = false; // Vigilante own-screen indicator: true once the bullet is spent
   let isLover = false;
   let isDead = false;
   let jokerWonOverlayShown = false;
@@ -228,6 +229,7 @@
     "mafia_targets",
     "doctor_targets",
     "detective_targets",
+    "vigilante_targets",
     "joker_haunt_targets",
     "hunter_revenge_pending",
     "hunter_revenge_targets",
@@ -347,6 +349,7 @@
       case "game_started":
         myRole = msg.role;
         myIsGodfather = !!msg.isGodfather;
+        vigilanteBulletUsed = false; // fresh game: bullet unused
         isLover = msg.isLover;
         myVariant = msg.variant || 0;
         mafiaTeam = msg.mafiaTeam || [];
@@ -427,6 +430,12 @@
 
       case "detective_targets":
         showNightAction("Choose someone to investigate", msg.players, "detective_investigate");
+        break;
+
+      case "vigilante_targets":
+        vigilanteBulletUsed = msg.bulletUsed;
+        updateBulletIndicator();
+        showNightAction("Choose someone to shoot — or hold your fire", msg.players, "vigilante_shoot");
         break;
 
       case "joker_haunt_targets":
@@ -596,6 +605,7 @@
     // 3. Set role
     myRole = msg.role;
     myIsGodfather = !!msg.isGodfather;
+    vigilanteBulletUsed = !!msg.vigilanteBulletUsed; // restore spent-bullet indicator before the card renders
     isLover = msg.isLover;
     myVariant = msg.variant;
     mafiaTeam = msg.mafiaTeam || [];
@@ -679,6 +689,7 @@
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
+    $("btn-vigilante-pass").classList.add("hidden");
     // C5b: gate-closed baseline (E10d — rejoin after resolution must leave
     // no stale wait view); the pendingRevenge branch below re-shows it.
     $("revenge-wait").classList.add("hidden");
@@ -776,7 +787,7 @@
           // Show locked-in action
           const panel = $("night-actions");
           panel.classList.remove("hidden");
-          const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : "Investigating";
+          const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : myRole === "vigilante" ? "Shooting" : "Investigating";
           $("action-title").textContent = roleLabel;
           $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
           hideSlideConfirm();
@@ -798,10 +809,12 @@
           const actionType = myRole === "mafia" ? "mafia_vote"
             : myRole === "doctor" ? "doctor_save"
             : myRole === "joker" ? "joker_haunt"
+            : myRole === "vigilante" ? "vigilante_shoot"
             : "detective_investigate";
           const title = myRole === "mafia" ? "Choose a victim"
             : myRole === "doctor" ? "Choose someone to protect"
             : myRole === "joker" ? "Choose someone to haunt"
+            : myRole === "vigilante" ? "Choose someone to shoot — or hold your fire"
             : "Choose someone to investigate";
           showNightAction(title, na.targets, actionType, myRole === "doctor" ? na.lastDoctorTarget : undefined);
 
@@ -949,7 +962,7 @@
     }
   });
 
-  ["doctor", "detective", "joker", "hunter", "lovers", "godfather"].forEach((role) => {
+  ["doctor", "detective", "joker", "hunter", "vigilante", "lovers", "godfather"].forEach((role) => {
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
@@ -1031,6 +1044,7 @@
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-hunter").checked = settings.enableHunter;
+    $("toggle-vigilante").checked = settings.enableVigilante;
     $("toggle-lovers").checked = settings.enableLovers;
     $("toggle-godfather").checked = settings.enableGodfather;
     if (settings.narratorGender) setGender(settings.narratorGender);
@@ -1129,6 +1143,7 @@
     if (settings.enableDetective) roles.push("Detective");
     if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
     if (settings.enableHunter) roles.push("Hunter");
+    if (settings.enableVigilante) roles.push("Vigilante");
     if (settings.enableLovers) roles.push("Lovers");
     if (settings.enableGodfather) roles.push("Godfather");
 
@@ -1183,6 +1198,23 @@
       $("role-mini-balloon").classList.remove("hidden");
     } else {
       $("role-mini-balloon").classList.add("hidden");
+    }
+    updateBulletIndicator();
+  }
+
+  // Vigilante-only one-shot indicator on the role card. Persistent across
+  // day/death (the bullet count is a fact about the role, not the night).
+  function updateBulletIndicator() {
+    const el = $("bullet-indicator");
+    if (!el) return;
+    const status = $("bullet-status");
+    if (myRole === "vigilante") {
+      el.classList.remove("hidden");
+      el.classList.toggle("spent", vigilanteBulletUsed);
+      if (status) status.textContent = vigilanteBulletUsed ? "bullet used" : "1 bullet";
+    } else {
+      el.classList.add("hidden");
+      el.classList.remove("spent");
     }
   }
 
@@ -1377,10 +1409,11 @@
     const iconArt = role === "mafia" ? KNIFE_ART
       : role === "doctor" ? CROSS_ART
       : role === "joker_haunt" ? CLOWN_ART
-      : role === "hunter_revenge" ? BOW_ART : MAGNIFIER_ART;
+      : role === "hunter_revenge" ? BOW_ART
+      : role === "vigilante" ? BULLET_ART : MAGNIFIER_ART;
     icon.innerHTML = pixelArtToSvg(iconArt);
 
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt", hunter_revenge: "slide to avenge" };
+    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt", hunter_revenge: "slide to avenge", vigilante: "slide to shoot" };
     label.textContent = labels[role] || "slide to confirm";
 
     slideCallback = callback;
@@ -1711,6 +1744,7 @@
     // Hide all action panels
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
+    $("btn-vigilante-pass").classList.add("hidden");
     // C5b: the deferred phase_change IS the revenge-resolution signal — the
     // room-wide wait view (and its admin skip control) comes down with it.
     $("revenge-wait").classList.add("hidden");
@@ -2084,6 +2118,7 @@
       spared: "Spared by vote",
       joker_haunt: "Haunted by the Joker",
       hunter_revenge: "Shot by the Hunter",
+      vigilante_shot: "Shot by the Vigilante",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -2224,6 +2259,8 @@
     // Decline affordance is exclusive to the hunter's revenge prompt
     // (slide-confirm is reserved for the kill; declining is a plain button).
     $("btn-decline-revenge").classList.toggle("hidden", actionType !== "hunter_revenge");
+    // The vigilante's "hold fire" button (parallel to the hunter's decline).
+    $("btn-vigilante-pass").classList.toggle("hidden", actionType !== "vigilante_shoot");
 
     const list = $("action-targets");
 
@@ -2264,11 +2301,17 @@
             nightActionLocked = true;
             // Keep deadActionActive true for the entire night (reset when the next night begins)
             wsSend({ type: actionType, targetId: selectedTargetId });
+            // A fired vigilante shot spends the bullet \u2014 reflect it on the card now.
+            if (actionType === "vigilante_shoot") {
+              vigilanteBulletUsed = true;
+              updateBulletIndicator();
+            }
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
-            // Action resolved: the hunter's decline affordance goes with it
-            // (no-op for every other action type; the button is already hidden)
+            // Action resolved: the hunter's decline / vigilante's hold-fire
+            // affordances go with it (no-op for other action types; already hidden)
             $("btn-decline-revenge").classList.add("hidden");
+            $("btn-vigilante-pass").classList.add("hidden");
           });
         });
       });
@@ -2310,6 +2353,17 @@
     $("btn-decline-revenge").classList.add("hidden");
     hideSlideConfirm();
     $("action-status").textContent = "You lower your bow.";
+  });
+
+  // The vigilante holds fire — keep the bullet for a later night (null = pass).
+  $("btn-vigilante-pass").addEventListener("click", () => {
+    if (nightActionLocked) return;
+    nightActionLocked = true;
+    wsSend({ type: "vigilante_shoot", targetId: null });
+    $("btn-vigilante-pass").classList.add("hidden");
+    hideSlideConfirm();
+    $("action-targets").innerHTML = "";
+    $("action-status").textContent = "You hold your fire.";
   });
 
   function renderSingleMafiaTargets(list, players) {
@@ -2710,6 +2764,16 @@
         $("action-title").textContent = "The Detective has fallen\u2026";
         list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No investigation tonight</li>`;
       }
+    } else if (msg.subPhase === "vigilante") {
+      // Phantom-safe: identical when the vigilante is dead vs out of ammo
+      // (server sends isRoleAlive=false for both), so state can't be inferred.
+      if (msg.isRoleAlive) {
+        $("action-title").textContent = "Vigilante is taking aim\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Deciding whether to shoot\u2026</li>`;
+      } else {
+        $("action-title").textContent = "The night stays quiet\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No shot is fired tonight</li>`;
+      }
     } else if (msg.subPhase === "resolving") {
       $("action-title").textContent = "Dawn approaches\u2026";
       list.innerHTML = "";
@@ -2732,6 +2796,14 @@
         div.innerHTML = `Detective chose to investigate <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
       } else {
         div.textContent = "Detective has fallen \u2014 no investigation tonight";
+      }
+    } else if (entry.phase === "vigilante") {
+      if (entry.alive && entry.targetName) {
+        div.innerHTML = `Vigilante took aim at <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else if (entry.alive) {
+        div.textContent = "Vigilante held their fire";
+      } else {
+        div.textContent = "Vigilante \u2014 no shot tonight";
       }
     }
     return div;
@@ -3230,6 +3302,7 @@
     const savedIsAdmin = isAdmin;
     myRole = null;
     myIsGodfather = false;
+    vigilanteBulletUsed = false;
     isLover = false;
     mafiaTeam = [];
     godfatherName = null;
@@ -3293,6 +3366,7 @@
     lover_death: "Died of heartbreak",
     joker_haunt: "Haunted by the Joker",
     hunter_revenge: "Shot by the Hunter",
+    vigilante_shot: "Shot by the Vigilante",
   };
   // Test handle: pins the game-over history labels. Not read by any app code.
   window.__gameOverHistoryLabels = GAME_HISTORY_LABELS;
@@ -3519,6 +3593,7 @@
     mafiaTeam = [];
     godfatherName = null;
     myIsGodfather = false;
+    vigilanteBulletUsed = false;
     resetEventHistoryTabs();
     closeSettingsModal();
     gameCode = null;
@@ -3634,6 +3709,7 @@
     "mafia_open", "mafia_close",
     "doctor_open", "doctor_close",
     "detective_open", "detective_close",
+    "vigilante_open", "vigilante_close",
   ];
 
   function queueSound(type) {
@@ -3992,7 +4068,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.24_202606191034";
+  const APP_VERSION_STAGING = "staging.25_202606281406";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

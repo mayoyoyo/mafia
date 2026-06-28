@@ -52,6 +52,7 @@ export function dumpGame(game: Game): Record<string, unknown> {
     mafiaTarget: game.mafiaTarget,
     doctorTarget: game.doctorTarget,
     detectiveTarget: game.detectiveTarget,
+    vigilanteTarget: game.vigilanteTarget,
     lastDoctorTarget: game.lastDoctorTarget,
     jokerHauntTarget: game.jokerHauntTarget,
     jokerHauntVoters: [...game.jokerHauntVoters],

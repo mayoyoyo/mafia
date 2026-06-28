@@ -60,6 +60,7 @@
   --role-detective: #9c27b0;
   --role-joker: #26c6da;
   --role-hunter: #ef6c00;
+  --role-vigilante: #7f8c8d;
   --role-lover: #e91e63;
   --role-godfather: #c9a227;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -251,6 +252,8 @@
   --warning: #c47d00;
   /* Fixed role-joker (no doctor collision) */
   --role-joker: #0097a7;
+  /* Gunmetal vigilante, darkened for AA contrast on the paper background */
+  --role-vigilante: #5f6b6c;
 }
 [data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
 /* Light theme: suppress the radial vignette on auth/game/gameover screens.
@@ -1123,6 +1126,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.detective .card-front { border-color: var(--role-detective); }
 .role-card.joker .card-front { border-color: var(--role-joker); }
 .role-card.hunter .card-front { border-color: var(--role-hunter); }
+.role-card.vigilante .card-front { border-color: var(--role-vigilante); }
 .role-card.godfather .card-front { border-color: var(--role-godfather); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
@@ -1133,8 +1137,29 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.detective .role-name { color: var(--role-detective); }
 .role-card.joker .role-name { color: var(--role-joker); }
 .role-card.hunter .role-name { color: var(--role-hunter); }
+.role-card.vigilante .role-name { color: var(--role-vigilante); }
 .role-card.godfather .role-name { color: var(--role-godfather); }
 .role-description { color: var(--text-secondary); font-size: 14px; margin-top: 8px; }
+/* Vigilante one-shot indicator on the role card */
+.bullet-indicator {
+  display: inline-block;
+  margin-top: 12px;
+  background: var(--role-vigilante);
+  color: #fff;
+  padding: 4px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: 'Silkscreen', monospace;
+  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+}
+.bullet-indicator.spent {
+  background: transparent;
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  opacity: 0.75;
+}
 .lover-badge {
   display: inline-block;
   margin-top: 12px;
@@ -1604,6 +1629,10 @@ input::placeholder { color: var(--text-secondary); }
   --slide-tint: var(--role-detective);
   background: linear-gradient(90deg, color-mix(in srgb, var(--role-detective) 30%, transparent), color-mix(in srgb, var(--role-detective) 60%, transparent));
 }
+.slide-confirm.role-vigilante .slide-fill {
+  --slide-tint: var(--role-vigilante);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--role-vigilante) 30%, transparent), color-mix(in srgb, var(--role-vigilante) 70%, transparent));
+}
 /* Existing mafia flavor — blood drip stays (existing animation, not new payoff) */
 .slide-confirm.role-mafia .slide-fill.dripping::before {
   content: "";
@@ -1647,6 +1676,7 @@ input::placeholder { color: var(--text-secondary); }
 .slide-confirm.role-detective .slide-icon { --slide-tint: var(--role-detective); }
 .slide-confirm.role-joker_haunt .slide-icon { --slide-tint: var(--role-joker); }
 .slide-confirm.role-hunter_revenge .slide-icon { --slide-tint: var(--role-hunter); }
+.slide-confirm.role-vigilante .slide-icon { --slide-tint: var(--role-vigilante); }
 .slide-confirm.dragging .slide-icon { transition: none; cursor: grabbing; }
 .slide-icon svg {
   width: 28px;
@@ -2068,6 +2098,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-reveal-role.detective { background: var(--role-detective); color: #fff; }
 .role-reveal-role.joker { background: var(--role-joker); color: #fff; }
 .role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }
+.role-reveal-role.vigilante { background: var(--role-vigilante); color: #fff; }
 .role-reveal-role.godfather { background: var(--role-godfather); color: #fff; }
 /* D3b: role-reveal-lover now has pixel heart art */
 .role-reveal-lover { display: inline-flex; align-items: center; gap: 3px; color: var(--role-lover); margin-left: 8px; font-size: 12px; }
