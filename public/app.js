@@ -44,6 +44,12 @@
   let suspenseQueue = [];
   let nightTransitionActive = false;
   let nightTransitionQueue = [];
+  // Round the NIGHTFALL overlay has already been shown for (Bug 2). The first
+  // night's transition is triggered off the opening "night" sound cue (the
+  // phase_change landed at start_game with previousPhase null, so
+  // handlePhaseChange skipped it); this marker fires that trigger exactly once
+  // and skips it when the day->night path already ran showNightTransition.
+  let nightTransitionRound = 0;
   let executionTransitionActive = false;
   let heartbreakTransitionActive = false;
   let pendingGameOver = null; // game_over held while an overlay chain animates (L5)
@@ -268,6 +274,23 @@
       pendingGameOver = msg;
       return;
     }
+    // Bug 2: on the FIRST night the night phase_change landed at start_game
+    // (previousPhase reset to null), so handlePhaseChange never ran the shared
+    // NIGHTFALL overlay. Trigger it off the opening "night" sound cue instead,
+    // so the mafia kill screen (and every role prompt) is gated behind the
+    // transition. applyPhaseChange already ran on the first night, so the
+    // callback is a no-op; the night tone is re-dispatched through the queue so
+    // it still plays after the overlay. Must run BEFORE the queue gate below or
+    // the cue would be swallowed before it could trigger.
+    if (msg.type === "sound_cue" && msg.sound === "night" && currentPhase === "night" && !nightTransitionActive) {
+      const round = parseInt($("round-number").textContent) || 0;
+      if (nightTransitionRound !== round) {
+        nightTransitionRound = round;
+        nightTransitionQueue.push(msg); // replay the night tone after the overlay
+        showNightTransition(() => {});
+        return;
+      }
+    }
     // During night/execution transition, queue sound_cues and night action prompts
     if ((nightTransitionActive || executionTransitionActive) && TRANSITION_GATE_TYPES.has(msg.type)) {
       nightTransitionQueue.push(msg);
@@ -373,6 +396,7 @@
         lastVoteResult = null;
         jokerJointWinner = false;
         previousPhase = null;
+        nightTransitionRound = 0; // Bug 2: re-arm the first-night NIGHTFALL trigger
         pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         // Fresh game: re-roll the "random" narrator and re-preload so this
         // game's cues all use the newly chosen voice (no-op for a real accent).
@@ -1654,6 +1678,10 @@
 
     // Day/voting → night transition
     if ((previousPhase === "day" || previousPhase === "voting") && msg.phase === "night") {
+      // This path owns the NIGHTFALL overlay for this night — mark the round so
+      // the first-night sound-cue trigger (Bug 2) skips when the queued "night"
+      // cue replays after the overlay completes.
+      nightTransitionRound = msg.round;
       const voteResult = lastVoteResult;
       lastVoteResult = null;
       if (voteResult) {
@@ -3710,6 +3738,7 @@
     "doctor_open", "doctor_close",
     "detective_open", "detective_close",
     "vigilante_open", "vigilante_close",
+    "hunter_open", "hunter_close",
   ];
 
   function queueSound(type) {
@@ -4068,7 +4097,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.25_202606281406";
+  const APP_VERSION_STAGING = "staging.26_202606281715";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

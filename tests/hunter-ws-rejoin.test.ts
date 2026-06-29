@@ -5,14 +5,14 @@ import {
   spawnServer, teardownServer, waitFor, waitMatch, send,
   setupGame as setupGameH, forceDawnToDay, lynchByVote, mafiaSoloKill,
   killHunterAndAwaitGate, closeAll, rejoinRecorded,
-  revengeTimerEvents, revengeGateRejects, indexOfMsg,
+  revengeGateRejects, indexOfMsg,
 } from "./helpers/ws-harness";
 
 /**
  * C4 — game_sync projection + rejoin support for the revenge gate
  * (HUNTER-DESIGN §3.4 the H4 lesson, §6 H4 row, §9 E10a-d + E13):
  *   E10a — hunter disconnects mid-gate, rejoins: pendingRevenge.isYou,
- *          hunter_revenge_targets re-sent, the revenge timer NOT reset;
+ *          hunter_revenge_targets re-sent, revenge completes normally;
  *   E10b — non-hunter rejoiners (alive + dead spectator) see the wait state;
  *   E10c — admin rejoins mid-gate, force_skip_revenge still works;
  *   E10d — hunter rejoins AFTER resolution: no stale projection, no re-send;
@@ -28,19 +28,15 @@ import {
  * 22600-22999 hunter-ws-night; 23600-23999 hunter-ws-vote). Sub-bands, one
  * fixed deal per server process (the MAFIA_FIXED_DEAL env seam is
  * process-wide):
- *   server A 24600-24689 — hunter deal, default 60s revenge timeout (gates
- *     that must HOLD across disconnect/rejoin windows): E10a/b/c/d, E13;
- *   server B 24700-24789 — hunter deal, revenge timeout shortened to 2500ms
- *     via MAFIA_REVENGE_TIMER_MS: the E10a timer-not-reset proof (expiry at
- *     the ORIGINAL deadline despite a mid-window rejoin);
+ *   server A 24600-24689 — hunter deal, gate stays open until the hunter
+ *     shoots or the admin skips (gates that must HOLD across disconnect/
+ *     rejoin windows): E10a/b/c/d, E13;
  *   server C 24800-24889 — NO hunter in the deal, enableHunter false: the
  *     hunter-disabled game_sync byte-shape (no pendingRevenge key, ever).
  */
 
 const PORT_A = 24600 + Math.floor(Math.random() * 90); // 24600-24689
-const PORT_B = 24700 + Math.floor(Math.random() * 90); // 24700-24789
 const PORT_C = 24800 + Math.floor(Math.random() * 90); // 24800-24889
-const SHORT_REVENGE_MS = 2500;
 
 // Seat indices into the hunter deal (join order).
 const ADMIN = 0, MAFIA = 1, HUNTER = 2, CIT_A = 3, CIT_B = 4, CIT_C = 5;
@@ -57,20 +53,17 @@ const NO_HUNTER_SETTINGS = { ...HUNTER_SETTINGS, enableHunter: false };
 // ── Per-band server subprocesses (harness: tests/helpers/ws-harness.ts) ────
 
 let serverA: HunterServer | null = null;
-let serverB: HunterServer | null = null;
 let serverC: HunterServer | null = null;
 
 beforeAll(async () => {
-  [serverA, serverB, serverC] = await Promise.all([
+  [serverA, serverC] = await Promise.all([
     spawnServer(PORT_A, "A", "rejoin", HUNTER_ROLES),
-    spawnServer(PORT_B, "B", "rejoin", HUNTER_ROLES,
-      { extraEnv: { MAFIA_REVENGE_TIMER_MS: String(SHORT_REVENGE_MS) } }),
     spawnServer(PORT_C, "C", "rejoin", NO_HUNTER_ROLES),
   ]);
 });
 
 afterAll(() => {
-  for (const srv of [serverA, serverB, serverC]) teardownServer(srv);
+  for (const srv of [serverA, serverC]) teardownServer(srv);
 });
 
 // ── This file's setupGame: the shared harness driver bound to this file's
@@ -84,7 +77,7 @@ function setupGame(srv: HunterServer, dealRoles: Role[], settings: Record<string
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("E10a: hunter rejoin mid-gate (night path)", () => {
-  test("game_sync.pendingRevenge { isYou: true } + targets re-sent; timer NOT re-armed; revenge completes", async () => {
+  test("game_sync.pendingRevenge { isYou: true } + targets re-sent; revenge completes", async () => {
     const game = await setupGame(serverA!, HUNTER_ROLES, HUNTER_SETTINGS);
     const [admin, hunter, citA] = [game.players[ADMIN], game.players[HUNTER], game.players[CIT_A]];
 
@@ -114,11 +107,10 @@ describe("E10a: hunter rejoin mid-gate (night path)", () => {
     expect(targetIds).toEqual(livingIds);
 
     // Re-send-only: no second public reveal (the room saw exactly one
-    // hunter_revenge_pending), and the revenge timer was NOT re-armed —
-    // exactly one "armed", no "overwritten", nothing else yet.
+    // hunter_revenge_pending), and the rejoin re-sends the private prompt
+    // without re-broadcasting the reveal.
     expect(admin.inbox.filter(m => m.type === "hunter_revenge_pending").length).toBe(1);
     expect(slice.filter(m => m.type === "hunter_revenge_pending").length).toBe(0);
-    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed"]);
 
     // C4 ride-along (M7 sweep `=== true`): while gated, a junk wire type
     // that collides with an Object.prototype key ("toString" indexes an
@@ -138,45 +130,6 @@ describe("E10a: hunter rejoin mid-gate (night path)", () => {
     send(hunter.ws, { type: "hunter_revenge", targetId: citA.userId });
     await victimP;
     await dayP;
-    await Bun.sleep(150);
-    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
-
-    closeAll(game);
-  }, 60000);
-});
-
-describe("E10a timer: a mid-window rejoin never extends the revenge window (short-timer server)", () => {
-  test("expiry still fires at the ORIGINAL deadline after the hunter rejoins", async () => {
-    const game = await setupGame(serverB!, HUNTER_ROLES, HUNTER_SETTINGS);
-    const [admin, hunter] = [game.players[ADMIN], game.players[HUNTER]];
-
-    await killHunterAndAwaitGate(game);
-    const t0 = Date.now(); // ≈ the arm instant (client receipt of the reveal)
-
-    // Burn ~half the window offline, then rejoin (join lands ~t0+1300).
-    await Bun.sleep(1000);
-    const slice = await rejoinRecorded(serverB!, hunter, game.code, 400);
-    expect(slice.find(m => m.type === "game_sync").pendingRevenge)
-      .toEqual({ hunterName: hunter.username, isYou: true });
-    expect(slice.find(m => m.type === "hunter_revenge_targets")).toBeDefined();
-
-    // The hunter never acts: expiry resolves as a decline at the ORIGINAL
-    // deadline (~t0+2500). A re-armed timer (re-arm at the join, ~t0+1300)
-    // would fire at ~t0+3800 — outside the asserted window.
-    const dayChange = await waitMatch(admin.ws,
-      m => m.type === "phase_change" && m.phase === "day", 6000, "expiry decline dawn");
-    const elapsed = Date.now() - t0;
-    // Upper bound only (a re-arm fires ~t0+3800, well past it). No lower
-    // bound: t0 lags the real arm by client receipt (~150ms), so a CI stall
-    // in that window could false-fail it — the slog ["armed", "fired"]
-    // assertion below is the load-bearing no-re-arm proof.
-    expect(elapsed).toBeLessThan(3500);
-    expect(dayChange.messages.length).toBeGreaterThan(0);
-
-    // Slog lifecycle agrees: one arm, the fire, nothing overwritten —
-    // the rejoin left the live timer untouched.
-    await Bun.sleep(150);
-    expect(revengeTimerEvents(serverB!, game.code)).toEqual(["armed", "fired"]);
 
     closeAll(game);
   }, 60000);
@@ -229,8 +182,6 @@ describe("E10b: non-hunter rejoiners mid-gate (vote path)", () => {
     send(hunter.ws, { type: "hunter_revenge", targetId: null });
     const nightChange = await nightP;
     expect(nightChange.round).toBe(2);
-    await Bun.sleep(150);
-    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
 
     closeAll(game);
   }, 60000);
@@ -267,8 +218,6 @@ describe("E10c: admin rejoin mid-gate", () => {
     for (const p of game.players) {
       expect(nightChange.messages[0]).not.toContain(p.username); // decline names nobody
     }
-    await Bun.sleep(150);
-    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
     // Nobody but the hunter died.
     expect(admin.inbox.find(m => m.type === "player_died" && m.playerId !== hunter.userId)).toBeUndefined();
 

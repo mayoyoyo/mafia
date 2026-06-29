@@ -124,7 +124,7 @@ describe("C7: app.css per-role classes", () => {
 describe("C7: README Role Roster (CLAUDE.md mandate)", () => {
   test("the Special Roles table contains the exact §10 Hunter row", () => {
     expect(readme).toContain(
-      "| **Hunter** | Town | None — acts only on death | When the Hunter dies — by Mafia kill, day-vote execution, Joker haunt, or lover heartbreak — they are revealed and may immediately take one living player down with them. The shot cannot be blocked by the Doctor and resolves before the win check. Revenge is optional in both modes — the Hunter may decline (and the host may skip a stalled Hunter). |"
+      "| **Hunter** | Town | None — acts only on death | When the Hunter dies a **direct** death — Mafia kill, day-vote execution, or Joker haunt — they are revealed and may immediately take one living player down with them. A Hunter who dies of **lover heartbreak** (their lover was killed) does **not** get a shot. If killed at night, the narrator wakes the Hunter (\"open your eyes\") to take the revenge, then sends them back to sleep. The shot cannot be blocked by the Doctor and resolves before the win check. Revenge is optional and has **no time limit** — the Hunter may decline, and the host may skip a stalled Hunter. |"
     );
   });
 

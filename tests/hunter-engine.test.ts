@@ -88,7 +88,8 @@ describe("C2a sequencing trap — the gate must survive the caller's reset bound
     const game = nightKillHunter();
 
     // The gate is open with the dawn resume shape (HUNTER-DESIGN §4).
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false } });
+    // Night kill -> wakeHunter true (resume.autoNight false).
+    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false }, wakeHunter: true });
     // The epilogue is deferred: no day, no win check, no narrator epilogue.
     expect(game.phase).toBe("night");
     expect(game.winner).toBeNull();
@@ -102,7 +103,8 @@ describe("C2a sequencing trap — the gate must survive the caller's reset bound
   test("vote path: lynching the hunter holds at 'voting' with the ballot cleared and resume.autoNight true", () => {
     const game = lynchHunter();
 
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: true } });
+    // Vote path -> wakeHunter false (resume.autoNight true).
+    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: true }, wakeHunter: false });
     expect(game.phase).toBe("voting"); // auto-night deferred
     expect(game.round).toBe(1);        // no night entered yet
     expect(game.winner).toBeNull();
@@ -166,7 +168,8 @@ describe("C2a submitHunterRevenge — decline", () => {
     // 1 mafia vs 1 citizen after the hunter's death: parity is on the board
     // but the win check was deferred behind the gate.
     const game = nightKillHunter(["mafia", "hunter", "citizen"]);
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false } });
+    // Night kill -> wakeHunter true (resume.autoNight false).
+    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false }, wakeHunter: true });
     expect(game.winner).toBeNull(); // deferred
 
     const eventsBefore = game.eventHistory.length;

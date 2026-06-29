@@ -293,15 +293,6 @@ export interface InvariantContext {
    * callers omit it and the timer invariant is skipped.
    */
   hasPendingNightTimer?: boolean;
-  /**
-   * C3b (§6 M2/M7 correlation): whether this game's revenge-timer slot is
-   * occupied. Same caller contract as hasPendingNightTimer — server choke
-   * points pass it, engine-level callers omit it and the correlation is
-   * skipped. The revenge timer's own fire callback ALSO omits it: it
-   * deletes its slot before asserting, so mid-fire the gate is legally
-   * open with an empty slot.
-   */
-  hasRevengeTimer?: boolean;
 }
 
 /**
@@ -409,20 +400,6 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
     if (game.votes.size > 0) violations.push("pending_revenge_votes_nonempty");
     if (game.voteTarget !== null) violations.push("pending_revenge_vote_target_set");
     if (game.winner !== null) violations.push("pending_revenge_winner_set");
-  }
-
-  // Invariant (C3b, §6 M2/M7 correlation): the revenge gate and its timer
-  // move together — gate open ⇒ timeout armed (a missing timer is an
-  // orphaned gate no timeout-decline can ever close), and timer armed ⇒
-  // gate open (an orphaned timer is the M2 class). Checked only when the
-  // caller can see the slot (ctx contract above).
-  if (ctx.hasRevengeTimer !== undefined) {
-    if (game.pendingRevenge !== null && !ctx.hasRevengeTimer) {
-      violations.push("pending_revenge_timer_missing");
-    }
-    if (ctx.hasRevengeTimer && game.pendingRevenge === null) {
-      violations.push("revenge_timer_without_gate");
-    }
   }
 
   // Invariant (M2 class): the TRACKED night-timer slot is empty outside
@@ -1145,13 +1122,14 @@ const queuedHunterTrigger = new WeakMap<Game, number>();
 export function notifyDeathTriggers(game: Game, death: Death): void {
   deathTriggerSpy?.(game, death);
   // C2a — the Hunter trigger: OBSERVE AND QUEUE only (contract above). It
-  // fires for EVERY death source and cause, so a heartbreak-dead Hunter
-  // (lover cascade) queues exactly like a direct kill — the point of B3's
-  // bypass fix. No game-state mutation here: the gate itself is opened by
-  // concludeRound past the caller's reset boundary, and the suppression
-  // conditions (E11 no-living-target, E12 already-game_over) are evaluated
-  // there, on the settled post-resolution board.
-  if (death.player.role === "hunter") {
+  // fires only for a DIRECT Hunter death (a mafia night kill, a daytime
+  // lynch, a joker haunt) — NOT for a lover-cascade (heartbreak) death: a
+  // Hunter who dies because their lover was killed takes no revenge shot.
+  // No game-state mutation here: the gate itself is opened by concludeRound
+  // past the caller's reset boundary, and the suppression conditions (E11
+  // no-living-target, E12 already-game_over) are evaluated there, on the
+  // settled post-resolution board.
+  if (death.player.role === "hunter" && death.cause === "direct") {
     queuedHunterTrigger.set(game, death.player.id);
   }
 }
@@ -1447,6 +1425,9 @@ export function concludeRound(game: Game, messages: string[], opts: ConcludeRoun
           autoNight: opts.autoNight,
           ...(opts.preserveHauntVoters !== undefined ? { preserveHauntVoters: opts.preserveHauntVoters } : {}),
         },
+        // Killed AT NIGHT (eyes closed) ⇒ wake the Hunter with open/close cues;
+        // a daytime-lynch gate opens at "voting"/"day" with eyes already open.
+        wakeHunter: game.phase === "night",
       };
     }
     slog("hunter_gate", {

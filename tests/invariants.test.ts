@@ -201,31 +201,6 @@ describe("D4 assertInvariants — violations throw in test mode", () => {
     expect(game.phase).toBe("night");
     expect(assertInvariants(game, { at: "test", hasPendingNightTimer: true })).toEqual([]);
   });
-
-  // C3b (§6 M2/M7 correlation): the revenge gate and its timer move together.
-  test("open gate with NO revenge timer armed (orphaned gate — no decline can ever close it)", () => {
-    const game = makeGame(["mafia", "citizen", "citizen"]);
-    expect(game.phase).toBe("night");
-    game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
-    expect(() => assertInvariants(game, { at: "test", hasRevengeTimer: false }))
-      .toThrow(/pending_revenge_timer_missing/);
-  });
-
-  test("revenge timer armed with NO gate (orphaned timer — the M2 class)", () => {
-    const game = gameInDay();
-    expect(() => assertInvariants(game, { at: "test", hasRevengeTimer: true }))
-      .toThrow(/revenge_timer_without_gate/);
-  });
-
-  test("open gate WITH the timer armed is the legal gated shape; omitted flag skips the correlation", () => {
-    const game = makeGame(["mafia", "citizen", "citizen"]);
-    expect(game.phase).toBe("night");
-    game.pendingRevenge = { hunterId: 2, resume: { autoNight: false } };
-    expect(assertInvariants(game, { at: "test", hasRevengeTimer: true })).toEqual([]);
-    // Engine-level callers (and the revenge timer's own mid-fire callback,
-    // which deletes its slot before asserting) omit the flag — skipped.
-    expect(assertInvariants(game, AT)).toEqual([]);
-  });
 });
 
 // ── Part 2: mode mechanism — log-don't-throw in production mode ────────────

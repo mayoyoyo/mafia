@@ -77,13 +77,19 @@ export type CueSubPhase = Exclude<NightSubPhase, "resolving">;
 /**
  * Every cue the server can send. The per-sub-phase open/close pairs are
  * DERIVED from NightSubPhase via template literals, so a new cue-emitting
- * sub-phase extends the union automatically; the three standalone cues
+ * sub-phase extends the union automatically; the standalone cues
  * ("night"/"day"/"everyone_close") have no sub-phase and stay enumerated.
+ * The Hunter is NOT a night sub-phase (it is a post-resolution revenge gate),
+ * so its wake/close cues are standalone too — emitted only when a Hunter is
+ * killed AT NIGHT and the gate opens mid-dawn (never for a heartbreak death
+ * or a daytime lynch, where the table's eyes are already open).
  */
 export type SoundCue =
   | "night"
   | "day"
   | "everyone_close"
+  | "hunter_open"
+  | "hunter_close"
   | `${CueSubPhase}_open`
   | `${CueSubPhase}_close`;
 
@@ -122,6 +128,15 @@ export interface ConcludeRoundOptions {
 export interface PendingRevenge {
   hunterId: number;
   resume: ConcludeRoundOptions;
+  /**
+   * true when the gate opened during night resolution (the Hunter was killed
+   * AT NIGHT, eyes closed) — the server plays the hunter_open/hunter_close
+   * wake cues only then. A daytime lynch opens the gate at "voting"/"day" with
+   * eyes already open, so this is false and no wake cues are emitted. Optional
+   * for ergonomics: the engine always sets it, and an absent value is read as
+   * "not a night kill" (no wake cue) — the conservative default.
+   */
+  wakeHunter?: boolean;
 }
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";

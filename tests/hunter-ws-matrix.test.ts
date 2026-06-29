@@ -2,9 +2,9 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import type { Role } from "../src/types";
 import {
   type HunterServer, type HunterGame,
-  spawnServer, teardownServer, waitFor, waitMatch, assertSilence,
-  send, setupGame as setupGameH, mafiaSoloKill, closeAll,
-  revengeTimerEvents, indexOfMsg,
+  spawnServer, teardownServer, waitMatch, assertSilence,
+  setupGame as setupGameH, mafiaSoloKill, closeAll,
+  slogEvents, indexOfMsg,
 } from "./helpers/ws-harness";
 
 /**
@@ -34,8 +34,9 @@ import {
  *                                                                resolveNightAndTransition path).
  *  E2    engine + WS   hunter-edge-matrix "E2 mafia kills the    hunter-ws-matrix (THIS FILE)             FILLED
  *                      Hunter's lover; the cascade kills the     "E2 (WS): night heartbreak" — was the
- *                      Hunter" (trigger on the CASCADE death;    one missing half (C8b).
- *                      two deaths then gate; revenge)
+ *                      Hunter" (NO trigger on the CASCADE        one missing half (C8b).
+ *                      death; two deaths then straight to day,
+ *                      no gate, no revenge — direct-only rule)
  *  E3    engine        hunter-edge-matrix "E3 the revenge        — (engine-only case)                     no
  *                      target is a lover"
  *  E4    engine + WS   hunter-edge-matrix "E4 …Hunter NOT        hunter-ws-vote "E4 base" ×2 +            no
@@ -63,22 +64,26 @@ import {
  *
  * ── THE GAP THIS FILE FILLS ──────────────────────────────────────────────
  * E2 is the heartbreak-DIRECTION case at NIGHT: mafia night-kills the
- * Hunter's lover X; the cascade kills the Hunter; the gate opens at dawn.
- * The vote-path heartbreak is E4 (covered in hunter-ws-vote); the night-path
+ * Hunter's lover X; the cascade kills the Hunter. Under the DIRECT-ONLY
+ * revenge rule, a Hunter who dies as the lover-cascade SECONDARY death takes
+ * NO revenge — the gate opens only for a DIRECT Hunter death. So the night
+ * resolves straight through to day: NO reveal, NO prompt, NO gate. The
+ * vote-path heartbreak is E4 (covered in hunter-ws-vote); the night-path
  * heartbreak (E2) had only its ENGINE half (hunter-edge-matrix). This file
  * supplies the WS half: TWO death announcements (X direct, then the Hunter's
- * heartbreak, isLoverDeath true) BEFORE the reveal, only the Hunter prompted,
- * the dawn phase_change deferred until revenge resolves.
+ * heartbreak, isLoverDeath true) precede the dawn, and the phase_change to
+ * day fires immediately with NO hunter_revenge_pending / _targets anywhere.
  *
  * ── BAND / SEAM CONVENTIONS (C8b) ────────────────────────────────────────
  * Port band 25600-25999 is claimed by this file (taken elsewhere: 4567,
  * 5567, 6567, 7600, 8600, 9600, 10600, 11600, 12600; 13600-17600 reserved;
  * 18600-19999 + 21600-21999 goldens; 20600-20999 structured-logging;
  * 22600-22999 hunter-ws-night; 23600-23999 hunter-ws-vote; 24600-24999
- * hunter-ws-rejoin). One server, default 60s revenge timeout — the gate is
- * resolved explicitly, never by expiry. Deterministic deal via the
- * MAFIA_FIXED_DEAL seam (one deal per process), lovers threaded as
- * join-order indices [HUNTER, X] exactly as hunter-ws-vote server B does.
+ * hunter-ws-rejoin). One server, no revenge timer (fully removed — the gate,
+ * when it opens at all, is resolved only by an explicit shot or force-skip).
+ * Deterministic deal via the MAFIA_FIXED_DEAL seam (one deal per process),
+ * lovers threaded as join-order indices [HUNTER, X] exactly as hunter-ws-vote
+ * server B does.
  *
  * Username prefix "hmx" (matches no "hunter" substring), preserving the E13
  * mechanical-sweep guarantee per the established convention.
@@ -116,12 +121,14 @@ function setupGame(srv: HunterServer): Promise<HunterGame> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// E2 (WS half) — night-path heartbreak: mafia night-kills the lover X;
-// the cascade kills the Hunter; the gate opens at dawn.
+// E2 (WS half) — night-path heartbreak: mafia night-kills the lover X; the
+// cascade kills the Hunter. The Hunter dies as the SECONDARY (lover_cascade)
+// death, so under the direct-only revenge rule NO gate opens — the night
+// resolves straight through to day.
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade kills the hunter", () => {
-  test("two death announcements (X direct, hunter heartbreak) precede the reveal; only the hunter is prompted; phase_change deferred until revenge resolves", async () => {
+describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade kills the hunter (no revenge gate)", () => {
+  test("two death announcements (X direct, hunter heartbreak) precede the dawn; NO revenge gate; phase_change to day fires immediately", async () => {
     const game = await setupGame(serverA!);
     const [admin, mafia, hunter, loverX, citB] = [
       game.players[ADMIN], game.players[MAFIA], game.players[HUNTER],
@@ -129,22 +136,23 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     ];
 
     // Night 1: mafia night-kills X (the hunter's lover) — NOT the hunter.
-    // The heartbreak cascade kills the hunter, opening the gate at dawn.
-    const pendingP = waitFor(admin.ws, "hunter_revenge_pending", 8000);
+    // The heartbreak cascade kills the hunter as the SECONDARY death. Under
+    // the direct-only revenge rule a lover-cascade Hunter death opens NO gate:
+    // the night resolves straight through to day.
+    const dayP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "day", 8000, "dawn");
     await mafiaSoloKill(mafia, loverX);
-    const pending = await pendingP;
-    expect(pending.hunterName).toBe(hunter.username); // the reveal names the HUNTER, not X
-    await Bun.sleep(150);
+    const dayChange = await dayP;
+    await Bun.sleep(200); // let per-socket fan-out settle on every inbox
 
-    // ── Two death announcements precede the reveal, on EVERY inbox: ───────
-    // player_died(X, direct) < player_died(hunter, heartbreak) < pending.
+    // ── Two death announcements precede the dawn, on EVERY inbox: ─────────
+    // player_died(X, direct) < player_died(hunter, heartbreak) < phase_change.
     for (const p of game.players) {
       const xIdx = indexOfMsg(p.inbox, m => m.type === "player_died" && m.playerId === loverX.userId);
       const hIdx = indexOfMsg(p.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
-      const pendIdx = indexOfMsg(p.inbox, m => m.type === "hunter_revenge_pending");
+      const dayIdx = indexOfMsg(p.inbox, m => m.type === "phase_change" && m.phase === "day");
       expect(xIdx).toBeGreaterThanOrEqual(0);
-      expect(hIdx).toBeGreaterThan(xIdx);     // the cascade death announced AFTER the direct kill
-      expect(pendIdx).toBeGreaterThan(hIdx);  // …and BOTH before the gate (the E2 ordering)
+      expect(hIdx).toBeGreaterThan(xIdx);   // the cascade death announced AFTER the direct kill
+      expect(dayIdx).toBeGreaterThan(hIdx); // …and BOTH before the dawn phase_change
     }
 
     // Death labels keyed on cause (B3): X died direct (no isLoverDeath), the
@@ -155,66 +163,40 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     const hunterDied = hunter.inbox.find(m => m.type === "you_died");
     expect(hunterDied).toBeDefined();
     expect(hunterDied.isLoverDeath).toBe(true);
-    // The hunter's own you_died precedes their reveal/prompt.
-    const hYouDiedIdx = indexOfMsg(hunter.inbox, m => m.type === "you_died");
-    expect(hYouDiedIdx).toBeLessThan(indexOfMsg(hunter.inbox, m => m.type === "hunter_revenge_pending"));
 
-    // The hunter — and ONLY the hunter — got the target list: exactly the
-    // four living players (X and the hunter are both dead).
-    const targetsMsg = hunter.inbox.find(m => m.type === "hunter_revenge_targets");
-    expect(targetsMsg).toBeDefined();
-    const targetSeats = targetsMsg.players.map((p: any) => game.seatOfId.get(p.id)).sort();
-    expect(targetSeats).toEqual(["P0", "P1", "P4", "P5"]); // P2 (hunter) & P3 (X) dead
+    // ── NO revenge gate anywhere (direct-only rule): the cascade Hunter death
+    // never triggers a reveal, a prompt, or a target list, on ANY inbox. ────
     for (const p of game.players) {
-      if (p.userId === hunter.userId) continue;
+      expect(p.inbox.find(m => m.type === "hunter_revenge_pending")).toBeUndefined();
       expect(p.inbox.find(m => m.type === "hunter_revenge_targets")).toBeUndefined();
     }
+    // No engine-side trace either: the cascade death never queued/opened a
+    // hunter gate, so no hunter_gate slog line was ever emitted for this game.
+    expect(slogEvents(serverA!, "hunter_gate", game.code)).toEqual([]);
 
-    // Spectator isolation (§3.9 server side): the prompted hunter received no
-    // dead-spectator panel at the gated dawn.
-    expect(hunter.inbox.find(m => m.type === "spectator_kill_confirmed")).toBeUndefined();
-
-    // The dawn is HELD: only the game-start night phase_change so far, and no
-    // day cue / game_over while gated.
-    expect(admin.inbox.filter(m => m.type === "phase_change").length).toBe(1);
-    await assertSilence(admin.ws, ["phase_change", "game_over", "sound_cue"], 600);
-    // The revenge timeout is armed while gated (never collided with anything).
-    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed"]);
-
-    // ── Revenge over the wire: the heartbreak-dead hunter shoots a citizen ─
-    const victimDiedP = waitFor(citB.ws, "you_died", 5000);
-    const dayP = waitMatch(admin.ws, m => m.type === "phase_change" && m.phase === "day", 5000, "deferred dawn");
-    send(hunter.ws, { type: "hunter_revenge", targetId: citB.userId });
-
-    const victimDied = await victimDiedP;
-    expect(victimDied.isLoverDeath).toBeUndefined(); // the citizen is no lover
-    const dayChange = await dayP;
+    // The dawn carries the standard night→day shape: round 1, the cascade's
+    // loverDeathName is the hunter (the secondary victim), no game_over (1
+    // mafia vs admin + 2 citizens = town majority still alive).
     expect(dayChange.round).toBe(1);
-    // The closing phase_change carries the revenge narrator line (loose prose
-    // match: the victim's name). The gated vote's own cascade name was
-    // announced via the death loop, never re-attached here.
-    expect(dayChange.messages.length).toBe(1);
-    expect(dayChange.messages[0]).toContain(citB.username);
-    expect(dayChange.loverDeathName).toBeUndefined();
-    await Bun.sleep(150);
-
-    // Order on the admin inbox: pending < player_died(victim) < day cue <
-    // phase_change(day). No game_over (1 mafia vs admin + 2 citizens = town
-    // majority still).
-    const pIdx = indexOfMsg(admin.inbox, m => m.type === "hunter_revenge_pending");
-    const vIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === citB.userId);
-    const cueIdx = indexOfMsg(admin.inbox, m => m.type === "sound_cue" && m.sound === "day");
-    const dIdx = indexOfMsg(admin.inbox, m => m.type === "phase_change" && m.phase === "day");
-    expect(pIdx).toBeGreaterThanOrEqual(0);
-    expect(vIdx).toBeGreaterThan(pIdx);
-    expect(cueIdx).toBeGreaterThan(vIdx);
-    expect(dIdx).toBeGreaterThan(cueIdx);
+    expect(dayChange.loverDeathName).toBe(hunter.username);
     expect(admin.inbox.find(m => m.type === "game_over")).toBeUndefined();
 
-    // Gate resolved → timer cleared (slog lifecycle, never orphaned).
-    expect(revengeTimerEvents(serverA!, game.code)).toEqual(["armed", "cleared"]);
-    // Exactly one gate ever opened.
-    expect(admin.inbox.filter(m => m.type === "hunter_revenge_pending").length).toBe(1);
+    // Order on the admin inbox: player_died(X) < player_died(hunter) < day cue
+    // < phase_change(day). Exactly one night→day phase_change; no gate cues.
+    const xIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === loverX.userId);
+    const hIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
+    const cueIdx = indexOfMsg(admin.inbox, m => m.type === "sound_cue" && m.sound === "day");
+    const dIdx = indexOfMsg(admin.inbox, m => m.type === "phase_change" && m.phase === "day");
+    expect(xIdx).toBeGreaterThanOrEqual(0);
+    expect(hIdx).toBeGreaterThan(xIdx);
+    expect(cueIdx).toBeGreaterThan(hIdx);
+    expect(dIdx).toBeGreaterThan(cueIdx);
+    // Exactly one phase_change reached the day (the dawn), and no hunter cues.
+    expect(admin.inbox.filter(m => m.type === "phase_change" && m.phase === "day").length).toBe(1);
+    expect(admin.inbox.find(m => m.type === "sound_cue" && (m.sound === "hunter_open" || m.sound === "hunter_close"))).toBeUndefined();
+
+    // Day has settled: no further phase_change / game_over / revenge reveal.
+    await assertSilence(admin.ws, ["phase_change", "game_over", "hunter_revenge_pending"], 600);
 
     closeAll(game);
   }, 60000);
