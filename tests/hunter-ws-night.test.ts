@@ -166,10 +166,13 @@ describe("E1: two-stage dawn — mafia night-kills the hunter", () => {
     expect(victimDied.isLoverDeath).toBeUndefined();
     const dayChange = await dayPromise;
     expect(dayChange.round).toBe(1);
-    // The closing phase_change carries the revenge narrator line (loose
-    // prose match: the victim's name, never exact text).
-    expect(dayChange.messages.length).toBe(1);
-    expect(dayChange.messages[0]).toContain(citA.username);
+    // The deferred dawn now carries TWO lines: [0] the ONE cause-neutral
+    // night-batch line (the hunter, who died at night — names WHO, never HOW),
+    // then [1] the separate hunter-revenge line naming the victim.
+    expect(dayChange.messages.length).toBe(2);
+    expect(dayChange.messages[0]).toContain(hunter.username);
+    expect(dayChange.messages[0]).not.toMatch(/Mafia|Vigilante|heartbreak/i);
+    expect(dayChange.messages[1]).toContain(citA.username);
     expect(Array.isArray(dayChange.events)).toBe(true);
     await Bun.sleep(150);
 
@@ -253,11 +256,14 @@ describe("E6: decline — explicit decline and admin force-skip are one path", (
     const dayChangeA = await dayA;
     await Bun.sleep(200);
 
-    // The decline narrator line is present in the closing phase_change
-    // (loose prose: exactly one line, naming no player).
-    expect(dayChangeA.messages.length).toBe(1);
+    // The deferred dawn now carries [0] the cause-neutral night-batch line
+    // (names the hunter, who died at night) and [1] the decline line, which
+    // names no player. (The combined line is delivered even on the decline
+    // path so living clients always get the one neutral announcement.)
+    expect(dayChangeA.messages.length).toBe(2);
+    expect(dayChangeA.messages[0]).toContain(gameA.players[HUNTER].username);
     for (const p of gameA.players) {
-      expect(dayChangeA.messages[0]).not.toContain(p.username);
+      expect(dayChangeA.messages[1]).not.toContain(p.username);
     }
 
     // (b) admin force_skip_revenge

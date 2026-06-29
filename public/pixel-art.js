@@ -58,20 +58,22 @@
       [_,_,"#574","#e60","#574","#574","#e60","#574",_,_],
       [_,_,"#653","#653",_,_,"#653","#653",_,_],
     ],
-    // Vigilante: black wide-brim hat, determined face, dark coat with a gold
-    // star badge (#fb0), a silver revolver at the right hip (#888/#ddd/#555),
-    // three red bullets on the belt (#f00), dark boots.
+    // Vigilante: black wide-brim hat (full brim like the Godfather), determined
+    // stubbled face, dark coat with a gold sheriff star (#fb0), two red belt
+    // rounds (#f00) and a silver revolver (#888/#ddd) on the hip — all centered
+    // within the body (cols 2-7) so it reads at the SAME scale/silhouette as the
+    // other roles (no narrow 4px hat-top, no col-0 bullet jut).
     vigilante: [
-      [_,_,_,"#222","#222","#222","#222",_,_,_],
-      [_,_,"#222","#222","#222","#222","#222","#222",_,_],
-      [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
-      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
-      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
-      [_,_,"#222","#fb0","#222","#222","#222","#222",_,_],
-      [_,_,"#222","#222","#222","#222","#888","#888","#ddd",_],
-      ["#f00","#f00","#f00","#222","#222","#222","#555","#888",_,_],
-      [_,_,"#333","#333",_,_,"#333","#333",_,_],
+      [_,_,"#222","#222","#222","#222","#222","#222",_,_],                     // 0 hat crown (6px)
+      [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],           // 1 hat crown (8px)
+      ["#222","#222","#222","#222","#222","#222","#222","#222","#222","#222"], // 2 wide brim (full width)
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],                     // 3 forehead
+      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],                     // 4 eyes (cols 3,6)
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],                     // 5 cheeks
+      [_,_,"#fdd","#fdd","#555","#555","#fdd","#fdd",_,_],                     // 6 stubble jaw
+      [_,_,"#222","#fb0","#222","#222","#222","#222",_,_],                     // 7 coat + gold star (col 3)
+      [_,_,"#f00","#f00","#222","#222","#888","#ddd",_,_],                     // 8 belt rounds + revolver
+      [_,_,"#333","#333",_,_,"#333","#333",_,_],                              // 9 boots
     ],
     citizen: [
       // 0: farmer

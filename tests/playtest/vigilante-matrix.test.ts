@@ -116,6 +116,7 @@ interface Scenario {
   name: string;
   roles?: Role[];
   settings?: Record<string, unknown>;
+  lovers?: [number, number];
   timeline: ScenarioStep[];
   check: (clients: PlaytestClient[], result: { gameOver?: any; lastPhaseChange?: any }) => void;
 }
@@ -126,6 +127,10 @@ const dawnEvents = (admin: PlaytestClient): Array<{ type: string; playerName: st
   const dawn = admin.lastOf("phase_change");
   return (dawn?.events as Array<{ type: string; playerName: string }>) ?? [];
 };
+// The narrator lines on the dawn phase_change (the public night-death stream).
+const dawnMessages = (admin: PlaytestClient): string[] => (admin.lastOf("phase_change")?.messages as string[]) ?? [];
+// Any of these in a dawn death line would re-out the killer's role.
+const NIGHT_CAUSE_WORDS = /Vigilante|gunshot|bullet|shot/i;
 
 const scenarios: Scenario[] = [
   {
@@ -145,6 +150,13 @@ const scenarios: Scenario[] = [
       const events = dawnEvents(admin);
       expect(events.some((e) => e.type === "vigilante_shot" && e.playerName === nameOf(clients[M1]))).toBe(true);
       expect(events.some((e) => e.type === "kill" && e.playerName === nameOf(clients[C0]))).toBe(true);
+      // CAUSE-NEUTRAL DAWN: the two deaths are announced as ONE combined line
+      // that names BOTH victims and leaks neither the mafia nor the vigilante.
+      const lines1 = dawnMessages(admin).filter((m) => m.includes(nameOf(clients[C0])) || m.includes(nameOf(clients[M1])));
+      expect(lines1.length).toBe(1);
+      expect(lines1[0]).toContain(nameOf(clients[C0]));
+      expect(lines1[0]).toContain(nameOf(clients[M1]));
+      expect(lines1[0]).not.toMatch(NIGHT_CAUSE_WORDS);
       // The vigilante's own confirmation says the bullet was spent.
       expect(clients[VIG].lastOf("night_action_done")!.message).toMatch(/spent/i);
       // D3: the vigilante is never offered itself as a target in the live prompt.
@@ -281,6 +293,12 @@ const scenarios: Scenario[] = [
       const conf = clients[VIG].lastOf("spectator_kill_confirmed");
       expect(conf).toBeDefined();
       expect((conf!.kills as unknown[]).length).toBe(2);
+      // CAUSE-NEUTRAL DAWN: ONE combined line names BOTH victims, no cause tell.
+      const lines6 = dawnMessages(admin).filter((m) => m.includes(nameOf(clients[VIG])) || m.includes(nameOf(clients[M1])));
+      expect(lines6.length).toBe(1);
+      expect(lines6[0]).toContain(nameOf(clients[VIG]));
+      expect(lines6[0]).toContain(nameOf(clients[M1]));
+      expect(lines6[0]).not.toMatch(NIGHT_CAUSE_WORDS);
     },
   },
   {
@@ -409,6 +427,35 @@ const scenarios: Scenario[] = [
       expect(clients[VIG].allOf("night_action_done").every((m) => /hold|keep/i.test(m.message as string))).toBe(true);
     },
   },
+  {
+    // (12) LOVERS night cascade: the mafia kills one lover; the partner dies of
+    // heartbreak the same night. The dawn must announce BOTH in ONE neutral
+    // line — no "heartbreak", no who-was-targeted order tell, and no separate
+    // night heartbreak beat (loverDeathName dropped from the dawn phase_change).
+    name: "12 — mafia kills a lover → ONE neutral dawn line names both, no heartbreak/target tell",
+    settings: { ...BASE_SETTINGS, enableLovers: true },
+    lovers: [C0, C1],
+    timeline: [
+      async (ctx) => { await twoMafiaKill(ctx, C0); }, // kill one lover
+      async (ctx) => { await doctorSaves(ctx, DET); },  // save misses both lovers
+      async (ctx) => { await detectiveInv(ctx, M0); },
+      async (ctx) => { await vigShootThenDay(ctx, null); }, // vig holds fire
+    ],
+    check: (clients) => {
+      const admin = clients[M0];
+      const died = diedNames(admin);
+      expect(died).toContain(nameOf(clients[C0])); // targeted lover
+      expect(died).toContain(nameOf(clients[C1])); // heartbreak cascade
+      const lines = dawnMessages(admin).filter((m) => m.includes(nameOf(clients[C0])) || m.includes(nameOf(clients[C1])));
+      expect(lines.length).toBe(1);                 // ONE combined line
+      expect(lines[0]).toContain(nameOf(clients[C0]));
+      expect(lines[0]).toContain(nameOf(clients[C1]));
+      expect(lines[0].toLowerCase()).not.toContain("heartbreak");
+      expect(lines[0]).not.toMatch(NIGHT_CAUSE_WORDS);
+      // No separate night heartbreak beat: the dawn carries no loverDeathName.
+      expect(admin.lastOf("phase_change")!.loverDeathName).toBeUndefined();
+    },
+  },
 ];
 
 describe("vigilante — 7-player edge-case matrix", () => {
@@ -417,6 +464,7 @@ describe("vigilante — 7-player edge-case matrix", () => {
       const result = await runScenario({
         roles: s.roles ?? BASE_ROLES,
         settings: s.settings ?? BASE_SETTINGS,
+        ...(s.lovers ? { lovers: s.lovers } : {}),
         autoNarratorReady: true,
         timeline: s.timeline,
       });

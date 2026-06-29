@@ -1,12 +1,4 @@
 // Mad-libs random elements
-const FOODS = [
-  "a cold cup of coffee", "a half-eaten supper", "a loaf of bread gone stale",
-  "a bottle with one swallow left", "a plate of food long since cold",
-  "a slice of pie nobody finished", "a candle burned down to nothing",
-  "a hand of cards", "a folded newspaper", "an unsmoked cigarette",
-  "a glass of whiskey, untouched", "a single match",
-];
-
 const LOCATIONS = [
   "in the alley behind the tailor's", "at the foot of the harbor stairs",
   "in a doorway off the empty square", "under the dead streetlamp on Mercer Lane",
@@ -14,29 +6,6 @@ const LOCATIONS = [
   "in the back room of the shuttered bar", "beneath the railway bridge",
   "in the fog at the end of the pier", "by the loading dock, out of the light",
   "in the stairwell of the boarding house", "at the corner where the gaslight had gone out",
-];
-
-const TOOLS = [
-  "a knife, clean and quiet", "a length of wire", "a single shot, close range",
-  "something heavy and blunt", "a cord drawn tight", "a blade between the ribs",
-  "a pistol, the kind that doesn't echo", "an iron pipe",
-  "poison, slow and patient", "a straight razor", "a blow to the back of the head",
-  "their own scarf, used against them",
-];
-
-const LAST_WORDS = [
-  '"I should have left this town when I had the chance..."',
-  '"Tell them... it wasn\'t me..."',
-  '"I knew it would end like this..."',
-  '"You won\'t get away with..."',
-  '"The ledger... look in the ledger..."',
-  '"It was supposed to be a quiet night..."',
-  '"I never saw their face..."',
-  '"So that\'s how it is..."',
-  '"Cold... it\'s so cold..."',
-  '"Don\'t trust..."',
-  '"I should have run..."',
-  '"Lock the door behind me..."',
 ];
 
 const SAVE_METHODS = [
@@ -47,41 +16,11 @@ const SAVE_METHODS = [
   "stubbornness, mostly, and a clean bandage", "the only hand in town that doesn't shake",
 ];
 
-const JOKER_HAUNT_KILL_MESSAGES = [
-  "{name} was found at dawn, cold and grinning. A playing card sat on their chest — the Joker. {lastWords}",
-  "{name} did not see morning. Discovered {location}, a single card tucked into their coat. The Joker collects, even now.",
-  "{name} didn't survive the night. Those who passed the window swear they heard laughing {location}. No one was there.",
-  "The town wakes to find {name} {location}. A card pinned to the door, the lamp still burning. {lastWords}",
-  "{name} is gone. Found {location}, clutching {food}, a Joker card in the other hand. The dead keep their promises.",
-  "A cold settles over the street. {name} was found {location}, no sign of struggle, no sign of anyone. The Joker pays its debts.",
-  "{name} lies {location}. The murder weapon? {tool}. The signature? A single card. The Joker laughs from somewhere you can't follow.",
-  "It's a grim morning. {name} was discovered {location}, a Joker card weighing down their hand. {lastWords}",
-];
-
 const EXECUTION_STYLES = [
   "taken to the gallows at first light", "led from the square and not seen again",
   "marched out past the silent crowd", "given to the rope as the town watched",
   "walked to the edge of town and left there", "put down by the verdict of the room",
   "handed over to the dark beyond the lamplight", "carried out, the matter closed",
-];
-
-const NIGHT_KILL_MESSAGES = [
-  "{name} was found {location}, taken out with {tool}. Their last words: {lastWords}",
-  "{name} did not see the morning. Discovered {location}, clutching {food}. No one heard a thing.",
-  "{name} is dead. Found {location}, with evidence of {tool} near the body. {lastWords}",
-  "{name} didn't survive the night. Last seen {location}, eating {food}. The door was locked from the inside.",
-  "The town wakes to find {name} {location}. Cause of death: {tool}. {lastWords}",
-  "{name} is gone. The signs point to {tool} near {location}. They died holding {food}.",
-  "{name} was found {location}. The murder weapon? {tool}. On the table beside them, {food}, left uneaten.",
-  "It's a grim morning. {name} was discovered {location}, done in by {tool}. {lastWords}",
-];
-
-const VIGILANTE_KILL_MESSAGES = [
-  "A single gunshot rang out in the dark. {name} did not see the dawn. {lastWords}",
-  "The Vigilante's lone bullet found {name} {location}. One shot, no echo.",
-  "{name} was gunned down in the night, {location}. Someone in this town keeps a pistol and their own counsel.",
-  "{name} is dead — a clean shot, close range, no killer to be found. The Vigilante answers to no one.",
-  "It's a grim morning. {name} was discovered {location}, a single bullet and no witnesses. {lastWords}",
 ];
 
 const DOCTOR_SAVE_MESSAGES = [
@@ -206,15 +145,58 @@ function fill(template: string, vars: Record<string, string>): string {
   );
 }
 
+// Join victim names for the combined dawn announcement. SORTED alphabetically
+// on purpose: the kill ORDER (targeted-first vs lover cascade) must not be
+// inferable from the line, so we never present them in resolution order.
+//   1 → "A"   2 → "A and B"   3+ → "A, B, and C"
+function joinNames(names: string[]): string {
+  const s = [...names].sort((a, b) => a.localeCompare(b));
+  if (s.length === 1) return s[0];
+  if (s.length === 2) return `${s[0]} and ${s[1]}`;
+  return `${s.slice(0, -1).join(", ")}, and ${s[s.length - 1]}`;
+}
+
+const NUMBER_WORDS = [
+  "zero", "one", "two", "three", "four", "five",
+  "six", "seven", "eight", "nine", "ten",
+];
+function numberWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
+}
+
+// Single-death dawn lines — concise neutral-noir. They name only WHO died,
+// never HOW (no shot/gun/bullet/knife/wire/heartbreak/joker/card/mafia).
+const NIGHT_DEATH_SINGLE = [
+  "{name} did not see the morning.",
+  "{name} did not live to see the dawn.",
+  "{name} was gone before first light.",
+  "The night took {name}.",
+];
+
+// Per-victim neutral line for the dead player's own you_died overlay and the
+// (no-longer-publicly-narrated) player_died field. Reveals nothing.
+const DIED_IN_NIGHT_MESSAGES = [
+  "{name} did not see the morning.",
+  "{name} did not live to see the dawn.",
+  "{name} did not survive the night.",
+  "The night took {name}.",
+];
+
 export const Narrator = {
-  nightKill(name: string): string {
-    return fill(pick(NIGHT_KILL_MESSAGES), {
-      name,
-      location: pick(LOCATIONS),
-      tool: pick(TOOLS),
-      lastWords: pick(LAST_WORDS),
-      food: pick(FOODS),
-    });
+  // The ONE cause-neutral dawn announcement for the entire simultaneous night
+  // batch (mafia + vigilante + joker haunt + their lover cascades). Names only
+  // WHO died, never HOW; joinNames() sorts so the kill order can't out the
+  // target. Never called with 0 names (resolveNight guards length > 0).
+  nightDeaths(names: string[]): string {
+    const who = joinNames(names);
+    if (names.length === 1) return fill(pick(NIGHT_DEATH_SINGLE), { name: who });
+    if (names.length === 2) return `Two were gone by dawn — ${who}.`;
+    return `Dawn counted ${numberWord(names.length)} empty beds: ${who}.`;
+  },
+  // Neutral per-victim line for the dead player's own you_died overlay and the
+  // player_died wire field (no longer re-narrated publicly).
+  diedInNight(name: string): string {
+    return fill(pick(DIED_IN_NIGHT_MESSAGES), { name });
   },
   doctorSave(name: string): string {
     return fill(pick(DOCTOR_SAVE_MESSAGES), {
@@ -250,15 +232,6 @@ export const Narrator = {
   jokerWin(name: string): string {
     return fill(pick(JOKER_WIN_MESSAGES), { name });
   },
-  jokerHauntKill(name: string): string {
-    return fill(pick(JOKER_HAUNT_KILL_MESSAGES), {
-      name,
-      location: pick(LOCATIONS),
-      tool: pick(TOOLS),
-      lastWords: pick(LAST_WORDS),
-      food: pick(FOODS),
-    });
-  },
   hunterReveal(name: string): string {
     return fill(pick(HUNTER_REVEAL_MESSAGES), { name });
   },
@@ -267,13 +240,6 @@ export const Narrator = {
   },
   hunterDecline(): string {
     return pick(HUNTER_DECLINE_MESSAGES);
-  },
-  vigilanteShotKill(name: string): string {
-    return fill(pick(VIGILANTE_KILL_MESSAGES), {
-      name,
-      location: pick(LOCATIONS),
-      lastWords: pick(LAST_WORDS),
-    });
   },
   townWin(): string {
     return pick(TOWN_WIN_MESSAGES);

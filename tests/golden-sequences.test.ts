@@ -1786,17 +1786,19 @@ const GAME_SETTINGS_6 = {
 // targeted — no doctor_save_private on the wire) → day 1: ordinary vote
 // executes P5 (citizen, non-lover, non-joker; 4 yes / 2 no) → auto-night 2:
 // mafia kills lover P3, partner P4 cascades (night path: primary victim
-// first, then the lover, same source; the partner's you_died carries
-// isLoverDeath and the day phase_change carries loverDeathName), doctor's
+// first, then the lover, same source; the partner's you_died still carries
+// isLoverDeath for their OWN heartbreak art, but the dawn phase_change is
+// cause-neutral — it carries NO loverDeathName, so the public stream is one
+// combined line and the kill+lover_death events stay in eventHistory), doctor's
 // save on P0 misses → day 2: vote executes the last mafia P1 → TOWN WIN at
 // vote resolution: phase_change phase=game_over (no day sound cue on the
 // vote path) + game_over winner=town with the full role/lover reveal.
 const GOLDEN_GAME_6: Record<string, string[]> = {
   // P0 — admin, citizen. Saved night-1 dawn shows saved=true with EMPTY
-  // events (official doctor mode logs no save event); night-2 dawn carries
-  // lover=P4 and the kill+lover_death pair; the day-2 vote ends the game on
-  // the VOTE path: phase_change phase=game_over (no day sound cue) then the
-  // game_over reveal.
+  // events (official doctor mode logs no save event); night-2 dawn carries the
+  // kill+lover_death pair (cause-neutral: NO lover= token); the day-2 vote ends
+  // the game on the VOTE path: phase_change phase=game_over (no day sound cue)
+  // then the game_over reveal.
   P0: [
     "registered",
     "game_created",
@@ -1838,7 +1840,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -1899,7 +1901,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -1953,7 +1955,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -2004,7 +2006,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -2054,7 +2056,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "you_died loverDeath=true",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -2111,7 +2113,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",

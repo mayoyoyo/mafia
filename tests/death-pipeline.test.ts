@@ -134,11 +134,11 @@ describe("B3 pins — cascade sub-branches the goldens don't cover", () => {
     expect(l.isAlive).toBe(false);
     expect(result.saved).toBe(false);
 
-    // message order mirrors the killed order, one line per death
-    expect(result.messages.length).toBe(3);
-    expect(result.messages[0]).toBe(result.killed[0].message);
-    expect(result.messages[1]).toBe(result.killed[1].message);
-    expect(result.messages[2]).toBe(result.killed[2].message);
+    // ONE cause-neutral combined dawn line names every victim (no per-death
+    // cause stream, no kill-order tell). killed[] keeps the full record above.
+    expect(result.messages.length).toBe(1);
+    for (const k of result.killed) expect(result.messages[0]).toContain(k.player.username);
+    expect(result.messages[0]).not.toMatch(/joker|playing card|heartbreak/i);
 
     // event labels: haunt victim is joker_haunt (NOT lover_death — M5),
     // partner is lover_death, in kill order
@@ -213,10 +213,9 @@ describe("B3 pins — cascade sub-branches the goldens don't cover", () => {
       [l.id, "mafia"],
       [b.id, "joker_haunt"],
     ]);
-    expect(result.messages.length).toBe(3);
-    expect(result.messages[0]).toBe(result.killed[0].message);
-    expect(result.messages[1]).toBe(result.killed[1].message);
-    expect(result.messages[2]).toBe(result.killed[2].message);
+    // ONE combined dawn line for the whole batch; killed[]/events keep order.
+    expect(result.messages.length).toBe(1);
+    for (const k of result.killed) expect(result.messages[0]).toContain(k.player.username);
     expect(eventsOfRound(game, 2)).toEqual([
       ["kill", a.username],
       ["lover_death", l.username],
@@ -258,9 +257,11 @@ describe("B3 pins — one save blocks one source (resolveNight fold semantics)",
     expect(y.isAlive).toBe(false);
     expect(result.killed.map(k => [k.player.id, k.source])).toEqual([[y.id, "mafia"]]);
 
-    // messages chronological: the mafia kill line, then the (house) save line
+    // messages: the (house) save line (names the saved x) + ONE combined death
+    // line (names the mafia victim y). No per-death cause stream.
     expect(result.messages.length).toBe(2);
-    expect(result.messages[0]).toBe(result.killed[0].message);
+    expect(result.messages.some(m => m.includes(y.username))).toBe(true);
+    expect(result.messages.some(m => m.includes(x.username))).toBe(true);
 
     // eventHistory presentation: save FIRST, then the kill — even though the
     // kill resolved first (today: transitionToDay pushes the save event ahead
@@ -290,10 +291,11 @@ describe("B3 pins — one save blocks one source (resolveNight fold semantics)",
     expect(x.isAlive).toBe(false);
     expect(result.killed.map(k => [k.player.id, k.source])).toEqual([[x.id, "joker_haunt"]]);
 
-    // messages chronological: save line first (mafia source resolves first),
-    // then the haunt kill line
+    // messages: the save line (mafia source blocked) + ONE combined death line
+    // naming the haunt victim x — cause-neutral (no "Joker"/"playing card").
     expect(result.messages.length).toBe(2);
-    expect(result.messages[1]).toBe(result.killed[0].message);
+    expect(result.messages[1]).toContain(x.username);
+    expect(result.messages[1]).not.toMatch(/joker|playing card/i);
 
     // events: save first, then the haunt kill
     expect(eventsOfRound(game, 2)).toEqual([

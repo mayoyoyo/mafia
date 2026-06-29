@@ -1291,7 +1291,7 @@ export function resolveNight(game: Game): NightResult {
   if (game.mafiaTarget !== null) {
     intents.push({
       targetId: game.mafiaTarget, source: "mafia",
-      deathMessage: (v) => Narrator.nightKill(v.username),
+      deathMessage: (v) => Narrator.diedInNight(v.username),
     });
   }
   // Vigilante shot resolves AFTER the mafia kill, BEFORE the joker haunt. A
@@ -1301,7 +1301,7 @@ export function resolveNight(game: Game): NightResult {
   if (game.vigilanteTarget !== null) {
     intents.push({
       targetId: game.vigilanteTarget, source: "vigilante",
-      deathMessage: (v) => Narrator.vigilanteShotKill(v.username),
+      deathMessage: (v) => Narrator.diedInNight(v.username),
     });
   }
   if (game.jokerHauntTarget !== null) {
@@ -1309,7 +1309,7 @@ export function resolveNight(game: Game): NightResult {
     // resolveVote's official branch.
     intents.push({
       targetId: game.jokerHauntTarget, source: "joker_haunt",
-      deathMessage: (v) => Narrator.jokerHauntKill(v.username),
+      deathMessage: (v) => Narrator.diedInNight(v.username),
     });
   }
   if (intents.length === 0) return result;
@@ -1326,6 +1326,9 @@ export function resolveNight(game: Game): NightResult {
   // consumes the save; a later intent on the same target kills anyway. A
   // target already dead from an earlier intent (or its cascade) is skipped.
   let saveUsed = false;
+  // Names of everyone who actually died tonight (direct + cascade), in kill
+  // order. Folded into ONE cause-neutral announcement after the loop.
+  const nightDeadNames: string[] = [];
   for (const intent of intents) {
     const target = game.players.get(intent.targetId);
     if (!target) continue;
@@ -1354,11 +1357,24 @@ export function resolveNight(game: Game): NightResult {
     } else if (target.isAlive) {
       const deaths = applyDeath(game, intent.targetId, intent.source, intent.deathMessage(target));
       for (const d of deaths) {
-        result.messages.push(d.message);
-        result.killed.push(d);
+        // Night cascade: strip the heartbreak/partner tell from the victim-
+        // facing line too (you_died/player_died read d.message). The public
+        // batch line is emitted once, below.
+        if (d.cause === "lover_cascade") d.message = Narrator.diedInNight(d.player.username);
+        nightDeadNames.push(d.player.username);
+        result.killed.push(d); // killed[] unchanged: drives triggers/events/UI
       }
     }
     // already dead and not saved: no additional effect
+  }
+
+  // ONE cause-neutral announcement for the ENTIRE simultaneous night batch
+  // (mafia + vigilante + joker haunt + their lover cascades). Names only WHO,
+  // never HOW; joinNames() sorts so the kill ORDER can't out the target.
+  // Hunter revenge is NOT folded in — it is gated/post-dawn (concludeRound
+  // defers the dawn) and keeps its own separate announcement.
+  if (nightDeadNames.length > 0) {
+    result.messages.push(Narrator.nightDeaths(nightDeadNames));
   }
 
   if (result.killed.length === 0 && !result.saved) {

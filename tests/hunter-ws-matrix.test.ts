@@ -174,11 +174,19 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     // hunter gate, so no hunter_gate slog line was ever emitted for this game.
     expect(slogEvents(serverA!, "hunter_gate", game.code)).toEqual([]);
 
-    // The dawn carries the standard night→day shape: round 1, the cascade's
-    // loverDeathName is the hunter (the secondary victim), no game_over (1
-    // mafia vs admin + 2 citizens = town majority still alive).
+    // The dawn carries the standard night→day shape: round 1, no game_over (1
+    // mafia vs admin + 2 citizens = town majority still alive). The two night
+    // deaths (X + the heartbroken hunter) are announced as ONE cause-neutral
+    // combined line naming BOTH, and loverDeathName is NOT passed on the night
+    // dawn — so the client fires no separate heartbreak beat that would out the
+    // lover pair or which of them was the mafia's original target.
     expect(dayChange.round).toBe(1);
-    expect(dayChange.loverDeathName).toBe(hunter.username);
+    expect(dayChange.loverDeathName).toBeUndefined();
+    expect(
+      (dayChange.messages as string[]).some(
+        (m) => m.includes(loverX.username) && m.includes(hunter.username) && !/heartbreak/i.test(m),
+      ),
+    ).toBe(true);
     expect(admin.inbox.find(m => m.type === "game_over")).toBeUndefined();
 
     // Order on the admin inbox: player_died(X) < player_died(hunter) < day cue

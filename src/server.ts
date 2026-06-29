@@ -447,6 +447,10 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
   // Capture the wake flag BEFORE submitHunterRevenge clears the gate — a
   // night-killed Hunter gets the "Hunter, close your eyes" cue once they act.
   const wakeHunter = game.pendingRevenge?.wakeHunter ?? false;
+  // Capture the deferred night-batch dawn lines BEFORE submitHunterRevenge
+  // clears the gate, so the ONE cause-neutral combined death line still leads
+  // the deferred phase_change. Empty for the vote-path gate (no deferred dawn).
+  const deferredNight = game.pendingRevenge?.deferredNightMessages ?? [];
   const result = submitHunterRevenge(game, hunterId, targetId);
   if (!result.ok) return false;
 
@@ -488,7 +492,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     game.dayStartedAt = null;
     broadcastPhaseChange(game, {
       from,
-      messages: result.messages,
+      messages: [...deferredNight, ...result.messages],
       events: true,
       loverDeathName: revengeLoverDeathName,
       // The dawn's deferred day cue (the night-path game_over shape, golden
@@ -507,7 +511,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     game.dayVoteCount = 0;
     broadcastPhaseChange(game, {
       from,
-      messages: result.messages,
+      messages: [...deferredNight, ...result.messages],
       events: true,
       loverDeathName: revengeLoverDeathName,
     });
@@ -517,7 +521,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     game.dayStartedAt = Date.now();
     broadcastPhaseChange(game, {
       from,
-      messages: result.messages,
+      messages: [...deferredNight, ...result.messages],
       events: true,
       loverDeathName: revengeLoverDeathName,
       dayCue: true,
@@ -1934,12 +1938,15 @@ function resolveNightAndTransition(game: Game): void {
     }, hauntingJokerId);
   }
 
-  // Notify killed players
-  let nightLoverDeathName: string | undefined;
+  // Notify killed players. NB: the dawn batch is announced as ONE cause-neutral
+  // line in nightResult.messages (engine resolveNight) — we deliberately do NOT
+  // pass loverDeathName to the dawn phase_change, so the client fires no
+  // separate night heartbreak beat (which would leak the lover + the original
+  // target). The victim's own you_died still carries isLoverDeath (private
+  // heartbreak art on their OWN screen only).
   for (const k of nightResult.killed) {
     // B3: keyed on the Death's cause (absorbs classifyNightDeath)
     const isLoverDeath = k.cause === "lover_cascade";
-    if (isLoverDeath) nightLoverDeathName = k.player.username;
     sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
       type: "player_died",
@@ -1959,6 +1966,10 @@ function resolveNightAndTransition(game: Game): void {
   // no gate, the tail below is byte-identical to the pre-C3a dawn (pinned
   // by the golden message-sequence tests).
   if (game.pendingRevenge) {
+    // Stash the (already-recorded) night-batch dawn lines so resolveRevenge can
+    // still deliver the ONE cause-neutral combined death line to living clients
+    // when the gate clears — the deferred dawn would otherwise drop it.
+    game.pendingRevenge.deferredNightMessages = nightResult.messages;
     openRevengeGate(game, game.pendingRevenge);
     return;
   }
@@ -1969,7 +1980,6 @@ function resolveNightAndTransition(game: Game): void {
     messages: nightResult.messages,
     events: true,
     saved: nightResult.saved,
-    loverDeathName: nightLoverDeathName,
     dayCue: true,
   });
 

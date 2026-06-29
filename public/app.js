@@ -566,7 +566,11 @@
         break;
 
       case "player_died":
-        showNarratorMessage(msg.message);
+        // No public per-death narration: the whole night batch is announced
+        // as ONE cause-neutral line via phase_change.messages (and the dawn
+        // verdict beat). Re-narrating each death here would replay the kills
+        // one-by-one and re-introduce an order/cause tell. The roster "mark
+        // dead" + death-order tracking happen in the early interceptor above.
         break;
 
       case "you_died":
@@ -2003,16 +2007,23 @@
     // Official doctor mode sends an anonymous `saved` flag (no named save event);
     // house mode and older payloads still carry a named "save" event.
     const hasSave = msg.saved === true || roundEvents.some((e) => e.type === "save");
-    const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
-    const killEvent = roundEvents.find((e) => e.type === "kill");
-    const victimName = killEvent ? killEvent.playerName : "Someone";
+    // Count EVERY night-death type (not just the mafia "kill") so a vigilante-
+    // only / joker-only / lover-only night isn't mis-read as peaceful.
+    const deathEvents = roundEvents.filter((e) =>
+      e.type === "kill" || e.type === "vigilante_shot" || e.type === "joker_haunt" || e.type === "lover_death"
+    );
+    const hasKill = deathEvents.length > 0;
+    // Only name a victim when EXACTLY ONE died; multi-death nights stay neutral
+    // so the verdict can't single out (and thereby cause-tag) the mafia victim
+    // \u2014 the combined narrator line already carries all the names.
+    const victimName = deathEvents.length === 1 ? deathEvents[0].playerName : null;
     // D5: verdict returns an art GRID + plain text + tint, painted into the
     // dedicated stage slots (the writer uses .textContent, so the relayed
     // username never reaches innerHTML \u2014 strictly safer than the prior
     // escapeHtml-into-innerHTML path).
-    if (hasSave && hasKill) return { art: CROSS_ART, text: `A life was saved... but ${victimName} didn\u2019t make it.`, color: "#2196f3", beatClass: "beat-dawn" };
+    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? `A life was saved... but ${victimName} didn\u2019t make it.` : "A life was saved... but others didn\u2019t make it.", color: "#2196f3", beatClass: "beat-dawn" };
     if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "#2196f3", beatClass: "beat-dawn" };
-    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: `${victimName} didn\u2019t survive the night.`, color: "#d32f2f", beatClass: "beat-death" };
+    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? `${victimName} didn\u2019t survive the night.` : "Several didn\u2019t survive the night.", color: "#d32f2f", beatClass: "beat-death" };
     return { art: SUN_ART, text: "A peaceful night... somehow.", color: "#8e8e93", beatClass: "beat-dawn" };
   }
 
@@ -2138,15 +2149,22 @@
     const container = $("event-history-list");
     container.innerHTML = "";
 
+    // In-game event tab is visible to LIVING players, so the four NIGHT death
+    // labels are neutralized to a cause-neutral line — naming the mafia /
+    // vigilante / joker / heartbreak here would re-leak exactly what the dawn
+    // fix hides. Day-public outcomes (execution/spared), positive save, and
+    // the detective's private investigations keep their descriptive labels.
+    // hunter_revenge is already a PUBLIC reveal (the gate announces the Hunter).
+    // The end-game history (GAME_HISTORY_LABELS) stays a FULL reveal.
     const EVENT_LABELS = {
-      kill: "Killed by Mafia",
+      kill: "Died in the night",
       save: "Saved by Doctor",
       execution: "Executed",
-      lover_death: "Died of heartbreak",
+      lover_death: "Died in the night",
       spared: "Spared by vote",
-      joker_haunt: "Haunted by the Joker",
+      joker_haunt: "Died in the night",
       hunter_revenge: "Shot by the Hunter",
-      vigilante_shot: "Shot by the Vigilante",
+      vigilante_shot: "Died in the night",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
@@ -2756,13 +2774,16 @@
     renderSpectatorLog();
 
     $("action-title").textContent = "Dawn approaches\u2026";
+    // Cause-neutral for the night batch: the dead-spectator list names WHO died,
+    // not by whose hand. (This also fixes the old bug where a vigilante/joker
+    // kill was mislabeled "killed by the Mafia".) The full reveal lives on the
+    // end-game history screen.
     if (msg.kills && msg.kills.length > 0) {
-      $("action-targets").innerHTML = msg.kills.map(k => {
-        const label = k.source === "joker_haunt" ? "haunted by the Joker" : "killed by the Mafia";
-        return `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 ${label}</li>`;
-      }).join("");
+      $("action-targets").innerHTML = msg.kills.map(k =>
+        `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 died in the night</li>`
+      ).join("");
     } else {
-      $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 killed by the Mafia</li>`;
+      $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 died in the night</li>`;
     }
     $("action-status").textContent = msg.doctorMessage || "";
   }
@@ -4097,7 +4118,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.26_202606281715";
+  const APP_VERSION_STAGING = "staging.27_202606282303";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

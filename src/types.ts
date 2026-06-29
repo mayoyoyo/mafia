@@ -137,6 +137,15 @@ export interface PendingRevenge {
    * "not a night kill" (no wake cue) — the conservative default.
    */
   wakeHunter?: boolean;
+  /**
+   * The night-batch dawn narrator lines (the ONE cause-neutral combined
+   * death line + any save line) captured when a Hunter dies at night and the
+   * dawn broadcast is deferred for the revenge gate. resolveRevenge prepends
+   * these to the deferred phase_change so the combined neutral announcement
+   * still reaches living clients (the line is already in narratorHistory).
+   * Unset for the vote-path gate (no deferred dawn). Plain data — rejoin-safe.
+   */
+  deferredNightMessages?: string[];
 }
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
