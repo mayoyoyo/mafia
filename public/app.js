@@ -1230,7 +1230,41 @@
       $("role-mini-balloon").classList.add("hidden");
     }
     updateBulletIndicator();
+    fitRoleCardText();
+    // Re-fit once the pixel font (Silkscreen) is loaded — measuring the
+    // single-line name against a fallback font under-reports its width and
+    // leaves long names (GODFATHER/VIGILANTE/DETECTIVE) overflowing.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitRoleCardText());
   }
+
+  // Force every role's membership card to the SAME fixed size (CSS gives the
+  // card its fixed box): shrink the single-line role name to fit the card
+  // width, and the description to fit the remaining height — only as far as
+  // needed, so short cards keep the full font and only long ones (e.g. the
+  // Vigilante) shrink. Re-runs on resize via the listener below.
+  function fitRoleCardText(attempt) {
+    attempt = attempt || 0;
+    const front = document.querySelector("#role-card .card-front");
+    const name = $("role-name");
+    const desc = $("role-description");
+    if (!front || !name || !desc) return;
+    name.style.fontSize = "";
+    desc.style.fontSize = "";
+    // The card may not be laid out yet (screen hidden / fonts loading) — retry.
+    if (front.clientHeight === 0) {
+      if (attempt < 8) requestAnimationFrame(() => fitRoleCardText(attempt + 1));
+      return;
+    }
+    // Name: keep it on ONE line — shrink until it fits the card width.
+    for (let s = 28; s > 12 && name.scrollWidth > name.clientWidth; s--) {
+      name.style.fontSize = s + "px";
+    }
+    // Description: shrink until the whole front content fits the fixed height.
+    for (let s = 14; s > 8 && front.scrollHeight > front.clientHeight + 1; s--) {
+      desc.style.fontSize = s + "px";
+    }
+  }
+  window.addEventListener("resize", () => fitRoleCardText());
 
   // Vigilante-only one-shot indicator on the role card. Persistent across
   // day/death (the bullet count is a fact about the role, not the night).
@@ -4120,7 +4154,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.28_202606282348";
+  const APP_VERSION_STAGING = "staging.29_202606290042";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

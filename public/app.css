@@ -999,7 +999,10 @@ input::placeholder { color: var(--text-secondary); }
   border-radius: 20px;
   text-align: center;
   position: relative;
-  min-height: 180px;
+  /* Fixed membership-card size: every role's card is identical regardless of
+     name/description length. The front fills this box and its text auto-shrinks
+     to fit (fitRoleCardText in app.js). */
+  height: 320px;
   /* no perspective — flat stacking */
 }
 .card-inner {
@@ -1018,6 +1021,15 @@ input::placeholder { color: var(--text-secondary); }
 .card-front {
   /* sits below .card-back in the stack; visible when card-back clips away */
   position: relative;
+  /* Fill the fixed card box and center the stacked content; clip any overflow
+     (the JS auto-fit shrinks text so nothing actually clips). */
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
 }
 .card-back {
@@ -1130,7 +1142,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.godfather .card-front { border-color: var(--role-godfather); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
-.role-name { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; font-family: 'Silkscreen', monospace; }
+.role-name { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; font-family: 'Silkscreen', monospace; white-space: nowrap; width: 100%; box-sizing: border-box; }
 .role-card.mafia .role-name { color: var(--role-mafia); }
 .role-card.citizen .role-name { color: var(--role-citizen); }
 .role-card.doctor .role-name { color: var(--role-doctor); }
@@ -1139,7 +1151,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.hunter .role-name { color: var(--role-hunter); }
 .role-card.vigilante .role-name { color: var(--role-vigilante); }
 .role-card.godfather .role-name { color: var(--role-godfather); }
-.role-description { color: var(--text-secondary); font-size: 14px; margin-top: 8px; }
+.role-description { color: var(--text-secondary); font-size: 14px; margin-top: 8px; width: 100%; box-sizing: border-box; }
 /* Vigilante one-shot indicator on the role card */
 .bullet-indicator {
   display: inline-block;
