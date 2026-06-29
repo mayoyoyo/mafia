@@ -579,8 +579,10 @@
         // If joker win overlay is already showing, skip the death overlay
         if (!jokerWonOverlayShown) {
           $("dead-overlay").classList.remove("hidden");
-          // D3b: pixel art skull or heartbreak art instead of emoji
-          $("dead-emoji").innerHTML = pixelArtToSvg(msg.isLoverDeath ? HEARTBREAK_ART : CARD_BACK_DEAD_ART);
+          // Always the neutral skull — no heartbreak framing on the dead
+          // player's own screen either (cause is hidden in-game; the end-game
+          // reveal still shows everything).
+          $("dead-emoji").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
@@ -4118,7 +4120,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.27_202606282303";
+  const APP_VERSION_STAGING = "staging.28_202606282348";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

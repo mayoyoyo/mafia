@@ -456,12 +456,11 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
 
   recordNarrator(game, result.messages);
 
-  // Revenge death broadcasts — keyed on Death.cause, never position (B3).
-  let revengeLoverDeathName: string | undefined;
+  // Revenge death broadcasts. Death messages are cause-neutral (a lover
+  // cascade reads as a plain death), and no loverDeathName/isLoverDeath rides
+  // the wire — the heartbreak framing is never shown to anyone in-game.
   for (const d of result.deaths) {
-    const isLoverDeath = d.cause === "lover_cascade";
-    if (isLoverDeath) revengeLoverDeathName = d.player.username;
-    sendToUser(d.player.id, { type: "you_died", message: d.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
+    sendToUser(d.player.id, { type: "you_died", message: d.message });
     broadcastToGame(game.code, {
       type: "player_died",
       playerId: d.player.id,
@@ -493,9 +492,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     broadcastPhaseChange(game, {
       from,
       messages: [...deferredNight, ...result.messages],
-      events: true,
-      loverDeathName: revengeLoverDeathName,
-      // The dawn's deferred day cue (the night-path game_over shape, golden
+      events: true,      // The dawn's deferred day cue (the night-path game_over shape, golden
       // #7); a vote-path game_over sends no cue (cast_vote shape).
       dayCue: from === "night",
     });
@@ -512,9 +509,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     broadcastPhaseChange(game, {
       from,
       messages: [...deferredNight, ...result.messages],
-      events: true,
-      loverDeathName: revengeLoverDeathName,
-    });
+      events: true,    });
     startNightSequence(game);
   } else {
     // Day — the deferred dawn completes.
@@ -522,9 +517,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     broadcastPhaseChange(game, {
       from,
       messages: [...deferredNight, ...result.messages],
-      events: true,
-      loverDeathName: revengeLoverDeathName,
-      dayCue: true,
+      events: true,      dayCue: true,
     });
   }
   return true;
@@ -1557,13 +1550,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             }
           }
 
-          let voteLoverDeathName: string | undefined;
           for (const k of voteResult.killed) {
-            // B3: keyed on the Death's cause, not array position — revenge
-            // deaths joining vote kill lists (Program C) keep correct labels.
-            const isLoverDeath = k.cause === "lover_cascade";
-            if (isLoverDeath) voteLoverDeathName = k.player.username;
-            sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
+            // Cause-neutral: a lover cascade reads as a plain death, and no
+            // isLoverDeath rides the wire — no heartbreak framing for anyone.
+            sendToUser(k.player.id, { type: "you_died", message: k.message });
             broadcastToGame(game.code, {
               type: "player_died",
               playerId: k.player.id,
@@ -1583,10 +1573,10 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           // NO phase_change leaves this handler, so the illegal
           // voting→voting edge (the pre-C3b "spared" fall-through) is
           // structurally unreachable, and no day/night cue fires early.
-          // Note: voteLoverDeathName is deliberately dropped on this path —
-          // the cascade death was already announced via the loop above, and
-          // the post-revenge phase_change carries only REVENGE-cascade names
-          // (C5: the client must not expect it on the resumed broadcast).
+          // No loverDeathName is ever passed on the vote path: a lover cascade
+          // is announced as a plain death (cause-neutral), so the client never
+          // fires the heartbreak beat that would out the executed player's
+          // secret partner.
           if (game.pendingRevenge) {
             openRevengeGate(game, game.pendingRevenge);
             break;
@@ -1597,9 +1587,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             broadcastPhaseChange(game, {
               from,
               messages: voteResult.messages,
-              events: true,
-              loverDeathName: voteLoverDeathName,
-            });
+              events: true,            });
             // Divergence kept visible: the live broadcast's message is the
             // narrator's last line, NOT buildGameSync's canonical win line.
             broadcastToGame(game.code, {
@@ -1613,9 +1601,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             broadcastPhaseChange(game, {
               from,
               messages: voteResult.messages,
-              events: true,
-              loverDeathName: voteLoverDeathName,
-            });
+              events: true,            });
             startNightSequence(game);
           } else {
             // Spared — stay in day
@@ -1938,16 +1924,13 @@ function resolveNightAndTransition(game: Game): void {
     }, hauntingJokerId);
   }
 
-  // Notify killed players. NB: the dawn batch is announced as ONE cause-neutral
+  // Notify killed players. The dawn batch is announced as ONE cause-neutral
   // line in nightResult.messages (engine resolveNight) — we deliberately do NOT
-  // pass loverDeathName to the dawn phase_change, so the client fires no
-  // separate night heartbreak beat (which would leak the lover + the original
-  // target). The victim's own you_died still carries isLoverDeath (private
-  // heartbreak art on their OWN screen only).
+  // pass loverDeathName, and no isLoverDeath rides any you_died, so heartbreak
+  // is never shown to anyone in-game (it would leak the lover pair + the
+  // original target). The end-game role reveal still shows everything.
   for (const k of nightResult.killed) {
-    // B3: keyed on the Death's cause (absorbs classifyNightDeath)
-    const isLoverDeath = k.cause === "lover_cascade";
-    sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
+    sendToUser(k.player.id, { type: "you_died", message: k.message });
     broadcastToGame(game.code, {
       type: "player_died",
       playerId: k.player.id,

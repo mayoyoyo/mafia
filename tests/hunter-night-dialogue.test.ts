@@ -101,7 +101,7 @@ const EDGE_CASES: EdgeCase[] = [
       const hunterDiedP = waitFor(hunter.ws, "you_died", 8000);
       await mafiaSoloKill(game.players[MAFIA], lover);
       const hunterDied = await hunterDiedP;
-      expect(hunterDied.isLoverDeath).toBe(true); // died as a lover, not a direct target
+      expect(hunterDied.isLoverDeath).toBeUndefined(); // cascade death now reads cause-neutral; no heartbreak signal on the wire
 
       await Bun.sleep(500); // let any (erroneous) revenge gate broadcast settle
 

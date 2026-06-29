@@ -1160,7 +1160,9 @@ export function applyDeath(game: Game, playerId: number, source: KillSource, mes
       lover.isAlive = false;
       deaths.push({
         player: lover, source, cause: "lover_cascade",
-        message: Narrator.loverDeath(lover.username, player.username),
+        // Cause-neutral: never reveals the bond. The night path further
+        // overrides this with diedInNight for the dawn voice.
+        message: Narrator.cascadeDeath(lover.username),
         eventType: deriveDeathEventType(source, "lover_cascade"),
       });
     }

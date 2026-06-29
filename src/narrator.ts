@@ -69,11 +69,15 @@ const EXECUTION_SPARED_MESSAGES = [
   "The verdict won't hold. {name} survives the vote. The town will remember whose name came up.",
 ];
 
-const LOVER_DEATH_MESSAGES = [
-  "Then {name} goes still too. They were {lover}'s, in secret, and a heart only breaks the once. Two coats left on two chairs.",
-  "{name} falls a breath after {lover} does. The thread between them was real, and it pulled tight at the end. Now there are two graves to dig.",
-  "{name} doesn't outlive {lover} by a minute. Whatever bound them, it held to the last. The town buries the pair together.",
-  "{name} was {lover}'s lover. As {lover} dies, {name} follows, without a sound. Some debts the heart pays in full.",
+// Cause-neutral cascade death (a second death that follows the first). NEVER
+// names the bond or the cause — saying "heartbreak"/"lover" would out the
+// secret pair (and, after an execution, the already-public victim's partner).
+// Time-agnostic so it reads on both the day (execution) and revenge paths;
+// the night path overrides this with diedInNight for the dawn voice.
+const CASCADE_DEATH_MESSAGES = [
+  "{name} is found dead, too.",
+  "{name} does not survive, either.",
+  "{name} is lost as well.",
 ];
 
 const JOKER_WIN_MESSAGES = [
@@ -226,8 +230,8 @@ export const Narrator = {
   executionSpared(name: string): string {
     return fill(pick(EXECUTION_SPARED_MESSAGES), { name });
   },
-  loverDeath(name: string, loverName?: string): string {
-    return fill(pick(LOVER_DEATH_MESSAGES), { name, lover: loverName ?? "their beloved" });
+  cascadeDeath(name: string): string {
+    return fill(pick(CASCADE_DEATH_MESSAGES), { name });
   },
   jokerWin(name: string): string {
     return fill(pick(JOKER_WIN_MESSAGES), { name });

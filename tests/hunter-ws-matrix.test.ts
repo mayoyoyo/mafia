@@ -155,14 +155,14 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
       expect(dayIdx).toBeGreaterThan(hIdx); // …and BOTH before the dawn phase_change
     }
 
-    // Death labels keyed on cause (B3): X died direct (no isLoverDeath), the
-    // hunter of heartbreak (isLoverDeath true — the cascade-victim copy).
+    // Both deaths now read cause-neutral on the wire: neither X (direct) nor the
+    // cascade-victim hunter carries an isLoverDeath flag anymore.
     const xDied = loverX.inbox.find(m => m.type === "you_died");
     expect(xDied).toBeDefined();
     expect(xDied.isLoverDeath).toBeUndefined();
     const hunterDied = hunter.inbox.find(m => m.type === "you_died");
     expect(hunterDied).toBeDefined();
-    expect(hunterDied.isLoverDeath).toBe(true);
+    expect(hunterDied.isLoverDeath).toBeUndefined();
 
     // ── NO revenge gate anywhere (direct-only rule): the cascade Hunter death
     // never triggers a reveal, a prompt, or a target list, on ANY inbox. ────

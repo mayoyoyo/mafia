@@ -22,9 +22,10 @@ describe("Narrator", () => {
     expect(msg).toContain("Dave");
   });
 
-  test("loverDeath includes both names", () => {
-    const msg = Narrator.loverDeath("Eve", "Frank");
+  test("cascadeDeath names the victim and never reveals the bond", () => {
+    const msg = Narrator.cascadeDeath("Eve");
     expect(msg).toContain("Eve");
+    expect(msg).not.toMatch(/heartbreak|lover|beloved/i);
   });
 
   test("jokerWin includes player name", () => {
@@ -121,19 +122,17 @@ describe("Narrator template injection (M13)", () => {
   // A username that is a literal placeholder must NOT be re-expanded into
   // mad-libs filler. Templates are picked at random, so run many trials to
   // cover every template; the name must survive in EVERY output.
-  test("loverDeath does not spoof a literal {lover} victim name to the partner", () => {
+  test("cascadeDeath does not spoof a literal placeholder victim name", () => {
     for (let i = 0; i < 100; i++) {
-      const msg = Narrator.loverDeath("{lover}", "Bob");
-      // The victim's literal name must be preserved...
-      expect(msg).toContain("{lover}");
-      // ...and the partner's name must still be substituted into the template.
-      expect(msg).toContain("Bob");
+      const msg = Narrator.cascadeDeath("{name}");
+      // The victim's literal name must be preserved (no re-expansion).
+      expect(msg).toContain("{name}");
     }
   });
 
   test("normal names are still substituted across many trials", () => {
     for (let i = 0; i < 50; i++) {
-      expect(Narrator.loverDeath("Eve", "Frank")).toContain("Eve");
+      expect(Narrator.cascadeDeath("Eve")).toContain("Eve");
       expect(Narrator.execution("Charlie")).toContain("Charlie");
     }
   });
