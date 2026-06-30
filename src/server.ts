@@ -1,7 +1,7 @@
 import { getDb, createUser, loginUser, getUserById, saveLastSettings, getLastSettings, getUserPrefs, updateUserPref } from "./db";
 import {
   createGame, getGame, removeGame, addPlayer, removePlayer, rejoinPlayer, updateSettings, sanitizeSettings,
-  getPlayerInfo, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
+  getPlayerInfo, rosterSummary, startGame, submitMafiaVote, removeMafiaVote, submitDoctorSave,
   submitDetectiveInvestigation, checkNightReady, transitionToDay, advanceNightSubPhase,
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
@@ -836,6 +836,7 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     role: rejoined.role!,
     isLover: rejoined.isLover,
     variant: rejoined.variant,
+    roster: rosterSummary(game),
     phase: game.phase,
     round: game.round,
     nightSubPhase: game.nightSubPhase,
@@ -1075,7 +1076,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             send(ws, { type: "awaiting_ready" });
           }
           // H4: mafia consensus locked but kill not yet confirmed — re-send
-          // mafia_confirm_ready so the rejoining mafia can slide-to-confirm
+          // mafia_confirm_ready so the rejoining mafia can confirm the kill
           // (otherwise the night soft-locks waiting for a confirm the client
           // no longer offers)
           if (game.phase === "night" && game.nightSubPhase === "mafia"
@@ -1247,6 +1248,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         .map(p => p.username);
       // Godfather (if any): every mafia learns who it is; the godfather learns they are it.
       const godfatherName = Array.from(game.players.values()).find(p => p.isGodfather)?.username;
+      // Public lineup summary for the "Roles in Play" modal (same for everyone).
+      const roster = rosterSummary(game);
 
       // Send each player their role
       for (const [playerId, player] of game.players) {
@@ -1255,6 +1258,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           role: player.role!,
           isLover: player.isLover,
           variant: player.variant,
+          roster,
           ...(player.role === "mafia" ? { mafiaTeam: mafiaNames } : {}),
           ...(player.role === "mafia" && godfatherName ? { godfatherName } : {}),
           ...(player.isGodfather ? { isGodfather: true } : {}),
@@ -1752,6 +1756,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         .filter(p => p.role === "mafia")
         .map(p => p.username);
       const godfatherName2 = Array.from(game.players.values()).find(p => p.isGodfather)?.username;
+      const roster2 = rosterSummary(game);
 
       // Send each player their new role
       for (const [playerId, player] of game.players) {
@@ -1760,6 +1765,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           role: player.role!,
           isLover: player.isLover,
           variant: player.variant,
+          roster: roster2,
           ...(player.role === "mafia" ? { mafiaTeam: mafiaNames2 } : {}),
           ...(player.role === "mafia" && godfatherName2 ? { godfatherName: godfatherName2 } : {}),
           ...(player.isGodfather ? { isGodfather: true } : {}),
@@ -1861,7 +1867,7 @@ function broadcastMafiaStatus(game: Game, result: { consensus: boolean; target: 
     targets: spectatorTargets,
   }, getHauntingJokerId(game));
 
-  // On consensus: send confirm-ready so mafia can slide to confirm the kill
+  // On consensus: send confirm-ready so mafia can confirm the kill
   if (result.consensus && result.target !== null) {
     const target = game.players.get(result.target);
     const targetName = target ? target.username : "target";

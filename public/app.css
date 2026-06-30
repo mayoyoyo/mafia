@@ -1564,152 +1564,46 @@ input::placeholder { color: var(--text-secondary); }
   --pxb-color: var(--primary);
 }
 .target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
-/* SLIDE-TO-CONFIRM */
-.slide-confirm { width: 100%; margin-top: 12px; }
-/* Pixel Noir slide (D1c) — stepped-corner track with a 2px stepped border
-   (frame = border color, inner = ink surface), per mockup screen 02. The INNER
-   .slide-track is the measured element AND the handle's offsetParent, so the
-   drag math stays internally consistent. */
-.slide-track-frame {
-  width: 100%;
-  background: var(--border);
-  padding: 2px;
-}
-.slide-track {
-  position: relative;
-  height: 56px;
-  background: var(--bg);
-  overflow: hidden;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-}
-.slide-label {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* ACTION CONFIRM — two-button Confirm/Cancel group (replaced the slide-to-
+   confirm). The Confirm button is tinted by the active role via --slide-tint
+   (derived from the --role-* token palette so a token change can't leave it
+   stale); Cancel stays neutral and narrower. */
+.action-confirm { display: flex; gap: 10px; width: 100%; margin-top: 12px; }
+.action-confirm .ac-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 16px 12px;
+  border: none;
+  cursor: pointer;
   font-family: 'Silkscreen', monospace;
-  font-size: 12px;
-  letter-spacing: 4px;
+  font-size: 15px;
+  letter-spacing: 1px;
   text-transform: uppercase;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.action-confirm .ac-btn:active { transform: scale(0.97); opacity: 0.85; }
+/* Cancel — narrower, neutral, with a stepped ink border via inset shadow */
+.action-confirm .ac-cancel {
+  flex: 0 0 34%;
+  background: var(--bg-elevated);
   color: var(--text-secondary);
-  pointer-events: none;
-  z-index: 1;
+  box-shadow: inset 0 0 0 2px var(--border);
 }
-/* "SLIDE TO INVESTIGATE" is the one label long enough to slide under the resting
-   knob; shrink just it (only one slider is ever on screen) so it stays centred and
-   clear of the knob without shortening the word. */
-.slide-confirm.role-detective .slide-label {
-  font-size: 10px;
-  letter-spacing: 2px;
-}
-.slide-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  z-index: 0;
-  transition: width 0.15s ease;
-}
-/* Dithered leading edge — 6px conic checker tinted to the active role */
-.slide-fill::after {
-  content: "";
-  position: absolute;
-  right: -6px;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  background-image: conic-gradient(var(--slide-tint, var(--border)) 25%, transparent 25% 50%, var(--slide-tint, var(--border)) 50% 75%, transparent 75%);
-  background-size: 6px 6px;
-}
-.slide-confirm.dragging .slide-fill { transition: none; }
-/* Role-tinted fills — re-pointed at the token palette (D1c): the gradient and
-   the dither edge both derive from the role's CSS variable so a token change
-   can never leave the slide skin stale. */
-.slide-confirm.role-mafia .slide-fill {
-  --slide-tint: var(--role-mafia);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--role-mafia) 30%, transparent), color-mix(in srgb, var(--role-mafia) 60%, transparent));
-}
-.slide-confirm.role-doctor .slide-fill {
-  --slide-tint: var(--role-doctor);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--role-doctor) 30%, transparent), color-mix(in srgb, var(--role-doctor) 60%, transparent));
-}
-.slide-confirm.role-detective .slide-fill {
-  --slide-tint: var(--role-detective);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--role-detective) 30%, transparent), color-mix(in srgb, var(--role-detective) 60%, transparent));
-}
-.slide-confirm.role-vigilante .slide-fill {
-  --slide-tint: var(--role-vigilante);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--role-vigilante) 30%, transparent), color-mix(in srgb, var(--role-vigilante) 70%, transparent));
-}
-/* Existing mafia flavor — blood drip stays (existing animation, not new payoff) */
-.slide-confirm.role-mafia .slide-fill.dripping::before {
-  content: "";
-  position: absolute;
-  right: -2px;
-  top: 50%;
-  width: 4px;
-  height: 8px;
-  background: var(--danger);
-  z-index: 1;
-  animation: blood-drip 0.8s ease-in infinite;
-}
-@keyframes blood-drip {
-  0% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(16px); opacity: 0; }
-}
-/* Handle — bordered pixel square carrying the role icon (mockup screen 02) */
-.slide-icon {
-  position: absolute;
-  left: 4px;
-  top: 4px;
-  width: 48px;
-  height: 48px;
-  /* Solid role-colour knob — the knife rides on top. A darker-tint border + inset
-     bevel give it the pixel-button read; the icon drop-shadow (below) keeps the
-     blade crisp where the knife's own red guard would blend into a red fill. */
-  background: var(--slide-tint, var(--bg-card));
-  border: 2px solid color-mix(in srgb, var(--slide-tint, var(--border)) 60%, #000);
-  box-shadow:
-    inset 2px 2px 0 0 rgba(255,255,255,0.18),
-    inset -2px -2px 0 0 rgba(0,0,0,0.30);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  cursor: grab;
-  transition: left 0.15s ease;
-}
-.slide-confirm.role-mafia .slide-icon { --slide-tint: var(--role-mafia); }
-.slide-confirm.role-doctor .slide-icon { --slide-tint: var(--role-doctor); }
-.slide-confirm.role-detective .slide-icon { --slide-tint: var(--role-detective); }
-.slide-confirm.role-joker_haunt .slide-icon { --slide-tint: var(--role-joker); }
-.slide-confirm.role-hunter_revenge .slide-icon { --slide-tint: var(--role-hunter); }
-.slide-confirm.role-vigilante .slide-icon { --slide-tint: var(--role-vigilante); }
-.slide-confirm.dragging .slide-icon { transition: none; cursor: grabbing; }
-.slide-icon svg {
-  width: 28px;
-  height: 28px;
-  image-rendering: pixelated;
-  /* Crisp 1px ink outline (4 zero-blur shadows) so the icon silhouette reads on
-     a solid role-colour knob even when the art shares the knob's hue — e.g. the
-     detective magnifier is the exact role-detective purple. */
-  filter:
-    drop-shadow(1px 0 0 rgba(0,0,0,0.85))
-    drop-shadow(-1px 0 0 rgba(0,0,0,0.85))
-    drop-shadow(0 1px 0 rgba(0,0,0,0.85))
-    drop-shadow(0 -1px 0 rgba(0,0,0,0.85));
-}
-.slide-confirm.confirmed .slide-track-frame { background: var(--success); }
-.slide-confirm.confirmed .slide-track { background: var(--success); }
-.slide-confirm.confirmed .slide-label {
+/* Confirm — solid role-tinted fill, ink label, pressed bottom edge */
+.action-confirm .ac-confirm {
+  background: var(--slide-tint, var(--primary));
   color: #fff;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.45);
+  box-shadow: inset 0 -5px 0 rgba(0,0,0,0.28);
 }
-.slide-confirm.confirmed .slide-fill { width: 100% !important; opacity: 0; }
-.slide-confirm.confirmed .slide-icon { opacity: 0; }
+.action-confirm.role-mafia .ac-confirm { --slide-tint: var(--role-mafia); }
+.action-confirm.role-doctor .ac-confirm { --slide-tint: var(--role-doctor); }
+.action-confirm.role-detective .ac-confirm { --slide-tint: var(--role-detective); }
+.action-confirm.role-vigilante .ac-confirm { --slide-tint: var(--role-vigilante); }
+.action-confirm.role-joker_haunt .ac-confirm { --slide-tint: var(--role-joker); }
+.action-confirm.role-hunter_revenge .ac-confirm { --slide-tint: var(--role-hunter); }
 .action-status { font-size: 14px; color: var(--text-secondary); margin-top: 8px; text-align: center; }
 
 /* VOTE STATUS */
@@ -1920,17 +1814,52 @@ input::placeholder { color: var(--text-secondary); }
 }
 .role-reveal-trophy svg { width: 16px; height: 16px; image-rendering: pixelated; }
 
-/* SLIDE CONFIRM - JOKER HAUNT (re-pointed at --role-joker token, D1c) */
-.slide-confirm.role-joker_haunt .slide-fill {
-  --slide-tint: var(--role-joker);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--role-joker) 30%, transparent), color-mix(in srgb, var(--role-joker) 60%, transparent));
+/* ROLES IN PLAY MODAL — text rows (no icons): role name + count, role-tinted */
+.roster-list { display: flex; flex-direction: column; gap: 8px; }
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 2px solid color-mix(in srgb, var(--rc, var(--border)) 55%, var(--border));
+  background: color-mix(in srgb, var(--rc, transparent) 9%, var(--bg-elevated));
 }
-
-/* SLIDE CONFIRM - HUNTER REVENGE (re-pointed at --role-hunter token, D1c) */
-.slide-confirm.role-hunter_revenge .slide-fill {
-  --slide-tint: var(--role-hunter);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--role-hunter) 30%, transparent), color-mix(in srgb, var(--role-hunter) 60%, transparent));
+.roster-name {
+  font-family: 'Silkscreen', monospace;
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--rc, var(--text));
 }
+.roster-count {
+  margin-left: auto;
+  font-family: 'Silkscreen', monospace;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  min-width: 44px;
+  text-align: center;
+}
+.roster-mods {
+  margin-top: 4px;
+  text-align: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+}
+.roster-hint {
+  margin: 12px 0 0;
+  text-align: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.roster-empty { text-align: center; color: var(--text-secondary); font-size: 13px; }
 
 /* SETTINGS MODAL */
 .settings-modal-body { display: flex; flex-direction: column; gap: 12px; }

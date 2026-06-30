@@ -266,11 +266,16 @@ describe("E10d: hunter rejoin after resolution", () => {
  * Test usernames are `hwr_`-prefixed, so no name can smuggle a match in.
  */
 function leaksHunter(m: any): boolean {
-  return /hunter/i.test(JSON.stringify(m).replaceAll("enableHunter", ""));
+  // Open setup (user decision): the public "Roles in Play" roster names every
+  // role in the deal (incl. hunter) but carries NO identities — it can never
+  // out WHO the hunter is — so it's an allowed existence reveal. Strip it (and
+  // the enableHunter settings key) before the identity/existence sweep.
+  const { roster, ...rest } = m;
+  return /hunter/i.test(JSON.stringify(rest).replaceAll("enableHunter", ""));
 }
 
 describe("E13: role secrecy until death", () => {
-  test("pre-death: zero 'hunter' occurrences on any non-hunter inbox (incl. a pre-death rejoin game_sync); post-death: the reveal rides hunter_revenge_pending + narrator-bearing payloads only", async () => {
+  test("pre-death: no hunter IDENTITY leak on any non-hunter inbox (open-setup roster existence-reveal aside; incl. a pre-death rejoin game_sync); post-death: the reveal rides hunter_revenge_pending + narrator-bearing payloads only", async () => {
     const game = await setupGame(serverA!, HUNTER_ROLES, HUNTER_SETTINGS);
     const [admin, mafia, hunter, citA, citB, citC] = [
       game.players[ADMIN], game.players[MAFIA], game.players[HUNTER],
@@ -322,8 +327,10 @@ describe("E13: role secrecy until death", () => {
       const revealIdx = indexOfMsg(p.inbox, m => m.type === "hunter_revenge_pending");
       expect(revealIdx).toBeGreaterThan(0); // everyone saw the public reveal
 
-      // Before the death: NOTHING names the hunter — game_started, the
-      // pre-death rejoin game_syncs, spectator/vote/night traffic, all of it.
+      // Before the death: nothing names the hunter's IDENTITY — game_started,
+      // the pre-death rejoin game_syncs, spectator/vote/night traffic, all of
+      // it. (leaksHunter strips the open-setup roster, whose existence-reveal
+      // carries no identities — see its definition.)
       for (const m of p.inbox.slice(0, revealIdx)) {
         if (leaksHunter(m)) {
           throw new Error(`pre-death hunter leak to ${p.seat}: ${JSON.stringify(m)}`);

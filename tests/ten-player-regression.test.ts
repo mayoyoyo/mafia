@@ -673,7 +673,11 @@ function deepHasRoleHunter(node: any): boolean {
   if (Array.isArray(node)) return node.some(deepHasRoleHunter);
   if (node === null || typeof node !== "object") return false;
   if (node.role === "hunter") return true;
-  return Object.values(node).some(deepHasRoleHunter);
+  // Open setup (user decision): the public "Roles in Play" roster names every
+  // role in the deal (incl. hunter) with NO identities, so it never outs WHO
+  // the hunter is. Exclude it from the identity sweep — a genuine identity leak
+  // would be a PlayerInfo carrying BOTH a username and role:"hunter".
+  return Object.entries(node).some(([k, v]) => k !== "roster" && deepHasRoleHunter(v));
 }
 
 function assertNoViolationsH(stage: string): void {
@@ -1020,17 +1024,20 @@ describe("10-player full game (hunter variant: 2 mafia + doctor + detective + jo
     }
 
     // E13 (final form): across EVERY message every client ever received, the
-    // literal role:"hunter" leak NEVER appears except inside (a) the hunter's
-    // OWN game_started (its own role; no other client's game_started carries
-    // it) and (b) the end-of-game reveal (game_over). The pre-reveal sweep
-    // already ran live in the recorder; this re-confirms there is no OTHER
-    // carrier — and in particular that no NON-hunter client's game_started
-    // ever carried role:"hunter".
+    // literal role:"hunter" IDENTITY leak NEVER appears except inside (a) the
+    // hunter's OWN game_started (its own role; no other client's game_started
+    // carries it) and (b) the end-of-game reveal (game_over). deepHasRoleHunter
+    // excludes the open-setup "Roles in Play" roster, which DOES name the hunter
+    // to everyone but carries no identities (existence is public by user
+    // decision; who-is-the-hunter stays hidden). The pre-reveal sweep already
+    // ran live in the recorder; this re-confirms there is no OTHER identity
+    // carrier — in particular no NON-hunter client's game_started leaks one.
     for (const p of playersH) {
       for (const m of p.inbox) {
         if (m.type === "game_over") continue;
         if (m.type === "game_started") {
-          // Only the hunter's own game_started may carry role:"hunter".
+          // Only the hunter's own game_started carries role:"hunter" outside
+          // the (excluded) public roster.
           expect(deepHasRoleHunter(m)).toBe(p === hunter);
           continue;
         }

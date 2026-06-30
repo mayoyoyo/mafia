@@ -39,6 +39,7 @@
   let deathOrderCounter = 0;
   let mafiaTeam = [];
   let godfatherName = null;
+  let currentRoster = null; // public lineup summary for the "Roles in Play" modal
   let dayVoteCount = 0;
   let suspenseActive = false;
   let suspenseQueue = [];
@@ -377,6 +378,7 @@
         myVariant = msg.variant || 0;
         mafiaTeam = msg.mafiaTeam || [];
         godfatherName = msg.godfatherName || null;
+        currentRoster = msg.roster || null;
         isDead = false;
         jokerWonOverlayShown = false;
         // Fresh game start — reset all state
@@ -640,6 +642,7 @@
     myVariant = msg.variant;
     mafiaTeam = msg.mafiaTeam || [];
     godfatherName = msg.godfatherName || null;
+    currentRoster = msg.roster || null;
     isDead = msg.isDead;
 
     // 4. Set phase
@@ -829,7 +832,7 @@
             // reached but the kill is NOT yet confirmed — the server
             // re-sends mafia_confirm_ready right after game_sync. Leave
             // the action unlocked so handleMafiaConfirmReady can restore
-            // the slide-to-confirm UI.
+            // the confirm/cancel buttons.
             if (msg.nightSubPhase === "mafia") {
               nightActionLocked = false;
             }
@@ -1453,146 +1456,44 @@
   // ============================================================
   // SLIDE-TO-CONFIRM
   // ============================================================
-  let slideCallback = null;
+  // ── Confirm / Cancel action buttons (replaced the slide-to-confirm) ──
+  // The names setupSlideConfirm / hideSlideConfirm are kept so every call site
+  // stays agnostic to the confirm mechanism; tests click the real buttons.
+  let confirmCallback = null;
+  let cancelCallback = null;
 
-  function setupSlideConfirm(role, callback) {
-    const container = $("slide-confirm");
-    const icon = $("slide-icon");
-    const label = $("slide-label");
-    const fill = $("slide-fill");
+  // role → the Confirm button's verb (Cancel is always "Cancel").
+  const ACTION_VERBS = { mafia: "Kill", doctor: "Save", detective: "Investigate", joker_haunt: "Haunt", hunter_revenge: "Avenge", vigilante: "Shoot" };
 
-    // Reset state
-    container.className = "slide-confirm";
-    container.classList.add(`role-${role}`);
-    container.classList.remove("confirmed", "dragging");
-    icon.style.left = "4px";
-    fill.style.width = "0";
-    fill.classList.remove("dripping");
-
-    // Set role-specific icon and label
-    const iconArt = role === "mafia" ? KNIFE_ART
-      : role === "doctor" ? CROSS_ART
-      : role === "joker_haunt" ? CLOWN_ART
-      : role === "hunter_revenge" ? BOW_ART
-      : role === "vigilante" ? BULLET_ART : MAGNIFIER_ART;
-    icon.innerHTML = pixelArtToSvg(iconArt);
-
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt", hunter_revenge: "slide to avenge", vigilante: "slide to shoot" };
-    label.textContent = labels[role] || "slide to confirm";
-
-    slideCallback = callback;
+  // Arm the two-button group for `role`. onConfirm fires on Confirm; optional
+  // onCancel fires on Cancel (deselect a target, or withdraw a mafia lock).
+  function setupSlideConfirm(role, onConfirm, onCancel) {
+    const container = $("action-confirm");
+    container.className = "action-confirm role-" + role;
+    container.classList.remove("hidden");
+    $("btn-action-confirm").textContent = ACTION_VERBS[role] || "Confirm";
+    confirmCallback = onConfirm || null;
+    cancelCallback = onCancel || null;
   }
 
   function hideSlideConfirm() {
-    const container = $("slide-confirm");
-    container.classList.add("hidden");
-    container.classList.remove("confirmed", "dragging");
-    slideCallback = null;
+    $("action-confirm").classList.add("hidden");
+    confirmCallback = null;
+    cancelCallback = null;
   }
 
-  // Test handle: happy-dom can't drive the pointer drag (zero-size layout
-  // rects), so client tests fire the armed confirm directly, mirroring the
-  // threshold branch of onEnd below. Not read by any app code.
-  window.__testFireSlideConfirm = () => {
-    if (!slideCallback) return;
-    const cb = slideCallback;
-    slideCallback = null;
-    cb();
-  };
-
-  // Slide drag handlers
-  (function () {
-    const container = $("slide-confirm");
-    const icon = $("slide-icon");
-    const fill = $("slide-fill");
-    const THRESHOLD = 0.85;
-    let dragging = false;
-    let startX = 0;
-    let trackWidth = 0;
-    // iconWidth (handle size) and padding (resting inset) are MEASURED at
-    // drag-start from the live layout instead of hardcoded 48/4 — the D1c
-    // reskin changes the handle's box, and measuring keeps the drag
-    // thresholds locked to whatever the rendered geometry actually is. The
-    // handle is laid out (not display:none) whenever onStart can fire, so the
-    // reads are valid; see the getBoundingClientRect hit-test below.
-    let iconWidth = 48;
-    let padding = 4;
-
-    function onStart(e) {
-      if (!slideCallback) return;
-      if (container.classList.contains("confirmed")) return;
-      const touch = e.touches ? e.touches[0] : e;
-      // Only start if touching the icon
-      const iconRect = icon.getBoundingClientRect();
-      const dx = touch.clientX - iconRect.left;
-      const dy = touch.clientY - iconRect.top;
-      if (dx < 0 || dx > iconRect.width || dy < 0 || dy > iconRect.height) return;
-      e.preventDefault();
-      dragging = true;
-      // Measure the live handle geometry while it is at rest (left:4px from
-      // setup/snap-back) — offsetWidth is the rendered handle box; the resting
-      // computed `left` is the symmetric track inset the math clamps against.
-      iconWidth = icon.offsetWidth || iconWidth;
-      const restingLeft = parseFloat(getComputedStyle(icon).left);
-      if (!Number.isNaN(restingLeft)) padding = restingLeft;
-      startX = touch.clientX - icon.offsetLeft;
-      const trackEl = container.querySelector(".slide-track");
-      trackWidth = trackEl.offsetWidth;
-      container.classList.add("dragging");
-    }
-
-    function onMove(e) {
-      if (!dragging) return;
-      e.preventDefault();
-      const touch = e.touches ? e.touches[0] : e;
-      const maxLeft = trackWidth - iconWidth - padding;
-      let newLeft = Math.max(padding, Math.min(maxLeft, touch.clientX - startX));
-      icon.style.left = newLeft + "px";
-      fill.style.width = (newLeft + iconWidth / 2) + "px";
-
-      const pct = (newLeft - padding) / (maxLeft - padding);
-      if (pct > 0.3 && container.classList.contains("role-mafia")) {
-        fill.classList.add("dripping");
-      } else {
-        fill.classList.remove("dripping");
-      }
-    }
-
-    function onEnd(e) {
-      if (!dragging) return;
-      e.preventDefault();
-      dragging = false;
-      container.classList.remove("dragging");
-
-      const maxLeft = trackWidth - iconWidth - padding;
-      const currentLeft = icon.offsetLeft;
-      const pct = (currentLeft - padding) / (maxLeft - padding);
-
-      if (pct >= THRESHOLD && slideCallback) {
-        // Confirmed
-        container.classList.add("confirmed");
-        $("slide-label").textContent = "confirmed";
-        fill.classList.remove("dripping");
-        const cb = slideCallback;
-        slideCallback = null;
-        cb();
-        setTimeout(() => hideSlideConfirm(), 400);
-      } else {
-        // Snap back to the measured resting inset (matches the CSS left:4px,
-        // but stays locked to whatever the reskin's inset actually is).
-        icon.style.left = padding + "px";
-        fill.style.width = "0";
-        fill.classList.remove("dripping");
-      }
-    }
-
-    container.addEventListener("touchstart", onStart, { passive: false });
-    document.addEventListener("touchmove", onMove, { passive: false });
-    document.addEventListener("touchend", onEnd, { passive: false });
-    container.addEventListener("mousedown", onStart);
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onEnd);
-  })();
+  // Wire the buttons once. Capture the armed callback, tear the group down,
+  // THEN run it — so a callback that re-arms (e.g. a re-render) sticks.
+  $("btn-action-confirm").addEventListener("click", () => {
+    const cb = confirmCallback;
+    hideSlideConfirm();
+    if (cb) cb();
+  });
+  $("btn-action-cancel").addEventListener("click", () => {
+    const cb = cancelCallback;
+    hideSlideConfirm();
+    if (cb) cb();
+  });
 
   // ============================================================
   // PULL-TO-REFRESH (works on game screen and menu screen)
@@ -2339,7 +2240,7 @@
     hideSlideConfirm();
 
     // Decline affordance is exclusive to the hunter's revenge prompt
-    // (slide-confirm is reserved for the kill; declining is a plain button).
+    // (the Confirm button is reserved for the kill; declining is a plain button).
     $("btn-decline-revenge").classList.toggle("hidden", actionType !== "hunter_revenge");
     // The vigilante's "hold fire" button (parallel to the hunter's decline).
     $("btn-vigilante-pass").classList.toggle("hidden", actionType !== "vigilante_shoot");
@@ -2349,6 +2250,17 @@
     if (actionType === "mafia_vote") {
       mafiaTargetPlayers = players;
       pendingMafiaLockTarget = null; // fresh night render (M11)
+      // A new mafia night opens with a clean slate. These vote-state globals are
+      // otherwise only reset on game_started / game_sync, so without this a prior
+      // night's Spare (objection), my own votes, and the voter chips would leak
+      // into this night's cards — a spared target would render "Blocked" with no
+      // buttons, and if the objector was lynched the remaining mafia couldn't act
+      // on it. The engine already clears its state every night (NIGHT_RESETS); the
+      // server echoes fresh state on the first vote. Reset the client mirror here.
+      mafiaObjectedTargets = {};
+      myMafiaVotes = [];
+      lastVoterTargets = {};
+      aliveMafiaCount = 0;
       // Branch on single vs multi mafia
       if (mafiaTeam.length <= 1) {
         renderSingleMafiaTargets(list, players);
@@ -2367,7 +2279,7 @@
         })
         .join("");
 
-      // Doctor/Detective/Joker haunt/Hunter revenge: clicking selects visually, slide-to-confirm sends to server
+      // Doctor/Detective/Joker haunt/Hunter revenge: clicking selects visually, the Confirm button sends to server
       let selectedTargetId = null;
       let selectedName = null;
       const slideRole = (actionType === "joker_haunt" || actionType === "hunter_revenge") ? actionType : myRole;
@@ -2394,6 +2306,11 @@
             // affordances go with it (no-op for other action types; already hidden)
             $("btn-decline-revenge").classList.add("hidden");
             $("btn-vigilante-pass").classList.add("hidden");
+          }, () => {
+            // Cancel: deselect so the player can choose a different target.
+            selectedTargetId = null;
+            selectedName = null;
+            list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
           });
         });
       });
@@ -2425,7 +2342,7 @@
     wsSend({ type: "force_skip_revenge" });
   });
 
-  // C5a: declining the revenge shot is a plain button (slide-confirm is
+  // C5a: declining the revenge shot is a plain button (the Confirm button is
   // reserved for the kill). Only visible while the hunter_revenge prompt is
   // up; null targetId is the wire shape for a decline.
   $("btn-decline-revenge").addEventListener("click", () => {
@@ -2576,7 +2493,7 @@
             actions.appendChild(btn);
           }
         } else if (cardState === "unanimous") {
-          // No buttons — slide-to-kill takes over
+          // No buttons — the Confirm button takes over
         } else if (cardState === "idle") {
           const nomBtn = document.createElement("button");
           nomBtn.className = "mtc-btn mtc-btn-suggest";
@@ -2717,7 +2634,7 @@
     lastVoterTargets = msg.voterTargets;
 
     // If consensus reached (lockedTarget set), don't re-render cards —
-    // handleMafiaConfirmReady will collapse the list and show slide-to-kill
+    // handleMafiaConfirmReady will collapse the list and show the Confirm button
     if (msg.lockedTarget) return;
 
     // For single mafia, don't re-render cards (consensus will trigger confirm)
@@ -2951,6 +2868,19 @@
       wsSend({ type: "confirm_mafia_kill" });
       // Show confirmed state
       list.innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
+    }, () => {
+      // Cancel: withdraw my lock to reopen the team vote. Toggling a lock off is
+      // the same wire frame as locking; the server re-broadcasts the (now
+      // unconsensused) state. Restore the picking UI now so there's no dead gap.
+      mafiaConfirmTarget = null;
+      wsSend({ type: "mafia_vote", targetId: msg.targetId, voteType: "lock" });
+      if (mafiaTeam.length <= 1) {
+        renderSingleMafiaTargets(list, mafiaTargetPlayers);
+        $("mafia-vote-status").classList.add("hidden");
+      } else {
+        renderMafiaTargetCards(list, mafiaTargetPlayers, computeVoteCounts(lastVoterTargets));
+        $("mafia-vote-status").classList.remove("hidden");
+      }
     });
   }
 
@@ -3196,6 +3126,42 @@
   function closeSettingsModal() {
     $("modal-settings").classList.add("hidden");
   }
+
+  // ============================================================
+  // ROLES IN PLAY MODAL (public lineup — every player, any time)
+  // ============================================================
+  const ROSTER_ROLE_NAMES = { mafia: "Mafia", doctor: "Doctor", detective: "Detective", vigilante: "Vigilante", hunter: "Hunter", joker: "Joker", citizen: "Citizen" };
+
+  function renderRoster(roster) {
+    const list = $("roster-list");
+    if (!roster || !Array.isArray(roster.roles) || roster.roles.length === 0) {
+      list.innerHTML = `<p class="roster-empty">No roster available.</p>`;
+      return;
+    }
+    let html = roster.roles.map((e) => `
+      <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role})">
+        <span class="roster-name">${ROSTER_ROLE_NAMES[e.role] || e.role}</span>
+        <span class="roster-count">×${e.count}</span>
+      </div>`).join("");
+    const mods = [];
+    if (roster.godfather) mods.push("Godfather");
+    if (roster.lovers) mods.push("Lovers");
+    if (mods.length) html += `<div class="roster-mods">+ ${mods.join(" · ")}</div>`;
+    list.innerHTML = html;
+  }
+
+  function openRosterModal() {
+    renderRoster(currentRoster);
+    $("modal-roster").classList.remove("hidden");
+  }
+  function closeRosterModal() {
+    $("modal-roster").classList.add("hidden");
+  }
+  $("btn-roster").addEventListener("click", openRosterModal);
+  $("btn-close-roster").addEventListener("click", closeRosterModal);
+  $("modal-roster").addEventListener("click", (e) => {
+    if (e.target === $("modal-roster")) closeRosterModal();
+  });
 
   // ============================================================
   // D8: IN-WORLD CONFIRM SHEET (replaces native confirm())
@@ -4154,7 +4120,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.29_202606290042";
+  const APP_VERSION_STAGING = "staging.30_202606300111";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

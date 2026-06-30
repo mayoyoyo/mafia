@@ -196,6 +196,7 @@
         <div class="round-indicator">Round <span id="round-number">1</span></div>
         <div class="game-header-right">
           <div id="day-timer" class="day-timer hidden">00:00</div>
+          <button id="btn-roster" class="btn btn-icon" title="Roles in play">&#9776;</button>
           <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
         </div>
       </div>
@@ -277,14 +278,9 @@
         <ul id="action-targets" class="target-list"></ul>
         <button id="btn-decline-revenge" class="btn btn-secondary btn-small hidden">Decline revenge</button>
         <button id="btn-vigilante-pass" class="btn btn-secondary btn-small hidden">Hold fire</button>
-        <div id="slide-confirm" class="slide-confirm hidden">
-          <div class="slide-track-frame pxc">
-            <div class="slide-track pxc">
-              <div class="slide-label" id="slide-label">slide to confirm</div>
-              <div class="slide-fill" id="slide-fill"></div>
-              <div class="slide-icon pxc" id="slide-icon"></div>
-            </div>
-          </div>
+        <div id="action-confirm" class="action-confirm hidden">
+          <button id="btn-action-cancel" class="ac-btn ac-cancel pxc">Cancel</button>
+          <button id="btn-action-confirm" class="ac-btn ac-confirm pxc">Confirm</button>
         </div>
         <div id="action-status" class="action-status"></div>
       </div>
@@ -445,6 +441,18 @@
             <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%">Leave Game</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ROLES IN PLAY MODAL — dismissible popup, openable from the game header -->
+    <div id="modal-roster" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Roles in Play</h3>
+          <button id="btn-close-roster" class="btn btn-icon">&times;</button>
+        </div>
+        <div id="roster-list" class="roster-list"></div>
+        <p class="roster-hint">Tap outside to dismiss</p>
       </div>
     </div>
 

@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, RosterSummary, RosterEntry, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
 // B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
@@ -608,6 +608,34 @@ export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
     isAdmin: p.id === game.adminId,
     ...(includeRoles ? { role: p.role ?? undefined, isLover: p.isLover, loverId: p.loverId ?? undefined, isGodfather: p.isGodfather } : {}),
   }));
+}
+
+// Display order for the "Roles in Play" roster: mafia first, town specials
+// next, citizens last. (Godfather is not a Role — it rides as a flag.)
+const ROSTER_ORDER: Role[] = ["mafia", "doctor", "detective", "vigilante", "hunter", "joker", "citizen"];
+
+/**
+ * Public, information-safe lineup summary for the in-game "Roles in Play" modal:
+ * how many of each role are in play (counts are public knowledge — the lobby
+ * already lists the lineup) plus whether the Godfather / Lovers modifiers are
+ * active. Derived from the ACTUAL dealt roles so it can't drift from the deal.
+ * No identities are exposed — only role → count.
+ */
+export function rosterSummary(game: Game): RosterSummary {
+  const counts = new Map<Role, number>();
+  let godfather = false;
+  let lovers = false;
+  for (const p of game.players.values()) {
+    if (p.role) counts.set(p.role, (counts.get(p.role) ?? 0) + 1);
+    if (p.isGodfather) godfather = true;
+    if (p.isLover) lovers = true;
+  }
+  const roles: RosterEntry[] = [];
+  for (const role of ROSTER_ORDER) {
+    const count = counts.get(role) ?? 0;
+    if (count > 0) roles.push({ role, count });
+  }
+  return { roles, godfather, lovers };
 }
 
 // ── B5 (audit P6-lite): the two pure payload projections ────────────────

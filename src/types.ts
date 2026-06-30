@@ -245,7 +245,7 @@ export type ServerMessage =
   | { type: "game_joined"; code: string; isAdmin: boolean }
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
-  | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[]; isGodfather?: boolean; godfatherName?: string }
+  | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[]; isGodfather?: boolean; godfatherName?: string; roster?: RosterSummary }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
   | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
@@ -310,6 +310,8 @@ export type ServerMessage =
       eventHistory: GameEvent[];
       // Mafia team (only for mafia players)
       mafiaTeam?: string[];
+      // Public lineup summary for the in-game "Roles in Play" modal (every rejoiner)
+      roster?: RosterSummary;
       // Godfather plumbing: isGodfather on the godfather's own sync; godfatherName on every mafia sync
       isGodfather?: boolean;
       godfatherName?: string;
@@ -373,6 +375,18 @@ export interface PlayerInfo {
   isLover?: boolean;
   loverId?: number;
   isGodfather?: boolean;
+}
+
+// Public, information-safe summary of the lineup shown to every player in the
+// in-game "Roles in Play" modal: how many of each role are in play (counts are
+// public knowledge — the lobby already lists the lineup) plus whether the
+// Godfather / Lovers modifiers are active. Godfather/Lovers are not Roles; they
+// ride as flags (a Godfather is still counted among the mafia).
+export interface RosterEntry { role: Role; count: number; }
+export interface RosterSummary {
+  roles: RosterEntry[];
+  godfather: boolean;
+  lovers: boolean;
 }
 
 export interface GameEvent {

@@ -223,12 +223,12 @@ describe("rejoined mafia: teammate confirms the kill", () => {
     });
     // Server re-sends the consensus state right after game_sync (H4).
     serverSays({ type: "mafia_confirm_ready", targetName: "Bob" });
-    expect(document.getElementById("slide-confirm").classList.contains("hidden")).toBe(false);
+    expect(document.getElementById("action-confirm").classList.contains("hidden")).toBe(false);
 
-    // Teammate slides to confirm — all mafia get night_action_done.
+    // Teammate confirms — all mafia get night_action_done.
     serverSays({ type: "night_action_done", message: "The Mafia has chosen their victim." });
 
-    expect(document.getElementById("slide-confirm").classList.contains("hidden")).toBe(true);
+    expect(document.getElementById("action-confirm").classList.contains("hidden")).toBe(true);
     expect(document.getElementById("action-targets").textContent).toContain("Bob ✔");
   });
 });
