@@ -145,14 +145,20 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     await Bun.sleep(200); // let per-socket fan-out settle on every inbox
 
     // ── Two death announcements precede the dawn, on EVERY inbox: ─────────
-    // player_died(X, direct) < player_died(hunter, heartbreak) < phase_change.
+    // Finding 3: the same-night batch is emitted in a CANONICAL (alphabetical-
+    // by-username) order — NOT the direct-then-cascade resolution order — so the
+    // player_died arrival sequence can't reveal which death was the mafia's
+    // direct target (X) and which was the heartbreak cascade (the hunter).
+    const hunterFirst = hunter.username.localeCompare(loverX.username) < 0;
     for (const p of game.players) {
       const xIdx = indexOfMsg(p.inbox, m => m.type === "player_died" && m.playerId === loverX.userId);
       const hIdx = indexOfMsg(p.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
       const dayIdx = indexOfMsg(p.inbox, m => m.type === "phase_change" && m.phase === "day");
       expect(xIdx).toBeGreaterThanOrEqual(0);
-      expect(hIdx).toBeGreaterThan(xIdx);   // the cascade death announced AFTER the direct kill
-      expect(dayIdx).toBeGreaterThan(hIdx); // …and BOTH before the dawn phase_change
+      expect(hIdx).toBeGreaterThanOrEqual(0);
+      if (hunterFirst) expect(hIdx).toBeLessThan(xIdx);
+      else expect(hIdx).toBeGreaterThan(xIdx);
+      expect(dayIdx).toBeGreaterThan(Math.max(xIdx, hIdx)); // BOTH before the dawn phase_change
     }
 
     // Both deaths now read cause-neutral on the wire: neither X (direct) nor the
@@ -189,15 +195,18 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     ).toBe(true);
     expect(admin.inbox.find(m => m.type === "game_over")).toBeUndefined();
 
-    // Order on the admin inbox: player_died(X) < player_died(hunter) < day cue
-    // < phase_change(day). Exactly one night→day phase_change; no gate cues.
+    // Order on the admin inbox: the two player_died (alphabetical batch order,
+    // finding 3) < day cue < phase_change(day). Exactly one night→day
+    // phase_change; no gate cues.
     const xIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === loverX.userId);
     const hIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
     const cueIdx = indexOfMsg(admin.inbox, m => m.type === "sound_cue" && m.sound === "day");
     const dIdx = indexOfMsg(admin.inbox, m => m.type === "phase_change" && m.phase === "day");
     expect(xIdx).toBeGreaterThanOrEqual(0);
-    expect(hIdx).toBeGreaterThan(xIdx);
-    expect(cueIdx).toBeGreaterThan(hIdx);
+    expect(hIdx).toBeGreaterThanOrEqual(0);
+    if (hunterFirst) expect(hIdx).toBeLessThan(xIdx);
+    else expect(hIdx).toBeGreaterThan(xIdx);
+    expect(cueIdx).toBeGreaterThan(Math.max(xIdx, hIdx));
     expect(dIdx).toBeGreaterThan(cueIdx);
     // Exactly one phase_change reached the day (the dawn), and no hunter cues.
     expect(admin.inbox.filter(m => m.type === "phase_change" && m.phase === "day").length).toBe(1);

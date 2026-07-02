@@ -1102,6 +1102,44 @@ export function deriveDeathEventType(source: KillSource, cause: DeathCause): Dea
   }
 }
 
+// The four NIGHT-death labels that must be cause-AMBIGUOUS to living players:
+// a vigilante kill has to be indistinguishable from a mafia kill, a joker
+// haunt, or a lover cascade on every client-visible surface (devtools counts).
+const NIGHT_DEATH_TYPES: ReadonlySet<GameEvent["type"]> = new Set<GameEvent["type"]>([
+  "kill", "vigilante_shot", "joker_haunt", "lover_death",
+]);
+
+/**
+ * Project the server-side eventHistory onto the information-safe shape that
+ * ships to CLIENTS while the game is IN PROGRESS (phase_change.events and
+ * game_sync.eventHistory). The four night-death labels above collapse to ONE
+ * neutral "death" type, and `source`/`cause` are stripped from EVERY event
+ * (the client never reads them — they were additive/deferred fields). This is
+ * the wire half of the dawn cause-neutrality fix: a raw-frame peek must not
+ * out whether a night death came from the mafia, the vigilante, the joker, or
+ * a heartbreak cascade.
+ *
+ * Types that stay DISTINCT (already public knowledge, so no leak):
+ *   - execution  — the day lynch is announced by vote_result;
+ *   - hunter_revenge — the revenge gate publicly named the Hunter;
+ *   - save / spared — house mode names them at dawn; the anonymous official
+ *     save carries no name here anyway.
+ *   - investigation_* — never enter game.eventHistory (they are merged in
+ *     client-side from the detective's own private history).
+ *
+ * game.eventHistory itself stays FULLY detailed server-side; callers send the
+ * UNPROJECTED history once game.phase === "game_over" so the end-of-game
+ * reveal shows every real cause.
+ */
+export function projectEventsForClients(events: GameEvent[]): GameEvent[] {
+  return events.map((e) => {
+    const type: GameEvent["type"] = NIGHT_DEATH_TYPES.has(e.type) ? "death" : e.type;
+    const projected: GameEvent = { round: e.round, type, playerName: e.playerName };
+    if (e.detail !== undefined) projected.detail = e.detail;
+    return projected;
+  });
+}
+
 // Test seam (pattern: setFixedDeal): lets engine tests observe every Death
 // that flows through the funnel. Production never sets it.
 let deathTriggerSpy: ((game: Game, death: Death) => void) | null = null;

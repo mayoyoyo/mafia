@@ -321,3 +321,82 @@ describe("B0d/D9: client console logging", () => {
     expect(warns[0]).toContain("join_game");
   });
 });
+
+// Wire cause-neutrality (findings 1 & 2): living players get the neutral "death"
+// event type in-game; the in-game renderer maps ANY night-death type to the
+// neutral CSS class; and the game-over reveal renders the FULL cause detail the
+// final (game_over-phase) phase_change carries.
+describe("cause-neutral event history + full-detail game-over reveal", () => {
+  const q = (sel: string) => document.querySelectorAll(sel);
+
+  beforeEach(() => {
+    // game_started resets previousPhase=null (and clears the event log), so a
+    // day-phase phase_change below lands in the plain applyPhaseChange branch —
+    // NOT the night→day suspense overlay (which would leak an async timer into
+    // the next test and hold its game_over). Keeps this describe self-contained.
+    serverSays({ type: "game_started", role: "citizen", isLover: false, variant: 0 });
+  });
+
+  test("in-game 'death' events render neutrally (label + CSS class)", () => {
+    serverSays({
+      type: "phase_change", phase: "day", round: 1, messages: [],
+      events: [
+        { round: 1, type: "death", playerName: "Alice" },
+        { round: 1, type: "death", playerName: "Bob" },
+      ],
+    });
+    const items = q("#event-history-list .event-item");
+    expect(items.length).toBe(2);
+    for (const it of items) {
+      expect((it as any).className).toBe("event-item death");
+      expect((it as any).textContent).toContain("Died in the night");
+      // A neutral surface must never carry a cause word.
+      expect((it as any).textContent).not.toMatch(/mafia|vigilante|joker|heartbreak/i);
+    }
+  });
+
+  test("a cause-bearing type reaching the in-game log is still class-neutralized (finding 2)", () => {
+    serverSays({
+      type: "phase_change", phase: "day", round: 2, messages: [],
+      events: [{ round: 2, type: "vigilante_shot", playerName: "Carol" }],
+    });
+    const item = q("#event-history-list .event-item")[0] as any;
+    expect(item.className).toBe("event-item death"); // NOT "event-item vigilante_shot"
+  });
+
+  test("game-over reveal shows FULL cause detail from the game_over-phase history", () => {
+    // At game_over the server ships the UNPROJECTED history (game_sync.eventHistory
+    // and phase_change.events both full-detail once phase === "game_over"); the
+    // reveal reads it back through GAME_HISTORY_LABELS as real causes. Driven via
+    // the game_sync rejoin-at-game-over path (calls handleGameOver directly), so
+    // it also pins that full-detail-on-the-wire contract for a rejoiner.
+    serverSays({
+      type: "game_sync",
+      code: "ZZZZ", isAdmin: false, narrationAccent: "none", narratorGender: "male",
+      hide_mafia_tag: false,
+      players: [
+        { id: 1, username: "Dan", isAlive: false, isAdmin: false },
+        { id: 2, username: "Eve", isAlive: false, isAdmin: false },
+      ],
+      role: "citizen", isLover: false, variant: 0,
+      phase: "game_over", round: 3, nightSubPhase: null, awaitingNarratorReady: false,
+      isDead: true, dayStartedAt: null, dayVoteCount: 0, narratorHistory: [],
+      // FULL detail (the game_over-phase contract) — the reveal must render it.
+      eventHistory: [
+        { round: 3, type: "kill", playerName: "Dan", cause: "direct", source: "mafia" },
+        { round: 3, type: "vigilante_shot", playerName: "Eve", cause: "direct", source: "vigilante" },
+      ],
+      nightAction: null, voteState: null,
+      gameOver: {
+        winner: "town", message: "Citizens win!", forceEnded: true,
+        revealPlayers: [
+          { id: 1, username: "Dan", isAlive: false, isAdmin: false, role: "citizen" },
+          { id: 2, username: "Eve", isAlive: false, isAdmin: false, role: "vigilante" },
+        ],
+      },
+    });
+    const texts = Array.from(q("#game-history .game-history-item")).map((i: any) => i.textContent as string);
+    expect(texts.some((t) => t.includes("Dan") && t.includes("Killed by the Mafia"))).toBe(true);
+    expect(texts.some((t) => t.includes("Eve") && t.includes("Shot by the Vigilante"))).toBe(true);
+  });
+});

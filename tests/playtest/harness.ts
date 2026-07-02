@@ -292,15 +292,21 @@ export async function bootServer(opts: {
   port: number;
   roles: Role[];
   lovers?: [number, number];
+  /** Join-order index of the mafioso to flag as Godfather (reads innocent). */
+  godfather?: number;
   dbPath?: string;
 }): Promise<{ proc: ReturnType<typeof Bun.spawn>; port: number; dbPath: string; teardown: () => Promise<void> }> {
   const dbPath = opts.dbPath ?? join(tmpdir(), `mafia-proof-${Date.now()}-${opts.port}.db`);
-  const fixedDeal = JSON.stringify({ roles: opts.roles, ...(opts.lovers ? { lovers: opts.lovers } : {}) });
+  const fixedDeal = JSON.stringify({
+    roles: opts.roles,
+    ...(opts.lovers ? { lovers: opts.lovers } : {}),
+    ...(opts.godfather != null ? { godfather: opts.godfather } : {}),
+  });
   const proc = Bun.spawn(["bun", "run", SERVER_ENTRY], {
     env: { ...process.env, PORT: String(opts.port), DATABASE_PATH: dbPath, MAFIA_FIXED_DEAL: fixedDeal },
     cwd: join(import.meta.dir, "..", ".."),
-    stdout: "ignore",
-    stderr: "ignore",
+    stdout: process.env.MAFIA_SERVER_LOG ? "inherit" : "ignore",
+    stderr: process.env.MAFIA_SERVER_LOG ? "inherit" : "ignore",
   });
   await waitForServer(opts.port);
   const teardown = async () => {

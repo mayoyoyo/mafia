@@ -11,10 +11,10 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import {
   resolveNight, transitionToDay, advanceNightSubPhase,
-  submitHunterRevenge, removeGame,
+  submitHunterRevenge, removeGame, projectEventsForClients,
 } from "../src/game-engine";
 import { makeGame, lockTarget, runNight } from "./helpers/engine-fixtures";
-import type { Game, Player, Role } from "../src/types";
+import type { Game, Player, Role, GameEvent } from "../src/types";
 
 // Any of these words in the dawn death line would re-reveal the cause.
 const FORBIDDEN = /vigilante|gunshot|bullet|joker|playing card|heartbreak|knife|wire|pistol|razor|shot|clean shot|mafia/i;
@@ -140,6 +140,68 @@ describe("dawn night batch — one cause-neutral combined line", () => {
     expect(result.saved).toBe(false);
     expect(result.messages.length).toBe(1);
     expect(result.messages[0]).not.toContain(v.username); // generic noKill, names no one
+  });
+});
+
+// The cause-bearing NIGHT-death labels that must never survive projection.
+const CAUSE_TYPES = new Set(["kill", "vigilante_shot", "joker_haunt", "lover_death"]);
+
+describe("projectEventsForClients — the wire-facing cause neutralization", () => {
+  test("every night-death type collapses to a neutral 'death' with no source/cause", () => {
+    // A single simultaneous night carrying ALL four cause-bearing labels: mafia
+    // kill, vigilante shot, joker haunt, and a lover cascade behind the mafia
+    // kill. The server-side eventHistory keeps them distinct; the PROJECTION the
+    // client receives must not.
+    const g = game(["mafia", "citizen", "citizen", "citizen", "citizen", "citizen", "citizen", "citizen"]);
+    const a = g.players.get(3)!, aLover = g.players.get(4)!; // mafia victim + cascade
+    const b = g.players.get(5)!;                              // vigilante victim
+    const c = g.players.get(6)!;                              // joker haunt victim
+    makeLovers(a, aLover);
+    g.mafiaTarget = a.id;
+    g.vigilanteTarget = b.id;
+    g.jokerHauntTarget = c.id;
+
+    resolveNight(g);
+
+    // Server-side history stays FULLY detailed (the end-of-game reveal source).
+    const raw = g.eventHistory;
+    expect(raw.some((e) => e.type === "kill")).toBe(true);
+    expect(raw.some((e) => e.type === "vigilante_shot")).toBe(true);
+    expect(raw.some((e) => e.type === "joker_haunt")).toBe(true);
+    expect(raw.some((e) => e.type === "lover_death")).toBe(true);
+    expect(raw.some((e) => e.source !== undefined)).toBe(true);
+
+    const projected = projectEventsForClients(raw);
+    // Same count/order, same names — only the cause is erased.
+    expect(projected.length).toBe(raw.length);
+    expect(projected.map((e) => e.playerName)).toEqual(raw.map((e) => e.playerName));
+    for (const e of projected) {
+      expect(CAUSE_TYPES.has(e.type)).toBe(false);           // no cause-bearing type survives
+      expect(e.type).toBe("death");                          // all four collapse to one neutral label
+      expect((e as GameEvent).source).toBeUndefined();       // source stripped
+      expect((e as GameEvent).cause).toBeUndefined();        // cause stripped
+    }
+  });
+
+  test("public/day labels stay DISTINCT through projection; source/cause still stripped", () => {
+    // A mixed history: a house-mode save + a day execution + hunter_revenge are
+    // all PUBLIC knowledge, so their type must survive; only the additive
+    // source/cause fields are shed.
+    const raw: GameEvent[] = [
+      { round: 1, type: "save", playerName: "S" },
+      { round: 1, type: "kill", playerName: "K", cause: "direct", source: "mafia" },
+      { round: 2, type: "execution", playerName: "E", cause: "direct", source: "execution" },
+      { round: 2, type: "hunter_revenge", playerName: "H", cause: "direct", source: "hunter_revenge" },
+      { round: 2, type: "spared", playerName: "P" },
+    ];
+    const projected = projectEventsForClients(raw);
+    expect(projected.map((e) => e.type)).toEqual(["save", "death", "execution", "hunter_revenge", "spared"]);
+    for (const e of projected) {
+      expect((e as GameEvent).source).toBeUndefined();
+      expect((e as GameEvent).cause).toBeUndefined();
+    }
+    // Purity: projection returns a fresh array; the input is untouched.
+    expect(raw.some((e) => e.source !== undefined)).toBe(true);
   });
 });
 

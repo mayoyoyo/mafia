@@ -147,9 +147,13 @@ const scenarios: Scenario[] = [
       const died = diedNames(admin);
       expect(died).toContain(nameOf(clients[C0])); // mafia kill
       expect(died).toContain(nameOf(clients[M1])); // vigilante shot
+      // WIRE CAUSE-NEUTRALITY (finding 1): a LIVING player's dawn events carry
+      // the neutral "death" type for BOTH victims — never the mafia "kill" or
+      // the "vigilante_shot" that would out the killer's role from a raw frame.
       const events = dawnEvents(admin);
-      expect(events.some((e) => e.type === "vigilante_shot" && e.playerName === nameOf(clients[M1]))).toBe(true);
-      expect(events.some((e) => e.type === "kill" && e.playerName === nameOf(clients[C0]))).toBe(true);
+      expect(events.some((e) => e.type === "death" && e.playerName === nameOf(clients[M1]))).toBe(true);
+      expect(events.some((e) => e.type === "death" && e.playerName === nameOf(clients[C0]))).toBe(true);
+      expect(events.every((e) => e.type !== "vigilante_shot" && e.type !== "kill")).toBe(true);
       // CAUSE-NEUTRAL DAWN: the two deaths are announced as ONE combined line
       // that names BOTH victims and leaks neither the mafia nor the vigilante.
       const lines1 = dawnMessages(admin).filter((m) => m.includes(nameOf(clients[C0])) || m.includes(nameOf(clients[M1])));
@@ -178,11 +182,15 @@ const scenarios: Scenario[] = [
       const admin = clients[M0];
       expect(diedNames(admin)).toContain(nameOf(clients[C1]));
       const events = dawnEvents(admin);
-      expect(events.some((e) => e.type === "vigilante_shot" && e.playerName === nameOf(clients[C1]))).toBe(true);
-      // c1 (dead) saw the kill recorded with the vigilante source.
+      // Living player's dawn event is the neutral "death" (never vigilante_shot).
+      expect(events.some((e) => e.type === "death" && e.playerName === nameOf(clients[C1]))).toBe(true);
+      expect(events.every((e) => e.type !== "vigilante_shot")).toBe(true);
+      // c1 (dead) sees the death in the kill roll — but NOT the source (finding 4):
+      // the spectator_kill_confirmed frame no longer carries the killer's role.
       const conf = clients[C1].lastOf("spectator_kill_confirmed");
       expect(conf).toBeDefined();
-      expect((conf!.kills as Array<{ name: string; source: string }>).some((k) => k.name === nameOf(clients[C1]) && k.source === "vigilante")).toBe(true);
+      expect((conf!.kills as Array<{ name: string }>).some((k) => k.name === nameOf(clients[C1]))).toBe(true);
+      expect((conf!.kills as Array<Record<string, unknown>>).every((k) => !("source" in k))).toBe(true);
       // The game is not over — town still has the numbers (and a doctor lives).
       expect(result.lastPhaseChange?.phase).toBe("day");
     },
@@ -336,9 +344,12 @@ const scenarios: Scenario[] = [
       const died = diedNames(admin);
       expect(died).toContain(nameOf(clients[C0]));
       expect(died).toContain(nameOf(clients[C1]));
+      // Both night deaths reach a living player as the SAME neutral "death" type
+      // (the mafia kill is indistinguishable from the vigilante shot on the wire).
       const events = dawnEvents(admin);
-      expect(events.some((e) => e.type === "kill" && e.playerName === nameOf(clients[C0]))).toBe(true);
-      expect(events.some((e) => e.type === "vigilante_shot" && e.playerName === nameOf(clients[C1]))).toBe(true);
+      expect(events.some((e) => e.type === "death" && e.playerName === nameOf(clients[C0]))).toBe(true);
+      expect(events.some((e) => e.type === "death" && e.playerName === nameOf(clients[C1]))).toBe(true);
+      expect(events.every((e) => e.type !== "kill" && e.type !== "vigilante_shot")).toBe(true);
     },
   },
   {
@@ -387,8 +398,11 @@ const scenarios: Scenario[] = [
     check: (clients) => {
       const admin = clients[M0];
       expect(admin.lastOf("hunter_revenge_pending")).toBeDefined();
+      // The Hunter's DEATH (a vigilante shot) is neutral on the wire — the PUBLIC
+      // reveal is the separate hunter_revenge_pending broadcast, not the cause.
       const events = dawnEvents(admin);
-      expect(events.some((e) => e.type === "vigilante_shot" && e.playerName === nameOf(clients[C1]))).toBe(true);
+      expect(events.some((e) => e.type === "death" && e.playerName === nameOf(clients[C1]))).toBe(true);
+      expect(events.every((e) => e.type !== "vigilante_shot")).toBe(true);
       // Only one shot opportunity; bullet spent.
       expect(clients[VIG].allOf("vigilante_targets").length).toBe(1);
       expect(clients[VIG].lastOf("night_action_done")!.message).toMatch(/spent/i);
@@ -454,6 +468,59 @@ const scenarios: Scenario[] = [
       expect(lines[0]).not.toMatch(NIGHT_CAUSE_WORDS);
       // No separate night heartbreak beat: the dawn carries no loverDeathName.
       expect(admin.lastOf("phase_change")!.loverDeathName).toBeUndefined();
+    },
+  },
+  {
+    // (13) WIRE-LEVEL payload neutrality + canonical death-batch ordering. A
+    // living player's raw phase_change on a mafia+vigilante double-kill night
+    // must (a) carry only the neutral "death" type — no vigilante_shot/kill/
+    // joker_haunt/lover_death and no source/cause on any death event, anywhere
+    // in its inbox — and (b) emit player_died in ALPHABETICAL order, not the
+    // mafia-then-vigilante RESOLUTION order that would out which role killed
+    // whom. Here the mafia victim (C0, seat idx 5) resolves first and the
+    // vigilante victim (M1, seat idx 1) second, but the alphabetical seat names
+    // flip them — so the sort is observable.
+    name: "13 — wire neutrality: neutral 'death' only, no source/cause, alphabetical player_died",
+    timeline: [
+      async (ctx) => { await twoMafiaKill(ctx, C0); },   // mafia victim = seat idx 5
+      async (ctx) => { await doctorSaves(ctx, DET); },
+      async (ctx) => { await detectiveInv(ctx, M0); },
+      async (ctx) => { await vigShootThenDay(ctx, M1); }, // vigilante victim = seat idx 1
+    ],
+    check: (clients) => {
+      const admin = clients[M0]; // a LIVING player throughout
+      const CAUSE_TYPES = ["vigilante_shot", "kill", "joker_haunt", "lover_death"];
+
+      // (a) The dawn phase_change: exactly two neutral deaths, no cause fields.
+      const events = dawnEvents(admin);
+      const deaths = events.filter((e) => CAUSE_TYPES.includes(e.type) || e.type === "death");
+      expect(deaths.length).toBe(2);
+      for (const e of deaths) {
+        expect(e.type).toBe("death");
+        expect(("source" in (e as object))).toBe(false);
+        expect(("cause" in (e as object))).toBe(false);
+      }
+
+      // Broader sweep: NO message anywhere in the living player's inbox carries a
+      // cause-bearing night-death event type, nor a source/cause on a death row.
+      const scan = (node: unknown): boolean => {
+        if (Array.isArray(node)) return node.some(scan);
+        if (node && typeof node === "object") {
+          const o = node as Record<string, unknown>;
+          if (typeof o.type === "string" && CAUSE_TYPES.includes(o.type)) return true;
+          if (o.type === "death" && ("source" in o || "cause" in o)) return true;
+          return Object.values(o).some(scan);
+        }
+        return false;
+      };
+      expect(admin.log.some(scan)).toBe(false);
+
+      // (b) player_died arrives ALPHABETICAL — flipped from resolution order.
+      const died = diedNames(admin);
+      expect(died.length).toBe(2);
+      expect(died).toEqual([...died].sort((a, b) => a.localeCompare(b)));
+      expect(died[0]).toBe(nameOf(clients[M1])); // vigilante victim (idx 1) first
+      expect(died[1]).toBe(nameOf(clients[C0])); // mafia victim (idx 5) second
     },
   },
 ];

@@ -40,13 +40,6 @@ const DOCTOR_SAVE_OFFICIAL_MESSAGES = [
   "The night was not clean, but it took no one. Someone lives who shouldn't. Ask no questions.",
 ];
 
-// Private message sent to the victim in official mode
-const DOCTOR_SAVE_VICTIM_MESSAGES = [
-  "They marked you last night. You're alive because someone reached you first. Say nothing, and watch the doors.",
-  "A knife had your name on it in the dark. It found someone steadier instead. You survived. Keep it to yourself.",
-  "You were meant to be the body at dawn. You aren't. Count yourself lucky, and stay out of the light.",
-];
-
 const NO_KILL_MESSAGES = [
   "Dawn comes, and no one is missing. The knives stayed in their sheaths tonight. No one says why.",
   "Morning, and every door opens to a living face. Whatever was planned, it didn't happen. Not this time.",
@@ -211,12 +204,6 @@ export const Narrator = {
   },
   doctorSaveOfficial(): string {
     return pick(DOCTOR_SAVE_OFFICIAL_MESSAGES);
-  },
-  // No longer sent: official Mafia must NOT privately reveal to the saved
-  // victim that they were targeted (server.ts dropped the doctor_save_private
-  // send). Kept for reference / potential non-official future use.
-  doctorSaveVictim(): string {
-    return pick(DOCTOR_SAVE_VICTIM_MESSAGES);
   },
   noKill(): string {
     return pick(NO_KILL_MESSAGES);

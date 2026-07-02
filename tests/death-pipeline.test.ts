@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from "bun:test";
 import {
   createGame, addPlayer, updateSettings, startGame,
   submitMafiaVote, submitDoctorSave, submitJokerHaunt,
-  advanceNightSubPhase, transitionToDay,
+  advanceNightSubPhase, transitionToDay, resolveNight,
   callVote, castVote, resolveVote,
   getAliveByRole, getAlivePlayers, removeGame,
   applyDeath, deriveDeathEventType, setDeathTriggerSpy,
@@ -301,6 +301,38 @@ describe("B3 pins — one save blocks one source (resolveNight fold semantics)",
     expect(eventsOfRound(game, 2)).toEqual([
       ["save", x.username],
       ["joker_haunt", x.username],
+    ]);
+    removeGame(game.code);
+  });
+
+  // ── RULING PIN (wire-neutralization workstream) ───────────────────────────
+  // When the mafia AND the vigilante BOTH target X and the doctor saves X, the
+  // save blocks only the FIRST source in resolution order (mafia) and X STILL
+  // DIES to the vigilante shot. resolveNight's fold consumes the single save on
+  // the first intent that matches the doctor's pick (intents resolve
+  // mafia → vigilante → joker_haunt); a later same-target intent is unaffected.
+  // result.saved stays TRUE even though X ends up dead — a save DID fire, it
+  // just wasn't enough. Under house mode the save event precedes the kill it
+  // could not stop in eventHistory. This double-covers the finding cited in the
+  // dawn cause-neutralization spec (game-engine.ts resolveNight fold).
+  test("mafia + vigilante both target X, doctor saves X → save blocks mafia, X dies to vigilante", () => {
+    const game = setupGame(6, { enableDoctor: true, doctorMode: "house", enableVigilante: true });
+    startGame(game);
+    const x = getCitizens(game)[0];
+    game.mafiaTarget = x.id;      // first intent — consumes the save
+    game.vigilanteTarget = x.id;  // second intent — lands, X dies
+    game.doctorTarget = x.id;
+
+    const result = resolveNight(game);
+
+    expect(result.saved).toBe(true);
+    expect(result.savedName).toBe(x.username);
+    expect(x.isAlive).toBe(false); // the vigilante shot got through the spent save
+    expect(result.killed.map(k => [k.player.id, k.source])).toEqual([[x.id, "vigilante"]]);
+    // house mode: the save event precedes the kill it couldn't stop.
+    expect(eventsOfRound(game, game.round)).toEqual([
+      ["save", x.username],
+      ["vigilante_shot", x.username],
     ]);
     removeGame(game.code);
   });

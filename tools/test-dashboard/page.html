@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mafia · Test Dashboard</title>
+<style>
+  :root {
+    --bg: #0d0f14; --panel: #151922; --panel2: #1c2130; --line: #262d3d;
+    --txt: #d7dbe6; --dim: #8b93a7; --accent: #c8a45c;
+    --pass: #3fb96b; --fail: #e5484d; --run: #4c9be8; --skip: #7c839a; --queue: #3a4056;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 14px/1.5 var(--mono); -webkit-font-smoothing: antialiased;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: linear-gradient(180deg, #11141c, #0d0f14);
+    border-bottom: 1px solid var(--line); padding: 14px 18px;
+  }
+  .titlerow { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .sub { color: var(--dim); font-size: 12px; }
+  .totals { display: flex; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
+  .stat {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; color: var(--dim);
+  }
+  .stat b { color: var(--txt); font-size: 14px; }
+  .stat.pass b { color: var(--pass); } .stat.fail b { color: var(--fail); }
+  .stat.skip b { color: var(--skip); }
+  .bar {
+    height: 6px; border-radius: 3px; background: var(--queue); overflow: hidden;
+    display: flex; margin-top: 10px;
+  }
+  .bar > span { height: 100%; }
+  .controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit; cursor: pointer; color: var(--txt);
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 12px; transition: border-color .15s, background .15s;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #2a2213; border-color: var(--accent); color: var(--accent); }
+  input[type=text] {
+    font: inherit; color: var(--txt); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; width: 180px;
+  }
+  main { padding: 14px 18px 60px; max-width: 1100px; }
+  .bucket-h { color: var(--dim); font-size: 11px; letter-spacing: .15em; text-transform: uppercase;
+    margin: 22px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  .row {
+    display: grid; grid-template-columns: 60px 1fr auto auto; gap: 10px; align-items: center;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); margin-bottom: 5px; cursor: pointer;
+  }
+  .row:hover { background: var(--panel2); }
+  .chip {
+    font-size: 10px; font-weight: 700; letter-spacing: .06em; text-align: center;
+    padding: 3px 0; border-radius: 4px; text-transform: uppercase; color: #0d0f14;
+  }
+  .chip.passed { background: var(--pass); } .chip.failed { background: var(--fail); color:#fff; }
+  .chip.running { background: var(--run); color:#fff; animation: pulse 1s infinite; }
+  .chip.queued { background: var(--queue); color: var(--dim); }
+  .chip.skipped { background: var(--skip); }
+  @keyframes pulse { 50% { opacity: .5; } }
+  .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .counts { color: var(--dim); font-size: 12px; white-space: nowrap; }
+  .counts .p { color: var(--pass); } .counts .f { color: var(--fail); } .counts .s { color: var(--skip); }
+  .dur { color: var(--dim); font-size: 12px; width: 52px; text-align: right; }
+  .detail {
+    display: none; margin: -3px 0 6px; padding: 8px 12px;
+    border: 1px solid var(--line); border-top: none; border-radius: 0 0 6px 6px;
+    background: #10131b;
+  }
+  .detail.open { display: block; }
+  .trow { display: flex; gap: 8px; padding: 2px 0; font-size: 12.5px; align-items: baseline; }
+  .tdot { flex: none; width: 8px; height: 8px; border-radius: 2px; margin-top: 5px; }
+  .tdot.passed { background: var(--pass); } .tdot.failed { background: var(--fail); }
+  .tdot.skipped { background: var(--skip); }
+  .tname { color: var(--txt); }
+  .tsuite { color: var(--dim); }
+  .terr { color: #f2b0b2; white-space: pre-wrap; font-size: 11.5px;
+    background: #1a1013; border: 1px solid #3a1a1d; border-radius: 4px;
+    padding: 6px 8px; margin: 3px 0 6px 16px; overflow-x: auto; }
+  .empty { color: var(--dim); padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="titlerow">
+    <h1>Mafia · Test Dashboard</h1>
+    <span class="sub" id="status">idle</span>
+  </div>
+  <div class="totals" id="totals"></div>
+  <div class="bar" id="bar"></div>
+  <div class="controls">
+    <button class="primary" id="runAll">Run All</button>
+    <button id="runFast">Run Fast</button>
+    <button id="runServer">Run Server</button>
+    <button id="cancel" disabled>Cancel</button>
+    <input type="text" id="filter" placeholder="filter substring…" />
+    <button id="runFilter">Run Filter</button>
+  </div>
+</header>
+<main id="main"><div class="empty">No run yet. Hit Run All (or Run Fast to skip the WS suite).</div></main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const state = { files: new Map(), order: [], running: false };
+
+function fmtDur(ms) { return ms >= 1000 ? (ms/1000).toFixed(1)+"s" : (ms||0)+"ms"; }
+function esc(s){ return (s??"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function setStatus(txt, running) {
+  $("#status").textContent = txt;
+  state.running = running;
+  for (const id of ["runAll","runFast","runServer","runFilter"]) $("#"+id).disabled = running;
+  $("#cancel").disabled = !running;
+}
+
+function renderTotals() {
+  const files = [...state.files.values()];
+  let p=0,f=0,s=0, done=0;
+  for (const r of files) { p+=r.passed||0; f+=r.failed||0; s+=r.skipped||0;
+    if (r.status!=="queued" && r.status!=="running") done++; }
+  $("#totals").innerHTML =
+    `<div class="stat">files <b>${files.length}</b></div>`+
+    `<div class="stat pass">pass <b>${p}</b></div>`+
+    `<div class="stat fail">fail <b>${f}</b></div>`+
+    `<div class="stat skip">skip <b>${s}</b></div>`+
+    `<div class="stat">done <b>${done}/${files.length}</b></div>`;
+  const passF = files.filter(r=>r.status==="passed").length;
+  const failF = files.filter(r=>r.status==="failed").length;
+  const runF  = files.filter(r=>r.status==="running").length;
+  const tot = files.length || 1;
+  $("#bar").innerHTML =
+    `<span style="width:${passF/tot*100}%;background:var(--pass)"></span>`+
+    `<span style="width:${failF/tot*100}%;background:var(--fail)"></span>`+
+    `<span style="width:${runF/tot*100}%;background:var(--run)"></span>`;
+}
+
+function render() {
+  const main = $("#main");
+  if (state.files.size === 0) { main.innerHTML = `<div class="empty">No results.</div>`; return; }
+  const buckets = { fast: [], server: [] };
+  for (const file of state.order) {
+    const r = state.files.get(file); if (!r) continue;
+    (buckets[r.bucket] || (buckets[r.bucket]=[])).push(r);
+  }
+  let html = "";
+  for (const b of ["fast","server"]) {
+    const rows = buckets[b]; if (!rows || !rows.length) continue;
+    html += `<div class="bucket-h">${b} bucket · ${rows.length} files</div>`;
+    for (const r of rows) {
+      const tests = (r.tests||[]).map(t =>
+        `<div class="tdetail">`+
+        `<div class="trow"><span class="tdot ${t.status}"></span>`+
+        `<span><span class="tsuite">${t.suite?esc(t.suite)+" › ":""}</span>`+
+        `<span class="tname">${esc(t.name)}</span></span></div>`+
+        (t.status==="failed"&&t.error?`<div class="terr">${esc(t.error)}</div>`:"")+
+        `</div>`).join("");
+      const fileErr = r.error ? `<div class="terr">${esc(r.error)}</div>` : "";
+      html +=
+        `<div class="row" data-file="${esc(r.file)}">`+
+          `<div class="chip ${r.status}">${r.status}</div>`+
+          `<div class="fname">${esc(r.file)}</div>`+
+          `<div class="counts"><span class="p">${r.passed||0}</span>/`+
+            `<span class="f">${r.failed||0}</span>/<span class="s">${r.skipped||0}</span></div>`+
+          `<div class="dur">${fmtDur(r.durationMs)}</div>`+
+        `</div>`+
+        `<div class="detail" data-detail="${esc(r.file)}">${fileErr}${tests||'<span class="tsuite">no per-test data</span>'}</div>`;
+    }
+  }
+  main.innerHTML = html;
+  main.querySelectorAll(".row").forEach(row => {
+    row.addEventListener("click", () => {
+      const d = main.querySelector(`.detail[data-detail="${CSS.escape(row.dataset.file)}"]`);
+      if (d) d.classList.toggle("open");
+    });
+  });
+}
+
+function upsert(file, patch) {
+  const cur = state.files.get(file) || { file, bucket: "fast", status: "queued",
+    passed:0, failed:0, skipped:0, durationMs:0, tests:[] };
+  state.files.set(file, { ...cur, ...patch });
+  if (!state.order.includes(file)) state.order.push(file);
+}
+
+function loadRun(run) {
+  state.files.clear(); state.order = [];
+  if (run && run.files) for (const r of run.files) upsert(r.file, r);
+  render(); renderTotals();
+  if (run && run.finishedAt) setStatus(`last run: ${run.ok?"OK":"FAILED"} · ${fmtDur(run.durationMs)} · ${new Date(run.finishedAt).toLocaleTimeString()}`, false);
+}
+
+// --- SSE ---
+function connect() {
+  const es = new EventSource("/api/events");
+  es.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch { return; }
+    switch (ev.type) {
+      case "hello": if (ev.running) setStatus("running…", true); break;
+      case "run-start":
+        state.files.clear(); state.order = [];
+        setStatus("running…", true); render(); renderTotals(); break;
+      case "file-queued": upsert(ev.file, { bucket: ev.bucket, status: "queued" }); render(); renderTotals(); break;
+      case "file-running": upsert(ev.file, { bucket: ev.bucket, status: "running" }); render(); renderTotals(); break;
+      case "file-done": upsert(ev.result.file, ev.result); render(); renderTotals(); break;
+      case "run-done": loadRun(ev.result); break;
+    }
+  };
+  es.onerror = () => { /* browser auto-retries */ };
+}
+
+async function startRun(body) {
+  const res = await fetch("/api/run", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body||{}) });
+  if (res.status === 409) { setStatus("a run is already in progress", true); }
+}
+
+$("#runAll").onclick    = () => startRun({});
+$("#runFast").onclick   = () => startRun({ bucket:"fast" });
+$("#runServer").onclick = () => startRun({ bucket:"server" });
+$("#runFilter").onclick = () => startRun({ filter: $("#filter").value.trim() || undefined });
+$("#filter").addEventListener("keydown", (e)=>{ if(e.key==="Enter") $("#runFilter").click(); });
+$("#cancel").onclick = () => fetch("/api/cancel", { method:"POST" });
+
+// initial load
+fetch("/api/last-run").then(r=>r.json()).then(loadRun).catch(()=>{});
+connect();
+</script>
+</body>
+</html>

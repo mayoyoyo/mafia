@@ -268,12 +268,6 @@ describe("Narrator - Doctor Official Messages", () => {
     expect(typeof msg).toBe("string");
     expect(msg.length).toBeGreaterThan(0);
   });
-
-  test("doctorSaveVictim returns a string", () => {
-    const msg = Narrator.doctorSaveVictim();
-    expect(typeof msg).toBe("string");
-    expect(msg.length).toBeGreaterThan(0);
-  });
 });
 
 // ============================================================

@@ -10,6 +10,10 @@
   let gameCode = null;
   let isAdmin = false;
   let myRole = null;
+  // Roles whose night sub-phase emits its own "<role>_close" sound_cue
+  // (mirrors CueSubPhase in src/types.ts — joker haunt / hunter revenge have
+  // no close cue, so they're intentionally excluded here).
+  const CLOSEABLE_NIGHT_ROLES = new Set(["mafia", "doctor", "detective", "vigilante"]);
   let myIsGodfather = false;
   let vigilanteBulletUsed = false; // Vigilante own-screen indicator: true once the bullet is spent
   let isLover = false;
@@ -52,7 +56,6 @@
   // and skips it when the day->night path already ran showNightTransition.
   let nightTransitionRound = 0;
   let executionTransitionActive = false;
-  let heartbreakTransitionActive = false;
   let pendingGameOver = null; // game_over held while an overlay chain animates (L5)
   let nightNarrationActive = false;
   let nightNarrationQueue = [];
@@ -271,7 +274,7 @@
     // While a death/heartbreak/night overlay chain is animating, hold game_over
     // so its reveal doesn't stomp the in-flight beats; it replays after the
     // chain's final callback (applyPhaseChange) via flushPendingGameOver (L5)
-    if ((suspenseActive || executionTransitionActive || heartbreakTransitionActive || nightTransitionActive) && msg.type === "game_over") {
+    if ((suspenseActive || executionTransitionActive || nightTransitionActive) && msg.type === "game_over") {
       pendingGameOver = msg;
       return;
     }
@@ -443,6 +446,20 @@
         // Hide awaiting-ready when night narration actually starts
         $("awaiting-ready").classList.add("hidden");
         $("btn-begin-night").classList.add("hidden");
+        // Bug fix: the server broadcasts "<role>_close" to EVERY client when a
+        // sub-phase ends, but only mafia/doctor/detective/vigilante ever emit
+        // one (joker haunt / hunter revenge have no close cue — their teardown
+        // is the deferred phase_change). When it's OUR role's own close cue,
+        // revert to the neutral night view so the finished action doesn't sit
+        // on screen (shoulder-surf risk) for the rest of the night.
+        if (CLOSEABLE_NIGHT_ROLES.has(myRole) && msg.sound === myRole + "_close") {
+          $("night-actions").classList.add("hidden");
+          hideSlideConfirm(); // defensive: mid-selection force-advance race
+          if (myRole === "mafia") {
+            $("mafia-vote-status").classList.add("hidden");
+            $("mafia-vote-details").innerHTML = "";
+          }
+        }
         queueSound(msg.sound);
         break;
 
@@ -495,10 +512,6 @@
       case "joker_win_overlay":
         jokerWonOverlayShown = true;
         showJokerWinOverlay(msg.jokerName);
-        break;
-
-      case "doctor_save_private":
-        showDoctorSavePrivate(msg.message);
         break;
 
       case "mafia_vote_update":
@@ -1098,8 +1111,8 @@
         t.classList.toggle("active", t.dataset.mode === settings.doctorMode);
       });
       $("doctor-mode-hint").textContent = settings.doctorMode === "official"
-        ? "Save is secret \u2014 only victim is notified"
-        : "Narrator reveals who was saved";
+        ? "Save is secret \u2014 no one is told who was saved, not even the victim"
+        : "Narrator announces who was saved";
     }
     if (settings.jokerMode) {
       $("joker-mode-tabs").querySelectorAll(".rule-tab").forEach((t) => {
@@ -1627,17 +1640,9 @@
       lastVoteResult = null;
       if (voteResult) {
         showExecutionTransition(voteResult, () => {
-          if (msg.loverDeathName) {
-            showHeartbreakTransition(msg.loverDeathName, () => {
-              showNightTransition(() => {
-                applyPhaseChange(msg);
-              });
-            });
-          } else {
-            showNightTransition(() => {
-              applyPhaseChange(msg);
-            });
-          }
+          showNightTransition(() => {
+            applyPhaseChange(msg);
+          });
         });
       } else {
         showNightTransition(() => {
@@ -1649,21 +1654,6 @@
       showSuspenseTransition(msg, () => {
         applyPhaseChange(msg);
       });
-    // Execution → game_over with lover death
-    } else if (msg.loverDeathName && msg.phase === "game_over") {
-      const voteResult = lastVoteResult;
-      lastVoteResult = null;
-      if (voteResult) {
-        showExecutionTransition(voteResult, () => {
-          showHeartbreakTransition(msg.loverDeathName, () => {
-            applyPhaseChange(msg);
-          });
-        });
-      } else {
-        showHeartbreakTransition(msg.loverDeathName, () => {
-          applyPhaseChange(msg);
-        });
-      }
     } else {
       applyPhaseChange(msg);
     }
@@ -1833,37 +1823,8 @@
         text.style.color = "";
         clearSuspenseStage();
         executionTransitionActive = false;
-        // no flushPendingGameOver here — all call sites chain into heartbreak/night, whose terminals flush
+        // no flushPendingGameOver here — the call site chains into showNightTransition, whose terminal flushes
         callback();
-      }, 600);
-    }, 2000);
-  }
-
-  function showHeartbreakTransition(loverName, callback) {
-    heartbreakTransitionActive = true;
-    const overlay = $("suspense-overlay");
-    const text = $("suspense-text");
-
-    overlay.classList.remove("hidden", "fade-out");
-    // D5: heartbreak art migrated from the text node into the dedicated art slot.
-    // The text node now carries only the (XSS-safe via textContent) sentence.
-    setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
-    text.textContent = loverName + " died of heartbreak.";
-    text.style.color = "#9c27b0";
-    text.style.animation = "none";
-    void text.offsetWidth;
-    text.style.animation = "suspenseFadeIn 0.8s ease";
-
-    setTimeout(() => {
-      overlay.classList.add("fade-out");
-      setTimeout(() => {
-        overlay.classList.add("hidden");
-        overlay.classList.remove("fade-out");
-        text.style.color = "";
-        clearSuspenseStage();
-        heartbreakTransitionActive = false;
-        callback();
-        flushPendingGameOver();
       }, 600);
     }, 2000);
   }
@@ -1944,10 +1905,12 @@
     // Official doctor mode sends an anonymous `saved` flag (no named save event);
     // house mode and older payloads still carry a named "save" event.
     const hasSave = msg.saved === true || roundEvents.some((e) => e.type === "save");
-    // Count EVERY night-death type (not just the mafia "kill") so a vigilante-
-    // only / joker-only / lover-only night isn't mis-read as peaceful.
+    // Count EVERY night-death type so a vigilante-only / joker-only / lover-only
+    // night isn't mis-read as peaceful. In-game the server now ships the ONE
+    // neutral "death" type (projectEventsForClients) — the legacy cause-bearing
+    // labels are kept here only for the game_over full-detail replay.
     const deathEvents = roundEvents.filter((e) =>
-      e.type === "kill" || e.type === "vigilante_shot" || e.type === "joker_haunt" || e.type === "lover_death"
+      e.type === "death" || e.type === "kill" || e.type === "vigilante_shot" || e.type === "joker_haunt" || e.type === "lover_death"
     );
     const hasKill = deathEvents.length > 0;
     // Only name a victim when EXACTLY ONE died; multi-death nights stay neutral
@@ -1969,8 +1932,6 @@
     suspenseQueue = [];
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
-    const hasLoverDeath = !!msg.loverDeathName;
-    const extraDelay = hasLoverDeath ? 2800 : 0;
 
     overlay.classList.remove("hidden", "fade-out");
     // D5: dawn opens on the sun centerpiece; the verdict beat re-stages art per
@@ -2001,22 +1962,9 @@
       text.style.animation = "suspenseFadeIn 0.8s ease";
     }, 3500);
 
-    if (hasLoverDeath) {
-      setTimeout(() => {
-        // D5: heartbreak art into the stage slot; text node carries the sentence
-        // (textContent — relayed name stays XSS-inert).
-        setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
-        text.textContent = msg.loverDeathName + " died of heartbreak.";
-        text.style.color = "#9c27b0";
-        text.style.animation = "none";
-        void text.offsetWidth;
-        text.style.animation = "suspenseFadeIn 0.8s ease";
-      }, 5700);
-    }
-
     setTimeout(() => {
       overlay.classList.add("fade-out");
-    }, 5500 + extraDelay);
+    }, 5500);
 
     setTimeout(() => {
       overlay.classList.add("hidden");
@@ -2034,7 +1982,7 @@
       }
       suspenseQueue = [];
       flushPendingGameOver();
-    }, 6300 + extraDelay);
+    }, 6300);
   }
 
   function showDetectiveResult(msg) {
@@ -2094,6 +2042,7 @@
     // hunter_revenge is already a PUBLIC reveal (the gate announces the Hunter).
     // The end-game history (GAME_HISTORY_LABELS) stays a FULL reveal.
     const EVENT_LABELS = {
+      death: "Died in the night",
       kill: "Died in the night",
       save: "Saved by Doctor",
       execution: "Executed",
@@ -2105,6 +2054,12 @@
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
+    // Living clients only ever receive the neutral "death" type in-game
+    // (projectEventsForClients), but map any cause-bearing night-death label to
+    // the SAME neutral CSS class defensively so the class attribute can never
+    // out the cause even if a full-detail event reaches this in-game renderer
+    // (e.g. the game_over full-history replay). See finding 2.
+    const NIGHT_DEATH_CLASS = new Set(["death", "kill", "vigilante_shot", "joker_haunt", "lover_death"]);
 
     // Merge detective history (private) into events for display
     let allEvents = [...events];
@@ -2133,7 +2088,8 @@
 
       for (const ev of grouped[round]) {
         const item = document.createElement("div");
-        item.className = `event-item ${ev.type}`;
+        const cls = NIGHT_DEATH_CLASS.has(ev.type) ? "death" : ev.type;
+        item.className = `event-item ${cls}`;
         item.textContent = `${ev.playerName} — ${EVENT_LABELS[ev.type] || ev.type}`;
         container.appendChild(item);
       }
@@ -2736,7 +2692,10 @@
         `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 died in the night</li>`
       ).join("");
     } else {
-      $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 died in the night</li>`;
+      // No kills \u27f9 a save-only night: no one died. Never name msg.targetName here
+      // (in official mode it is null, and it would otherwise leak the saved
+      // player's identity \u2014 and wrongly imply they died).
+      $("action-targets").innerHTML = `<li class="spectator-kill-result">No one died in the night</li>`;
     }
     $("action-status").textContent = msg.doctorMessage || "";
   }
@@ -2788,8 +2747,12 @@
     if (entry.phase === "mafia") {
       div.innerHTML = `Mafia chose to kill <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
     } else if (entry.phase === "doctor") {
-      if (entry.alive) {
+      if (entry.alive && entry.targetName) {
         div.innerHTML = `Doctor chose to protect <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else if (entry.alive) {
+        // Official mode: the save is secret \u2014 the target name is withheld, so
+        // render an anonymous line (mirrors the vigilante's held-fire phrasing).
+        div.textContent = "Doctor made a choice";
       } else {
         div.textContent = "Doctor has fallen \u2014 no protection tonight";
       }
@@ -3073,15 +3036,6 @@
     $("joker-win-name").textContent = jokerName
       ? `${jokerName} had the last laugh`
       : "You achieved a joint victory!";
-  }
-
-  // Doctor save private notification (official mode)
-  function showDoctorSavePrivate(message) {
-    // Show as a detective-result-style notification
-    const el = $("detective-result");
-    el.textContent = message;
-    el.style.borderColor = "var(--role-doctor)";
-    el.classList.remove("hidden");
   }
 
   // ============================================================
@@ -3418,6 +3372,7 @@
     joker_haunt: "Haunted by the Joker",
     hunter_revenge: "Shot by the Hunter",
     vigilante_shot: "Shot by the Vigilante",
+    death: "Died in the night", // defensive fallback (see renderGameHistory)
   };
   // Test handle: pins the game-over history labels. Not read by any app code.
   window.__gameOverHistoryLabels = GAME_HISTORY_LABELS;
@@ -3438,7 +3393,11 @@
     let lastPhase = "night";
     for (const ev of events) {
       if (!grouped[ev.round]) grouped[ev.round] = { night: [], day: [] };
-      if (ev.type === "kill" || ev.type === "save" || ev.type === "joker_haunt") {
+      // "death" is the defensive neutral fallback if a projected event ever
+      // reaches this FULL-detail reveal (game_over ships the unprojected
+      // history, so normally the real cause labels arrive — including
+      // vigilante_shot, which must group as a night death like the mafia kill).
+      if (ev.type === "kill" || ev.type === "save" || ev.type === "joker_haunt" || ev.type === "vigilante_shot" || ev.type === "death") {
         grouped[ev.round].night.push(ev);
         lastPhase = "night";
       } else if (ev.type === "execution") {
@@ -4120,7 +4079,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.30_202606300111";
+  const APP_VERSION_STAGING = "staging.31_202607021651";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

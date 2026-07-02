@@ -246,7 +246,7 @@ export type ServerMessage =
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[]; isGodfather?: boolean; godfatherName?: string; roster?: RosterSummary }
-  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
+  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
   | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
   | { type: "mafia_targets"; players: PlayerInfo[] }
@@ -260,19 +260,25 @@ export type ServerMessage =
   // C3a: broadcast to the whole room when the gate opens — this IS the public reveal
   | { type: "hunter_revenge_pending"; hunterName: string }
   | { type: "joker_win_overlay"; jokerName: string }
-  | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number }
   | { type: "vote_update"; totalVotes: number; total: number }
   | { type: "vote_result"; targetName: string; executed: boolean }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
-  | { type: "you_died"; message: string; isLoverDeath?: boolean }
+  | { type: "you_died"; message: string }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
   | { type: "sound_cue"; sound: SoundCue }
   | { type: "awaiting_ready" }
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
-  | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null; kills?: Array<{ name: string; source: KillSource }> }
+  // targetName is null on a save-only night under official doctor mode: no one
+  // died and the saved identity must stay secret. `kills` is the source of truth
+  // for who actually died (empty ⟹ save-only night).
+  // Finding 4: `source` (mafia vs vigilante vs joker_haunt) was shipped here to
+  // dead spectators but never rendered — dropped so the raw frame can't out the
+  // killer's role. Dead spectators still learn WHO each role targeted via the
+  // per-sub-phase spectator_night_phase/spectator_night_complete stream.
+  | { type: "spectator_kill_confirmed"; targetName: string | null; doctorMessage: string | null; kills?: Array<{ name: string }> }
   | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "vigilante" | "resolving"; isRoleAlive: boolean }
   | { type: "spectator_night_complete"; phase: string; targetName: string | null; alive: boolean }
   | { type: "spectator_joker_deliberating" }
@@ -392,8 +398,12 @@ export interface RosterSummary {
 export interface GameEvent {
   round: number;
   // Structurally DeathEventType plus the two non-death labels — the death
-  // labels are reused, not re-listed (compile-time identical union).
-  type: DeathEventType | "save" | "spared";
+  // labels are reused, not re-listed (compile-time identical union). The
+  // extra "death" literal is the CLIENT-projection type only: it never enters
+  // game.eventHistory server-side (applyDeath pushes real DeathEventTypes) —
+  // projectEventsForClients collapses the four cause-bearing NIGHT-death
+  // labels onto it before the events ride the wire in-game (see game-engine).
+  type: DeathEventType | "save" | "spared" | "death";
   playerName: string;
   detail?: string;
   // B3 (audit P2): additive wire fields, present on death events only. The

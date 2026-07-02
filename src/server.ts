@@ -6,7 +6,7 @@ import {
   callVote, castVote, resolveVote, cancelVote, endDay, forceDawn, forceEndGame,
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
   submitJokerHaunt, getJokerHauntTargets, assertInvariants, assertPhaseEdge,
-  toTargetInfo, projectGameOver, submitHunterRevenge, submitVigilanteShoot,
+  toTargetInfo, projectGameOver, projectEventsForClients, submitHunterRevenge, submitVigilanteShoot,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
@@ -159,9 +159,8 @@ function armNightTimer(game: Game, kind: string, delay: number, fn: () => void):
 // optional clearNightTimer hook. The per-site payload DISAGREEMENTS are
 // deliberate and PINNED by the golden message-sequence tests: some sites
 // include `events`, only the two dawn paths emit the day sound cue, only
-// night resolution carries `saved`, only the lover-cascade paths carry
-// `loverDeathName`. Each call site DECLARES its current shape through the
-// options — the helper unifies the assembly, NOT the payloads.
+// night resolution carries `saved`. Each call site DECLARES its current shape
+// through the options — the helper unifies the assembly, NOT the payloads.
 //
 // Logging: the engine's logTransition (B0d) already slogs every transition
 // at the game.phase= write sites; this helper adds no routine slog line (the
@@ -176,8 +175,6 @@ interface PhaseChangeOptions {
   events?: boolean;
   /** Include `saved` (night resolution only — always present there, even when false). */
   saved?: boolean;
-  /** Include `loverDeathName` when a lover cascaded (truthy check, exactly as the sites had). */
-  loverDeathName?: string;
   /** Broadcast the "day" sound cue immediately before (force_dawn + night resolution only). */
   dayCue?: boolean;
   /**
@@ -204,9 +201,15 @@ function broadcastPhaseChange(game: Game, opts: PhaseChangeOptions): void {
     round: game.round,
     messages: opts.messages,
     // New options need a matching spread line below + a golden pinning their presence — a forgotten spread silently drops the field (tsc can't catch optional omissions).
-    ...(opts.events ? { events: game.eventHistory } : {}),
+    // Wire cause-neutrality (finding 1): while the game is in progress the
+    // per-death cause/source is projected away and the four night-death labels
+    // collapse to a neutral "death" (projectEventsForClients). At game_over the
+    // FULL history rides the wire — that IS the end-of-game reveal surface the
+    // client renders from (renderGameHistory reads the last events it saw).
+    ...(opts.events
+      ? { events: game.phase === "game_over" ? game.eventHistory : projectEventsForClients(game.eventHistory) }
+      : {}),
     ...(opts.saved !== undefined ? { saved: opts.saved } : {}),
-    ...(opts.loverDeathName ? { loverDeathName: opts.loverDeathName } : {}),
   });
 }
 
@@ -845,7 +848,12 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     dayStartedAt: game.dayStartedAt,
     dayVoteCount: game.dayVoteCount,
     narratorHistory: game.narratorHistory,
-    eventHistory: game.eventHistory,
+    // Wire cause-neutrality (finding 1): in-progress syncs get the projected
+    // (cause-stripped, night-deaths-neutralized) history; a game_over sync
+    // carries the FULL detail for the end-of-game reveal. Dead spectators keep
+    // their omniscient live night log via the spectator_* stream + spectatorLog
+    // below — not via this field — so projecting it costs them no information.
+    eventHistory: game.phase === "game_over" ? game.eventHistory : projectEventsForClients(game.eventHistory),
     ...(rejoined.role === "detective" ? { detectiveHistory: game.detectiveHistory } : {}),
     ...(rejoined.role === "mafia" ? {
       mafiaTeam: Array.from(game.players.values())
@@ -1336,12 +1344,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (saved) {
         sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
 
-        // Notify dead players that doctor sub-phase completed (exclude haunting joker)
+        // Notify dead players that doctor sub-phase completed (exclude haunting joker).
+        // Official mode keeps the save fully secret: dead spectators must NOT learn
+        // who the doctor protected, so the target name is withheld (null). House mode
+        // reveals it. (Matches the public dawn narration, which is anonymous in
+        // official mode — see resolveNightAndTransition + Narrator.doctorSaveOfficial.)
         const protectedPlayer = game.players.get(msg.targetId);
+        const revealDoctorTarget = game.settings.doctorMode !== "official";
         sendToDeadPlayers(game, {
           type: "spectator_night_complete",
           phase: "doctor",
-          targetName: protectedPlayer ? protectedPlayer.username : null,
+          targetName: revealDoctorTarget && protectedPlayer ? protectedPlayer.username : null,
           alive: true,
         }, getHauntingJokerId(game));
 
@@ -1893,7 +1906,7 @@ function resolveNightAndTransition(game: Game): void {
   // Official Mafia keeps the Doctor save ANONYMOUS: the saved victim is NOT
   // privately told they were targeted (only the anonymous public "someone was
   // saved" narration is broadcast at dawn). We intentionally send nothing to
-  // the victim here. (Narrator.doctorSaveVictim() is no longer sent.)
+  // the victim here (the old doctor_save_private message was removed entirely).
 
   // Send detective result privately (even if detective died this night)
   if (game.detectiveResult) {
@@ -1908,20 +1921,43 @@ function resolveNightAndTransition(game: Game): void {
     game.detectiveResult = null;
   }
 
+  // Finding 3: the same-night death BATCH is emitted in a CANONICAL
+  // (alphabetical-by-name) order so the player_died / you_died / spectator
+  // sequence can't encode RESOLUTION order — mafia victim always ahead of the
+  // vigilante victim, an original lover ahead of its cascade partner — and
+  // thereby out the killer's role. This mirrors the dawn narrator line's
+  // joinNames() alphabetization. The engine already applied every death; this
+  // only reorders the wire emission. Hunter-revenge deaths are a SEPARATE,
+  // later, by-design-public broadcast (resolveRevenge) — never folded in here.
+  nightResult.killed.sort((a, b) => a.player.username.localeCompare(b.player.username));
+
   // Send spectator kill result to dead players (before phase change clears their panel)
   if (nightResult.killed.length > 0 || nightResult.saved) {
+    // On a save-only night (no deaths) targetName would otherwise be the SAVED
+    // player's name — a secrecy leak in official mode. Withhold it there; the
+    // `kills` array (empty here) is the real death list. When someone actually
+    // died, targetName is that public death, which is fine to name.
     const targetName = nightResult.killed.length > 0
       ? nightResult.killed[0].player.username
-      : nightResult.savedName!;
+      : (game.settings.doctorMode === "official" ? null : nightResult.savedName!);
     let doctorMessage: string | null = null;
     if (game.settings.enableDoctor) {
       if (nightResult.saved && nightResult.savedName) {
-        doctorMessage = `Doctor saved ${nightResult.savedName}`;
+        // Official mode keeps the save anonymous to dead spectators too — the
+        // saved player's name is withheld, consistent with the public dawn
+        // narration (Narrator.doctorSaveOfficial). House mode names them.
+        doctorMessage = game.settings.doctorMode === "official"
+          ? "The Doctor saved someone tonight"
+          : `Doctor saved ${nightResult.savedName}`;
       } else {
         doctorMessage = `Doctor was not able to save ${targetName}`;
       }
     }
-    const kills = nightResult.killed.map(k => ({ name: k.player.username, source: k.source }));
+    // Finding 4: `source` dropped — a dead spectator's raw frame must not out
+    // whether each death was a mafia kill or a vigilante shot. The name list is
+    // the death roll; per-role targeting is already visible in the spectator_*
+    // per-sub-phase stream for those who watched it live.
+    const kills = nightResult.killed.map(k => ({ name: k.player.username }));
     sendToDeadPlayers(game, {
       type: "spectator_kill_confirmed",
       targetName,
