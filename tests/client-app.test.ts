@@ -364,6 +364,26 @@ describe("cause-neutral event history + full-detail game-over reveal", () => {
     expect(item.className).toBe("event-item death"); // NOT "event-item vigilante_shot"
   });
 
+  test("lover_death survives projection: labeled 'Died of heartbreak', keeps its own (non-neutral) class (owner ruling)", () => {
+    // Heartbreak is PUBLIC now: unlike the three direct night-death types,
+    // lover_death is NOT collapsed to "death" — it keeps its label + class.
+    serverSays({
+      type: "phase_change", phase: "day", round: 3, messages: [],
+      events: [
+        { round: 3, type: "death", playerName: "Alice" },       // direct victim, neutral
+        { round: 3, type: "lover_death", playerName: "Bob" },   // heartbroken partner, public
+      ],
+    });
+    const items = Array.from(q("#event-history-list .event-item")) as any[];
+    expect(items.length).toBe(2);
+    const alice = items.find((i) => i.textContent.includes("Alice"));
+    const bob = items.find((i) => i.textContent.includes("Bob"));
+    expect(alice.className).toBe("event-item death");
+    expect(alice.textContent).toContain("Died in the night");
+    expect(bob.className).toBe("event-item lover_death"); // NOT neutralized to "death"
+    expect(bob.textContent).toContain("Died of heartbreak");
+  });
+
   test("game-over reveal shows FULL cause detail from the game_over-phase history", () => {
     // At game_over the server ships the UNPROJECTED history (game_sync.eventHistory
     // and phase_change.events both full-detail once phase === "game_over"); the

@@ -1,19 +1,26 @@
 // Playtest: LOVERS end-to-end over real WebSockets (previously ZERO WS coverage).
 //
 // The lover cascade ("heartbreak") is a death that follows its partner's death
-// through the SAME applyDeath funnel. This file pins the cascade's wire shape at
-// dawn and on the day-execution path, and two trigger-interaction edges:
-//   a. mafia kills a lover at night  → ONE neutral dawn line names both, no
-//      heartbreak/cause tell; living-client events are neutral "death" ×2;
-//      player_died is alphabetical (resolution order flipped); both get you_died.
+// through the SAME applyDeath funnel. Owner ruling: heartbreak is PUBLIC — the
+// heartbroken partner is named ("X died of heartbreak"), sequenced AFTER the
+// original victim. This file pins the cascade's wire shape at dawn and on the
+// day-execution path, and the trigger-interaction edges:
+//   a. mafia kills a lover at night  → combined cause-neutral line for the
+//      DIRECT victim, then a SEPARATE public heartbreak line for the partner;
+//      living-client events are "death" (direct) + "lover_death" (partner);
+//      loverDeathName rides the dawn phase_change; player_died is direct-first
+//      then its cascade partner (never a global alphabetical flip).
 //   b. day execution of a lover      → the partner cascades; the narrator shows
-//      the execution line THEN the cascade line (both PUBLIC by design), and the
-//      cascade line still names no bond/cause.
+//      the execution line THEN the public "X died of heartbreak" line; the
+//      heartbreak line names ONLY the partner, never the executed lover.
 //   c. lover partner is the HUNTER, dies by heartbreak cascade → NO revenge gate
-//      (cause is "lover_cascade", not "direct").
+//      (cause is "lover_cascade", not "direct") — engine rule unchanged.
 //   d. a MAFIA lover executed by day → town-lover cascades → win recomputed on
 //      the settled board (the sole mafia gone ⇒ town win); at game_over the
 //      events payload is FULL detail (execution + lover_death types restored).
+//   e. LEAK boundary: mafia + vigilante + a lover cascade in ONE night → the
+//      combined line names both direct victims, a separate heartbreak line names
+//      the partner; the wire reveals the bond but NOT which direct was mafia's.
 //
 // Run ONLY this file:  bun test tests/playtest/lovers-heartbreak.test.ts
 //   (…then `pkill -f src/server.ts`.)
@@ -29,18 +36,22 @@ const dawnEvents = (admin: PlaytestClient): Array<{ type: string; playerName: st
   (admin.lastOf("phase_change")?.events as Array<{ type: string; playerName: string }>) ?? [];
 const uid = (ctx: ScenarioContext, i: number) => ctx.clients[i].userId!;
 
-// Any of these words in a public death line would out the bond or the killer.
-const CAUSE_WORDS = /heartbreak|lover|sweetheart|Vigilante|gunshot|bullet|\bshot\b|knife|wire|mafia/i;
+// Any of these words in a DIRECT (combined) death line would out the killer.
+// NB: "heartbreak"/"lover" are EXCLUDED — the separate heartbreak line is
+// allowed (indeed required) to say them; use HEARTBREAK_WORDS below to assert
+// the DIRECT line never leaks the bond.
+const CAUSE_WORDS = /Vigilante|gunshot|bullet|\bshot\b|knife|wire|mafia/i;
+const HEARTBREAK_WORDS = /heartbreak|lover|sweetheart/i;
 
 const dayWaiter = (admin: PlaytestClient, t = 14000) =>
   admin.waitMatch((m) => m.type === "phase_change" && m.phase === "day", t, "phase_change(day)");
 
 describe("lovers — heartbreak cascade end-to-end", () => {
-  // ── (a) mafia kills a lover at night → both die, ONE neutral dawn line ──────
-  test("a — mafia kills a lover: one neutral dawn line names both, alphabetical player_died", async () => {
+  // ── (a) mafia kills a lover at night → direct line + separate heartbreak ────
+  test("a — mafia kills a lover: neutral line for the direct victim, separate public heartbreak line", async () => {
     // 5 seats: admin/mafia(0) is a LIVING observer throughout; lovers at 3 & 4.
-    // Mafia targets seat 4 so the DIRECT death (4) resolves before the CASCADE
-    // (3) — the alphabetical wire sort must then flip them back to [3, 4].
+    // Mafia targets seat 4 → seat 4 is the DIRECT victim, seat 3 CASCADES. The
+    // player_died order is direct-first (seat 4) then its cascade partner (seat 3).
     const { clients } = await runScenario({
       roles: ["mafia", "citizen", "citizen", "citizen", "citizen"] as Role[],
       settings: { enableLovers: true },
@@ -66,32 +77,36 @@ describe("lovers — heartbreak cascade end-to-end", () => {
     expect(clients[3].lastOf("you_died")).toBeDefined();
     expect(clients[4].lastOf("you_died")).toBeDefined();
 
-    // ONE combined dawn line names BOTH — no heartbreak/bond/cause tell.
-    const lines = dawnMsgs(admin).filter((m) => m.includes(A) || m.includes(B));
-    expect(lines.length).toBe(1);
-    expect(lines[0]).toContain(A);
-    expect(lines[0]).toContain(B);
-    expect(lines[0]).not.toMatch(CAUSE_WORDS);
+    // The combined dawn line names ONLY the DIRECT victim (B, seat 4) and never
+    // leaks the bond; a SEPARATE public line names the heartbroken partner (A).
+    const msgs = dawnMsgs(admin);
+    const directLine = msgs.find((m) => m.includes(B) && !m.includes(A));
+    const heartbreakLine = msgs.find((m) => m.includes(A) && !m.includes(B));
+    expect(directLine).toBeDefined();
+    expect(directLine).not.toMatch(CAUSE_WORDS);
+    expect(directLine).not.toMatch(HEARTBREAK_WORDS); // direct line never outs the bond
+    expect(heartbreakLine).toBeDefined();
+    expect(heartbreakLine!.toLowerCase()).toContain("heartbreak");
+    // Ordering: the direct line comes BEFORE the heartbreak line.
+    expect(msgs.indexOf(directLine!)).toBeLessThan(msgs.indexOf(heartbreakLine!));
 
-    // Living-client events: neutral "death" ×2, no source/cause on either.
+    // Living-client events: "death" (direct, B) + "lover_death" (partner, A);
+    // source/cause stripped on both, but lover_death SURVIVES projection.
     const events = dawnEvents(admin);
-    expect(events.filter((e) => e.type === "death").length).toBe(2);
-    expect(events.some((e) => e.type === "death" && e.playerName === A)).toBe(true);
     expect(events.some((e) => e.type === "death" && e.playerName === B)).toBe(true);
+    expect(events.some((e) => e.type === "lover_death" && e.playerName === A)).toBe(true);
     for (const e of events) {
       expect("source" in (e as object)).toBe(false);
       expect("cause" in (e as object)).toBe(false);
-      expect(e.type).not.toBe("lover_death");
     }
 
-    // No separate heartbreak beat rides the dawn.
-    expect(admin.lastOf("phase_change")!.loverDeathName).toBeUndefined();
+    // The dawn phase_change carries the heartbroken partner's name (public beat).
+    expect(admin.lastOf("phase_change")!.loverDeathName).toBe(A);
 
-    // player_died is ALPHABETICAL — seat 3 (cascade) ahead of seat 4 (direct),
-    // reversing the mafia-then-cascade RESOLUTION order.
-    expect(died).toEqual([...died].sort((a, b) => a.localeCompare(b)));
-    expect(died[0]).toBe(A);
-    expect(died[1]).toBe(B);
+    // player_died order: the DIRECT victim (B, seat 4) first, then its cascade
+    // partner (A, seat 3) immediately after — never a global alphabetical flip.
+    expect(died[0]).toBe(B);
+    expect(died[1]).toBe(A);
   }, 60000);
 
   // ── (b) day execution of a lover → execution THEN cascade line (both public) ─
@@ -148,15 +163,20 @@ describe("lovers — heartbreak cascade end-to-end", () => {
     expect(clients[5].lastOf("you_died")).toBeDefined();
 
     // The execution phase_change carries BOTH lines (public by design), with the
-    // execution line BEFORE the cascade line.
+    // execution line BEFORE the public "X died of heartbreak" line.
     const msgs = dawnMsgs(admin);
     const execIdx = msgs.findIndex((m) => m.includes(execLover));
     const cascadeIdx = msgs.findIndex((m) => m.includes(partner) && !m.includes(execLover));
     expect(execIdx).toBeGreaterThanOrEqual(0);
     expect(cascadeIdx).toBeGreaterThanOrEqual(0);
     expect(execIdx).toBeLessThan(cascadeIdx);
-    // The cascade line still names no bond/cause (only WHO).
-    expect(msgs[cascadeIdx]).not.toMatch(CAUSE_WORDS);
+    // Owner ruling: the heartbreak line NAMES the partner and SAYS "heartbreak",
+    // but names ONLY the partner — never the executed lover.
+    expect(msgs[cascadeIdx].toLowerCase()).toContain("heartbreak");
+    expect(msgs[cascadeIdx]).not.toContain(execLover);
+    expect(msgs[cascadeIdx]).not.toMatch(CAUSE_WORDS); // no killer/weapon words
+    // The partner's you_died carries isLoverDeath (private heartbreak art).
+    expect(clients[5].lastOf("you_died")!.isLoverDeath).toBe(true);
   }, 60000);
 
   // ── (c) lover HUNTER dies by cascade → NO revenge gate (cause != direct) ────
@@ -244,5 +264,59 @@ describe("lovers — heartbreak cascade end-to-end", () => {
     const events = dawnEvents(admin);
     expect(events.some((e) => e.type === "execution" && e.playerName === nameOf(clients[0]))).toBe(true);
     expect(events.some((e) => e.type === "lover_death" && e.playerName === nameOf(clients[1]))).toBe(true);
+  }, 60000);
+
+  // ── (e) LEAK boundary: mafia + vigilante + a lover cascade in ONE night ─────
+  test("e — mafia + vigilante + lover cascade: combined line names both directs, separate heartbreak names the partner", async () => {
+    // 7 seats. Vigilante at seat 1. Lovers at seats 3 (mafia victim) & 4 (cascade).
+    // Mafia kills seat 3 (→ seat 4 cascades); vigilante shoots seat 5. The
+    // combined line reveals {seat3, seat5} died directly, the heartbreak line
+    // reveals seat4↔seat3 — but NOT which of {seat3, seat5} was mafia's vs the
+    // vigilante's. That residual is the acceptable/correct leak boundary.
+    const { clients } = await runScenario({
+      roles: ["mafia", "vigilante", "citizen", "citizen", "citizen", "citizen", "citizen"] as Role[],
+      settings: { enableLovers: true, enableVigilante: true },
+      lovers: [3, 4],
+      autoNarratorReady: true,
+      timeline: [
+        async (ctx) => {
+          const admin = ctx.clients[0];
+          const vig = ctx.clients[1];
+          const dayP = dayWaiter(admin);
+          await admin.killAsMafia(uid(ctx, 3));      // mafia kills lover seat 3
+          await vig.waitFor("vigilante_targets", 8000);
+          await vig.vigilanteShoot(uid(ctx, 5));     // vigilante shoots seat 5
+          await dayP;
+        },
+      ],
+    });
+
+    const admin = clients[0];
+    const mafVictim = nameOf(clients[3]);   // direct (mafia)
+    const cascade = nameOf(clients[4]);     // heartbroken partner
+    const vigVictim = nameOf(clients[5]);   // direct (vigilante)
+
+    const msgs = dawnMsgs(admin);
+    // The combined line names BOTH direct victims, and never the partner/bond.
+    const combined = msgs.find((m) => m.includes(mafVictim) && m.includes(vigVictim));
+    expect(combined).toBeDefined();
+    expect(combined).not.toContain(cascade);
+    expect(combined).not.toMatch(CAUSE_WORDS);
+    expect(combined).not.toMatch(HEARTBREAK_WORDS);
+    // The separate heartbreak line names ONLY the partner — not either direct,
+    // so it can't out which direct was the mafia's kill.
+    const heartbreakLine = msgs.find((m) => m.includes(cascade) && !m.includes(mafVictim) && !m.includes(vigVictim));
+    expect(heartbreakLine).toBeDefined();
+    expect(heartbreakLine!.toLowerCase()).toContain("heartbreak");
+
+    // Wire events: two neutral "death" (directs) + one "lover_death" (partner).
+    const events = dawnEvents(admin);
+    expect(events.filter((e) => e.type === "death").length).toBe(2);
+    expect(events.some((e) => e.type === "lover_death" && e.playerName === cascade)).toBe(true);
+    // No direct death is tagged with a source/cause on the wire.
+    for (const e of events) {
+      expect("source" in (e as object)).toBe(false);
+      expect("cause" in (e as object)).toBe(false);
+    }
   }, 60000);
 });

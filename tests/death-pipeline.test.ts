@@ -134,11 +134,14 @@ describe("B3 pins — cascade sub-branches the goldens don't cover", () => {
     expect(l.isAlive).toBe(false);
     expect(result.saved).toBe(false);
 
-    // ONE cause-neutral combined dawn line names every victim (no per-death
-    // cause stream, no kill-order tell). killed[] keeps the full record above.
-    expect(result.messages.length).toBe(1);
-    for (const k of result.killed) expect(result.messages[0]).toContain(k.player.username);
+    // Combined cause-neutral line for the DIRECT victims (a, b), then a
+    // SEPARATE public "died of heartbreak" line for the cascade partner (l).
+    expect(result.messages.length).toBe(2);
+    expect(result.messages[0]).toContain(a.username);
+    expect(result.messages[0]).toContain(b.username);
     expect(result.messages[0]).not.toMatch(/joker|playing card|heartbreak/i);
+    expect(result.messages[1]).toContain(l.username);
+    expect(result.messages[1]).toMatch(/heartbreak/i);
 
     // event labels: haunt victim is joker_haunt (NOT lover_death — M5),
     // partner is lover_death, in kill order
@@ -213,9 +216,13 @@ describe("B3 pins — cascade sub-branches the goldens don't cover", () => {
       [l.id, "mafia"],
       [b.id, "joker_haunt"],
     ]);
-    // ONE combined dawn line for the whole batch; killed[]/events keep order.
-    expect(result.messages.length).toBe(1);
-    for (const k of result.killed) expect(result.messages[0]).toContain(k.player.username);
+    // Combined dawn line for the DIRECT victims (a, b), then a separate public
+    // heartbreak line for the mafia victim's cascade partner (l).
+    expect(result.messages.length).toBe(2);
+    expect(result.messages[0]).toContain(a.username);
+    expect(result.messages[0]).toContain(b.username);
+    expect(result.messages[1]).toContain(l.username);
+    expect(result.messages[1]).toMatch(/heartbreak/i);
     expect(eventsOfRound(game, 2)).toEqual([
       ["kill", a.username],
       ["lover_death", l.username],

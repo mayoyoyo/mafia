@@ -22,10 +22,17 @@ describe("Narrator", () => {
     expect(msg).toContain("Dave");
   });
 
-  test("cascadeDeath names the victim and never reveals the bond", () => {
-    const msg = Narrator.cascadeDeath("Eve");
+  test("loverDeath names ONLY the heartbroken partner and says heartbreak", () => {
+    const msg = Narrator.loverDeath("Eve");
+    // Owner ruling: heartbreak IS public. The line names the heartbroken
+    // partner and says "heartbreak" plainly.
     expect(msg).toContain("Eve");
-    expect(msg).not.toMatch(/heartbreak|lover|beloved/i);
+    expect(msg).toMatch(/heartbreak/i);
+    // Invariant: it must NEVER interpolate/name the original lover — the only
+    // name the generator is given is the partner's, so any other capitalized
+    // stand-in would be a regression. Guard the old {lover} placeholder is gone.
+    expect(msg).not.toMatch(/\{\w+\}/);
+    expect(msg).not.toContain("Frank"); // no other-victim tell
   });
 
   test("jokerWin includes player name", () => {
@@ -122,9 +129,9 @@ describe("Narrator template injection (M13)", () => {
   // A username that is a literal placeholder must NOT be re-expanded into
   // mad-libs filler. Templates are picked at random, so run many trials to
   // cover every template; the name must survive in EVERY output.
-  test("cascadeDeath does not spoof a literal placeholder victim name", () => {
+  test("loverDeath does not spoof a literal placeholder victim name", () => {
     for (let i = 0; i < 100; i++) {
-      const msg = Narrator.cascadeDeath("{name}");
+      const msg = Narrator.loverDeath("{name}");
       // The victim's literal name must be preserved (no re-expansion).
       expect(msg).toContain("{name}");
     }
@@ -132,7 +139,7 @@ describe("Narrator template injection (M13)", () => {
 
   test("normal names are still substituted across many trials", () => {
     for (let i = 0; i < 50; i++) {
-      expect(Narrator.cascadeDeath("Eve")).toContain("Eve");
+      expect(Narrator.loverDeath("Eve")).toContain("Eve");
       expect(Narrator.execution("Charlie")).toContain("Charlie");
     }
   });

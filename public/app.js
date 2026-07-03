@@ -56,6 +56,7 @@
   // and skips it when the day->night path already ran showNightTransition.
   let nightTransitionRound = 0;
   let executionTransitionActive = false;
+  let heartbreakTransitionActive = false;
   let pendingGameOver = null; // game_over held while an overlay chain animates (L5)
   let nightNarrationActive = false;
   let nightNarrationQueue = [];
@@ -274,7 +275,7 @@
     // While a death/heartbreak/night overlay chain is animating, hold game_over
     // so its reveal doesn't stomp the in-flight beats; it replays after the
     // chain's final callback (applyPhaseChange) via flushPendingGameOver (L5)
-    if ((suspenseActive || executionTransitionActive || nightTransitionActive) && msg.type === "game_over") {
+    if ((suspenseActive || executionTransitionActive || heartbreakTransitionActive || nightTransitionActive) && msg.type === "game_over") {
       pendingGameOver = msg;
       return;
     }
@@ -594,10 +595,9 @@
         // If joker win overlay is already showing, skip the death overlay
         if (!jokerWonOverlayShown) {
           $("dead-overlay").classList.remove("hidden");
-          // Always the neutral skull — no heartbreak framing on the dead
-          // player's own screen either (cause is hidden in-game; the end-game
-          // reveal still shows everything).
-          $("dead-emoji").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+          // Pixel art skull, or heartbreak art on the dead player's OWN screen
+          // when they died of heartbreak (owner ruling: heartbreak is public).
+          $("dead-emoji").innerHTML = pixelArtToSvg(msg.isLoverDeath ? HEARTBREAK_ART : CARD_BACK_DEAD_ART);
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
@@ -1640,9 +1640,17 @@
       lastVoteResult = null;
       if (voteResult) {
         showExecutionTransition(voteResult, () => {
-          showNightTransition(() => {
-            applyPhaseChange(msg);
-          });
+          if (msg.loverDeathName) {
+            showHeartbreakTransition(msg.loverDeathName, () => {
+              showNightTransition(() => {
+                applyPhaseChange(msg);
+              });
+            });
+          } else {
+            showNightTransition(() => {
+              applyPhaseChange(msg);
+            });
+          }
         });
       } else {
         showNightTransition(() => {
@@ -1654,6 +1662,22 @@
       showSuspenseTransition(msg, () => {
         applyPhaseChange(msg);
       });
+    // Execution → game_over with lover death (owner ruling: public heartbreak
+    // beat before the game-over reveal).
+    } else if (msg.loverDeathName && msg.phase === "game_over") {
+      const voteResult = lastVoteResult;
+      lastVoteResult = null;
+      if (voteResult) {
+        showExecutionTransition(voteResult, () => {
+          showHeartbreakTransition(msg.loverDeathName, () => {
+            applyPhaseChange(msg);
+          });
+        });
+      } else {
+        showHeartbreakTransition(msg.loverDeathName, () => {
+          applyPhaseChange(msg);
+        });
+      }
     } else {
       applyPhaseChange(msg);
     }
@@ -1823,8 +1847,40 @@
         text.style.color = "";
         clearSuspenseStage();
         executionTransitionActive = false;
-        // no flushPendingGameOver here — the call site chains into showNightTransition, whose terminal flushes
+        // no flushPendingGameOver here — all call sites chain into heartbreak/night, whose terminals flush
         callback();
+      }, 600);
+    }, 2000);
+  }
+
+  // Public heartbreak beat (owner ruling): a full-screen "X died of heartbreak"
+  // overlay for the heartbroken partner, chained AFTER the execution/dawn beat
+  // and BEFORE nightfall / game_over. This terminal flushes any held game_over.
+  function showHeartbreakTransition(loverName, callback) {
+    heartbreakTransitionActive = true;
+    const overlay = $("suspense-overlay");
+    const text = $("suspense-text");
+
+    overlay.classList.remove("hidden", "fade-out");
+    // D5: heartbreak art migrated from the text node into the dedicated art slot.
+    // The text node now carries only the (XSS-safe via textContent) sentence.
+    setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
+    text.textContent = loverName + " died of heartbreak.";
+    text.style.color = "#9c27b0";
+    text.style.animation = "none";
+    void text.offsetWidth;
+    text.style.animation = "suspenseFadeIn 0.8s ease";
+
+    setTimeout(() => {
+      overlay.classList.add("fade-out");
+      setTimeout(() => {
+        overlay.classList.add("hidden");
+        overlay.classList.remove("fade-out");
+        text.style.color = "";
+        clearSuspenseStage();
+        heartbreakTransitionActive = false;
+        callback();
+        flushPendingGameOver();
       }, 600);
     }, 2000);
   }
@@ -1909,14 +1965,18 @@
     // night isn't mis-read as peaceful. In-game the server now ships the ONE
     // neutral "death" type (projectEventsForClients) — the legacy cause-bearing
     // labels are kept here only for the game_over full-detail replay.
-    const deathEvents = roundEvents.filter((e) =>
-      e.type === "death" || e.type === "kill" || e.type === "vigilante_shot" || e.type === "joker_haunt" || e.type === "lover_death"
+    // Owner ruling: a lover cascade (lover_death) gets its OWN public "died of
+    // heartbreak" beat below, so it is NOT folded into the direct-victim
+    // singling here — direct kills stay cause-ambiguous, the partner is named.
+    const directDeaths = roundEvents.filter((e) =>
+      e.type === "death" || e.type === "kill" || e.type === "vigilante_shot" || e.type === "joker_haunt"
     );
-    const hasKill = deathEvents.length > 0;
+    const hasLoverDeath = roundEvents.some((e) => e.type === "lover_death");
+    const hasKill = directDeaths.length > 0 || hasLoverDeath;
     // Only name a victim when EXACTLY ONE died; multi-death nights stay neutral
     // so the verdict can't single out (and thereby cause-tag) the mafia victim
     // \u2014 the combined narrator line already carries all the names.
-    const victimName = deathEvents.length === 1 ? deathEvents[0].playerName : null;
+    const victimName = directDeaths.length === 1 ? directDeaths[0].playerName : null;
     // D5: verdict returns an art GRID + plain text + tint, painted into the
     // dedicated stage slots (the writer uses .textContent, so the relayed
     // username never reaches innerHTML \u2014 strictly safer than the prior
@@ -1932,6 +1992,11 @@
     suspenseQueue = [];
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
+    // Owner ruling: a night lover cascade gets a dedicated public heartbreak
+    // beat after the verdict; it lengthens the dawn overlay so game_over/night
+    // don't stomp it (extraDelay pushes the fade-out + teardown timers).
+    const hasLoverDeath = !!msg.loverDeathName;
+    const extraDelay = hasLoverDeath ? 2800 : 0;
 
     overlay.classList.remove("hidden", "fade-out");
     // D5: dawn opens on the sun centerpiece; the verdict beat re-stages art per
@@ -1962,9 +2027,22 @@
       text.style.animation = "suspenseFadeIn 0.8s ease";
     }, 3500);
 
+    if (hasLoverDeath) {
+      setTimeout(() => {
+        // D5: heartbreak art into the stage slot; text node carries the sentence
+        // (textContent — relayed name stays XSS-inert). Names only the partner.
+        setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
+        text.textContent = msg.loverDeathName + " died of heartbreak.";
+        text.style.color = "#9c27b0";
+        text.style.animation = "none";
+        void text.offsetWidth;
+        text.style.animation = "suspenseFadeIn 0.8s ease";
+      }, 5700);
+    }
+
     setTimeout(() => {
       overlay.classList.add("fade-out");
-    }, 5500);
+    }, 5500 + extraDelay);
 
     setTimeout(() => {
       overlay.classList.add("hidden");
@@ -1982,7 +2060,7 @@
       }
       suspenseQueue = [];
       flushPendingGameOver();
-    }, 6300);
+    }, 6300 + extraDelay);
   }
 
   function showDetectiveResult(msg) {
@@ -2046,7 +2124,7 @@
       kill: "Died in the night",
       save: "Saved by Doctor",
       execution: "Executed",
-      lover_death: "Died in the night",
+      lover_death: "Died of heartbreak",
       spared: "Spared by vote",
       joker_haunt: "Died in the night",
       hunter_revenge: "Shot by the Hunter",
@@ -2054,12 +2132,14 @@
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
-    // Living clients only ever receive the neutral "death" type in-game
-    // (projectEventsForClients), but map any cause-bearing night-death label to
-    // the SAME neutral CSS class defensively so the class attribute can never
-    // out the cause even if a full-detail event reaches this in-game renderer
-    // (e.g. the game_over full-history replay). See finding 2.
-    const NIGHT_DEATH_CLASS = new Set(["death", "kill", "vigilante_shot", "joker_haunt", "lover_death"]);
+    // Living clients only ever receive the neutral "death" type for DIRECT night
+    // kills (projectEventsForClients), but map any cause-bearing direct-death
+    // label to the SAME neutral CSS class defensively so the class attribute
+    // can never out the cause even if a full-detail event reaches this in-game
+    // renderer (e.g. the game_over full-history replay). lover_death is
+    // DELIBERATELY EXCLUDED (owner ruling): heartbreak is public, so it keeps
+    // its own "lover_death" class + "Died of heartbreak" label.
+    const NIGHT_DEATH_CLASS = new Set(["death", "kill", "vigilante_shot", "joker_haunt"]);
 
     // Merge detective history (private) into events for display
     let allEvents = [...events];
@@ -4079,7 +4159,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.31_202607021651";
+  const APP_VERSION_STAGING = "staging.32_202607021737";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

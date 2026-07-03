@@ -62,15 +62,17 @@ const EXECUTION_SPARED_MESSAGES = [
   "The verdict won't hold. {name} survives the vote. The town will remember whose name came up.",
 ];
 
-// Cause-neutral cascade death (a second death that follows the first). NEVER
-// names the bond or the cause — saying "heartbreak"/"lover" would out the
-// secret pair (and, after an execution, the already-public victim's partner).
-// Time-agnostic so it reads on both the day (execution) and revenge paths;
-// the night path overrides this with diedInNight for the dawn voice.
-const CASCADE_DEATH_MESSAGES = [
-  "{name} is found dead, too.",
-  "{name} does not survive, either.",
-  "{name} is lost as well.",
+// Public heartbreak death (a lover's cascade following their partner's death).
+// Owner ruling: heartbreak IS revealed. Names ONLY the heartbroken partner and
+// says plainly they "died of heartbreak" — it must NEVER name the original
+// lover in the same line (that name is already public from the announcement
+// this line follows). Time-agnostic so it reads on the night (dawn), day
+// (execution) and hunter-revenge paths alike.
+const LOVER_DEATH_MESSAGES = [
+  "{name} died of heartbreak.",
+  "{name} could not go on, and died of heartbreak.",
+  "A heart only breaks the once: {name} died of heartbreak.",
+  "{name} followed soon after, dead of heartbreak.",
 ];
 
 const JOKER_WIN_MESSAGES = [
@@ -217,8 +219,11 @@ export const Narrator = {
   executionSpared(name: string): string {
     return fill(pick(EXECUTION_SPARED_MESSAGES), { name });
   },
-  cascadeDeath(name: string): string {
-    return fill(pick(CASCADE_DEATH_MESSAGES), { name });
+  // Public "died of heartbreak" line — names ONLY the heartbroken partner,
+  // never the original lover (see LOVER_DEATH_MESSAGES). Feeds you_died /
+  // player_died on the day/revenge paths, and a separate dawn line at night.
+  loverDeath(name: string): string {
+    return fill(pick(LOVER_DEATH_MESSAGES), { name });
   },
   jokerWin(name: string): string {
     return fill(pick(JOKER_WIN_MESSAGES), { name });

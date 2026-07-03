@@ -255,16 +255,16 @@ describe("E4 heartbreak: lover lynched, hunter dies of heartbreak mid-vote", () 
       expect(p.inbox.find(m => m.type === "hunter_revenge_targets")).toBeUndefined();
     }
 
-    // Both deaths now read cause-neutral on the wire: neither the lover (direct)
-    // nor the cascade-victim hunter carries an isLoverDeath flag anymore.
+    // Owner ruling: heartbreak is public. The lynched lover (direct) carries NO
+    // isLoverDeath; the cascade-victim Hunter DOES (private heartbreak art).
     const loverDied = lover.inbox.find(m => m.type === "you_died");
     expect(loverDied.isLoverDeath).toBeUndefined();
     const hunterDied = hunter.inbox.find(m => m.type === "you_died");
-    expect(hunterDied.isLoverDeath).toBeUndefined();
+    expect(hunterDied.isLoverDeath).toBe(true);
 
-    // The cascade now reads cause-neutral: loverDeathName is no longer passed
-    // on the auto-night phase_change (no separate heartbreak beat is fired).
-    expect(nightChange.loverDeathName).toBeUndefined();
+    // The auto-night phase_change carries loverDeathName = the heartbroken
+    // Hunter's name (the public "died of heartbreak" beat fires).
+    expect(nightChange.loverDeathName).toBe(hunter.username);
 
     // Exactly the two phase_changes seen by now: game-start night + forced
     // day, plus this auto-night (the third), with no game_over.
@@ -319,7 +319,8 @@ describe("E4 official-joker: lynched joker's lover is the hunter", () => {
     expect(jIdx).toBeGreaterThanOrEqual(0);
     expect(hIdx).toBeGreaterThan(jIdx);
     expect(adminNcIdx).toBeGreaterThan(hIdx);
-    expect(hunter.inbox.find(m => m.type === "you_died").isLoverDeath).toBeUndefined();
+    // Owner ruling: the heartbroken Hunter's own you_died carries isLoverDeath.
+    expect(hunter.inbox.find(m => m.type === "you_died").isLoverDeath).toBe(true);
 
     // No revenge gate ever opened — not the public reveal, not the prompt.
     for (const p of game.players) {

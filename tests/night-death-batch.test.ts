@@ -55,7 +55,7 @@ describe("dawn night batch — one cause-neutral combined line", () => {
     expect(result.killed.map((k) => k.source).sort()).toEqual(["mafia", "vigilante"]);
   });
 
-  test("mafia kills a lover → ONE line names BOTH partners, no heartbreak / no order tell", () => {
+  test("mafia kills a lover → combined line for the direct victim, SEPARATE public heartbreak line for the partner", () => {
     const g = game(["mafia", "citizen", "citizen", "citizen", "citizen", "citizen"]);
     const target = g.players.get(3)!, partner = g.players.get(4)!;
     makeLovers(target, partner);
@@ -63,22 +63,32 @@ describe("dawn night batch — one cause-neutral combined line", () => {
 
     const result = resolveNight(g);
 
-    expect(result.messages.length).toBe(1);
+    // Owner ruling: the combined line covers only the DIRECT victim (cause
+    // stays ambiguous); the cascade partner gets a SEPARATE public "died of
+    // heartbreak" line AFTER it.
+    expect(result.messages.length).toBe(2);
     const line = result.messages[0];
     expect(line).toContain(target.username);
-    expect(line).toContain(partner.username);
+    expect(line).not.toContain(partner.username);
     expect(line).not.toMatch(FORBIDDEN);
     expect(line.toLowerCase()).not.toContain("heartbreak");
+    const heartbreak = result.messages[1];
+    expect(heartbreak).toContain(partner.username);
+    expect(heartbreak).not.toContain(target.username); // never names the original lover
+    expect(heartbreak.toLowerCase()).toContain("heartbreak");
     // killed[] integrity: direct death + lover cascade, in kill order.
     expect(result.killed.map((k) => k.cause)).toEqual(["direct", "lover_cascade"]);
-    // The cascade victim's own line is neutral and does NOT name the original
-    // target (no who-was-targeted tell on the victim-facing surface either).
+    // The cascade victim's own line IS the heartbreak line (names only them).
     expect(result.killed[1].player.id).toBe(partner.id);
     expect(result.killed[1].message).not.toContain(target.username);
-    expect(result.killed[1].message.toLowerCase()).not.toContain("heartbreak");
+    expect(result.killed[1].message.toLowerCase()).toContain("heartbreak");
   });
 
-  test("mafia + vigilante + joker haunt + a lover cascade → ONE line, all four names, no cause words", () => {
+  test("LEAK ANALYSIS: mafia + vigilante + joker haunt + a lover cascade → combined neutral line for the 3 directs, then ONE heartbreak line", () => {
+    // The canonical leak-boundary scenario (spec): the combined line reveals
+    // WHO died directly (a, b, c) but not by whose hand; the separate heartbreak
+    // line reveals the bond (aLover↔a) but NOT which of the directs was mafia's
+    // vs the vigilante's. That residual is acceptable and correct.
     const g = game(["mafia", "citizen", "citizen", "citizen", "citizen", "citizen", "citizen", "citizen"]);
     const a = g.players.get(3)!, aLover = g.players.get(4)!; // mafia victim + cascade
     const b = g.players.get(5)!;                              // vigilante victim
@@ -90,11 +100,17 @@ describe("dawn night batch — one cause-neutral combined line", () => {
 
     const result = resolveNight(g);
 
-    expect(result.messages.length).toBe(1);
-    for (const n of [a.username, aLover.username, b.username, c.username]) {
+    expect(result.messages.length).toBe(2);
+    // Combined line: the three DIRECT victims, never the heartbroken partner.
+    for (const n of [a.username, b.username, c.username]) {
       expect(result.messages[0]).toContain(n);
     }
+    expect(result.messages[0]).not.toContain(aLover.username);
     expect(result.messages[0]).not.toMatch(FORBIDDEN);
+    // Separate public heartbreak line: names only the heartbroken partner.
+    expect(result.messages[1]).toContain(aLover.username);
+    expect(result.messages[1].toLowerCase()).toContain("heartbreak");
+    expect(result.messages[1]).not.toContain(b.username); // doesn't out which direct was mafia's
     expect(result.killed.length).toBe(4);
   });
 
@@ -143,15 +159,17 @@ describe("dawn night batch — one cause-neutral combined line", () => {
   });
 });
 
-// The cause-bearing NIGHT-death labels that must never survive projection.
-const CAUSE_TYPES = new Set(["kill", "vigilante_shot", "joker_haunt", "lover_death"]);
+// The DIRECT-death labels that must never survive projection (cause-ambiguous).
+// "lover_death" is DELIBERATELY NOT here (owner ruling): heartbreak is public,
+// so lover_death survives projection as its own distinct type.
+const CAUSE_TYPES = new Set(["kill", "vigilante_shot", "joker_haunt"]);
 
 describe("projectEventsForClients — the wire-facing cause neutralization", () => {
-  test("every night-death type collapses to a neutral 'death' with no source/cause", () => {
-    // A single simultaneous night carrying ALL four cause-bearing labels: mafia
-    // kill, vigilante shot, joker haunt, and a lover cascade behind the mafia
-    // kill. The server-side eventHistory keeps them distinct; the PROJECTION the
-    // client receives must not.
+  test("the three DIRECT night-death types collapse to 'death'; lover_death survives distinctly", () => {
+    // A single simultaneous night carrying all three direct labels (mafia kill,
+    // vigilante shot, joker haunt) plus a lover cascade behind the mafia kill.
+    // The server-side eventHistory keeps them distinct; the PROJECTION collapses
+    // the DIRECT causes to "death" but keeps "lover_death" (public heartbreak).
     const g = game(["mafia", "citizen", "citizen", "citizen", "citizen", "citizen", "citizen", "citizen"]);
     const a = g.players.get(3)!, aLover = g.players.get(4)!; // mafia victim + cascade
     const b = g.players.get(5)!;                              // vigilante victim
@@ -172,12 +190,14 @@ describe("projectEventsForClients — the wire-facing cause neutralization", () 
     expect(raw.some((e) => e.source !== undefined)).toBe(true);
 
     const projected = projectEventsForClients(raw);
-    // Same count/order, same names — only the cause is erased.
+    // Same count/order, same names — only the DIRECT causes are erased.
     expect(projected.length).toBe(raw.length);
     expect(projected.map((e) => e.playerName)).toEqual(raw.map((e) => e.playerName));
+    // lover_death survives; the three direct causes collapse to "death".
+    expect(projected.some((e) => e.type === "lover_death")).toBe(true);
     for (const e of projected) {
-      expect(CAUSE_TYPES.has(e.type)).toBe(false);           // no cause-bearing type survives
-      expect(e.type).toBe("death");                          // all four collapse to one neutral label
+      expect(CAUSE_TYPES.has(e.type)).toBe(false);           // no DIRECT cause-bearing type survives
+      expect(e.type === "death" || e.type === "lover_death").toBe(true);
       expect((e as GameEvent).source).toBeUndefined();       // source stripped
       expect((e as GameEvent).cause).toBeUndefined();        // cause stripped
     }

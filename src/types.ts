@@ -246,7 +246,7 @@ export type ServerMessage =
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[]; isGodfather?: boolean; godfatherName?: string; roster?: RosterSummary }
-  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; saved?: boolean }
+  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
   | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
   | { type: "mafia_targets"; players: PlayerInfo[] }
@@ -264,7 +264,7 @@ export type ServerMessage =
   | { type: "vote_update"; totalVotes: number; total: number }
   | { type: "vote_result"; targetName: string; executed: boolean }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
-  | { type: "you_died"; message: string }
+  | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
   | { type: "sound_cue"; sound: SoundCue }

@@ -1102,11 +1102,14 @@ export function deriveDeathEventType(source: KillSource, cause: DeathCause): Dea
   }
 }
 
-// The four NIGHT-death labels that must be cause-AMBIGUOUS to living players:
-// a vigilante kill has to be indistinguishable from a mafia kill, a joker
-// haunt, or a lover cascade on every client-visible surface (devtools counts).
+// The DIRECT night-death labels that must be cause-AMBIGUOUS to living players:
+// a vigilante kill has to be indistinguishable from a mafia kill or a joker
+// haunt on every client-visible surface (devtools counts). "lover_death" is
+// DELIBERATELY EXCLUDED (owner ruling): heartbreak is public, so a lover
+// cascade survives projection as its own distinct "lover_death" type — the
+// bond is revealed, but the direct kills' causes stay collapsed to "death".
 const NIGHT_DEATH_TYPES: ReadonlySet<GameEvent["type"]> = new Set<GameEvent["type"]>([
-  "kill", "vigilante_shot", "joker_haunt", "lover_death",
+  "kill", "vigilante_shot", "joker_haunt",
 ]);
 
 /**
@@ -1226,9 +1229,10 @@ export function applyDeath(game: Game, playerId: number, source: KillSource, mes
       lover.isAlive = false;
       deaths.push({
         player: lover, source, cause: "lover_cascade",
-        // Cause-neutral: never reveals the bond. The night path further
-        // overrides this with diedInNight for the dawn voice.
-        message: Narrator.cascadeDeath(lover.username),
+        // Public heartbreak (owner ruling): names only the heartbroken partner.
+        // Feeds you_died / player_died on the day (execution) and revenge paths;
+        // the night path re-narrates it as a separate dawn heartbreak line.
+        message: Narrator.loverDeath(lover.username),
         eventType: deriveDeathEventType(source, "lover_cascade"),
       });
     }
@@ -1394,9 +1398,13 @@ export function resolveNight(game: Game): NightResult {
   // consumes the save; a later intent on the same target kills anyway. A
   // target already dead from an earlier intent (or its cascade) is skipped.
   let saveUsed = false;
-  // Names of everyone who actually died tonight (direct + cascade), in kill
-  // order. Folded into ONE cause-neutral announcement after the loop.
+  // DIRECT victim names (mafia + vigilante + joker haunt), folded into ONE
+  // cause-neutral announcement after the loop. Lover cascades are tracked
+  // separately below and announced as their OWN public heartbreak lines.
   const nightDeadNames: string[] = [];
+  // Heartbroken partners (lover cascades), in kill order. Each gets its own
+  // public "died of heartbreak" dawn line, sequenced AFTER the combined line.
+  const heartbreakNames: string[] = [];
   for (const intent of intents) {
     const target = game.players.get(intent.targetId);
     if (!target) continue;
@@ -1425,24 +1433,33 @@ export function resolveNight(game: Game): NightResult {
     } else if (target.isAlive) {
       const deaths = applyDeath(game, intent.targetId, intent.source, intent.deathMessage(target));
       for (const d of deaths) {
-        // Night cascade: strip the heartbreak/partner tell from the victim-
-        // facing line too (you_died/player_died read d.message). The public
-        // batch line is emitted once, below.
-        if (d.cause === "lover_cascade") d.message = Narrator.diedInNight(d.player.username);
-        nightDeadNames.push(d.player.username);
+        if (d.cause === "lover_cascade") {
+          // Public heartbreak (owner ruling): the partner's death gets its OWN
+          // dawn line AFTER the combined direct-victim line. d.message is left
+          // as Narrator.loverDeath(...) (you_died reads it) — NOT overridden.
+          heartbreakNames.push(d.player.username);
+        } else {
+          nightDeadNames.push(d.player.username);
+        }
         result.killed.push(d); // killed[] unchanged: drives triggers/events/UI
       }
     }
     // already dead and not saved: no additional effect
   }
 
-  // ONE cause-neutral announcement for the ENTIRE simultaneous night batch
-  // (mafia + vigilante + joker haunt + their lover cascades). Names only WHO,
-  // never HOW; joinNames() sorts so the kill ORDER can't out the target.
-  // Hunter revenge is NOT folded in — it is gated/post-dawn (concludeRound
-  // defers the dawn) and keeps its own separate announcement.
+  // ONE cause-neutral announcement for the DIRECT night batch (mafia +
+  // vigilante + joker haunt). Names only WHO, never HOW; joinNames() sorts so
+  // the kill ORDER can't out the target. Hunter revenge is NOT folded in — it
+  // is gated/post-dawn (concludeRound defers the dawn) and keeps its own line.
   if (nightDeadNames.length > 0) {
     result.messages.push(Narrator.nightDeaths(nightDeadNames));
+  }
+  // Then each lover cascade as its OWN public "died of heartbreak" line,
+  // sequenced AFTER the combined line — the heartbroken partner is named, the
+  // original (already-announced) lover is not. Owner ruling reverses the prior
+  // concealment; the bond is revealed, the direct kills' causes stay ambiguous.
+  for (const name of heartbreakNames) {
+    result.messages.push(Narrator.loverDeath(name));
   }
 
   if (result.killed.length === 0 && !result.saved) {

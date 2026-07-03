@@ -145,30 +145,28 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     await Bun.sleep(200); // let per-socket fan-out settle on every inbox
 
     // ── Two death announcements precede the dawn, on EVERY inbox: ─────────
-    // Finding 3: the same-night batch is emitted in a CANONICAL (alphabetical-
-    // by-username) order — NOT the direct-then-cascade resolution order — so the
-    // player_died arrival sequence can't reveal which death was the mafia's
-    // direct target (X) and which was the heartbreak cascade (the hunter).
-    const hunterFirst = hunter.username.localeCompare(loverX.username) < 0;
+    // Owner ruling ordering: the DIRECT victim (X) is emitted first, then its
+    // cascade partner (the Hunter) IMMEDIATELY after. The direct-then-cascade
+    // order is intentional — X's death is the public one, and the Hunter is
+    // plainly the heartbroken partner — so it outs no killer role.
     for (const p of game.players) {
       const xIdx = indexOfMsg(p.inbox, m => m.type === "player_died" && m.playerId === loverX.userId);
       const hIdx = indexOfMsg(p.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
       const dayIdx = indexOfMsg(p.inbox, m => m.type === "phase_change" && m.phase === "day");
       expect(xIdx).toBeGreaterThanOrEqual(0);
       expect(hIdx).toBeGreaterThanOrEqual(0);
-      if (hunterFirst) expect(hIdx).toBeLessThan(xIdx);
-      else expect(hIdx).toBeGreaterThan(xIdx);
+      expect(xIdx).toBeLessThan(hIdx); // direct victim before its cascade partner
       expect(dayIdx).toBeGreaterThan(Math.max(xIdx, hIdx)); // BOTH before the dawn phase_change
     }
 
-    // Both deaths now read cause-neutral on the wire: neither X (direct) nor the
-    // cascade-victim hunter carries an isLoverDeath flag anymore.
+    // Owner ruling: heartbreak is public. X (direct) carries NO isLoverDeath;
+    // the cascade-victim Hunter DOES (private heartbreak art on their screen).
     const xDied = loverX.inbox.find(m => m.type === "you_died");
     expect(xDied).toBeDefined();
     expect(xDied.isLoverDeath).toBeUndefined();
     const hunterDied = hunter.inbox.find(m => m.type === "you_died");
     expect(hunterDied).toBeDefined();
-    expect(hunterDied.isLoverDeath).toBeUndefined();
+    expect(hunterDied.isLoverDeath).toBe(true);
 
     // ── NO revenge gate anywhere (direct-only rule): the cascade Hunter death
     // never triggers a reveal, a prompt, or a target list, on ANY inbox. ────
@@ -181,22 +179,21 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     expect(slogEvents(serverA!, "hunter_gate", game.code)).toEqual([]);
 
     // The dawn carries the standard night→day shape: round 1, no game_over (1
-    // mafia vs admin + 2 citizens = town majority still alive). The two night
-    // deaths (X + the heartbroken hunter) are announced as ONE cause-neutral
-    // combined line naming BOTH, and loverDeathName is NOT passed on the night
-    // dawn — so the client fires no separate heartbreak beat that would out the
-    // lover pair or which of them was the mafia's original target.
+    // mafia vs admin + 2 citizens = town majority still alive). Owner ruling:
+    // the DIRECT victim (X) is announced in a cause-neutral combined line, and
+    // the heartbroken Hunter gets a SEPARATE public "died of heartbreak" line;
+    // loverDeathName = the Hunter's name rides the dawn phase_change (public beat).
     expect(dayChange.round).toBe(1);
-    expect(dayChange.loverDeathName).toBeUndefined();
-    expect(
-      (dayChange.messages as string[]).some(
-        (m) => m.includes(loverX.username) && m.includes(hunter.username) && !/heartbreak/i.test(m),
-      ),
-    ).toBe(true);
+    expect(dayChange.loverDeathName).toBe(hunter.username);
+    const dmsgs = dayChange.messages as string[];
+    // Direct line names X, never the Hunter, never "heartbreak".
+    expect(dmsgs.some((m) => m.includes(loverX.username) && !m.includes(hunter.username) && !/heartbreak/i.test(m))).toBe(true);
+    // Separate heartbreak line names the Hunter + "heartbreak", never X.
+    expect(dmsgs.some((m) => m.includes(hunter.username) && !m.includes(loverX.username) && /heartbreak/i.test(m))).toBe(true);
     expect(admin.inbox.find(m => m.type === "game_over")).toBeUndefined();
 
-    // Order on the admin inbox: the two player_died (alphabetical batch order,
-    // finding 3) < day cue < phase_change(day). Exactly one night→day
+    // Order on the admin inbox: the two player_died (direct X, then its cascade
+    // partner the Hunter) < day cue < phase_change(day). Exactly one night→day
     // phase_change; no gate cues.
     const xIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === loverX.userId);
     const hIdx = indexOfMsg(admin.inbox, m => m.type === "player_died" && m.playerId === hunter.userId);
@@ -204,8 +201,7 @@ describe("E2 (WS): night heartbreak — mafia kills the hunter's lover, cascade 
     const dIdx = indexOfMsg(admin.inbox, m => m.type === "phase_change" && m.phase === "day");
     expect(xIdx).toBeGreaterThanOrEqual(0);
     expect(hIdx).toBeGreaterThanOrEqual(0);
-    if (hunterFirst) expect(hIdx).toBeLessThan(xIdx);
-    else expect(hIdx).toBeGreaterThan(xIdx);
+    expect(xIdx).toBeLessThan(hIdx); // direct victim before its cascade partner
     expect(cueIdx).toBeGreaterThan(Math.max(xIdx, hIdx));
     expect(dIdx).toBeGreaterThan(cueIdx);
     // Exactly one phase_change reached the day (the dawn), and no hunter cues.

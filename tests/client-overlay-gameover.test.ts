@@ -14,10 +14,11 @@
 // These are the golden #6 / #7 end-game shapes (see golden-sequences.test.ts):
 // a vote_result + player_died cascade + phase_change(game_over) + game_over,
 // with an overlay chain deliberately kept in flight so the hold path fires.
-// Nothing here uses the retired heartbreak/loverDeathName wire surface — a
-// night lover cascade is cause-neutral on the wire, so the "night heartbreak
-// beat" coverage is re-expressed as game_over queuing behind the DAWN
-// suspense/verdict transition (the closest live equivalent).
+// Owner ruling restored the PUBLIC heartbreak beat: a night lover cascade
+// ships loverDeathName on the dawn phase_change, so the dawn chain now includes
+// a "X died of heartbreak." beat, and heartbreakTransitionActive is one of the
+// gates a held game_over queues behind. The dedicated heartbreak-beat coverage
+// lives in the "dawn heartbreak beat" test below.
 //
 // The harness compresses app.js's multi-second setTimeouts via timeScale so
 // the whole chain plays out in a fraction of a second of wall clock.
@@ -186,6 +187,60 @@ describe("L5: game_over queues behind active overlay transitions", () => {
       "Mafia Wins!",
     ]);
     // The dawn verdict fully played before the game-over screen appeared.
+    for (const b of beats) expect(b.gameoverScreenActive).toBe(false);
+
+    expect($("screen-gameover").classList.contains("active")).toBe(true);
+    expect($("suspense-overlay").classList.contains("hidden")).toBe(true);
+    expect($("gameover-title").textContent).toBe("Mafia Wins!");
+  });
+
+  test("dawn heartbreak beat: game_over waits behind the restored 'X died of heartbreak' beat", async () => {
+    // Owner ruling: a night lover cascade ships loverDeathName on the dawn
+    // phase_change, so the dawn suspense adds a public heartbreak beat after the
+    // verdict. A game_over landing mid-dawn must queue behind that beat too
+    // (heartbreakTransitionActive is in the hold gate).
+    startGameAsCitizen();
+    serverSays({ type: "phase_change", phase: "night", round: 6, messages: [] });
+    serverSays({ type: "player_died", playerId: 3, playerName: "Alice", message: "Alice was killed in the night." });
+    // Bob is Alice's lover — cascades, and his you_died carries isLoverDeath.
+    serverSays({ type: "player_died", playerId: 2, playerName: "Bob", message: "Bob died of heartbreak." });
+
+    // night → day DAWN suspense, now carrying the public heartbreak name.
+    serverSays({
+      type: "phase_change",
+      phase: "day",
+      round: 6,
+      saved: false,
+      loverDeathName: "Bob",
+      events: [
+        { type: "death", round: 6, playerName: "Alice" },        // direct victim, neutral
+        { type: "lover_death", round: 6, playerName: "Bob" },    // public heartbreak
+      ],
+      messages: [],
+    });
+    expect($("suspense-text").textContent).toBe("The sun rises...");
+
+    // game_over lands mid-dawn — held behind the (longer, heartbreak-extended) chain.
+    serverSays({
+      type: "game_over",
+      winner: "mafia",
+      message: "The Mafia wins!",
+      players: REVEAL_PLAYERS,
+    });
+    expect($("suspense-text").textContent).toBe("The sun rises...");
+
+    // Dawn (~6.3s) + heartbreak extraDelay (~2.8s) + reveal (~4.8s) + stagger.
+    const beats = await recordBeats(ms(16000));
+
+    expect(beats.map((b) => b.text)).toEqual([
+      "The sun rises...",
+      "What happened last night?",
+      "Alice didn’t survive the night.",   // direct victim named, cause-neutral
+      "Bob died of heartbreak.",           // separate PUBLIC heartbreak beat
+      "The game is over...",
+      "Mafia Wins!",
+    ]);
+    // The whole dawn+heartbreak chain played before the game-over screen appeared.
     for (const b of beats) expect(b.gameoverScreenActive).toBe(false);
 
     expect($("screen-gameover").classList.contains("active")).toBe(true);

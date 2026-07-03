@@ -443,10 +443,11 @@ const scenarios: Scenario[] = [
   },
   {
     // (12) LOVERS night cascade: the mafia kills one lover; the partner dies of
-    // heartbreak the same night. The dawn must announce BOTH in ONE neutral
-    // line — no "heartbreak", no who-was-targeted order tell, and no separate
-    // night heartbreak beat (loverDeathName dropped from the dawn phase_change).
-    name: "12 — mafia kills a lover → ONE neutral dawn line names both, no heartbreak/target tell",
+    // heartbreak the same night. Owner ruling: the dawn announces the DIRECT
+    // victim in a cause-neutral line, then a SEPARATE public "X died of
+    // heartbreak" line for the partner, and the dawn phase_change carries
+    // loverDeathName (the public beat). The direct line never leaks the bond.
+    name: "12 — mafia kills a lover → neutral direct line + separate public heartbreak line",
     settings: { ...BASE_SETTINGS, enableLovers: true },
     lovers: [C0, C1],
     timeline: [
@@ -457,17 +458,26 @@ const scenarios: Scenario[] = [
     ],
     check: (clients) => {
       const admin = clients[M0];
+      const A = nameOf(clients[C0]); // direct (mafia) victim
+      const B = nameOf(clients[C1]); // heartbreak cascade partner
       const died = diedNames(admin);
-      expect(died).toContain(nameOf(clients[C0])); // targeted lover
-      expect(died).toContain(nameOf(clients[C1])); // heartbreak cascade
-      const lines = dawnMessages(admin).filter((m) => m.includes(nameOf(clients[C0])) || m.includes(nameOf(clients[C1])));
-      expect(lines.length).toBe(1);                 // ONE combined line
-      expect(lines[0]).toContain(nameOf(clients[C0]));
-      expect(lines[0]).toContain(nameOf(clients[C1]));
-      expect(lines[0].toLowerCase()).not.toContain("heartbreak");
-      expect(lines[0]).not.toMatch(NIGHT_CAUSE_WORDS);
-      // No separate night heartbreak beat: the dawn carries no loverDeathName.
-      expect(admin.lastOf("phase_change")!.loverDeathName).toBeUndefined();
+      expect(died).toContain(A);
+      expect(died).toContain(B);
+      const msgs = dawnMessages(admin);
+      // Combined direct line: names A only, never B, never the bond.
+      const directLine = msgs.find((m) => m.includes(A) && !m.includes(B));
+      expect(directLine).toBeDefined();
+      expect(directLine!.toLowerCase()).not.toContain("heartbreak");
+      expect(directLine).not.toMatch(NIGHT_CAUSE_WORDS);
+      // Separate public heartbreak line: names B, says "heartbreak", not A.
+      const heartbreakLine = msgs.find((m) => m.includes(B) && !m.includes(A));
+      expect(heartbreakLine).toBeDefined();
+      expect(heartbreakLine!.toLowerCase()).toContain("heartbreak");
+      // The dawn phase_change carries the public heartbreak name.
+      expect(admin.lastOf("phase_change")!.loverDeathName).toBe(B);
+      // player_died order: direct victim (A) first, then its cascade partner (B).
+      expect(died[0]).toBe(A);
+      expect(died[1]).toBe(B);
     },
   },
   {
