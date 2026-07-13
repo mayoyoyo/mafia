@@ -155,6 +155,23 @@ export interface MafiaVoteEntry {
   voteType: MafiaVoteType;
 }
 
+// ── Player-initiated accusations (day phase) ────────────────────────────────
+// A pending, un-seconded accusation. When a DIFFERENT living player (not the
+// accuser, not the accused) seconds it, the game transitions day→voting on the
+// target exactly as an admin call_vote does. `targetId === null` is a "propose
+// the town sleeps" no-lynch proposal (a null-target yes/no ballot). Accuser and
+// seconder identities are PUBLIC (canonical open accusations); the ballot stays
+// secret (M12). All accusation state is DAY-scoped: it clears at every night
+// entry (beginNight) — pending accusations PERSIST across a failed/cancelled
+// vote within the same day.
+export interface Accusation {
+  id: number;                 // unique within the day (nextAccusationId counter)
+  accuserId: number;
+  accuserName: string;
+  targetId: number | null;    // null = "propose the town sleeps"
+  targetName: string | null;  // null = sleep proposal
+}
+
 export interface Game {
   code: string;
   adminId: number;
@@ -178,6 +195,16 @@ export interface Game {
   // Day voting
   voteTarget: number | null; // who is being voted on
   votes: Map<number, boolean>; // playerId -> thumbsUp(true)/thumbsDown(false)
+  // Sleep ballot flag: true while the live ballot is a "town considers sleeping"
+  // yes/no vote (voteTarget is null in that case). Part of the ballot, so it is
+  // NIGHT-scoped (cleared with voteTarget/votes by resetNightActions).
+  sleepVote: boolean;
+  // Player-initiated accusations (DAY-scoped — cleared by beginNight, NOT by the
+  // per-vote resetNightActions, so pending accusations survive a failed vote).
+  accusations: Accusation[];   // pending, un-seconded accusations (+ sleep proposals)
+  accusationsMade: number[];   // player ids who used their ONE accusation today
+  secondsMade: number[];       // player ids who used their ONE second today
+  nextAccusationId: number;    // monotonic id source (per day)
   // Results
   nightKill: number | null; // who was killed at night (after doctor check)
   doctorSaved: boolean;
@@ -222,6 +249,12 @@ export type ClientMessage =
   | { type: "vigilante_shoot"; targetId: number | null }
   // C3a: admin only (rights retained dead or alive); resolves as decline
   | { type: "force_skip_revenge" }
+  // Player-initiated accusations (day phase, living players only). `accuse`
+  // with targetId null proposes the town sleeps (no-lynch). A pending
+  // accusation opens a vote only when a different living player seconds it.
+  | { type: "accuse"; targetId: number | null }
+  | { type: "second_accusation"; accusationId: number }
+  | { type: "withdraw_accusation"; accusationId: number }
   | { type: "call_vote"; targetId: number }
   | { type: "abstain_vote" }
   | { type: "cancel_vote" }
@@ -260,9 +293,13 @@ export type ServerMessage =
   // C3a: broadcast to the whole room when the gate opens — this IS the public reveal
   | { type: "hunter_revenge_pending"; hunterName: string }
   | { type: "joker_win_overlay"; jokerName: string }
-  | { type: "vote_called"; targetName: string; targetId: number }
+  | { type: "vote_called"; targetName: string; targetId: number; sleep?: boolean }
   | { type: "vote_update"; totalVotes: number; total: number }
-  | { type: "vote_result"; targetName: string; executed: boolean }
+  | { type: "vote_result"; targetName: string; executed: boolean; sleep?: boolean; sleepPassed?: boolean }
+  // Live accusation-state broadcast: the full pending list + per-day usage
+  // (accuser/seconder identities are PUBLIC), plus an optional narrator line to
+  // display (accusation made / seconded / withdrawn / sleep proposed).
+  | { type: "accusations_update"; accusations: Accusation[]; accusationsMade: number[]; secondsMade: number[]; message?: string }
   | { type: "player_died"; playerId: number; playerName: string; message: string }
   | { type: "you_died"; message: string; isLoverDeath?: boolean }
   | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
@@ -341,14 +378,22 @@ export type ServerMessage =
         jokerDeliberating?: boolean;
         jokerResolvedTarget?: string;
       } | null;
-      // Vote state (null if not in voting)
+      // Vote state (null if not in voting). `sleep` marks a "town considers
+      // sleeping" ballot — targetName is "" and targetId 0 in that case.
       voteState: {
         targetName: string;
         targetId: number;
         hasVoted: boolean;
         totalVotes: number;
         total: number;
+        sleep?: boolean;
       } | null;
+      // Player accusations (DAY-scoped). Each key is OMITTED when empty so a
+      // no-accusation sync stays byte-identical to the pre-accusation shape
+      // (the mafiaTeam/detectiveHistory optional-absence pattern).
+      accusations?: Accusation[];
+      accusationsMade?: number[];
+      secondsMade?: number[];
       // Game over (null if game not over)
       gameOver: {
         winner: "town" | "mafia" | "joker";

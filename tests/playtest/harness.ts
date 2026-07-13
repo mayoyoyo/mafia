@@ -249,6 +249,22 @@ export class PlaytestClient {
     this.send({ type: "end_day" });
   }
 
+  // ── Player-initiated accusations (day phase) ──────────────────────────────
+  /** Accuse a living player, or propose the town sleeps (targetId null). */
+  accuse(targetId: number | null): void {
+    this.send({ type: "accuse", targetId });
+  }
+
+  /** Second a pending accusation by its id (opens the day→voting ballot). */
+  secondAccusation(accusationId: number): void {
+    this.send({ type: "second_accusation", accusationId });
+  }
+
+  /** Withdraw one of your own un-seconded accusations. */
+  withdrawAccusation(accusationId: number): void {
+    this.send({ type: "withdraw_accusation", accusationId });
+  }
+
   /** Admin: force the night sub-phases to resolve to dawn. */
   forceDawn(): void {
     this.send({ type: "force_dawn" });

@@ -61,6 +61,7 @@ const NIGHT_KEYS = [
   "nightSubPhase",
   "voteTarget",
   "votes",
+  "sleepVote",
   "awaitingNarratorReady",
   // B4a (Hunter pre-plumbing): the revenge gate clears at every forced
   // transition (HUNTER-DESIGN §6 L2 row) — per-night scope covers all of
@@ -85,6 +86,13 @@ const GAME_KEYS = [
   "dayVoteCount",
   "narratorHistory",
   "detectiveHistory",
+  // Player-initiated accusations are DAY-scoped: cleared by beginNight, and in
+  // whole-game scope here (lobby resets). They intentionally survive the
+  // per-night resetNightActions so a failed vote leaves them standing.
+  "accusations",
+  "accusationsMade",
+  "secondsMade",
+  "nextAccusationId",
 ] as const;
 
 const PERSISTENT_KEYS = [
@@ -167,6 +175,7 @@ function dirtyNightFields(game: Game, skip: string[] = []): void {
     nightSubPhase: () => { /* transition-owned; never dirtied */ },
     voteTarget: () => { game.voteTarget = 998; },
     votes: () => game.votes.set(999, true),
+    sleepVote: () => { game.sleepVote = true; },
     awaitingNarratorReady: () => { game.awaitingNarratorReady = true; },
     pendingRevenge: () => { game.pendingRevenge = { hunterId: 998, resume: { autoNight: false } }; },
   };
@@ -223,7 +232,7 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     castVote(game, 5, false);
     castVote(game, 2, false);
 
-    dirtyNightFields(game, ["voteTarget", "votes", "jokerHauntVoters", "awaitingNarratorReady"]);
+    dirtyNightFields(game, ["voteTarget", "votes", "sleepVote", "jokerHauntVoters", "awaitingNarratorReady"]);
     game.awaitingNarratorReady = true;
 
     const result = resolveVote(game);
@@ -287,7 +296,7 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     castVote(game, 4, false);
     castVote(game, 5, false);
 
-    dirtyNightFields(game, ["voteTarget", "votes"]);
+    dirtyNightFields(game, ["voteTarget", "votes", "sleepVote"]);
 
     const result = resolveVote(game);
     expect(result!.executed).toBe(true);
@@ -308,7 +317,7 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     castVote(game, 4, false);
     castVote(game, 5, false);
 
-    dirtyNightFields(game, ["voteTarget", "votes"]);
+    dirtyNightFields(game, ["voteTarget", "votes", "sleepVote"]);
 
     const result = resolveVote(game);
     expect(result!.executed).toBe(false);
@@ -325,7 +334,7 @@ describe("P1 reset parity — per-night fields return to createGame values", () 
     expect(callVote(game, 1, 4)).toBe(true);
     castVote(game, 1, true);
     castVote(game, 2, false);
-    dirtyNightFields(game, ["voteTarget", "votes"]);
+    dirtyNightFields(game, ["voteTarget", "votes", "sleepVote"]);
 
     expect(cancelVote(game, 1)).toBe(true);
     expect(game.phase).toBe("day");

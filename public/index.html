@@ -298,6 +298,22 @@
         </div>
       </div>
 
+      <!-- Player Accusations (all LIVING players, day phase) -->
+      <div id="day-accuse-controls" class="day-accuse-controls hidden">
+        <div id="accusations-panel" class="accusations-panel"></div>
+        <div class="accuse-launch">
+          <button id="btn-accuse" class="btn btn-primary btn-small">Accuse someone</button>
+        </div>
+        <div id="accuse-picker" class="accuse-picker hidden">
+          <p class="accuse-picker-title">Point a finger &mdash; or move that the town sleeps:</p>
+          <ul id="accuse-target-list" class="target-list"></ul>
+          <div class="accuse-picker-buttons">
+            <button id="btn-accuse-cancel" class="btn btn-secondary btn-small">Cancel</button>
+            <button id="btn-accuse-confirm" class="btn btn-primary btn-small" disabled>Confirm</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Mafia Vote Status (for mafia members) -->
       <div id="mafia-vote-status" class="vote-status hidden">
         <h4>Mafia Votes</h4>
@@ -306,7 +322,7 @@
 
       <!-- Day Voting -->
       <div id="voting-panel" class="voting-panel hidden">
-        <h3>Vote: Execute <span id="vote-target-name"></span>?</h3>
+        <h3 id="voting-title">Vote: Execute <span id="vote-target-name"></span>?</h3>
         <div id="vote-buttons-wrapper" class="vote-buttons">
           <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes"></button>
           <button id="btn-vote-no" class="btn btn-vote btn-vote-no"></button>

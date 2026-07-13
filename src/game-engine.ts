@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, RosterSummary, RosterEntry, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, RosterSummary, RosterEntry, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions, Accusation } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
 // B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
@@ -67,6 +67,11 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     jokerJointWinner: false,
     voteTarget: null,
     votes: new Map(),
+    sleepVote: false,
+    accusations: [],
+    accusationsMade: [],
+    secondsMade: [],
+    nextAccusationId: 0,
     nightKill: null,
     doctorSaved: false,
     detectiveResult: null,
@@ -120,6 +125,8 @@ const NIGHT_RESETS = {
   nightSubPhase: (g: Game) => { g.nightSubPhase = null; },
   voteTarget: (g: Game) => { g.voteTarget = null; },
   votes: (g: Game) => { g.votes.clear(); },
+  // Ballot-scoped: the sleep flag lives and dies with voteTarget/votes.
+  sleepVote: (g: Game) => { g.sleepVote = false; },
   awaitingNarratorReady: (g: Game) => { g.awaitingNarratorReady = false; },
   // B4a/C2a: the revenge gate clears at every forced transition
   // (HUNTER-DESIGN §6 L2 row) — per-night scope reaches all of them
@@ -169,6 +176,15 @@ const GAME_RESETS = {
   dayVoteCount: (g: Game) => { g.dayVoteCount = 0; },
   narratorHistory: (g: Game) => { g.narratorHistory = []; },
   detectiveHistory: (g: Game) => { g.detectiveHistory = []; },
+  // Player-initiated accusations are DAY-scoped, NOT per-night: they must
+  // survive resetNightActions (a failed/cancelled vote returns to the same day
+  // with pending accusations still standing). beginNight clears them at every
+  // night entry via clearAccusations(); this whole-game scope covers the lobby
+  // resets and satisfies the exactly-one-scope classification guard.
+  accusations: (g: Game) => { g.accusations = []; },
+  accusationsMade: (g: Game) => { g.accusationsMade = []; },
+  secondsMade: (g: Game) => { g.secondsMade = []; },
+  nextAccusationId: (g: Game) => { g.nextAccusationId = 0; },
 } as const;
 
 const PERSISTENT_FIELDS = [
@@ -214,6 +230,19 @@ export function resetNightActions(game: Game, opts: ResetNightOptions = {}): voi
 }
 
 /**
+ * Clear every DAY-scoped accusation field. Called at every night entry
+ * (beginNight) — NOT from resetNightActions, so a failed/cancelled vote leaves
+ * pending accusations standing. The GAME_RESETS entries for these fields cover
+ * the lobby resets and the exactly-one-scope classification.
+ */
+export function clearAccusations(game: Game): void {
+  game.accusations = [];
+  game.accusationsMade = [];
+  game.secondsMade = [];
+  game.nextAccusationId = 0;
+}
+
+/**
  * Enter the night phase: transition log + phase/round/sub-phase bookkeeping +
  * per-night reset. Returns the narrator's night-falls line for the caller to
  * place in its message flow. Used by startGame, endDay, and both resolveVote
@@ -224,6 +253,9 @@ export function beginNight(game: Game, reason: string, opts: ResetNightOptions =
   game.phase = "night";
   game.round++;
   resetNightActions(game, opts);
+  // Rule 3: all accusation state clears at the day→night boundary. beginNight is
+  // the single night-entry funnel (startGame, endDay, execution auto-night).
+  clearAccusations(game);
   game.nightSubPhase = "mafia";
   return Narrator.nightFalls();
 }
@@ -354,6 +386,10 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
     if (game.phase === "voting") {
       skip.add("voteTarget");
       skip.add("votes");
+      // A "town considers sleeping" ballot legitimately holds sleepVote=true at
+      // "voting" (voteTarget is null there); it clears with the rest of the
+      // ballot on resolution. Only ever true during a sleep voting phase.
+      skip.add("sleepVote");
       skip.add("pendingRevenge"); // C2a: vote-path gate legitimately holds at "voting" (§4 check below)
       // C2b (E4 variant): an official-joker lynch whose lover cascade killed
       // the Hunter defers its haunt night behind the gate — the captured
@@ -1661,6 +1697,114 @@ export function callVote(game: Game, adminId: number, targetId: number): boolean
   return true;
 }
 
+// ── Player-initiated accusations (day phase) ────────────────────────────────
+//
+// accuse → (a different living player) second_accusation → the game transitions
+// day→voting on the target exactly as an admin call_vote does. A sleep proposal
+// (accuse with targetId null) opens a null-target yes/no ballot on resolution.
+// Limits (anti-spam): ONE accusation and ONE second per living player per day;
+// no accusations while a vote is in progress; pending accusations may stack and
+// persist across a failed vote; the voted-on accusation is consumed when the
+// vote opens. Small-endgame waiver: with ≤2 players alive no eligible seconder
+// can exist, so an accusation/sleep proposal opens the vote immediately.
+
+/** Open the day→voting ballot for a (real or sleep) accusation. */
+function startAccusationVote(game: Game, targetId: number | null): void {
+  game.voteTarget = targetId;              // null for a sleep proposal
+  game.votes.clear();
+  game.sleepVote = targetId === null;
+  logTransition(game, game.phase, "voting", targetId === null ? "sleep_second" : "accusation_second");
+  game.phase = "voting";
+}
+
+export interface AccuseResult {
+  ok: boolean;
+  error?: string;
+  accusation?: Accusation;
+  /** True when the ≤2-alive waiver opened the vote immediately (no second needed). */
+  voteStarted?: boolean;
+}
+
+/** targetId null = "propose the town sleeps". */
+export function accuse(game: Game, accuserId: number, targetId: number | null): AccuseResult {
+  if (game.phase !== "day") return { ok: false, error: "not_day" };
+  const accuser = game.players.get(accuserId);
+  if (!accuser || !accuser.isAlive) return { ok: false, error: "not_alive" };
+  if (game.accusationsMade.includes(accuserId)) return { ok: false, error: "already_accused" };
+
+  let target: Player | null = null;
+  if (targetId !== null) {
+    if (targetId === accuserId) return { ok: false, error: "self" };
+    target = game.players.get(targetId) ?? null;
+    if (!target || !target.isAlive) return { ok: false, error: "invalid_target" };
+  }
+
+  const accusation: Accusation = {
+    id: game.nextAccusationId++,
+    accuserId,
+    accuserName: accuser.username,
+    targetId,
+    targetName: target ? target.username : null,
+  };
+  game.accusationsMade.push(accuserId); // consumes the one-per-day accusation
+
+  // Small-endgame waiver: with ≤2 alive, accuser + accused are (at most) the
+  // only living players, so no eligible seconder can ever exist — open the vote
+  // immediately instead of leaving an unsecondable accusation pending.
+  if (getAlivePlayers(game).length <= 2) {
+    startAccusationVote(game, targetId);
+    return { ok: true, accusation, voteStarted: true };
+  }
+
+  game.accusations.push(accusation);
+  return { ok: true, accusation, voteStarted: false };
+}
+
+export interface SecondResult {
+  ok: boolean;
+  error?: string;
+  /** The consumed accusation (removed from pending; drives the narration + vote). */
+  accusation?: Accusation;
+}
+
+export function secondAccusation(game: Game, seconderId: number, accusationId: number): SecondResult {
+  if (game.phase !== "day") return { ok: false, error: "not_day" };
+  const seconder = game.players.get(seconderId);
+  if (!seconder || !seconder.isAlive) return { ok: false, error: "not_alive" };
+  const idx = game.accusations.findIndex((a) => a.id === accusationId);
+  if (idx === -1) return { ok: false, error: "no_such_accusation" };
+  const accusation = game.accusations[idx];
+  if (accusation.accuserId === seconderId) return { ok: false, error: "own_accusation" };
+  if (accusation.targetId === seconderId) return { ok: false, error: "accused_cannot_second" };
+  if (game.secondsMade.includes(seconderId)) return { ok: false, error: "already_seconded" };
+
+  // Consume the accusation, spend the one-per-day second, open the vote.
+  game.accusations.splice(idx, 1);
+  game.secondsMade.push(seconderId);
+  startAccusationVote(game, accusation.targetId);
+  return { ok: true, accusation };
+}
+
+export interface WithdrawResult {
+  ok: boolean;
+  accusation?: Accusation;
+}
+
+/**
+ * An accuser withdraws their own un-seconded accusation. Does NOT refund their
+ * one-per-day accusation (rule 4 — prevents accuse/withdraw cycling). A seconded
+ * accusation is no longer pending, so this rejects it (the vote already began).
+ */
+export function withdrawAccusation(game: Game, accuserId: number, accusationId: number): WithdrawResult {
+  if (game.phase !== "day") return { ok: false };
+  const idx = game.accusations.findIndex((a) => a.id === accusationId);
+  if (idx === -1) return { ok: false };
+  const accusation = game.accusations[idx];
+  if (accusation.accuserId !== accuserId) return { ok: false };
+  game.accusations.splice(idx, 1);
+  return { ok: true, accusation };
+}
+
 export function castVote(game: Game, voterId: number, approve: boolean): { allVoted: boolean } {
   if (game.phase !== "voting") return { allVoted: false };
   const voter = game.players.get(voterId);
@@ -1685,10 +1829,51 @@ export interface VoteResult {
   messages: string[];
   killed: Death[];
   jokerWin: boolean;
+  /** True when this ballot was a "town considers sleeping" no-lynch vote. */
+  sleep?: boolean;
+  /** For a sleep ballot: true when the town voted to sleep (day → night). */
+  sleepPassed?: boolean;
+}
+
+/**
+ * Resolve a "town considers sleeping" ballot (voteTarget null, sleepVote true).
+ * Majority YES ends the day with NO execution (like an admin end_day → night);
+ * otherwise the day continues and pending accusations stay standing.
+ */
+function resolveSleepVote(game: Game): VoteResult {
+  let votesFor = 0;   // FOR = sleep
+  let votesAgainst = 0;
+  for (const [voterId, approve] of game.votes) {
+    const voter = game.players.get(voterId)!;
+    if (!voter.isAlive) continue;
+    if (approve) votesFor++;
+    else votesAgainst++;
+  }
+  const total = votesFor + votesAgainst;
+  const passed = votesFor > total / 2; // strictly >50%, mirrors execution
+  const result: VoteResult = {
+    executed: false, targetName: "", votesFor, votesAgainst,
+    messages: [], killed: [], jokerWin: false, sleep: true, sleepPassed: passed,
+  };
+  if (passed) {
+    result.messages.push(Narrator.sleepPassed());
+    // No execution — end the day, night falls (beginNight clears the ballot,
+    // sleepVote and all accusation state).
+    result.messages.push(beginNight(game, "sleep_vote"));
+  } else {
+    result.messages.push(Narrator.sleepFailed());
+    // Back to day; pending accusations (DAY-scoped) survive resetNightActions.
+    resetNightActions(game);
+    logTransition(game, game.phase, "day", "sleep_failed");
+    game.phase = "day";
+  }
+  return result;
 }
 
 export function resolveVote(game: Game): VoteResult | null {
-  if (game.phase !== "voting" || game.voteTarget === null) return null;
+  if (game.phase !== "voting") return null;
+  if (game.sleepVote) return resolveSleepVote(game);
+  if (game.voteTarget === null) return null;
 
   const target = game.players.get(game.voteTarget)!;
   let votesFor = 0;

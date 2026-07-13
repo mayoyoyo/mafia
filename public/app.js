@@ -45,6 +45,13 @@
   let godfatherName = null;
   let currentRoster = null; // public lineup summary for the "Roles in Play" modal
   let dayVoteCount = 0;
+  // Player-initiated accusations (day phase). pendingAccusations mirrors the
+  // server's un-seconded list; accusationsMade/secondsMade are the per-day usage
+  // sets (public info) used for button eligibility + rejoin.
+  let pendingAccusations = [];
+  let accusationsMade = [];
+  let secondsMade = [];
+  let accuseSelectedTarget = null; // "sleep" | player id | null while picking
   let suspenseActive = false;
   let suspenseQueue = [];
   let nightTransitionActive = false;
@@ -388,6 +395,9 @@
         // Fresh game start — reset all state
         hasVoted = false;
         dayVoteCount = 0;
+        pendingAccusations = [];
+        accusationsMade = [];
+        secondsMade = [];
         narratorTranscript = [];
         detectiveHistory = [];
         nightActionLocked = false;
@@ -581,6 +591,10 @@
         handleVoteResult(msg);
         break;
 
+      case "accusations_update":
+        handleAccusationsUpdate(msg);
+        break;
+
       case "player_died":
         // No public per-death narration: the whole night batch is announced
         // as ONE cause-neutral line via phase_change.messages (and the dawn
@@ -676,6 +690,9 @@
       preloadNarrationAudio();
     }
     dayVoteCount = msg.dayVoteCount;
+    pendingAccusations = msg.accusations || [];
+    accusationsMade = msg.accusationsMade || [];
+    secondsMade = msg.secondsMade || [];
     narratorTranscript = msg.narratorHistory;
     detectiveHistory = msg.detectiveHistory || [];
     hasVoted = false;
@@ -743,6 +760,7 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("admin-night-controls").classList.add("hidden");
+    $("day-accuse-controls").classList.add("hidden");
     $("awaiting-ready").classList.add("hidden");
     $("btn-begin-night").classList.add("hidden");
 
@@ -773,6 +791,7 @@
         showAdminDayControls();
         setTimeout(() => populateAdminTargets(knownPlayers), 100);
       }
+      renderAccusePanel();
     }
 
     if (msg.phase === "night" || msg.phase === "game_over") {
@@ -878,6 +897,7 @@
       handleVoteCalled({
         targetName: vs.targetName,
         targetId: vs.targetId,
+        sleep: vs.sleep,
       }, vs.hasVoted);
       updateVoteProgress({
         totalVotes: vs.totalVotes,
@@ -1735,6 +1755,7 @@
     $("voting-panel").classList.add("hidden");
     $("admin-day-controls").classList.add("hidden");
     $("admin-night-controls").classList.add("hidden");
+    $("day-accuse-controls").classList.add("hidden");
     $("awaiting-ready").classList.add("hidden");
     $("btn-begin-night").classList.add("hidden");
 
@@ -1744,6 +1765,9 @@
         showAdminDayControls();
         setTimeout(() => populateAdminTargets(knownPlayers), 100);
       }
+      // Living players get the accusation UI (pendingAccusations persists in
+      // client memory across a failed vote — the server clears it at night).
+      renderAccusePanel();
     }
 
     if (msg.phase === "night" || msg.phase === "game_over") {
@@ -1753,6 +1777,11 @@
     if (msg.phase === "night") {
       hasVoted = false;
       dayVoteCount = 0;
+      // Accusation state is day-scoped and cleared server-side at night entry.
+      pendingAccusations = [];
+      accusationsMade = [];
+      secondsMade = [];
+      $("accusations-panel").innerHTML = "";
       nightActionLocked = false;
       deadActionActive = false;
       clearDetectiveResult();
@@ -2964,6 +2993,112 @@
     });
   }
 
+  // ============================================================
+  // PLAYER ACCUSATIONS (day phase)
+  // ============================================================
+  function handleAccusationsUpdate(msg) {
+    pendingAccusations = msg.accusations || [];
+    accusationsMade = msg.accusationsMade || [];
+    secondsMade = msg.secondsMade || [];
+    if (msg.message) showNarratorMessage(msg.message);
+    renderAccusePanel();
+  }
+
+  function iAccusedToday() { return accusationsMade.indexOf(userId) !== -1; }
+  function iSecondedToday() { return secondsMade.indexOf(userId) !== -1; }
+
+  // The accuse UI shows only for LIVING players during the day. Voting, night
+  // and game_over hide it (their phase handlers hide day-accuse-controls).
+  function renderAccusePanel() {
+    const wrap = $("day-accuse-controls");
+    if (currentPhase !== "day" || isDead) {
+      wrap.classList.add("hidden");
+      $("accuse-picker").classList.add("hidden");
+      return;
+    }
+    wrap.classList.remove("hidden");
+
+    const btn = $("btn-accuse");
+    if (iAccusedToday()) {
+      btn.disabled = true;
+      btn.textContent = "You've made your accusation";
+    } else {
+      btn.disabled = false;
+      btn.textContent = "Accuse someone";
+    }
+
+    renderAccusationsList();
+  }
+
+  function accusationLabel(a) {
+    return a.targetId === null
+      ? escapeHtml(a.accuserName) + " moves that the town sleeps"
+      : escapeHtml(a.accuserName) + " accuses " + escapeHtml(a.targetName);
+  }
+
+  function renderAccusationsList() {
+    const panel = $("accusations-panel");
+    if (!pendingAccusations.length) { panel.innerHTML = ""; return; }
+    panel.innerHTML = pendingAccusations.map((a) => {
+      const mine = a.accuserId === userId;
+      // Eligible to second: living, not the accuser, not the accused, and
+      // haven't already spent this day's second.
+      const canSecond = !isDead
+        && a.accuserId !== userId
+        && a.targetId !== userId
+        && !iSecondedToday();
+      const secondBtn = canSecond
+        ? '<button class="btn btn-small acc-second" data-id="' + a.id + '">Second</button>'
+        : "";
+      const withdrawBtn = mine
+        ? '<button class="btn btn-small btn-secondary acc-withdraw" data-id="' + a.id + '">Withdraw</button>'
+        : "";
+      return '<div class="accusation-row" data-id="' + a.id + '">'
+        + '<span class="accusation-text">' + accusationLabel(a) + '</span>'
+        + '<span class="accusation-actions">' + secondBtn + withdrawBtn + '</span>'
+        + '</div>';
+    }).join("");
+    panel.querySelectorAll(".acc-second").forEach((b) => {
+      b.addEventListener("click", () => wsSend({ type: "second_accusation", accusationId: parseInt(b.dataset.id) }));
+    });
+    panel.querySelectorAll(".acc-withdraw").forEach((b) => {
+      b.addEventListener("click", () => wsSend({ type: "withdraw_accusation", accusationId: parseInt(b.dataset.id) }));
+    });
+  }
+
+  function populateAccuseTargets() {
+    const list = $("accuse-target-list");
+    const rows = knownPlayers
+      .filter((p) => p.isAlive && p.id !== userId)
+      .map((p) => '<li data-id="' + p.id + '">' + escapeHtml(p.username) + '</li>')
+      .join("");
+    list.innerHTML = rows + '<li data-id="sleep" class="accuse-sleep-row">Propose the town sleeps on it</li>';
+    accuseSelectedTarget = null;
+    $("btn-accuse-confirm").disabled = true;
+    list.querySelectorAll("li").forEach((li) => {
+      li.addEventListener("click", () => {
+        list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
+        li.classList.add("selected");
+        accuseSelectedTarget = li.dataset.id;
+        $("btn-accuse-confirm").disabled = false;
+      });
+    });
+  }
+
+  $("btn-accuse").addEventListener("click", () => {
+    populateAccuseTargets();
+    $("accuse-picker").classList.remove("hidden");
+  });
+  $("btn-accuse-cancel").addEventListener("click", () => {
+    $("accuse-picker").classList.add("hidden");
+  });
+  $("btn-accuse-confirm").addEventListener("click", () => {
+    if (accuseSelectedTarget === null) return;
+    const targetId = accuseSelectedTarget === "sleep" ? null : parseInt(accuseSelectedTarget);
+    wsSend({ type: "accuse", targetId });
+    $("accuse-picker").classList.add("hidden");
+  });
+
   $("btn-force-dawn").addEventListener("click", () => {
     showConfirmSheet(
       "Force Dawn",
@@ -3005,8 +3140,15 @@
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
     $("admin-day-controls").classList.add("hidden");
-    $("vote-target-name").textContent = msg.targetName;
-    $("vote-progress").textContent = "Waiting for votes...";
+    // Accusations hide while the ballot is live (rule 9).
+    $("day-accuse-controls").classList.add("hidden");
+    // Sleep ("town considers sleeping") ballot vs an ordinary execution vote.
+    if (msg.sleep) {
+      $("voting-title").textContent = "The town considers sleeping. Turn in for the night?";
+    } else {
+      $("voting-title").innerHTML = 'Vote: Execute <span id="vote-target-name"></span>?';
+      $("vote-target-name").textContent = msg.targetName;
+    }
 
     // Hide vote buttons if dead or already voted (rejoin), show otherwise
     if (isDead || hasVoted) {
@@ -3065,6 +3207,14 @@
       // Re-sync the pinned base + chrome for the restored phase ambience.
       applyEffectiveTheme();
     }
+    // Sleep ballot: no execution/heartbreak overlay. A passed sleep vote is
+    // followed by a plain day→night phase_change (handled without lastVoteResult
+    // so no execution transition plays); the narrator carries the outcome.
+    if (msg.sleep) {
+      lastVoteResult = null;
+      return;
+    }
+
     lastVoteResult = msg;
 
     const resultText = msg.executed
@@ -4166,7 +4316,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.34_202607131127";
+  const APP_VERSION_STAGING = "staging.35_202607131225";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

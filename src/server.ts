@@ -7,6 +7,7 @@ import {
   getAlivePlayers, getAliveByRole, getMafiaVoteStatus, restartGame, returnToLobby, getAllGames,
   submitJokerHaunt, getJokerHauntTargets, assertInvariants, assertPhaseEdge,
   toTargetInfo, projectGameOver, projectEventsForClients, submitHunterRevenge, submitVigilanteShoot,
+  accuse, secondAccusation, withdrawAccusation,
 } from "./game-engine";
 import { Narrator } from "./narrator";
 import { slog } from "./debug";
@@ -92,6 +93,40 @@ function broadcastLobbyUpdate(game: Game): void {
 
 function recordNarrator(game: Game, messages: string[]): void {
   for (const m of messages) game.narratorHistory.push(m);
+}
+
+// ── Player-initiated accusations: broadcast helpers ─────────────────────────
+
+/** The live accusation-state frame (public accuser/seconder identities). */
+function accusationsPayload(game: Game, message?: string): ServerMessage {
+  return {
+    type: "accusations_update",
+    accusations: game.accusations.map((a) => ({ ...a })),
+    accusationsMade: [...game.accusationsMade],
+    secondsMade: [...game.secondsMade],
+    ...(message ? { message } : {}),
+  };
+}
+
+/** Record `message` to the narrator history and push the updated accusation frame. */
+function broadcastAccusations(game: Game, message?: string): void {
+  if (message) recordNarrator(game, [message]);
+  broadcastToGame(game.code, accusationsPayload(game, message));
+}
+
+/**
+ * Announce that a day→voting ballot has opened (accusation seconded or the
+ * ≤2-alive waiver). Mirrors the admin call_vote broadcast (dayVoteCount++ +
+ * vote_called), adding the sleep flag for a "town considers sleeping" ballot.
+ */
+function broadcastVoteStarted(game: Game): void {
+  game.dayVoteCount++;
+  if (game.sleepVote) {
+    broadcastToGame(game.code, { type: "vote_called", targetName: "", targetId: 0, sleep: true });
+  } else {
+    const t = game.players.get(game.voteTarget!)!;
+    broadcastToGame(game.code, { type: "vote_called", targetName: t.username, targetId: game.voteTarget! });
+  }
 }
 
 // Night timer management for sequential sub-phases.
@@ -820,7 +855,16 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
 
   // Vote state (only if voting)
   let voteState: Extract<ServerMessage, { type: "game_sync" }>["voteState"] = null;
-  if (game.phase === "voting" && game.voteTarget !== null) {
+  if (game.phase === "voting" && game.sleepVote) {
+    // Sleep ("town considers sleeping") ballot — null target.
+    voteState = {
+      targetName: "", targetId: 0,
+      hasVoted: game.votes.has(userId),
+      totalVotes: game.votes.size,
+      total: getAlivePlayers(game).length,
+      sleep: true,
+    };
+  } else if (game.phase === "voting" && game.voteTarget !== null) {
     const target = game.players.get(game.voteTarget)!;
     voteState = {
       targetName: target.username,
@@ -891,6 +935,11 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     nightAction,
     voteState,
     gameOver,
+    // Player accusations (DAY-scoped, PUBLIC). Each key omitted when empty so a
+    // no-accusation sync stays byte-identical to the pre-accusation shape.
+    ...(game.accusations.length ? { accusations: game.accusations.map((a) => ({ ...a })) } : {}),
+    ...(game.accusationsMade.length ? { accusationsMade: [...game.accusationsMade] } : {}),
+    ...(game.secondsMade.length ? { secondsMade: [...game.secondsMade] } : {}),
     // C4 (HUNTER-DESIGN §3.4, the H4 lesson): the open revenge gate is
     // PUBLIC pending state — projected for EVERY rejoiner. Driven off
     // game.pendingRevenge alone (while gated, phase holds at "night" with
@@ -945,6 +994,11 @@ const REVENGE_GATE_REJECTED: Record<ClientMessage["type"], boolean> = {
   abstain_vote: true,
   cancel_vote: true,
   end_day: true,
+  // Player accusations are day-only actions; reject them while a revenge gate
+  // holds the game (they are double-guarded by their own day-phase checks).
+  accuse: true,
+  second_accusation: true,
+  withdraw_accusation: true,
   mafia_vote: true,
   mafia_remove_vote: true,
   confirm_mafia_kill: true,
@@ -1497,6 +1551,54 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       break;
     }
 
+    case "accuse": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) return;
+      const r = accuse(game, client.userId, msg.targetId ?? null);
+      if (!r.ok) return; // silent reject (established guard style)
+      const acc = r.accusation!;
+      const line = acc.targetId === null
+        ? Narrator.sleepProposed(acc.accuserName)
+        : Narrator.accusationMade(acc.accuserName, acc.targetName!);
+      broadcastAccusations(game, line);
+      // ≤2-alive waiver: the ballot opened immediately (no second possible).
+      if (r.voteStarted) broadcastVoteStarted(game);
+      break;
+    }
+
+    case "second_accusation": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) return;
+      const r = secondAccusation(game, client.userId, msg.accusationId);
+      if (!r.ok) return;
+      const seconder = game.players.get(client.userId)!;
+      const acc = r.accusation!;
+      const line = acc.targetId === null
+        ? Narrator.sleepSeconded(seconder.username)
+        : Narrator.accusationSeconded(seconder.username);
+      // Push the updated (now-consumed) accusation list + the "seconded" line,
+      // then open the ballot exactly as an admin call_vote would.
+      broadcastAccusations(game, line);
+      broadcastVoteStarted(game);
+      break;
+    }
+
+    case "withdraw_accusation": {
+      if (!client.gameCode || !client.userId) return;
+      const game = getGame(client.gameCode);
+      if (!game) return;
+      const r = withdrawAccusation(game, client.userId, msg.accusationId);
+      if (!r.ok) return;
+      const acc = r.accusation!;
+      const line = acc.targetId === null
+        ? Narrator.sleepWithdrawn(acc.accuserName)
+        : Narrator.accusationWithdrawn(acc.accuserName, acc.targetName!);
+      broadcastAccusations(game, line);
+      break;
+    }
+
     case "call_vote": {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
@@ -1566,6 +1668,28 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         const from = game.phase;
         const voteResult = resolveVote(game);
         if (voteResult) {
+          // Sleep ("town considers sleeping") ballot: no execution, no deaths.
+          // Majority YES ends the day (night); otherwise the day continues with
+          // pending accusations still standing.
+          if (voteResult.sleep) {
+            recordNarrator(game, voteResult.messages);
+            broadcastToGame(game.code, {
+              type: "vote_result", targetName: "", executed: false,
+              sleep: true, sleepPassed: !!voteResult.sleepPassed,
+            });
+            if (voteResult.sleepPassed) {
+              game.dayStartedAt = null;
+              game.dayVoteCount = 0;
+              broadcastPhaseChange(game, { from, messages: voteResult.messages });
+              startNightSequence(game);
+            } else {
+              game.dayStartedAt = Date.now();
+              broadcastPhaseChange(game, { from, messages: voteResult.messages, events: true });
+              broadcastToGame(game.code, accusationsPayload(game));
+            }
+            break;
+          }
+
           recordNarrator(game, voteResult.messages);
 
           // M12: never broadcast exact tallies — in small games they de-anonymize voters

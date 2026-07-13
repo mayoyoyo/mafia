@@ -123,6 +123,59 @@ const NIGHT_FALLS_MESSAGES = [
   "The last light goes out of the sky. Another night begins, and the wrong people are awake for it.",
 ];
 
+// ── Player-initiated accusations (text-only narrator log; no recorded audio) ──
+// Noir register, matching the rest of the narrator. Names are PUBLIC (open
+// accusations), so these lines name the accuser, the accused, and the seconder.
+const ACCUSATION_MADE_MESSAGES = [
+  "{accuser} points a finger across the room. {target} stands accused. Who will second it?",
+  "{accuser} names {target} for it, plain and loud. The charge needs a second before the town will hear it.",
+  "“{target},” says {accuser}, and lets the name hang there. Someone has to second the accusation.",
+  "{accuser} accuses {target}. The room waits to see who else will stand up.",
+];
+
+const SLEEP_PROPOSED_MESSAGES = [
+  "{accuser} says the town has heard enough for one day and moves that everyone sleep on it. It needs a second.",
+  "{accuser} proposes the town sleeps tonight and lets no one hang. Who will second it?",
+  "“No rope today,” says {accuser}. They move that the town sleep on it. The motion needs a second.",
+  "{accuser} would rather the town sleep than get it wrong. Someone must second the motion.",
+];
+
+const ACCUSATION_SECONDED_MESSAGES = [
+  "{seconder} seconds it. The town will vote.",
+  "{seconder} stands up alongside the charge. That settles it — the town votes now.",
+  "“Seconded,” says {seconder}. The matter goes to the room.",
+  "{seconder} backs the accusation. Hands will be counted.",
+];
+
+const SLEEP_SECONDED_MESSAGES = [
+  "{seconder} seconds the motion. The town votes on whether to sleep.",
+  "{seconder} agrees — better to sleep than to be wrong. The town decides.",
+  "“Seconded,” says {seconder}. The room votes on turning in for the night.",
+];
+
+const ACCUSATION_WITHDRAWN_MESSAGES = [
+  "{accuser} thinks better of it and takes the accusation against {target} back.",
+  "{accuser} lets it drop. The charge against {target} is withdrawn — for now.",
+  "{accuser} waves it off. Nothing said against {target}, they decide. Not yet.",
+];
+
+const SLEEP_WITHDRAWN_MESSAGES = [
+  "{accuser} withdraws the motion to sleep. The day goes on.",
+  "{accuser} takes it back — no vote on sleeping after all. The day is still young enough for a rope.",
+];
+
+const SLEEP_PASSED_MESSAGES = [
+  "The town votes to sleep on it. No one hangs today; the lamps go out on a full room.",
+  "The room decides against the rope. Everyone goes home whole, and the night comes anyway.",
+  "The vote holds: the town will sleep, and let tomorrow sort the guilty from the rest.",
+];
+
+const SLEEP_FAILED_MESSAGES = [
+  "The motion to sleep fails. The town isn't done yet, and the day grinds on.",
+  "Not enough hands to call it a day. The room stays awake, and the arguments start again.",
+  "The town won't turn in. The day continues, and someone's name will come up again soon enough.",
+];
+
 const DAY_BREAKS_MESSAGES = [
   "Grey light comes up over the rooftops. A new day, and the first question is who's still here to see it.",
   "Morning. The fog thins, the lamps go out one by one, and the town counts its people.",
@@ -248,5 +301,30 @@ export const Narrator = {
   },
   dayBreaks(): string {
     return pick(DAY_BREAKS_MESSAGES);
+  },
+  // ── Player-initiated accusations (text-only) ──
+  accusationMade(accuser: string, target: string): string {
+    return fill(pick(ACCUSATION_MADE_MESSAGES), { accuser, target });
+  },
+  sleepProposed(accuser: string): string {
+    return fill(pick(SLEEP_PROPOSED_MESSAGES), { accuser });
+  },
+  accusationSeconded(seconder: string): string {
+    return fill(pick(ACCUSATION_SECONDED_MESSAGES), { seconder });
+  },
+  sleepSeconded(seconder: string): string {
+    return fill(pick(SLEEP_SECONDED_MESSAGES), { seconder });
+  },
+  accusationWithdrawn(accuser: string, target: string): string {
+    return fill(pick(ACCUSATION_WITHDRAWN_MESSAGES), { accuser, target });
+  },
+  sleepWithdrawn(accuser: string): string {
+    return fill(pick(SLEEP_WITHDRAWN_MESSAGES), { accuser });
+  },
+  sleepPassed(): string {
+    return pick(SLEEP_PASSED_MESSAGES);
+  },
+  sleepFailed(): string {
+    return pick(SLEEP_FAILED_MESSAGES);
   },
 };
