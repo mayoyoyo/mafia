@@ -38,6 +38,8 @@ interface GridScenario {
   roles: Role[];
   /** Join-order index of the mafioso to flag as Godfather (reads innocent). */
   godfather?: number;
+  /** Fixed lover pair (join-order indices) — pinned via MAFIA_FIXED_DEAL lovers:[i,j]. */
+  lovers?: [number, number];
   /** Optional-role enable flags to switch ON via the lobby toggles, + mafiaCount. */
   settings: { mafiaCount?: number; toggles: string[] };
   /** Short label per seat for screenshot filenames (e.g. "0-mafia"). */
@@ -147,6 +149,80 @@ const SCENARIOS: Record<string, GridScenario> = {
       const living = [0, 1, 4, 5, 6, 7];
       await g.expectDawnVerdict(living, /Several didn/); // "Several didn't survive the night."
       for (const s of living) await g.shot(s, "dawn");
+    },
+  },
+
+  // ── 3. lovers-heartbreak-8 ────────────────────────────────────────────────
+  // 8 seats. Single mafia + doctor + detective + 5 citizens, with a LOVER pair
+  // pinned on seats 3 & 4 (two citizens). One night: mafia kills lover A (3),
+  // doctor saves an irrelevant citizen (5), detective investigates the mafia.
+  // Dawn: seat 3 dies AND seat 4 CASCADES → the restored PUBLIC heartbreak
+  // reveal fires — a dedicated purple "beat-heartbreak" beat naming seat 4
+  // ("<name> died of heartbreak."), AFTER a cause-neutral verdict for seat 3.
+  // Then day; the run lynches the mafia to a town-win game_over reveal.
+  "lovers-heartbreak-8": {
+    roles: ["mafia", "doctor", "detective", "citizen", "citizen", "citizen", "citizen", "citizen"],
+    lovers: [3, 4],
+    settings: { mafiaCount: 1, toggles: ["doctor", "detective", "lovers"] },
+    seatLabels: ["0-mafia", "1-doctor", "2-detective", "3-loverA", "4-loverB", "5-citizen", "6-citizen", "7-citizen"],
+    async run(g) {
+      const MAFIA = 0, DOCTOR = 1, DETECTIVE = 2;
+      const LOVER_A = 3;  // mafia victim (dies directly, cause-neutral)
+      const LOVER_B = 4;  // cascades → public heartbreak beat
+      const SAVED = 5;    // doctor saves an irrelevant citizen (no effect)
+      const ALL = [0, 1, 2, 3, 4, 5, 6, 7];
+      const living = [0, 1, 2, 5, 6, 7]; // after the night: seats 3 & 4 are dead
+
+      // ── MAFIA sub-phase (single) ─────────────────────────────────────
+      await g.expectActorPanel([MAFIA], "mafia");
+      await g.shot(MAFIA, "own-open"); await g.shot(MAFIA, "night-start");
+      await g.shotNonActors([MAFIA], "night-start");
+      await g.mafiaKill([MAFIA], LOVER_A);
+
+      // ── DOCTOR sub-phase ─────────────────────────────────────────────
+      await g.waitPanel(DOCTOR);
+      await g.expectHidden([MAFIA], "mafia panel torn down after its close cue");
+      await g.expectActorPanel([DOCTOR], "doctor");
+      await g.shot(DOCTOR, "own-open");
+      await g.chooseAndConfirm(DOCTOR, SAVED);
+
+      // ── DETECTIVE sub-phase ──────────────────────────────────────────
+      await g.waitPanel(DETECTIVE);
+      await g.expectHidden([DOCTOR], "doctor panel hidden once detective phase begins");
+      await g.expectActorPanel([DETECTIVE], "detective");
+      await g.shot(DETECTIVE, "own-open");
+      await g.chooseAndConfirm(DETECTIVE, MAFIA); // reads MAFIA (plain mafioso) — verdict at dawn
+
+      // ── DAWN — capture the transient verdict + heartbreak beats on EVERY
+      //    seat concurrently (launched before dawn opens so no window is missed).
+      const beats = await Promise.all(ALL.map((s) => g.captureDawnBeats(s)));
+      const loverName = g.usernames[LOVER_B];
+      const victimName = g.usernames[LOVER_A];
+      const CAUSE = /\bmafia\b|\bvigilante\b|\bshot\b|\bgun\b|hanged|executed/i;
+      for (const s of ALL) {
+        const { verdict, heartbreak } = beats[s];
+        // (2) heartbreak beat: purple "beat-heartbreak" beat naming seat 4.
+        const hbOk = heartbreak.includes(loverName) && /died of heartbreak/i.test(heartbreak);
+        g.record(s, `heartbreak beat: "<${g.labels[LOVER_B]}> died of heartbreak."`, hbOk, heartbreak.replace(/\s+/g, " ").slice(0, 60) || "not seen");
+        // (3) verdict beat is cause-blind for the mafia victim (seat 3).
+        const namesVictim = verdict.includes(victimName);
+        const vOk = !!verdict && !CAUSE.test(verdict);
+        g.record(s, `verdict beat cause-blind for ${g.labels[LOVER_A]}`, vOk, `${namesVictim ? "names-victim " : ""}${verdict.replace(/\s+/g, " ").slice(0, 70) || "no verdict"}`);
+      }
+
+      // ── DAY — overlay tears down; assert roster + event log + screenshots.
+      await Promise.all(ALL.map((s) => g.waitDay(s)));
+      for (const s of ALL) await g.shot(s, "day");
+      // (1) both lovers dead in the roster (on living seats + admin).
+      for (const s of living) await g.assertDeadInRoster(s, [LOVER_A, LOVER_B]);
+      // (5) event log: victim neutral, partner "Died of heartbreak".
+      for (const s of living) await g.assertEventLog(s, LOVER_A, LOVER_B);
+      // (4) the dead lover's OWN death poster (heartbreak art).
+      await g.assertDeadOverlay(LOVER_B);
+      await g.shot(LOVER_A, "death-overlay"); // the direct victim's own poster too
+
+      // (6) push to a town-win game_over by lynching the mafia at the day vote.
+      await g.lynchMafiaToGameOver(MAFIA, living);
     },
   },
 };
@@ -283,6 +359,99 @@ class GridRun {
     this.record(seat, `detective verdict on ${this.labels[targetSeat]} (Godfather) reads INNOCENT`, ok, txt.trim().slice(0, 80) || "no verdict text");
   }
 
+  // ── Lover-cascade dawn beats (restored public heartbreak reveal) ──────────
+  // The dawn overlay chains DAWN → THE VERDICT → HEARTBREAK. Both middle beats
+  // are transient (~2.2 s / ~2.6 s windows). Launch this per seat RIGHT AFTER
+  // the last night action (before dawn even opens) and it will catch each beat
+  // as its pre-label / tint flips. Screenshots are taken while the beat is up.
+  async captureDawnBeats(seat: number): Promise<{ verdict: string; heartbreak: string }> {
+    const page = this.pages[seat];
+    const txt = page.locator("#suspense-text");
+    let verdict = "", heartbreak = "";
+    // 1) THE VERDICT beat — #suspense-pre flips to "THE VERDICT" (~3.5 s in).
+    try {
+      await page.waitForFunction(
+        () => document.getElementById("suspense-pre")?.textContent?.trim() === "THE VERDICT",
+        null, { timeout: 20000, polling: 80 },
+      );
+      await this.shot(seat, "dawn-verdict");
+      verdict = ((await txt.textContent().catch(() => "")) || "").trim();
+    } catch { /* missed window — recorded as empty */ }
+    // 2) HEARTBREAK beat — #suspense-overlay gains .beat-heartbreak (~5.7 s in).
+    try {
+      await page.locator("#suspense-overlay.beat-heartbreak").waitFor({ state: "visible", timeout: 20000 });
+      await this.shot(seat, "heartbreak");
+      heartbreak = ((await txt.textContent().catch(() => "")) || "").trim();
+    } catch { /* missed window */ }
+    return { verdict, heartbreak };
+  }
+
+  // Wait for the dawn overlay to tear down (phase applied → day rendered).
+  async waitDay(seat: number, timeout = 15000) {
+    try { await this.pages[seat].locator("#suspense-overlay").waitFor({ state: "hidden", timeout }); } catch {}
+  }
+
+  // Roster (Players tab, #player-status-list) marks the given seats DEAD.
+  async assertDeadInRoster(seat: number, deadSeats: number[]) {
+    const page = this.pages[seat];
+    for (const d of deadSeats) {
+      const name = this.usernames[d];
+      let ok = false;
+      try { ok = (await page.locator("#player-status-list .player-status-name.dead", { hasText: name }).count()) > 0; } catch {}
+      this.record(seat, `roster: ${this.labels[d]} marked DEAD at day`, ok, ok ? "" : "not flagged dead");
+    }
+  }
+
+  // In-game event log: the direct victim stays cause-neutral ("Died in the
+  // night"), the heartbroken partner is named ("Died of heartbreak").
+  async assertEventLog(seat: number, victimSeat: number, loverSeat: number) {
+    const page = this.pages[seat];
+    const all = (await page.locator("#event-history-list .event-item").allTextContents().catch(() => [])) || [];
+    const CAUSE = /\bmafia\b|\bvigilante\b|\bshot\b|\bgun\b|hanged|executed/i;
+    const vLine = all.find((t) => t.includes(this.usernames[victimSeat])) || "";
+    const lLine = all.find((t) => t.includes(this.usernames[loverSeat])) || "";
+    const vOk = !!vLine && /Died in the night/i.test(vLine) && !CAUSE.test(vLine);
+    this.record(seat, `event log: ${this.labels[victimSeat]} neutral ("Died in the night")`, vOk, vLine.slice(0, 60) || "no entry");
+    const lOk = !!lLine && /Died of heartbreak/i.test(lLine);
+    this.record(seat, `event log: ${this.labels[loverSeat]} "Died of heartbreak"`, lOk, lLine.slice(0, 60) || "no entry");
+  }
+
+  // The dead lover's OWN screen: full-screen death poster with the HEARTBREAK
+  // art (msg.isLoverDeath → HEARTBREAK_ART in #dead-emoji).
+  async assertDeadOverlay(seat: number) {
+    const page = this.pages[seat];
+    let vis = false;
+    try { await page.locator("#dead-overlay").waitFor({ state: "visible", timeout: 10000 }); vis = true; } catch { vis = await page.locator("#dead-overlay").isVisible().catch(() => false); }
+    const hasArt = (await page.locator("#dead-emoji svg").count().catch(() => 0)) > 0;
+    const msg = ((await page.locator("#death-message").textContent().catch(() => "")) || "").trim();
+    await this.shot(seat, "death-overlay");
+    this.record(seat, "dead lover: own death poster visible (heartbreak art)", vis && hasArt, `msg="${msg.slice(0, 50)}"`);
+  }
+
+  // OPTIONAL end-game: admin nominates the mafia, every living seat votes YES →
+  // town wins → game_over reveal (full-detail history). Screenshots 2 seats.
+  async lynchMafiaToGameOver(nomineeSeat: number, living: number[]) {
+    const admin = this.pages[0];
+    await admin.locator("#admin-day-controls").waitFor({ state: "visible", timeout: 15000 });
+    await admin.locator("#admin-target-list li", { hasText: this.usernames[nomineeSeat] }).first().click();
+    // resolveVote only fires once EVERY living player has voted — so all living
+    // (incl. the nominee) must cast a ballot.
+    for (const s of living) {
+      const yes = this.pages[s].locator("#btn-vote-yes");
+      try { await yes.waitFor({ state: "visible", timeout: 10000 }); await yes.click(); } catch {}
+    }
+    for (const s of living.slice(0, 2)) {
+      let ok = false, title = "";
+      try {
+        await this.pages[s].locator("#screen-gameover.active").waitFor({ state: "visible", timeout: 25000 });
+        ok = true;
+        title = ((await this.pages[s].locator("#gameover-title").textContent().catch(() => "")) || "").trim();
+        await this.shot(s, "gameover");
+      } catch {}
+      this.record(s, "game over: reveal screen (town wins)", ok, title.slice(0, 40));
+    }
+  }
+
   // Drive the mafia kill through the real vote UI (single OR duo consensus).
   async mafiaKill(mafiaSeats: number[], victimSeat: number) {
     const victim = this.usernames[victimSeat];
@@ -371,7 +540,7 @@ async function runScenario(scenarioName: string, headed: boolean): Promise<boole
   console.log(`  MAFIA CHROME GRID — scenario: ${scenarioName}  (${n} seats, :${port})`);
   console.log("══════════════════════════════════════════════════════════════════");
 
-  const srv = await bootServer({ port, roles: scenario.roles, godfather: scenario.godfather });
+  const srv = await bootServer({ port, roles: scenario.roles, godfather: scenario.godfather, lovers: scenario.lovers });
 
   let browser: Browser | null = null;
   const contexts: BrowserContext[] = [];
