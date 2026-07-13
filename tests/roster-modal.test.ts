@@ -85,6 +85,48 @@ describe("Roles in Play modal", () => {
     expect(text).toContain("Lovers");
   });
 
+  test("shows an OFFICIAL/HOUSE badge on the doctor and joker rows when modes are present", () => {
+    startGameWithRoster({
+      roles: [
+        { role: "mafia", count: 2 },
+        { role: "doctor", count: 1 },
+        { role: "joker", count: 1 },
+        { role: "citizen", count: 2 },
+      ],
+      godfather: false,
+      lovers: false,
+      modes: { doctor: "house", joker: "official" },
+    });
+    $("btn-roster").click();
+
+    const doctorRow = $("roster-list").querySelector('[data-role="doctor"]');
+    const jokerRow = $("roster-list").querySelector('[data-role="joker"]');
+    const mafiaRow = $("roster-list").querySelector('[data-role="mafia"]');
+    expect(doctorRow.textContent).toContain("HOUSE");
+    expect(jokerRow.textContent).toContain("OFFICIAL");
+    // Roles without a mode (e.g. mafia) get no badge.
+    expect(mafiaRow.querySelector(".roster-mode-badge")).toBeNull();
+  });
+
+  test("renders no mode badges when the roster carries no modes", () => {
+    startGameWithRoster(ROSTER); // no `modes` key
+    $("btn-roster").click();
+    expect($("roster-list").querySelector(".roster-mode-badge")).toBeNull();
+  });
+
+  test("a non-admin player can open the roster modal (visible to every player)", () => {
+    serverSays({ type: "logged_in", userId: 1, username: "P" });
+    serverSays({ type: "game_joined", code: "ABCD", isAdmin: false });
+    serverSays({ type: "game_started", role: "citizen", isLover: false, variant: 0, mafiaTeam: [], roster: ROSTER });
+
+    $("btn-close-roster").click(); // reset modal-visible state left over from a prior test
+    expect($("btn-roster")).not.toBeNull();
+    expect(isHidden("modal-roster")).toBe(true);
+    $("btn-roster").click();
+    expect(isHidden("modal-roster")).toBe(false);
+    expect($("roster-list").textContent).toContain("Mafia");
+  });
+
   test("a rejoining player gets the roster from game_sync", () => {
     serverSays({ type: "logged_in", userId: 1, username: "P" });
     serverSays({ type: "game_joined", code: "ABCD", isAdmin: false });

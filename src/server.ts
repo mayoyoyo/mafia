@@ -1363,17 +1363,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (saved) {
         sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
 
-        // Notify dead players that doctor sub-phase completed (exclude haunting joker).
-        // Official mode keeps the save fully secret: dead spectators must NOT learn
-        // who the doctor protected, so the target name is withheld (null). House mode
-        // reveals it. (Matches the public dawn narration, which is anonymous in
-        // official mode — see resolveNightAndTransition + Narrator.doctorSaveOfficial.)
+        // Notify dead players that the doctor sub-phase completed (exclude the
+        // haunting joker). Owner ruling: dead spectators are OMNISCIENT — they see
+        // who the doctor protected in BOTH modes, restoring their night log. The
+        // save stays secret only to LIVING players (the dawn narration is
+        // anonymous under official mode — Narrator.doctorSaveOfficial) and to the
+        // saved victim (never privately told). Those invariants live elsewhere.
         const protectedPlayer = game.players.get(msg.targetId);
-        const revealDoctorTarget = game.settings.doctorMode !== "official";
         sendToDeadPlayers(game, {
           type: "spectator_night_complete",
           phase: "doctor",
-          targetName: revealDoctorTarget && protectedPlayer ? protectedPlayer.username : null,
+          targetName: protectedPlayer ? protectedPlayer.username : null,
           alive: true,
         }, getHauntingJokerId(game));
 
@@ -1980,22 +1980,20 @@ function resolveNightAndTransition(game: Game): void {
 
   // Send spectator kill result to dead players (before phase change clears their panel)
   if (nightResult.killed.length > 0 || nightResult.saved) {
-    // On a save-only night (no deaths) targetName would otherwise be the SAVED
-    // player's name — a secrecy leak in official mode. Withhold it there; the
-    // `kills` array (empty here) is the real death list. When someone actually
-    // died, targetName is that public death, which is fine to name.
+    // Owner ruling: dead spectators are omniscient. On a save-only night (no
+    // deaths) targetName carries the SAVED player's name in both modes — the
+    // client renders the death roll from the `kills` array (empty here → "No one
+    // died"), NOT from targetName, so a save always reads as a save, never a
+    // death. The save stays secret only to LIVING players + the saved victim.
     const targetName = nightResult.killed.length > 0
       ? nightResult.killed[0].player.username
-      : (game.settings.doctorMode === "official" ? null : nightResult.savedName!);
+      : nightResult.savedName!;
     let doctorMessage: string | null = null;
     if (game.settings.enableDoctor) {
       if (nightResult.saved && nightResult.savedName) {
-        // Official mode keeps the save anonymous to dead spectators too — the
-        // saved player's name is withheld, consistent with the public dawn
-        // narration (Narrator.doctorSaveOfficial). House mode names them.
-        doctorMessage = game.settings.doctorMode === "official"
-          ? "The Doctor saved someone tonight"
-          : `Doctor saved ${nightResult.savedName}`;
+        // Named in BOTH modes for dead spectators. Secrecy for the living is the
+        // dawn narration's job (Narrator.doctorSaveOfficial stays anonymous).
+        doctorMessage = `Doctor saved ${nightResult.savedName}`;
       } else {
         doctorMessage = `Doctor was not able to save ${targetName}`;
       }

@@ -635,7 +635,10 @@ export function rosterSummary(game: Game): RosterSummary {
     const count = counts.get(role) ?? 0;
     if (count > 0) roles.push({ role, count });
   }
-  return { roles, godfather, lovers };
+  const modes: RosterSummary["modes"] = {};
+  if ((counts.get("doctor") ?? 0) > 0) modes.doctor = game.settings.doctorMode;
+  if ((counts.get("joker") ?? 0) > 0) modes.joker = game.settings.jokerMode;
+  return { roles, godfather, lovers, ...(Object.keys(modes).length ? { modes } : {}) };
 }
 
 // ── B5 (audit P6-lite): the two pure payload projections ────────────────

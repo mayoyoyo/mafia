@@ -322,9 +322,9 @@ function makeSummarizer(players: GoldenPlayer[]) {
       case "detective_result": return `detective_result target=${seatName(m.targetName)} isMafia=${m.isMafia}`;
       case "spectator_kill_confirmed": {
         // NB: couples to server prose — resolveNightAndTransition (src/server.ts)
-        // builds doctorMessage as "Doctor saved <name>" (house) / "The Doctor
-        // saved someone tonight" (official, anonymous) / "Doctor was not able to
-        // save <name>". A successful save reads "saved"; the failure reads
+        // builds doctorMessage as "Doctor saved <name>" (both modes — dead
+        // spectators are omniscient per the owner ruling) / "Doctor was not able
+        // to save <name>". A successful save reads "saved"; the failure reads
         // "save" (no d). If that prose changes, this branch (and the goldens)
         // must change with it.
         const doc = m.doctorMessage == null ? "-" : (m.doctorMessage.includes("saved") ? "saved" : "not_saved");
@@ -2106,7 +2106,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "sound_cue mafia_close",
     "sound_cue doctor_open",
     "spectator_night_phase doctor roleAlive=true",
-    "spectator_night_complete phase=doctor target=- alive=true",
+    "spectator_night_complete phase=doctor target=P0 alive=true",
     "sound_cue doctor_close",
     "spectator_kill_confirmed kills=[P3,P4] doctor=not_saved",
     "player_died P3",

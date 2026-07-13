@@ -1844,6 +1844,16 @@ input::placeholder { color: var(--text-secondary); }
   min-width: 44px;
   text-align: center;
 }
+.roster-mode-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
 .roster-mods {
   margin-top: 4px;
   text-align: center;

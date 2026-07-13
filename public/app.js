@@ -1038,7 +1038,7 @@
 
   setupRuleTabs("doctor-mode-tabs", "doctorMode", {
     house: "Narrator reveals who was saved",
-    official: "Save is secret \u2014 only victim is notified",
+    official: "Save is secret from the living \u2014 not even the victim (the dead see all)",
   });
 
   setupRuleTabs("joker-mode-tabs", "jokerMode", {
@@ -1111,7 +1111,7 @@
         t.classList.toggle("active", t.dataset.mode === settings.doctorMode);
       });
       $("doctor-mode-hint").textContent = settings.doctorMode === "official"
-        ? "Save is secret \u2014 no one is told who was saved, not even the victim"
+        ? "Save is secret from the living \u2014 no living player is told who was saved, not even the victim (the dead see everything)"
         : "Narrator announces who was saved";
     }
     if (settings.jokerMode) {
@@ -2772,9 +2772,10 @@
         `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 died in the night</li>`
       ).join("");
     } else {
-      // No kills \u27f9 a save-only night: no one died. Never name msg.targetName here
-      // (in official mode it is null, and it would otherwise leak the saved
-      // player's identity \u2014 and wrongly imply they died).
+      // No kills \u27f9 a save-only night: no one died. Never name msg.targetName here:
+      // it carries the SAVED player's name (dead spectators may see it), but the
+      // death roll comes from `kills` only \u2014 a save must never imply a death. The
+      // save itself is reported by the doctorMessage below.
       $("action-targets").innerHTML = `<li class="spectator-kill-result">No one died in the night</li>`;
     }
     $("action-status").textContent = msg.doctorMessage || "";
@@ -3172,11 +3173,17 @@
       list.innerHTML = `<p class="roster-empty">No roster available.</p>`;
       return;
     }
-    let html = roster.roles.map((e) => `
+    const modes = roster.modes || {};
+    let html = roster.roles.map((e) => {
+      const mode = modes[e.role];
+      const badge = mode ? `<span class="roster-mode-badge roster-mode-${mode}">${mode.toUpperCase()}</span>` : "";
+      return `
       <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role})">
         <span class="roster-name">${ROSTER_ROLE_NAMES[e.role] || e.role}</span>
+        ${badge}
         <span class="roster-count">×${e.count}</span>
-      </div>`).join("");
+      </div>`;
+    }).join("");
     const mods = [];
     if (roster.godfather) mods.push("Godfather");
     if (roster.lovers) mods.push("Lovers");
@@ -4159,7 +4166,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.33_202607130233";
+  const APP_VERSION_STAGING = "staging.34_202607131127";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

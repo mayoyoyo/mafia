@@ -1,11 +1,14 @@
-// Playtest: official-mode Doctor save must stay secret from DEAD SPECTATORS too.
+// Playtest: owner ruling — the Doctor save is secret from LIVING players and
+// the saved victim, but DEAD SPECTATORS are omniscient and DO see who was saved
+// (in both modes). This restores the dead-spectator night log.
 //
-// The old bug: even after the victim-facing `doctor_save_private` was removed,
-// dead spectators still learned exactly who the Doctor protected via two wire
+// So under BOTH modes, dead spectators receive the named save via two wire
 // fields — `spectator_night_complete { phase:"doctor", targetName }` (real-time)
 // and the dawn `spectator_kill_confirmed.doctorMessage` ("Doctor saved <name>").
-// Under official mode both must be anonymised; under house mode both keep the
-// name. This drives real WebSockets to pin both halves.
+// The secrecy that matters is enforced elsewhere and pinned below: LIVING
+// players never receive the saved-name association (the dawn narration stays
+// anonymous under official mode — Narrator.doctorSaveOfficial), and the saved
+// victim is never privately told. This drives real WebSockets to pin all of it.
 //
 // Scenario (single mafia, single doctor, deterministic pinned deal):
 //   Night 1 — mafia targets C0, doctor SAVES C0 → no death, no spectators yet.
@@ -51,7 +54,8 @@ async function dayLynch(ctx: ScenarioContext, targetIdx: number, aliveIdxs: numb
 
 /**
  * Run the shared scenario under a given doctorMode and return the dead
- * spectator's (C1) full log plus the saved player's (C2) username.
+ * spectator's (C1) full log, a LIVING non-doctor player's (C3) full log, the
+ * saved victim's (C2) full log, and the saved player's (C2) username.
  */
 async function runSecrecyScenario(doctorMode: "official" | "house") {
   const { clients } = await runScenario({
@@ -72,11 +76,17 @@ async function runSecrecyScenario(doctorMode: "official" | "house") {
     ],
   });
   const ctx = { clients } as ScenarioContext;
-  return { spectatorLog: clients[C1].log, savedName: nameOf(ctx, C2), clients };
+  return {
+    spectatorLog: clients[C1].log,
+    livingLog: clients[C3].log,
+    victimLog: clients[C2].log,
+    savedName: nameOf(ctx, C2),
+    clients,
+  };
 }
 
-describe("official Doctor save — no reveal to dead spectators", () => {
-  test("dead spectator never learns who the Doctor saved (official)", async () => {
+describe("official Doctor save — dead spectators DO see the save; living + victim do not", () => {
+  test("dead spectator DOES learn who the Doctor saved (official)", async () => {
     const { spectatorLog, savedName } = await runSecrecyScenario("official");
 
     // Sanity: the dead spectator actually observed the night-2 doctor phase.
@@ -85,20 +95,56 @@ describe("official Doctor save — no reveal to dead spectators", () => {
     );
     expect(doctorCompletes.length).toBeGreaterThan(0);
 
-    // (a) Every doctor-phase completion withholds the target name.
-    for (const m of doctorCompletes) {
-      expect(m.targetName == null).toBe(true);
-      expect(String(m.targetName ?? "")).not.toContain(savedName);
-    }
+    // (a) The doctor-phase completion NAMES the protected player to the dead.
+    expect(doctorCompletes.some((m) => m.targetName === savedName)).toBe(true);
 
-    // (b) The dawn kill-confirmed message is anonymous — no saved name.
+    // (b) The dawn kill-confirmed doctorMessage NAMES the save to the dead.
     const killConfirmed = spectatorLog.filter((m) => m.type === "spectator_kill_confirmed");
     expect(killConfirmed.length).toBeGreaterThan(0);
-    for (const m of killConfirmed) {
-      expect(String(m.doctorMessage ?? "")).not.toContain(savedName);
-    }
-    // …and it still communicates that SOMEONE was saved (not over-removed).
+    expect(killConfirmed.some((m) => String(m.doctorMessage ?? "").includes(savedName))).toBe(true);
+    // …and it reads as a save (not over-removed).
     expect(killConfirmed.some((m) => /saved/i.test(String(m.doctorMessage ?? "")))).toBe(true);
+  }, 60000);
+
+  test("LIVING players never receive the saved-name association (official)", async () => {
+    const { livingLog, savedName } = await runSecrecyScenario("official");
+
+    // A living, non-doctor player never receives the dead-only spectator stream.
+    expect(livingLog.some((m) => m.type === "spectator_night_complete")).toBe(false);
+    expect(livingLog.some((m) => m.type === "spectator_kill_confirmed")).toBe(false);
+
+    // No message a living player receives carries a doctorMessage (spectator-only)…
+    expect(livingLog.some((m) => "doctorMessage" in m && m.doctorMessage != null)).toBe(false);
+
+    // …and the dawn narration they DO see (phase_change.messages) never names the
+    // save — it stays anonymous under official mode (Narrator.doctorSaveOfficial).
+    const narrationText = livingLog
+      .filter((m) => m.type === "phase_change")
+      .flatMap((m) => (m.messages ?? []) as string[])
+      .join(" ∣ ");
+    expect(narrationText).not.toContain(savedName);
+    // Sanity: dawn narration actually reached this living player (non-empty),
+    // so the "never names the save" assertion above isn't vacuous.
+    expect(narrationText.length).toBeGreaterThan(0);
+  }, 60000);
+
+  test("the saved victim is never told they were saved (official)", async () => {
+    const { victimLog, savedName } = await runSecrecyScenario("official");
+
+    // The victim is a living player → no dead-only spectator stream, no doctorMessage.
+    expect(victimLog.some((m) => m.type === "spectator_night_complete")).toBe(false);
+    expect(victimLog.some((m) => m.type === "spectator_kill_confirmed")).toBe(false);
+    expect(victimLog.some((m) => "doctorMessage" in m && m.doctorMessage != null)).toBe(false);
+
+    // No message tells the victim they were the target of a save/protection.
+    const victimText = victimLog.map((m) => JSON.stringify(m)).join(" ∣ ");
+    expect(/you (were|are|have been) (saved|protected|targeted)/i.test(victimText)).toBe(false);
+    // Their own dawn narration is the anonymous public line, never naming them.
+    const victimNarration = victimLog
+      .filter((m) => m.type === "phase_change")
+      .flatMap((m) => (m.messages ?? []) as string[])
+      .join(" ∣ ");
+    expect(victimNarration).not.toContain(savedName);
   }, 60000);
 });
 

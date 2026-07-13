@@ -393,6 +393,10 @@ export interface RosterSummary {
   roles: RosterEntry[];
   godfather: boolean;
   lovers: boolean;
+  // Which ruleset each mode-bearing role is playing under (doctorMode/jokerMode
+  // in GameSettings). Public information — the settings screen already shows it
+  // pre-game. Key present only when that role is actually dealt/in play.
+  modes?: { doctor?: RuleMode; joker?: RuleMode };
 }
 
 export interface GameEvent {

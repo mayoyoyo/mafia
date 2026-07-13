@@ -67,4 +67,47 @@ describe("rosterSummary", () => {
       removeGame(game.code);
     }
   });
+
+  test("reports doctor's rule mode when the doctor is in play", () => {
+    const game = dealtGame(7, { mafiaCount: 1, enableDoctor: true, doctorMode: "house" });
+    const r = rosterSummary(game);
+    try {
+      expect(r.modes?.doctor).toBe("house");
+      expect(r.modes?.joker).toBeUndefined();
+    } finally {
+      removeGame(game.code);
+    }
+  });
+
+  test("reports joker's rule mode when the joker is in play", () => {
+    const game = dealtGame(7, { mafiaCount: 1, enableJoker: true, jokerMode: "official" });
+    const r = rosterSummary(game);
+    try {
+      expect(r.modes?.joker).toBe("official");
+      expect(r.modes?.doctor).toBeUndefined();
+    } finally {
+      removeGame(game.code);
+    }
+  });
+
+  test("reports both modes when doctor and joker are both in play", () => {
+    const game = dealtGame(8, { mafiaCount: 1, enableDoctor: true, doctorMode: "official", enableJoker: true, jokerMode: "house" });
+    const r = rosterSummary(game);
+    try {
+      expect(r.modes?.doctor).toBe("official");
+      expect(r.modes?.joker).toBe("house");
+    } finally {
+      removeGame(game.code);
+    }
+  });
+
+  test("omits modes entirely when neither doctor nor joker is in play", () => {
+    const game = dealtGame(5, { mafiaCount: 1 }); // no specials enabled
+    const r = rosterSummary(game);
+    try {
+      expect(r.modes).toBeUndefined();
+    } finally {
+      removeGame(game.code);
+    }
+  });
 });
