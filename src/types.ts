@@ -1,4 +1,4 @@
-export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker" | "hunter";
+export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker" | "hunter" | "vigilante";
 
 export interface Player {
   id: number;
@@ -7,8 +7,10 @@ export interface Player {
   isAlive: boolean;
   isLover: boolean;
   loverId: number | null; // the other lover's player id
+  isGodfather: boolean; // mafia-aligned; reads INNOCENT to the Detective (role stays "mafia")
   connected: boolean;
   variant: number; // pixel art variant index
+  vigilanteBulletUsed: boolean; // Vigilante one-shot: true once the single bullet is spent (persists across nights)
 }
 
 export type RuleMode = "official" | "house";
@@ -19,7 +21,9 @@ export interface GameSettings {
   enableDetective: boolean;
   enableJoker: boolean;
   enableHunter: boolean;
+  enableVigilante: boolean;
   enableLovers: boolean;
+  enableGodfather: boolean;
   soundEnabled: boolean;
   narrationAccent: string;
   narratorGender: "male" | "female";
@@ -33,7 +37,9 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enableDetective: false,
   enableJoker: false,
   enableHunter: false,
+  enableVigilante: false,
   enableLovers: false,
+  enableGodfather: false,
   soundEnabled: false,
   narrationAccent: "classic",
   narratorGender: "male",
@@ -49,9 +55,9 @@ export type GamePhase = "lobby" | "night" | "day" | "voting" | "game_over";
 // event label (deriveDeathEventType in game-engine.ts).
 // "hunter_revenge" (C2a): the Hunter's dying shot — applied by
 // submitHunterRevenge AFTER the triggering resolution, never inside it.
-export type KillSource = "mafia" | "joker_haunt" | "execution" | "hunter_revenge";
+export type KillSource = "mafia" | "joker_haunt" | "execution" | "hunter_revenge" | "vigilante";
 export type DeathCause = "direct" | "lover_cascade";
-export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death" | "hunter_revenge";
+export type DeathEventType = "kill" | "joker_haunt" | "execution" | "lover_death" | "hunter_revenge" | "vigilante_shot";
 
 export interface Death {
   player: Player;
@@ -62,7 +68,7 @@ export interface Death {
   eventType: DeathEventType;
 }
 
-export type NightSubPhase = "mafia" | "doctor" | "detective" | "resolving";
+export type NightSubPhase = "mafia" | "doctor" | "detective" | "vigilante" | "resolving";
 
 // ── B7 (audit P8): sound-cue typing — derived, not hand-synced ──────────
 /** The night sub-phases that emit open/close narration cues — "resolving" is silent. */
@@ -71,13 +77,19 @@ export type CueSubPhase = Exclude<NightSubPhase, "resolving">;
 /**
  * Every cue the server can send. The per-sub-phase open/close pairs are
  * DERIVED from NightSubPhase via template literals, so a new cue-emitting
- * sub-phase extends the union automatically; the three standalone cues
+ * sub-phase extends the union automatically; the standalone cues
  * ("night"/"day"/"everyone_close") have no sub-phase and stay enumerated.
+ * The Hunter is NOT a night sub-phase (it is a post-resolution revenge gate),
+ * so its wake/close cues are standalone too — emitted only when a Hunter is
+ * killed AT NIGHT and the gate opens mid-dawn (never for a heartbreak death
+ * or a daytime lynch, where the table's eyes are already open).
  */
 export type SoundCue =
   | "night"
   | "day"
   | "everyone_close"
+  | "hunter_open"
+  | "hunter_close"
   | `${CueSubPhase}_open`
   | `${CueSubPhase}_close`;
 
@@ -116,6 +128,24 @@ export interface ConcludeRoundOptions {
 export interface PendingRevenge {
   hunterId: number;
   resume: ConcludeRoundOptions;
+  /**
+   * true when the gate opened during night resolution (the Hunter was killed
+   * AT NIGHT, eyes closed) — the server plays the hunter_open/hunter_close
+   * wake cues only then. A daytime lynch opens the gate at "voting"/"day" with
+   * eyes already open, so this is false and no wake cues are emitted. Optional
+   * for ergonomics: the engine always sets it, and an absent value is read as
+   * "not a night kill" (no wake cue) — the conservative default.
+   */
+  wakeHunter?: boolean;
+  /**
+   * The night-batch dawn narrator lines (the ONE cause-neutral combined
+   * death line + any save line) captured when a Hunter dies at night and the
+   * dawn broadcast is deferred for the revenge gate. resolveRevenge prepends
+   * these to the deferred phase_change so the combined neutral announcement
+   * still reaches living clients (the line is already in narratorHistory).
+   * Unset for the vote-path gate (no deferred dawn). Plain data — rejoin-safe.
+   */
+  deferredNightMessages?: string[];
 }
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
@@ -139,6 +169,7 @@ export interface Game {
   mafiaTarget: number | null;
   doctorTarget: number | null;
   detectiveTarget: number | null;
+  vigilanteTarget: number | null; // this-night Vigilante shot (per-night; cleared by NIGHT_RESETS)
   lastDoctorTarget: number | null;
   // Joker haunt (official mode)
   jokerHauntTarget: number | null;
@@ -187,6 +218,8 @@ export type ClientMessage =
   | { type: "joker_haunt"; targetId: number }
   // C3a (HUNTER-DESIGN §3.2): revenge resolution — hunter only; null = decline
   | { type: "hunter_revenge"; targetId: number | null }
+  // Vigilante one-shot night kill — vigilante only; null = hold fire (keep bullet)
+  | { type: "vigilante_shoot"; targetId: number | null }
   // C3a: admin only (rights retained dead or alive); resolves as decline
   | { type: "force_skip_revenge" }
   | { type: "call_vote"; targetId: number }
@@ -212,7 +245,7 @@ export type ServerMessage =
   | { type: "game_joined"; code: string; isAdmin: boolean }
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
-  | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[] }
+  | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[]; isGodfather?: boolean; godfatherName?: string; roster?: RosterSummary }
   | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
   | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
@@ -220,13 +253,13 @@ export type ServerMessage =
   | { type: "doctor_targets"; players: PlayerInfo[]; lastDoctorTarget?: number | null }
   | { type: "detective_targets"; players: PlayerInfo[] }
   | { type: "detective_result"; targetName: string; isMafia: boolean }
+  | { type: "vigilante_targets"; players: PlayerInfo[]; bulletUsed: boolean }
   | { type: "joker_haunt_targets"; players: PlayerInfo[] }
   // C3a (HUNTER-DESIGN §3.3): to the hunter when the gate opens (re-sent on rejoin — C4)
   | { type: "hunter_revenge_targets"; players: PlayerInfo[] }
   // C3a: broadcast to the whole room when the gate opens — this IS the public reveal
   | { type: "hunter_revenge_pending"; hunterName: string }
   | { type: "joker_win_overlay"; jokerName: string }
-  | { type: "doctor_save_private"; message: string }
   | { type: "vote_called"; targetName: string; targetId: number }
   | { type: "vote_update"; totalVotes: number; total: number }
   | { type: "vote_result"; targetName: string; executed: boolean }
@@ -238,8 +271,15 @@ export type ServerMessage =
   | { type: "awaiting_ready" }
   | { type: "night_action_done"; message: string }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
-  | { type: "spectator_kill_confirmed"; targetName: string; doctorMessage: string | null; kills?: Array<{ name: string; source: KillSource }> }
-  | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "resolving"; isRoleAlive: boolean }
+  // targetName is null on a save-only night under official doctor mode: no one
+  // died and the saved identity must stay secret. `kills` is the source of truth
+  // for who actually died (empty ⟹ save-only night).
+  // Finding 4: `source` (mafia vs vigilante vs joker_haunt) was shipped here to
+  // dead spectators but never rendered — dropped so the raw frame can't out the
+  // killer's role. Dead spectators still learn WHO each role targeted via the
+  // per-sub-phase spectator_night_phase/spectator_night_complete stream.
+  | { type: "spectator_kill_confirmed"; targetName: string | null; doctorMessage: string | null; kills?: Array<{ name: string }> }
+  | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "vigilante" | "resolving"; isRoleAlive: boolean }
   | { type: "spectator_night_complete"; phase: string; targetName: string | null; alive: boolean }
   | { type: "spectator_joker_deliberating" }
   | { type: "spectator_joker_resolved"; targetName: string }
@@ -276,6 +316,13 @@ export type ServerMessage =
       eventHistory: GameEvent[];
       // Mafia team (only for mafia players)
       mafiaTeam?: string[];
+      // Public lineup summary for the in-game "Roles in Play" modal (every rejoiner)
+      roster?: RosterSummary;
+      // Godfather plumbing: isGodfather on the godfather's own sync; godfatherName on every mafia sync
+      isGodfather?: boolean;
+      godfatherName?: string;
+      // Vigilante: spent-bullet flag on the vigilante's own sync (own-screen indicator); omitted otherwise
+      vigilanteBulletUsed?: boolean;
       // Night action (null if not in night or dead or no action needed)
       nightAction: {
         locked: boolean;
@@ -333,13 +380,30 @@ export interface PlayerInfo {
   role?: Role;
   isLover?: boolean;
   loverId?: number;
+  isGodfather?: boolean;
+}
+
+// Public, information-safe summary of the lineup shown to every player in the
+// in-game "Roles in Play" modal: how many of each role are in play (counts are
+// public knowledge — the lobby already lists the lineup) plus whether the
+// Godfather / Lovers modifiers are active. Godfather/Lovers are not Roles; they
+// ride as flags (a Godfather is still counted among the mafia).
+export interface RosterEntry { role: Role; count: number; }
+export interface RosterSummary {
+  roles: RosterEntry[];
+  godfather: boolean;
+  lovers: boolean;
 }
 
 export interface GameEvent {
   round: number;
   // Structurally DeathEventType plus the two non-death labels — the death
-  // labels are reused, not re-listed (compile-time identical union).
-  type: DeathEventType | "save" | "spared";
+  // labels are reused, not re-listed (compile-time identical union). The
+  // extra "death" literal is the CLIENT-projection type only: it never enters
+  // game.eventHistory server-side (applyDeath pushes real DeathEventTypes) —
+  // projectEventsForClients collapses the four cause-bearing NIGHT-death
+  // labels onto it before the events ride the wire in-game (see game-engine).
+  type: DeathEventType | "save" | "spared" | "death";
   playerName: string;
   detail?: string;
   // B3 (audit P2): additive wire fields, present on death events only. The

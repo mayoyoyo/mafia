@@ -1123,15 +1123,28 @@ describe("Lover Death Broadcast", () => {
     removeGame(game.code);
   });
 
-  test("lover death message includes both lover names", () => {
+  test("night lover cascade: combined neutral line for the direct victim, then a SEPARATE public heartbreak line for the partner", () => {
     const { game, loverA, loverB, mafia } = setupLoversGame();
 
     lockTarget(game, mafia[0].id, loverA.id);
     const nightResult = transitionToDay(game);
 
-    // The heartbreak death message should include the heartbreak lover's name
+    // Owner ruling: the DIRECT victim (loverA) gets the cause-neutral combined
+    // dawn line (names only them, never "heartbreak"); the cascade partner
+    // (loverB) gets a SEPARATE public "died of heartbreak" line AFTER it.
+    expect(nightResult.messages.length).toBe(2);
+    expect(nightResult.messages[0]).toContain(loverA.username);
+    expect(nightResult.messages[0]).not.toContain(loverB.username);
+    expect(nightResult.messages[0].toLowerCase()).not.toContain("heartbreak");
+    expect(nightResult.messages[1]).toContain(loverB.username);
+    expect(nightResult.messages[1]).not.toContain(loverA.username); // never names the original lover
+    expect(nightResult.messages[1].toLowerCase()).toContain("heartbreak");
+    // The cascade victim's own (you_died) line IS the public heartbreak line:
+    // names only them + "heartbreak", never the original target.
     const heartbreakMsg = nightResult.killed[1].message;
     expect(heartbreakMsg).toContain(loverB.username);
+    expect(heartbreakMsg).not.toContain(loverA.username);
+    expect(heartbreakMsg.toLowerCase()).toContain("heartbreak");
     removeGame(game.code);
   });
 

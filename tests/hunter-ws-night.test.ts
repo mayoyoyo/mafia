@@ -4,33 +4,34 @@ import {
   type HunterServer, type HunterGame,
   spawnServer, teardownServer, waitFor, waitMatch, assertSilence,
   send, setupGame as setupGameH, mafiaSoloKill, killHunterAndAwaitGate,
-  closeAll, revengeTimerEvents, indexOfMsg,
+  closeAll, indexOfMsg,
 } from "./helpers/ws-harness";
 
 /**
  * C3a — WS half of the Hunter revenge flow, NIGHT path (HUNTER-DESIGN §3.6,
- * §4, §6): edges E1 (two-stage dawn), E6 (decline ×3 identical), E9 (timer
- * isolation + force_dawn clears the gate), plus handler guard rejections
- * for the two new message types. The vote-path interrupt (E4/E8 sweep) is
- * C3b; rejoin mid-revenge (E10) is C4.
+ * §4, §6): edges E1 (two-stage dawn), E6 (decline identical), E9 (force_dawn
+ * clears the gate), plus handler guard rejections for the two new message
+ * types. The vote-path interrupt (E4/E8 sweep) is C3b; rejoin mid-revenge
+ * (E10) is C4.
+ *
+ * There is NO revenge timer: the gate never auto-resolves — it stays open
+ * until the hunter shoots or the admin force-skips (force_skip_revenge) or
+ * force-dawns (force_dawn). A night-killed Hunter's gate carries
+ * wakeHunter:true, so the server frames the prompt with the hunter_open /
+ * hunter_close wake cues (a day-lynch gate emits neither).
  *
  * Port band 22600-22999 is claimed by this file (taken elsewhere: 4567,
  * 5567, 6567, 7600, 8600, 9600, 10600, 11600, 12600; 13600-17600 reserved;
  * 18600-19999 + 21600-21999 goldens; 20600-20999 structured-logging).
- * Sub-bands: server A 22600-22789 (default 60s revenge timeout — games
- * that resolve the gate explicitly), server B 22800-22989 (revenge timeout
- * shortened to 1500ms via MAFIA_REVENGE_TIMER_MS — the C3a test seam,
- * pattern: DATABASE_PATH / MAFIA_FIXED_DEAL — for the expiry/silence
- * cases; no real 60s waits anywhere).
+ * One default server (server A 22600-22789) — every game resolves the gate
+ * explicitly; there are no timed waits.
  *
  * Deterministic deal via MAFIA_FIXED_DEAL (one deal per server process, the
  * golden-file mechanism): join order P0 citizen (admin), P1 mafia,
- * P2 hunter, P3-P5 citizens. Both servers use the same deal.
+ * P2 hunter, P3-P5 citizens.
  */
 
 const PORT_A = 22600 + Math.floor(Math.random() * 190); // 22600-22789
-const PORT_B = 22800 + Math.floor(Math.random() * 190); // 22800-22989
-const SHORT_REVENGE_MS = 1500;
 
 const DEAL_ROLES: Role[] = ["citizen", "mafia", "hunter", "citizen", "citizen", "citizen"];
 const SETTINGS = {
@@ -44,17 +45,13 @@ const ADMIN = 0, MAFIA = 1, HUNTER = 2, CIT_A = 3, CIT_B = 4, CIT_C = 5;
 // ── Per-band server subprocesses (harness: tests/helpers/ws-harness.ts) ────
 
 let serverA: HunterServer | null = null;
-let serverB: HunterServer | null = null;
 
 beforeAll(async () => {
-  [serverA, serverB] = await Promise.all([
-    spawnServer(PORT_A, "A", "night", DEAL_ROLES),
-    spawnServer(PORT_B, "B", "night", DEAL_ROLES, { extraEnv: { MAFIA_REVENGE_TIMER_MS: String(SHORT_REVENGE_MS) } }),
-  ]);
+  serverA = await spawnServer(PORT_A, "A", "night", DEAL_ROLES);
 });
 
 afterAll(() => {
-  for (const srv of [serverA, serverB]) teardownServer(srv);
+  teardownServer(serverA);
 });
 
 // ── This file's setupGame: the shared harness driver bound to this band's
@@ -169,10 +166,13 @@ describe("E1: two-stage dawn — mafia night-kills the hunter", () => {
     expect(victimDied.isLoverDeath).toBeUndefined();
     const dayChange = await dayPromise;
     expect(dayChange.round).toBe(1);
-    // The closing phase_change carries the revenge narrator line (loose
-    // prose match: the victim's name, never exact text).
-    expect(dayChange.messages.length).toBe(1);
-    expect(dayChange.messages[0]).toContain(citA.username);
+    // The deferred dawn now carries TWO lines: [0] the ONE cause-neutral
+    // night-batch line (the hunter, who died at night — names WHO, never HOW),
+    // then [1] the separate hunter-revenge line naming the victim.
+    expect(dayChange.messages.length).toBe(2);
+    expect(dayChange.messages[0]).toContain(hunter.username);
+    expect(dayChange.messages[0]).not.toMatch(/Mafia|Vigilante|heartbreak/i);
+    expect(dayChange.messages[1]).toContain(citA.username);
     expect(Array.isArray(dayChange.events)).toBe(true);
     await Bun.sleep(150);
 
@@ -246,8 +246,8 @@ describe("E1: two-stage dawn — mafia night-kills the hunter", () => {
 // E6 — decline ×3: identical observable sequences
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("E6: decline ×3 — explicit decline, admin force-skip, timer expiry are one path", () => {
-  test("all three resolutions produce the identical per-seat message sequence", async () => {
+describe("E6: decline — explicit decline and admin force-skip are one path", () => {
+  test("both resolutions produce the identical per-seat message sequence", async () => {
     // (a) hunter_revenge { targetId: null }
     const gameA = await setupGame(serverA!);
     await killHunterAndAwaitGate(gameA);
@@ -256,11 +256,14 @@ describe("E6: decline ×3 — explicit decline, admin force-skip, timer expiry a
     const dayChangeA = await dayA;
     await Bun.sleep(200);
 
-    // The decline narrator line is present in the closing phase_change
-    // (loose prose: exactly one line, naming no player).
-    expect(dayChangeA.messages.length).toBe(1);
+    // The deferred dawn now carries [0] the cause-neutral night-batch line
+    // (names the hunter, who died at night) and [1] the decline line, which
+    // names no player. (The combined line is delivered even on the decline
+    // path so living clients always get the one neutral announcement.)
+    expect(dayChangeA.messages.length).toBe(2);
+    expect(dayChangeA.messages[0]).toContain(gameA.players[HUNTER].username);
     for (const p of gameA.players) {
-      expect(dayChangeA.messages[0]).not.toContain(p.username);
+      expect(dayChangeA.messages[1]).not.toContain(p.username);
     }
 
     // (b) admin force_skip_revenge
@@ -271,49 +274,42 @@ describe("E6: decline ×3 — explicit decline, admin force-skip, timer expiry a
     await dayB;
     await Bun.sleep(200);
 
-    // (c) revenge timer expiry (server B: 1500ms seam) — nobody acts.
-    const gameC = await setupGame(serverB!);
-    await killHunterAndAwaitGate(gameC);
-    const dayC = waitMatch(gameC.players[ADMIN].ws, m => m.type === "phase_change" && m.phase === "day",
-      SHORT_REVENGE_MS + 4000, "expiry dawn");
-    await dayC;
-    await Bun.sleep(200);
-
-    // Identical observable sequence, per seat, across all three games
-    // (modulo narrator prose and timing — the summarizer drops both). No
-    // deaths in the slice; the decline line rides the closing phase_change.
+    // Identical observable sequence, per seat, across both games (modulo
+    // narrator prose and timing — the summarizer drops both). No deaths in
+    // the slice; the decline line rides the closing phase_change. The
+    // night-kill gate frames the slice with the hunter_open / hunter_close
+    // wake cues (Change 1), which the summarizer keeps — both paths emit
+    // them identically, so the sequences still match.
     for (let i = 0; i < DEAL_ROLES.length; i++) {
       const seqA = summarizeSlice(gameA, gameA.players[i].inbox);
       const seqB = summarizeSlice(gameB, gameB.players[i].inbox);
-      const seqC = summarizeSlice(gameC, gameC.players[i].inbox);
       expect(seqA.length).toBeGreaterThanOrEqual(2); // at least pending + phase_change
       expect(seqA.find(s => s.type === "player_died")).toBeUndefined();
       expect(seqA.find(s => s.type === "you_died")).toBeUndefined();
       expect(seqB).toEqual(seqA);
-      expect(seqC).toEqual(seqA);
     }
 
-    // Expiry game continues: night-timer machinery is intact after the
-    // timer-fired decline (end_day → night 2 → kill → dawn 2).
-    const adminC = gameC.players[ADMIN];
-    const night2 = waitMatch(adminC.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "night 2 after expiry");
-    send(adminC.ws, { type: "end_day" });
+    // The declined game continues: night-timer machinery is intact after the
+    // decline resolution (end_day → night 2 → kill → dawn 2).
+    const adminA = gameA.players[ADMIN];
+    const night2 = waitMatch(adminA.ws, m => m.type === "phase_change" && m.phase === "night", 5000, "night 2 after decline");
+    send(adminA.ws, { type: "end_day" });
     await night2;
-    const day2 = waitMatch(adminC.ws, m => m.type === "phase_change" && m.phase === "day" && m.round === 2, 8000, "dawn 2 after expiry");
-    await mafiaSoloKill(gameC.players[MAFIA], gameC.players[CIT_A]);
+    const day2 = waitMatch(adminA.ws, m => m.type === "phase_change" && m.phase === "day" && m.round === 2, 8000, "dawn 2 after decline");
+    await mafiaSoloKill(gameA.players[MAFIA], gameA.players[CIT_A]);
     await day2;
 
-    closeAll(gameA); closeAll(gameB); closeAll(gameC);
+    closeAll(gameA); closeAll(gameB);
   }, 90000);
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// E9 — timer isolation + force_dawn clears the gate
+// E9 — force_dawn clears the gate
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("E9: revenge timer isolation; force_dawn while gated", () => {
-  test("force_dawn clears gate + revenge timer (no revenge, no late fire); night timers unaffected", async () => {
-    const game = await setupGame(serverB!); // 1500ms revenge timeout
+describe("E9: force_dawn while gated", () => {
+  test("force_dawn clears the gate (no revenge, no late fire); night timers unaffected", async () => {
+    const game = await setupGame(serverA!);
     const admin = game.players[ADMIN];
 
     await killHunterAndAwaitGate(game);
@@ -330,22 +326,14 @@ describe("E9: revenge timer isolation; force_dawn while gated", () => {
     // No revenge happened: the only player_died is the hunter's own death.
     expect(admin.inbox.filter(m => m.type === "player_died").length).toBe(1);
 
-    // The armed revenge timer was CLEARED, not orphaned: advance well past
-    // the would-be expiry (1500ms) and assert total silence — a live timer
-    // would fire a decline resolution (second phase_change / day cue).
+    // The gate was truly CLEARED, not left dangling: there is no revenge
+    // timer (Change 2) — nothing can auto-resolve — so the gate is simply
+    // gone after force_dawn. Hold the window open well past any prior
+    // would-be expiry and assert total silence: no second phase_change, no
+    // late decline resolution, no stale re-prompt or wake cue.
     await assertSilence(admin.ws,
       ["phase_change", "player_died", "you_died", "game_over", "hunter_revenge_pending", "sound_cue"],
-      SHORT_REVENGE_MS + 700);
-
-    // CLEARED vs ORPHANED, proven at the slog layer (C3a spec-review
-    // follow-up): the silence window above is BLIND to an orphaned timer —
-    // force_dawn already wiped pendingRevenge, so an uncleared timer fires
-    // into the gate-null guard and no-ops with zero wire traffic. The
-    // server's own "revenge_timer" lifecycle log is the observable that
-    // distinguishes the two: exactly armed -> cleared for this game, and
-    // NEVER "fired" (we are already past the would-be expiry). Dropping
-    // force_dawn's clearRevengeTimer turns this into ["armed", "fired"].
-    expect(revengeTimerEvents(serverB!, game.code)).toEqual(["armed", "cleared"]);
+      2200);
 
     // Night timers never collided with the revenge slot: night 2 arms its
     // own sub-phase timers (resolve timer included) and a plain dawn lands.

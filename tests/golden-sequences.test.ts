@@ -45,11 +45,14 @@ import { unlinkSync } from "node:fs";
  *      anonymous — official mode sends no doctor_save_private to the victim)
  *      → day 1: ordinary vote execution of a non-joker
  *      non-lover → night 2: mafia kills a lover, the partner cascades
- *      (ordering/labeling keyed on Death.cause) → day 2: vote executes the
+ *      (direct victim first, then its cascade partner; PUBLIC heartbreak —
+ *      isLoverDeath on the partner's you_died + loverDeathName on the dawn
+ *      phase_change) → day 2: vote executes the
  *      last mafia → town win, vote-path game_over with full role reveal.
  *   #7 "vote-path lover cascade → mafia win at dawn" (B3-prep) — day 1:
- *      the vote executes a lover, the partner cascades (isLoverDeath keyed
- *      on Death.cause) → night 2: the mafia kill reaches
+ *      the vote executes a lover, the partner cascades (PUBLIC heartbreak:
+ *      isLoverDeath keyed on Death.cause + loverDeathName on the auto-night
+ *      phase_change) → night 2: the mafia kill reaches
  *      parity → NIGHT-path game_over (resolveNightAndTransition's distinct
  *      game_over emission: sound_cue day + phase_change phase=game_over
  *      before the game_over broadcast).
@@ -297,10 +300,10 @@ function makeSummarizer(players: GoldenPlayer[]) {
       }
       case "phase_change": {
         const saved = m.saved !== undefined ? ` saved=${m.saved}` : "";
-        // loverDeathName rides on the phase_change that follows a lover
-        // cascade — both paths (night and vote) key it on the Death's
-        // cause === "lover_cascade" (B3's cause-keyed labeling surface).
-        const lover = m.loverDeathName !== undefined ? ` lover=${seatName(m.loverDeathName)}` : "";
+        // Owner ruling: a lover cascade rides a PUBLIC loverDeathName on the
+        // phase_change (the heartbroken partner's name → the client's public
+        // "died of heartbreak" beat). Annotate it when present.
+        const lover = m.loverDeathName ? ` lover=${seatName(m.loverDeathName)}` : "";
         const ev = m.events
           ? ` events=[${m.events.map((e: any) => `${e.type}:${seatName(e.playerName)}@r${e.round}`).join(",")}]`
           : "";
@@ -317,14 +320,17 @@ function makeSummarizer(players: GoldenPlayer[]) {
         return `doctor_targets ${seats(m.players)} last=${m.lastDoctorTarget == null ? "-" : seatId(m.lastDoctorTarget)}`;
       case "detective_targets": return `detective_targets ${seats(m.players)}`;
       case "detective_result": return `detective_result target=${seatName(m.targetName)} isMafia=${m.isMafia}`;
-      case "doctor_save_private": return "doctor_save_private";
       case "spectator_kill_confirmed": {
         // NB: couples to server prose — resolveNightAndTransition (src/server.ts)
-        // builds doctorMessage as "Doctor saved <name>" / "Doctor was not able
-        // to save <name>". If that string changes, this branch (and the
-        // goldens) must change with it.
-        const doc = m.doctorMessage == null ? "-" : (m.doctorMessage.startsWith("Doctor saved") ? "saved" : "not_saved");
-        const kills = (m.kills ?? []).map((k: any) => `${seatName(k.name)}/${k.source}`).join(",");
+        // builds doctorMessage as "Doctor saved <name>" (house) / "The Doctor
+        // saved someone tonight" (official, anonymous) / "Doctor was not able to
+        // save <name>". A successful save reads "saved"; the failure reads
+        // "save" (no d). If that prose changes, this branch (and the goldens)
+        // must change with it.
+        const doc = m.doctorMessage == null ? "-" : (m.doctorMessage.includes("saved") ? "saved" : "not_saved");
+        // Finding 4: `source` (mafia/vigilante/joker_haunt) was dropped from the
+        // payload — the kill roll now names WHO died, never HOW.
+        const kills = (m.kills ?? []).map((k: any) => `${seatName(k.name)}`).join(",");
         return `spectator_kill_confirmed kills=[${kills}] doctor=${doc}`;
       }
       case "spectator_night_complete":
@@ -339,7 +345,9 @@ function makeSummarizer(players: GoldenPlayer[]) {
       case "vote_update": return `vote_update ${m.totalVotes}/${m.total}`;
       // M12: vote_result intentionally carries no tallies (see scanSecrecy)
       case "vote_result": return `vote_result target=${seatName(m.targetName)} executed=${m.executed}`;
-      case "you_died": return `you_died loverDeath=${m.isLoverDeath === true}`;
+      // Owner ruling: the heartbroken partner's OWN you_died carries
+      // isLoverDeath (private heartbreak art). Annotate it when present.
+      case "you_died": return `you_died${m.isLoverDeath ? " lover" : ""}`;
       case "player_died": return `player_died ${seatId(m.playerId)}`;
       case "game_over": {
         // The win reveal: every player's role/lover link goes public here
@@ -395,6 +403,17 @@ function scanSecrecy(players: GoldenPlayer[], roleOf: (seat: string) => Role): s
       // voters in small games)
       if (m.type === "vote_result" && (deepHasKey(m, "votesFor") || deepHasKey(m, "votesAgainst"))) {
         violations.push(`${tag}: vote tallies leaked (M12)`);
+      }
+      // Owner ruling (reverses old "Finding 5"): heartbreak is PUBLIC. The two
+      // wire fields are ALLOWED but MESSAGE-SCOPED — loverDeathName rides only
+      // the public phase_change (the dawn/execution/revenge heartbreak beat);
+      // isLoverDeath rides only the heartbroken partner's OWN you_died (private
+      // heartbreak art). Either on any OTHER message type is a leak/regression.
+      if (m.type !== "phase_change" && deepHasKey(m, "loverDeathName")) {
+        violations.push(`${tag}: loverDeathName on non-phase_change`);
+      }
+      if (m.type !== "you_died" && deepHasKey(m, "isLoverDeath")) {
+        violations.push(`${tag}: isLoverDeath on non-you_died`);
       }
       if (m.type !== "game_over") findRoleLeaks(m, p, tag, violations);
     }
@@ -485,7 +504,7 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "sound_cue detective_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
   // P1 — mafia. Only the two mafia seats carry mafiaTeam, the target list,
   // the vote-coordination stream and the confirm prompt.
@@ -519,7 +538,7 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "sound_cue detective_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
   // P2 — mafia (second seat; same private stream as P1).
   P2: [
@@ -551,7 +570,7 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "sound_cue detective_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
   // P3 — doctor. Gets the doctor prompt (all 8 alive, no prior save) and
   // their own night_action_done; nothing about other roles.
@@ -578,7 +597,7 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "sound_cue detective_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
   // P4 — detective. Prompt excludes self; the private detective_result
   // (P1 IS mafia) arrives at dawn, before the public death announcement.
@@ -605,7 +624,7 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "detective_result target=P1 isMafia=true",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
   // P5 — joker, lover. Alive joker has NO night action: stream is identical
   // to a citizen's apart from their own role/lover flags.
@@ -628,7 +647,7 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "sound_cue detective_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
   // P6 — citizen, the night-1 victim. The only seat that sees you_died and
   // (being dead by resolution time) the spectator kill confirmation.
@@ -648,11 +667,11 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "sound_cue doctor_close",
     "sound_cue detective_open",
     "sound_cue detective_close",
-    "spectator_kill_confirmed kills=[P6/mafia] doctor=not_saved",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P6] doctor=not_saved",
+    "you_died",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
   // P7 — citizen. The plain public stream: cues, the death, the day.
   P7: [
@@ -672,7 +691,7 @@ const GOLDEN_GAME_1: Record<string, string[]> = {
     "sound_cue detective_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
   ],
 };
 
@@ -781,7 +800,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
     "vote_called target=P2",
     "vote_update 1/6",
     "vote_update 2/6",
@@ -791,15 +810,15 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "vote_update 6/6",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "phase_change phase=night round=2 events=[kill:P6@r1,execution:P2@r1]",
+    "phase_change phase=night round=2 events=[death:P6@r1,execution:P2@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "player_died P5",
     "player_died P4",
+    "player_died P5",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false events=[kill:P6@r1,execution:P2@r1,kill:P5@r2,joker_haunt:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[death:P6@r1,execution:P2@r1,death:P5@r2,death:P4@r2]",
   ],
   // P1 — mafia (solo), yes-voter. Carries the mafia stream in BOTH nights;
   // a single mafia's lock is instant consensus.
@@ -826,7 +845,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
     "vote_called target=P2",
     "vote_update 1/6",
     "vote_update 2/6",
@@ -836,7 +855,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "vote_update 6/6",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "phase_change phase=night round=2 events=[kill:P6@r1,execution:P2@r1]",
+    "phase_change phase=night round=2 events=[death:P6@r1,execution:P2@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
@@ -846,10 +865,10 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "mafia_confirm_ready target=P5",
     "night_action_done",
     "sound_cue mafia_close",
-    "player_died P5",
     "player_died P4",
+    "player_died P5",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false events=[kill:P6@r1,execution:P2@r1,kill:P5@r2,joker_haunt:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[death:P6@r1,execution:P2@r1,death:P5@r2,death:P4@r2]",
   ],
   // P2 — joker. After execution: private joker_win_overlay (official mode —
   // the game continues), then in night 2 the private haunt prompt listing
@@ -873,7 +892,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
     "vote_called target=P2",
     "vote_update 1/6",
     "vote_update 2/6",
@@ -883,19 +902,19 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "vote_update 6/6",
     "vote_result target=P2 executed=true",
     "joker_win_overlay P2",
-    "you_died loverDeath=false",
+    "you_died",
     "player_died P2",
-    "phase_change phase=night round=2 events=[kill:P6@r1,execution:P2@r1]",
+    "phase_change phase=night round=2 events=[death:P6@r1,execution:P2@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "joker_haunt_targets [P0,P1,P3,P4]",
     "night_action_done",
     "sound_cue mafia_close",
-    "player_died P5",
     "player_died P4",
+    "player_died P5",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false events=[kill:P6@r1,execution:P2@r1,kill:P5@r2,joker_haunt:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[death:P6@r1,execution:P2@r1,death:P5@r2,death:P4@r2]",
   ],
   // P3 — citizen, yes-voter, survives. Plain public stream throughout.
   P3: [
@@ -914,7 +933,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
     "vote_called target=P2",
     "vote_update 1/6",
     "vote_update 2/6",
@@ -924,15 +943,15 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "vote_update 6/6",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "phase_change phase=night round=2 events=[kill:P6@r1,execution:P2@r1]",
+    "phase_change phase=night round=2 events=[death:P6@r1,execution:P2@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "player_died P5",
     "player_died P4",
+    "player_died P5",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false events=[kill:P6@r1,execution:P2@r1,kill:P5@r2,joker_haunt:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[death:P6@r1,execution:P2@r1,death:P5@r2,death:P4@r2]",
   ],
   // P4 — citizen, yes-voter, the HAUNT victim. Dies at night-2 dawn: the
   // spectator kill panel arrives first (they are dead by send time), then
@@ -952,7 +971,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
     "vote_called target=P2",
     "vote_update 1/6",
     "vote_update 2/6",
@@ -962,17 +981,17 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "vote_update 6/6",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "phase_change phase=night round=2 events=[kill:P6@r1,execution:P2@r1]",
+    "phase_change phase=night round=2 events=[death:P6@r1,execution:P2@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P5/mafia,P4/joker_haunt] doctor=-",
-    "player_died P5",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P4,P5] doctor=-",
+    "you_died",
     "player_died P4",
+    "player_died P5",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false events=[kill:P6@r1,execution:P2@r1,kill:P5@r2,joker_haunt:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[death:P6@r1,execution:P2@r1,death:P5@r2,death:P4@r2]",
   ],
   // P5 — citizen, no-voter, the night-2 MAFIA victim. Their you_died comes
   // before P4's haunt death announcement (mafia kill resolves first).
@@ -990,7 +1009,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
     "vote_called target=P2",
     "vote_update 1/6",
     "vote_update 2/6",
@@ -1000,17 +1019,17 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "vote_update 6/6",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "phase_change phase=night round=2 events=[kill:P6@r1,execution:P2@r1]",
+    "phase_change phase=night round=2 events=[death:P6@r1,execution:P2@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P5/mafia,P4/joker_haunt] doctor=-",
-    "you_died loverDeath=false",
-    "player_died P5",
+    "spectator_kill_confirmed kills=[P4,P5] doctor=-",
     "player_died P4",
+    "you_died",
+    "player_died P5",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false events=[kill:P6@r1,execution:P2@r1,kill:P5@r2,joker_haunt:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[death:P6@r1,execution:P2@r1,death:P5@r2,death:P4@r2]",
   ],
   // P6 — citizen, the night-1 victim → the only plain spectator during the
   // haunt night. Sees the dead-player stream: the live mafia vote state,
@@ -1027,11 +1046,11 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P6/mafia] doctor=-",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P6] doctor=-",
+    "you_died",
     "player_died P6",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P6@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P6@r1]",
     "vote_called target=P2",
     "vote_update 1/6",
     "vote_update 2/6",
@@ -1041,7 +1060,7 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "vote_update 6/6",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "phase_change phase=night round=2 events=[kill:P6@r1,execution:P2@r1]",
+    "phase_change phase=night round=2 events=[death:P6@r1,execution:P2@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
@@ -1052,11 +1071,11 @@ const GOLDEN_GAME_2: Record<string, string[]> = {
     "spectator_mafia_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1 targets=[P0,P3,P4,P5]",
     "spectator_night_complete phase=mafia target=P5 alive=true",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P5/mafia,P4/joker_haunt] doctor=-",
-    "player_died P5",
+    "spectator_kill_confirmed kills=[P4,P5] doctor=-",
     "player_died P4",
+    "player_died P5",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false events=[kill:P6@r1,execution:P2@r1,kill:P5@r2,joker_haunt:P4@r2]",
+    "phase_change phase=day round=2 saved=false events=[death:P6@r1,execution:P2@r1,death:P5@r2,death:P4@r2]",
   ],
 };
 
@@ -1166,14 +1185,14 @@ const GOLDEN_GAME_3: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P1",
     "vote_update 1/4",
     "vote_update 2/4",
     "vote_update 3/4",
     "vote_update 4/4",
     "vote_result target=P1 executed=false",
-    "phase_change phase=day round=1 events=[kill:P4@r1,spared:P1@r1]",
+    "phase_change phase=day round=1 events=[death:P4@r1,spared:P1@r1]",
   ],
   // P1 — mafia, the accused. Survives the vote; no you_died, no death
   // broadcast — just the same public spared sequence as everyone else.
@@ -1198,14 +1217,14 @@ const GOLDEN_GAME_3: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P1",
     "vote_update 1/4",
     "vote_update 2/4",
     "vote_update 3/4",
     "vote_update 4/4",
     "vote_result target=P1 executed=false",
-    "phase_change phase=day round=1 events=[kill:P4@r1,spared:P1@r1]",
+    "phase_change phase=day round=1 events=[death:P4@r1,spared:P1@r1]",
   ],
   // P2 — citizen, yes-voter. Plain public stream.
   P2: [
@@ -1223,14 +1242,14 @@ const GOLDEN_GAME_3: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P1",
     "vote_update 1/4",
     "vote_update 2/4",
     "vote_update 3/4",
     "vote_update 4/4",
     "vote_result target=P1 executed=false",
-    "phase_change phase=day round=1 events=[kill:P4@r1,spared:P1@r1]",
+    "phase_change phase=day round=1 events=[death:P4@r1,spared:P1@r1]",
   ],
   // P3 — citizen, no-voter. Plain public stream.
   P3: [
@@ -1247,14 +1266,14 @@ const GOLDEN_GAME_3: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P1",
     "vote_update 1/4",
     "vote_update 2/4",
     "vote_update 3/4",
     "vote_update 4/4",
     "vote_result target=P1 executed=false",
-    "phase_change phase=day round=1 events=[kill:P4@r1,spared:P1@r1]",
+    "phase_change phase=day round=1 events=[death:P4@r1,spared:P1@r1]",
   ],
   // P4 — citizen, the night-1 victim. Dead spectators still receive the
   // whole public vote stream (call, progress, result, the spared day).
@@ -1269,18 +1288,18 @@ const GOLDEN_GAME_3: Record<string, string[]> = {
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P4/mafia] doctor=-",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P4] doctor=-",
+    "you_died",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P1",
     "vote_update 1/4",
     "vote_update 2/4",
     "vote_update 3/4",
     "vote_update 4/4",
     "vote_result target=P1 executed=false",
-    "phase_change phase=day round=1 events=[kill:P4@r1,spared:P1@r1]",
+    "phase_change phase=day round=1 events=[death:P4@r1,spared:P1@r1]",
   ],
 };
 
@@ -1565,7 +1584,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     // — restart_game: identical re-deal, fresh night-1 gate —
     "game_started role=citizen lover=false variant=0",
     "phase_change phase=night round=1",
@@ -1576,7 +1595,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P2",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P2@r1]",
   ],
   // P1 — mafia in BOTH deals (identical fixed deal). The post-restart
   // target list includes P4 again — the restart revived them.
@@ -1601,7 +1620,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     // — restart_game —
     "game_started role=mafia lover=false variant=0 mafiaTeam=[P1]",
     "phase_change phase=night round=1",
@@ -1616,7 +1635,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P2",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P2@r1]",
   ],
   // P2 — citizen; survives the first game, dies in the post-restart night.
   P2: [
@@ -1634,7 +1653,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     // — restart_game —
     "game_started role=citizen lover=false variant=1",
     "phase_change phase=night round=1",
@@ -1642,11 +1661,11 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P2/mafia] doctor=-",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P2] doctor=-",
+    "you_died",
     "player_died P2",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P2@r1]",
   ],
   // P3 — citizen. Plain public stream through both games.
   P3: [
@@ -1663,7 +1682,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     // — restart_game —
     "game_started role=citizen lover=false variant=2",
     "phase_change phase=night round=1",
@@ -1673,7 +1692,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P2",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P2@r1]",
   ],
   // P4 — citizen, night-1 victim. DEAD when the restart lands: receives the
   // same restart triplet as the living (minus awaiting_ready) and is a
@@ -1690,11 +1709,11 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P4/mafia] doctor=-",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P4] doctor=-",
+    "you_died",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     // — restart_game (received while dead) —
     "game_started role=citizen lover=false variant=3",
     "phase_change phase=night round=1",
@@ -1704,7 +1723,7 @@ const GOLDEN_GAME_5: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P2",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P2@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P2@r1]",
   ],
 };
 
@@ -1785,18 +1804,16 @@ const GAME_SETTINGS_6 = {
 // enters the history AND the saved victim is NOT privately told they were
 // targeted — no doctor_save_private on the wire) → day 1: ordinary vote
 // executes P5 (citizen, non-lover, non-joker; 4 yes / 2 no) → auto-night 2:
-// mafia kills lover P3, partner P4 cascades (night path: primary victim
-// first, then the lover, same source; the partner's you_died carries
-// isLoverDeath and the day phase_change carries loverDeathName), doctor's
+// mafia kills lover P3, partner P4 cascades (night path: direct victim first,
+// then its cascade partner immediately after; the partner's you_died carries
+// isLoverDeath for their OWN heartbreak art, and the dawn phase_change carries
+// loverDeathName=P4 — owner ruling: heartbreak is PUBLIC, so the direct victim
+// gets the combined cause-neutral line and P4 gets a separate "died of
+// heartbreak" beat; kill+lover_death events survive projection), doctor's
 // save on P0 misses → day 2: vote executes the last mafia P1 → TOWN WIN at
 // vote resolution: phase_change phase=game_over (no day sound cue on the
 // vote path) + game_over winner=town with the full role/lover reveal.
 const GOLDEN_GAME_6: Record<string, string[]> = {
-  // P0 — admin, citizen. Saved night-1 dawn shows saved=true with EMPTY
-  // events (official doctor mode logs no save event); night-2 dawn carries
-  // lover=P4 and the kill+lover_death pair; the day-2 vote ends the game on
-  // the VOTE path: phase_change phase=game_over (no day sound cue) then the
-  // game_over reveal.
   P0: [
     "registered",
     "game_created",
@@ -1838,7 +1855,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,death:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -1848,9 +1865,6 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
     "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
   ],
-  // P1 — mafia. Night-1 kill on P5 silently blocked by the doctor (the mafia
-  // see only the public saved=true day). Executed day 2 → their you_died
-  // arrives between vote_result and their own player_died.
   P1: [
     "registered",
     "game_joined isAdmin=false",
@@ -1899,19 +1913,17 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,death:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
     "vote_update 3/3",
     "vote_result target=P1 executed=true",
-    "you_died loverDeath=false",
+    "you_died",
     "player_died P1",
     "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
     "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
   ],
-  // P2 — doctor. Night-2 prompt carries last=P5 (the night-1 save target,
-  // dead by then) — lastDoctorTarget propagation pinned over the wire.
   P2: [
     "registered",
     "game_joined isAdmin=false",
@@ -1953,7 +1965,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,death:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -1963,9 +1975,6 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
     "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
   ],
-  // P3 — citizen, lover, the night-2 PRIMARY mafia victim: dead by send time,
-  // so the spectator kill panel precedes their you_died (loverDeath=false —
-  // primary kill, not a cascade), then both player_died broadcasts.
   P3: [
     "registered",
     "game_joined isAdmin=false",
@@ -1999,12 +2008,12 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "sound_cue mafia_close",
     "sound_cue doctor_open",
     "sound_cue doctor_close",
-    "spectator_kill_confirmed kills=[P3/mafia,P4/mafia] doctor=not_saved",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P3,P4] doctor=not_saved",
+    "you_died",
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,death:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -2014,9 +2023,6 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
     "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
   ],
-  // P4 — citizen, lover, the night-2 CASCADE death: sees partner P3's
-  // player_died FIRST, then their own you_died with loverDeath=true (night
-  // path: labeled by the Death's cause === "lover_cascade").
   P4: [
     "registered",
     "game_joined isAdmin=false",
@@ -2049,12 +2055,12 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "sound_cue mafia_close",
     "sound_cue doctor_open",
     "sound_cue doctor_close",
-    "spectator_kill_confirmed kills=[P3/mafia,P4/mafia] doctor=not_saved",
+    "spectator_kill_confirmed kills=[P3,P4] doctor=not_saved",
     "player_died P3",
-    "you_died loverDeath=true",
+    "you_died lover",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,death:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -2064,11 +2070,6 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "phase_change phase=game_over round=2 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2,execution:P1@r2]",
     "game_over winner=town players=[P0=citizen,P1=mafia(dead),P2=doctor,P3=citizen(dead)+lover:P4,P4=citizen(dead)+lover:P3,P5=citizen(dead)]",
   ],
-  // P5 — citizen. Night 1: the mafia's target, saved by the doctor — but in
-  // official mode the victim is NOT told (no doctor_save_private); the dawn
-  // shows only the anonymous saved=true. Executed day 1 (plain execution),
-  // then the full dead-spectator stream of night 2: live mafia votes, the
-  // doctor sub-phase (spectator_night_phase) and the doctor's pick.
   P5: [
     "registered",
     "game_joined isAdmin=false",
@@ -2092,7 +2093,7 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "vote_update 5/6",
     "vote_update 6/6",
     "vote_result target=P5 executed=true",
-    "you_died loverDeath=false",
+    "you_died",
     "player_died P5",
     "phase_change phase=night round=2 events=[execution:P5@r1]",
     "sound_cue night",
@@ -2105,13 +2106,13 @@ const GOLDEN_GAME_6: Record<string, string[]> = {
     "sound_cue mafia_close",
     "sound_cue doctor_open",
     "spectator_night_phase doctor roleAlive=true",
-    "spectator_night_complete phase=doctor target=P0 alive=true",
+    "spectator_night_complete phase=doctor target=- alive=true",
     "sound_cue doctor_close",
-    "spectator_kill_confirmed kills=[P3/mafia,P4/mafia] doctor=not_saved",
+    "spectator_kill_confirmed kills=[P3,P4] doctor=not_saved",
     "player_died P3",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,kill:P3@r2,lover_death:P4@r2]",
+    "phase_change phase=day round=2 saved=false lover=P4 events=[execution:P5@r1,death:P3@r2,lover_death:P4@r2]",
     "vote_called target=P1",
     "vote_update 1/3",
     "vote_update 2/3",
@@ -2226,10 +2227,6 @@ const GAME_SETTINGS_7 = {
 // (saved=false) BEFORE the game_over broadcast, and the dead spectators'
 // kill panel precedes it all.
 const GOLDEN_GAME_7: Record<string, string[]> = {
-  // P0 — admin, citizen. Day-1 vote executes lover P2 → P3 cascades: both
-  // player_died in push order, the night-2 phase_change carries lover=P3.
-  // The night-2 dawn ends the game on the NIGHT path: sound_cue day +
-  // phase_change phase=game_over saved=false, THEN the game_over reveal.
   P0: [
     "registered",
     "game_created",
@@ -2250,7 +2247,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/5",
     "vote_update 2/5",
@@ -2260,7 +2257,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "vote_result target=P2 executed=true",
     "player_died P2",
     "player_died P3",
-    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "phase_change phase=night round=2 lover=P3 events=[death:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
@@ -2270,8 +2267,6 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
     "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
   ],
-  // P1 — mafia, the winner. Night-2 target list is down to [P0,P5] (the
-  // cascade removed both lovers).
   P1: [
     "registered",
     "game_joined isAdmin=false",
@@ -2294,7 +2289,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/5",
     "vote_update 2/5",
@@ -2304,7 +2299,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "vote_result target=P2 executed=true",
     "player_died P2",
     "player_died P3",
-    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "phase_change phase=night round=2 lover=P3 events=[death:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
@@ -2319,9 +2314,6 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
     "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
   ],
-  // P2 — citizen, lover, the day-1 execution target: you_died with
-  // loverDeath=false (vote target, not a cascade) between vote_result and
-  // their own player_died; then the dead-spectator stream of night 2.
   P2: [
     "registered",
     "game_joined isAdmin=false",
@@ -2338,7 +2330,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/5",
     "vote_update 2/5",
@@ -2346,10 +2338,10 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "vote_update 4/5",
     "vote_update 5/5",
     "vote_result target=P2 executed=true",
-    "you_died loverDeath=false",
+    "you_died",
     "player_died P2",
     "player_died P3",
-    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "phase_change phase=night round=2 lover=P3 events=[death:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
@@ -2358,15 +2350,12 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "spectator_mafia_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1 targets=[P0,P5]",
     "spectator_night_complete phase=mafia target=P5 alive=true",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
+    "spectator_kill_confirmed kills=[P5] doctor=-",
     "player_died P5",
     "sound_cue day",
     "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
     "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
   ],
-  // P3 — citizen, lover, the VOTE-path cascade death: sees partner P2's
-  // player_died first, then their own you_died with loverDeath=true
-  // (labeled by the Death's cause === "lover_cascade").
   P3: [
     "registered",
     "game_joined isAdmin=false",
@@ -2382,7 +2371,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/5",
     "vote_update 2/5",
@@ -2391,9 +2380,9 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "vote_update 5/5",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "you_died loverDeath=true",
+    "you_died lover",
     "player_died P3",
-    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "phase_change phase=night round=2 lover=P3 events=[death:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
@@ -2402,13 +2391,12 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "spectator_mafia_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1 targets=[P0,P5]",
     "spectator_night_complete phase=mafia target=P5 alive=true",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
+    "spectator_kill_confirmed kills=[P5] doctor=-",
     "player_died P5",
     "sound_cue day",
     "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
     "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
   ],
-  // P4 — citizen, the night-1 victim; plain dead-spectator stream after.
   P4: [
     "registered",
     "game_joined isAdmin=false",
@@ -2421,11 +2409,11 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P4/mafia] doctor=-",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P4] doctor=-",
+    "you_died",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/5",
     "vote_update 2/5",
@@ -2435,7 +2423,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "vote_result target=P2 executed=true",
     "player_died P2",
     "player_died P3",
-    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "phase_change phase=night round=2 lover=P3 events=[death:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
@@ -2444,15 +2432,12 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "spectator_mafia_update votes={P1:[P5/lock]} locked=P5 objected={} mafiaAlive=1 targets=[P0,P5]",
     "spectator_night_complete phase=mafia target=P5 alive=true",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
+    "spectator_kill_confirmed kills=[P5] doctor=-",
     "player_died P5",
     "sound_cue day",
     "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
     "game_over winner=mafia players=[P0=citizen,P1=mafia,P2=citizen(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead),P5=citizen(dead)]",
   ],
-  // P5 — citizen, the night-2 victim whose death hands mafia parity: the
-  // spectator kill panel, you_died, player_died, then the night-path
-  // game_over pair.
   P5: [
     "registered",
     "game_joined isAdmin=false",
@@ -2466,7 +2451,7 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/5",
     "vote_update 2/5",
@@ -2476,13 +2461,13 @@ const GOLDEN_GAME_7: Record<string, string[]> = {
     "vote_result target=P2 executed=true",
     "player_died P2",
     "player_died P3",
-    "phase_change phase=night round=2 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
+    "phase_change phase=night round=2 lover=P3 events=[death:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "sound_cue night",
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P5/mafia] doctor=-",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P5] doctor=-",
+    "you_died",
     "player_died P5",
     "sound_cue day",
     "phase_change phase=game_over round=2 saved=false events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1,kill:P5@r2]",
@@ -2567,9 +2552,6 @@ const GAME_SETTINGS_8 = {
 // 1-vs-1 parity, no mafia-win check runs — the house branch returns with
 // winner=joker directly (current behavior, pinned).
 const GOLDEN_GAME_8: Record<string, string[]> = {
-  // P0 — admin, citizen. The day-1 vote ends the game instantly (house
-  // joker): vote_result → both deaths → phase_change phase=game_over
-  // round=1 with lover=P3 → game_over winner=joker (NO jokerJointWinner).
   P0: [
     "registered",
     "game_created",
@@ -2589,7 +2571,7 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/4",
     "vote_update 2/4",
@@ -2601,8 +2583,6 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
   ],
-  // P1 — mafia. Loses to the instant joker win despite 1-vs-1 parity (the
-  // house branch sets winner=joker without a mafia-parity check).
   P1: [
     "registered",
     "game_joined isAdmin=false",
@@ -2624,7 +2604,7 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/4",
     "vote_update 2/4",
@@ -2636,9 +2616,6 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
   ],
-  // P2 — joker, lover, executed. HOUSE mode: NO joker_win_overlay (that is
-  // official-mode-only), no haunt night — just you_died (loverDeath=false)
-  // and the immediate game_over.
   P2: [
     "registered",
     "game_joined isAdmin=false",
@@ -2654,21 +2631,19 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/4",
     "vote_update 2/4",
     "vote_update 3/4",
     "vote_update 4/4",
     "vote_result target=P2 executed=true",
-    "you_died loverDeath=false",
+    "you_died",
     "player_died P2",
     "player_died P3",
     "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
   ],
-  // P3 — citizen, lover of the joker: cascades through the HOUSE-joker kill
-  // block — partner's player_died first, then you_died loverDeath=true.
   P3: [
     "registered",
     "game_joined isAdmin=false",
@@ -2683,7 +2658,7 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "sound_cue mafia_close",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/4",
     "vote_update 2/4",
@@ -2691,12 +2666,11 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "vote_update 4/4",
     "vote_result target=P2 executed=true",
     "player_died P2",
-    "you_died loverDeath=true",
+    "you_died lover",
     "player_died P3",
     "phase_change phase=game_over round=1 lover=P3 events=[kill:P4@r1,execution:P2@r1,lover_death:P3@r1]",
     "game_over winner=joker players=[P0=citizen,P1=mafia,P2=joker(dead)+lover:P3,P3=citizen(dead)+lover:P2,P4=citizen(dead)]",
   ],
-  // P4 — citizen, the night-1 victim; dead spectator for the vote.
   P4: [
     "registered",
     "game_joined isAdmin=false",
@@ -2708,11 +2682,11 @@ const GOLDEN_GAME_8: Record<string, string[]> = {
     "sound_cue everyone_close",
     "sound_cue mafia_open",
     "sound_cue mafia_close",
-    "spectator_kill_confirmed kills=[P4/mafia] doctor=-",
-    "you_died loverDeath=false",
+    "spectator_kill_confirmed kills=[P4] doctor=-",
+    "you_died",
     "player_died P4",
     "sound_cue day",
-    "phase_change phase=day round=1 saved=false events=[kill:P4@r1]",
+    "phase_change phase=day round=1 saved=false events=[death:P4@r1]",
     "vote_called target=P2",
     "vote_update 1/4",
     "vote_update 2/4",

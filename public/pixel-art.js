@@ -58,6 +58,23 @@
       [_,_,"#574","#e60","#574","#574","#e60","#574",_,_],
       [_,_,"#653","#653",_,_,"#653","#653",_,_],
     ],
+    // Vigilante: black wide-brim hat (full brim like the Godfather), determined
+    // stubbled face, dark coat with a gold sheriff star (#fb0), two red belt
+    // rounds (#f00) and a silver revolver (#888/#ddd) on the hip — all centered
+    // within the body (cols 2-7) so it reads at the SAME scale/silhouette as the
+    // other roles (no narrow 4px hat-top, no col-0 bullet jut).
+    vigilante: [
+      [_,_,"#222","#222","#222","#222","#222","#222",_,_],                     // 0 hat crown (6px)
+      [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],           // 1 hat crown (8px)
+      ["#222","#222","#222","#222","#222","#222","#222","#222","#222","#222"], // 2 wide brim (full width)
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],                     // 3 forehead
+      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],                     // 4 eyes (cols 3,6)
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],                     // 5 cheeks
+      [_,_,"#fdd","#fdd","#555","#555","#fdd","#fdd",_,_],                     // 6 stubble jaw
+      [_,_,"#222","#fb0","#222","#222","#222","#222",_,_],                     // 7 coat + gold star (col 3)
+      [_,_,"#f00","#f00","#222","#222","#888","#ddd",_,_],                     // 8 belt rounds + revolver
+      [_,_,"#333","#333",_,_,"#333","#333",_,_],                              // 9 boots
+    ],
     citizen: [
       // 0: farmer
       [
@@ -218,6 +235,18 @@
         [_,_,"#222","#222",_,_,"#222","#222",_,_],
       ],
     ],
+    godfather: [
+      [_,_,"#222","#222","#222","#222","#222","#222",_,_],
+      [_,"#222","#222","#222","#222","#222","#222","#222","#222",_],
+      [_,"#c9a227","#c9a227","#c9a227","#c9a227","#c9a227","#c9a227","#c9a227","#c9a227",_],
+      ["#333","#333","#333","#333","#333","#333","#333","#333","#333","#333"],
+      [_,_,"#fdd","#fdd","#fdd","#fdd","#fdd","#fdd",_,_],
+      [_,_,"#fdd","#222","#fdd","#fdd","#222","#fdd",_,_],
+      [_,_,"#fdd","#fdd","#a62","#a62","#fdd","#fdd",_,_],
+      [_,_,"#222","#222","#fff","#fff","#222","#222",_,_],
+      [_,_,"#222","#fff","#d00","#d00","#fff","#222",_,_],
+      [_,_,"#222","#222","#c9a227","#d00","#222","#222",_,_],
+    ],
   };
 
   // Card back: mafioso + civilian side by side
@@ -327,6 +356,21 @@
     [_,_,"#ddd",_,"#852","#852",_,_,_,_],
     [_,_,"#ddd","#852","#852",_,_,_,_,_],
     [_,_,"#852","#852",_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+  ];
+
+  // Bullet/cartridge icon for the vigilante shoot slide-to-confirm: a brass
+  // casing (#fb0/#fc0) with a copper tip (#e94/#c83/#a52) pointing right.
+  var BULLET_ART = [
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+    ["#fb0","#fb0","#fb0","#fb0","#fb0","#c83","#c83","#a52",_,_],
+    ["#fc0","#fb0","#fb0","#fb0","#fb0","#e94","#c83","#a52","#a52",_],
+    ["#fc0","#fb0","#fb0","#fb0","#fb0","#e94","#c83","#a52","#a52",_],
+    ["#fb0","#fb0","#fb0","#fb0","#fb0","#c83","#c83","#a52",_,_],
+    [_,_,_,_,_,_,_,_,_,_],
+    [_,_,_,_,_,_,_,_,_,_],
     [_,_,_,_,_,_,_,_,_,_],
   ];
 
@@ -557,6 +601,8 @@
     detective: "You are the Detective. Each night, investigate one player to discover if they are Mafia.",
     joker: "You are the Joker. Win by getting yourself executed during the day vote.",
     hunter: "You are the Hunter. If you die, you may take one player down with you.",
+    vigilante: "You are the Vigilante. You have ONE bullet for the entire game. Each night you may shoot one player — or hold your fire and keep the bullet. Friendly fire is allowed.",
+    godfather: "You are the Godfather. You run the Mafia and appear INNOCENT to the Detective. Win with the Mafia.",
   };
 
   var ROLE_COLORS = {
@@ -566,6 +612,8 @@
     detective: "detective",
     joker: "joker",
     hunter: "hunter",
+    vigilante: "vigilante",
+    godfather: "godfather",
   };
 
   // Expose on window for app.js
@@ -579,6 +627,7 @@
   window.MAGNIFIER_ART = MAGNIFIER_ART;
   window.CLOWN_ART = CLOWN_ART;
   window.BOW_ART = BOW_ART;
+  window.BULLET_ART = BULLET_ART;
   window.TROPHY_ART = TROPHY_ART;
   window.GEAR_ART = GEAR_ART;
   window.SCROLL_ART = SCROLL_ART;

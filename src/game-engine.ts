@@ -1,4 +1,4 @@
-import type { Game, GameSettings, Player, Role, PlayerInfo, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions } from "./types";
+import type { Game, GameSettings, Player, Role, PlayerInfo, RosterSummary, RosterEntry, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Narrator } from "./narrator";
 // B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
@@ -41,8 +41,10 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     isAlive: true,
     isLover: false,
     loverId: null,
+    isGodfather: false,
     connected: true,
     variant: 0,
+    vigilanteBulletUsed: false,
   };
 
   const game: Game = {
@@ -58,6 +60,7 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
     mafiaTarget: null,
     doctorTarget: null,
     detectiveTarget: null,
+    vigilanteTarget: null,
     lastDoctorTarget: null,
     jokerHauntTarget: null,
     jokerHauntVoters: [],
@@ -111,6 +114,7 @@ const NIGHT_RESETS = {
   mafiaTarget: (g: Game) => { g.mafiaTarget = null; },
   doctorTarget: (g: Game) => { g.doctorTarget = null; },
   detectiveTarget: (g: Game) => { g.detectiveTarget = null; },
+  vigilanteTarget: (g: Game) => { g.vigilanteTarget = null; },
   jokerHauntTarget: (g: Game) => { g.jokerHauntTarget = null; },
   jokerHauntVoters: (g: Game) => { g.jokerHauntVoters = []; },
   nightSubPhase: (g: Game) => { g.nightSubPhase = null; },
@@ -145,6 +149,11 @@ const GAME_RESETS = {
       player.isLover = false;
       player.loverId = null;
       player.variant = 0;
+      player.isGodfather = false;
+      // CRITICAL (same reset-leak class as isGodfather): a spent bullet must
+      // not survive a Play Again — without this a previous vigilante's flag
+      // would leak onto whoever holds the seat in the next game.
+      player.vigilanteBulletUsed = false;
     }
   },
   lastDoctorTarget: (g: Game) => { g.lastDoctorTarget = null; },
@@ -284,15 +293,6 @@ export interface InvariantContext {
    * callers omit it and the timer invariant is skipped.
    */
   hasPendingNightTimer?: boolean;
-  /**
-   * C3b (§6 M2/M7 correlation): whether this game's revenge-timer slot is
-   * occupied. Same caller contract as hasPendingNightTimer — server choke
-   * points pass it, engine-level callers omit it and the correlation is
-   * skipped. The revenge timer's own fire callback ALSO omits it: it
-   * deletes its slot before asserting, so mid-fire the gate is legally
-   * open with an empty slot.
-   */
-  hasRevengeTimer?: boolean;
 }
 
 /**
@@ -400,20 +400,6 @@ export function assertInvariants(game: Game, ctx: InvariantContext): string[] {
     if (game.votes.size > 0) violations.push("pending_revenge_votes_nonempty");
     if (game.voteTarget !== null) violations.push("pending_revenge_vote_target_set");
     if (game.winner !== null) violations.push("pending_revenge_winner_set");
-  }
-
-  // Invariant (C3b, §6 M2/M7 correlation): the revenge gate and its timer
-  // move together — gate open ⇒ timeout armed (a missing timer is an
-  // orphaned gate no timeout-decline can ever close), and timer armed ⇒
-  // gate open (an orphaned timer is the M2 class). Checked only when the
-  // caller can see the slot (ctx contract above).
-  if (ctx.hasRevengeTimer !== undefined) {
-    if (game.pendingRevenge !== null && !ctx.hasRevengeTimer) {
-      violations.push("pending_revenge_timer_missing");
-    }
-    if (ctx.hasRevengeTimer && game.pendingRevenge === null) {
-      violations.push("revenge_timer_without_gate");
-    }
   }
 
   // Invariant (M2 class): the TRACKED night-timer slot is empty outside
@@ -533,8 +519,10 @@ export function addPlayer(game: Game, userId: number, username: string): Player 
     isAlive: true,
     isLover: false,
     loverId: null,
+    isGodfather: false,
     connected: true,
     variant: 0,
+    vigilanteBulletUsed: false,
   };
 
   game.players.set(userId, player);
@@ -557,7 +545,7 @@ export function updateSettings(game: Game, settings: Partial<GameSettings>): voi
 }
 
 // Keys handled by sanitizeSettings, grouped by validation strategy.
-const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableLovers", "soundEnabled"] as const;
+const boolKeys = ["enableDoctor", "enableDetective", "enableJoker", "enableHunter", "enableVigilante", "enableLovers", "enableGodfather", "soundEnabled"] as const;
 const modeKeys = ["doctorMode", "jokerMode"] as const;
 
 // Compile-time exhaustiveness guard: if a key is added to GameSettings in
@@ -618,8 +606,36 @@ export function getPlayerInfo(game: Game, includeRoles = false): PlayerInfo[] {
     username: p.username,
     isAlive: p.isAlive,
     isAdmin: p.id === game.adminId,
-    ...(includeRoles ? { role: p.role ?? undefined, isLover: p.isLover, loverId: p.loverId ?? undefined } : {}),
+    ...(includeRoles ? { role: p.role ?? undefined, isLover: p.isLover, loverId: p.loverId ?? undefined, isGodfather: p.isGodfather } : {}),
   }));
+}
+
+// Display order for the "Roles in Play" roster: mafia first, town specials
+// next, citizens last. (Godfather is not a Role — it rides as a flag.)
+const ROSTER_ORDER: Role[] = ["mafia", "doctor", "detective", "vigilante", "hunter", "joker", "citizen"];
+
+/**
+ * Public, information-safe lineup summary for the in-game "Roles in Play" modal:
+ * how many of each role are in play (counts are public knowledge — the lobby
+ * already lists the lineup) plus whether the Godfather / Lovers modifiers are
+ * active. Derived from the ACTUAL dealt roles so it can't drift from the deal.
+ * No identities are exposed — only role → count.
+ */
+export function rosterSummary(game: Game): RosterSummary {
+  const counts = new Map<Role, number>();
+  let godfather = false;
+  let lovers = false;
+  for (const p of game.players.values()) {
+    if (p.role) counts.set(p.role, (counts.get(p.role) ?? 0) + 1);
+    if (p.isGodfather) godfather = true;
+    if (p.isLover) lovers = true;
+  }
+  const roles: RosterEntry[] = [];
+  for (const role of ROSTER_ORDER) {
+    const count = counts.get(role) ?? 0;
+    if (count > 0) roles.push({ role, count });
+  }
+  return { roles, godfather, lovers };
 }
 
 // ── B5 (audit P6-lite): the two pure payload projections ────────────────
@@ -707,6 +723,7 @@ export function getAliveByRole(game: Game, role: Role): Player[] {
 export interface FixedDeal {
   roles: Role[];             // role for the i-th player in join order
   lovers?: [number, number]; // join-order indices of the lover pair
+  godfather?: number;        // join-order index of the mafioso to flag as Godfather
 }
 
 let fixedDeal: FixedDeal | null = process.env.MAFIA_FIXED_DEAL
@@ -727,8 +744,16 @@ function assignFixedRoles(game: Game, deal: FixedDeal): number {
 
   let mafiaCount = 0;
   for (let i = 0; i < playerIds.length; i++) {
-    game.players.get(playerIds[i])!.role = deal.roles[i];
+    const p = game.players.get(playerIds[i])!;
+    p.role = deal.roles[i];
+    p.isGodfather = false; // fixed path never touches flags otherwise — reset before pinning
     if (deal.roles[i] === "mafia") mafiaCount++;
+  }
+
+  // Deterministically pin the Godfather by join-order index (test seam).
+  if (deal.godfather != null) {
+    const gf = game.players.get(playerIds[deal.godfather]);
+    if (gf && gf.role === "mafia") gf.isGodfather = true;
   }
 
   // Same variant scheme as the random path, with mafiaVariant pinned to 0
@@ -795,6 +820,11 @@ function assignRoles(game: Game): number {
     idx++;
   }
 
+  if (settings.enableVigilante && idx < totalPlayers) {
+    game.players.get(playerIds[idx])!.role = "vigilante";
+    idx++;
+  }
+
   // Rest are citizens
   while (idx < totalPlayers) {
     game.players.get(playerIds[idx])!.role = "citizen";
@@ -811,7 +841,7 @@ function assignRoles(game: Game): number {
       player.variant = citizenVariantIdx % 8;
       citizenVariantIdx++;
     } else {
-      player.variant = 0; // doctor, detective, joker, hunter have single variant
+      player.variant = 0; // doctor, detective, joker, hunter, vigilante have single variant
     }
   }
 
@@ -826,6 +856,16 @@ function assignRoles(game: Game): number {
     p1.loverId = lover2;
     p2.isLover = true;
     p2.loverId = lover1;
+  }
+
+  // Godfather: promote ONE random mafioso (replaces a mafia slot — count stays
+  // constant). Only when 2+ effective mafia (at 1 mafia the Detective could
+  // never find anyone). Reads INNOCENT to the Detective; mafia in all else.
+  if (settings.enableGodfather && mafiaCount >= 2) {
+    const mafias = Array.from(game.players.values()).filter((p) => p.role === "mafia");
+    if (mafias.length >= 2) {
+      mafias[Math.floor(Math.random() * mafias.length)].isGodfather = true;
+    }
   }
 
   return mafiaCount;
@@ -988,7 +1028,8 @@ export function submitDetectiveInvestigation(game: Game, detectiveId: number, ta
   if (!target || !target.isAlive) return null;
 
   game.detectiveTarget = targetId;
-  const isMafia = target.role === "mafia";
+  // The Godfather (role stays "mafia") reads INNOCENT — the role's sole mechanic.
+  const isMafia = target.role === "mafia" && !target.isGodfather;
   game.detectiveResult = { targetId, isMafia };
   game.detectiveHistory.push({ round: game.round, targetName: target.username, isMafia });
   return { isMafia, targetName: target.username };
@@ -1007,6 +1048,29 @@ export function submitJokerHaunt(game: Game, jokerId: number, targetId: number):
   if (!target || !target.isAlive) return false;
 
   game.jokerHauntTarget = targetId;
+  return true;
+}
+
+/**
+ * The Vigilante's one-shot night kill. `targetId === null` is a PASS (hold
+ * fire — keep the bullet, advance the phase). A real shot commits the target
+ * to game.vigilanteTarget (resolved at dawn by resolveNight) AND spends the
+ * bullet at submit time — so choosing to shoot consumes the bullet even when
+ * the Doctor blocks the kill (D1). Guards: alive vigilante, unused bullet,
+ * alive non-self target (self-shot FORBIDDEN — D3; friendly fire on OTHER
+ * town is allowed). Returns false (no state change) on any rejection.
+ */
+export function submitVigilanteShoot(game: Game, vigilanteId: number, targetId: number | null): boolean {
+  if (game.phase !== "night" || game.nightSubPhase !== "vigilante") return false;
+  const vig = game.players.get(vigilanteId);
+  if (!vig || vig.role !== "vigilante" || !vig.isAlive) return false;
+  if (vig.vigilanteBulletUsed) return false; // one bullet per game
+  if (targetId === null) return true;        // PASS: keep the bullet, advance
+  if (targetId === vigilanteId) return false; // D3: no self-shot
+  const target = game.players.get(targetId);
+  if (!target || !target.isAlive) return false;
+  game.vigilanteTarget = targetId;
+  vig.vigilanteBulletUsed = true; // consume at submit time (survives a doctor block)
   return true;
 }
 
@@ -1034,7 +1098,49 @@ export function deriveDeathEventType(source: KillSource, cause: DeathCause): Dea
     case "joker_haunt": return "joker_haunt";
     case "execution": return "execution";
     case "hunter_revenge": return "hunter_revenge";
+    case "vigilante": return "vigilante_shot";
   }
+}
+
+// The DIRECT night-death labels that must be cause-AMBIGUOUS to living players:
+// a vigilante kill has to be indistinguishable from a mafia kill or a joker
+// haunt on every client-visible surface (devtools counts). "lover_death" is
+// DELIBERATELY EXCLUDED (owner ruling): heartbreak is public, so a lover
+// cascade survives projection as its own distinct "lover_death" type — the
+// bond is revealed, but the direct kills' causes stay collapsed to "death".
+const NIGHT_DEATH_TYPES: ReadonlySet<GameEvent["type"]> = new Set<GameEvent["type"]>([
+  "kill", "vigilante_shot", "joker_haunt",
+]);
+
+/**
+ * Project the server-side eventHistory onto the information-safe shape that
+ * ships to CLIENTS while the game is IN PROGRESS (phase_change.events and
+ * game_sync.eventHistory). The four night-death labels above collapse to ONE
+ * neutral "death" type, and `source`/`cause` are stripped from EVERY event
+ * (the client never reads them — they were additive/deferred fields). This is
+ * the wire half of the dawn cause-neutrality fix: a raw-frame peek must not
+ * out whether a night death came from the mafia, the vigilante, the joker, or
+ * a heartbreak cascade.
+ *
+ * Types that stay DISTINCT (already public knowledge, so no leak):
+ *   - execution  — the day lynch is announced by vote_result;
+ *   - hunter_revenge — the revenge gate publicly named the Hunter;
+ *   - save / spared — house mode names them at dawn; the anonymous official
+ *     save carries no name here anyway.
+ *   - investigation_* — never enter game.eventHistory (they are merged in
+ *     client-side from the detective's own private history).
+ *
+ * game.eventHistory itself stays FULLY detailed server-side; callers send the
+ * UNPROJECTED history once game.phase === "game_over" so the end-of-game
+ * reveal shows every real cause.
+ */
+export function projectEventsForClients(events: GameEvent[]): GameEvent[] {
+  return events.map((e) => {
+    const type: GameEvent["type"] = NIGHT_DEATH_TYPES.has(e.type) ? "death" : e.type;
+    const projected: GameEvent = { round: e.round, type, playerName: e.playerName };
+    if (e.detail !== undefined) projected.detail = e.detail;
+    return projected;
+  });
 }
 
 // Test seam (pattern: setFixedDeal): lets engine tests observe every Death
@@ -1085,13 +1191,14 @@ const queuedHunterTrigger = new WeakMap<Game, number>();
 export function notifyDeathTriggers(game: Game, death: Death): void {
   deathTriggerSpy?.(game, death);
   // C2a — the Hunter trigger: OBSERVE AND QUEUE only (contract above). It
-  // fires for EVERY death source and cause, so a heartbreak-dead Hunter
-  // (lover cascade) queues exactly like a direct kill — the point of B3's
-  // bypass fix. No game-state mutation here: the gate itself is opened by
-  // concludeRound past the caller's reset boundary, and the suppression
-  // conditions (E11 no-living-target, E12 already-game_over) are evaluated
-  // there, on the settled post-resolution board.
-  if (death.player.role === "hunter") {
+  // fires only for a DIRECT Hunter death (a mafia night kill, a daytime
+  // lynch, a joker haunt) — NOT for a lover-cascade (heartbreak) death: a
+  // Hunter who dies because their lover was killed takes no revenge shot.
+  // No game-state mutation here: the gate itself is opened by concludeRound
+  // past the caller's reset boundary, and the suppression conditions (E11
+  // no-living-target, E12 already-game_over) are evaluated there, on the
+  // settled post-resolution board.
+  if (death.player.role === "hunter" && death.cause === "direct") {
     queuedHunterTrigger.set(game, death.player.id);
   }
 }
@@ -1122,7 +1229,10 @@ export function applyDeath(game: Game, playerId: number, source: KillSource, mes
       lover.isAlive = false;
       deaths.push({
         player: lover, source, cause: "lover_cascade",
-        message: Narrator.loverDeath(lover.username, player.username),
+        // Public heartbreak (owner ruling): names only the heartbroken partner.
+        // Feeds you_died / player_died on the day (execution) and revenge paths;
+        // the night path re-narrates it as a separate dawn heartbreak line.
+        message: Narrator.loverDeath(lover.username),
         eventType: deriveDeathEventType(source, "lover_cascade"),
       });
     }
@@ -1169,7 +1279,7 @@ export interface SubPhaseAdvanceResult {
 
 export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
   const current = game.nightSubPhase;
-  const phases: NightSubPhase[] = ["mafia", "doctor", "detective", "resolving"];
+  const phases: NightSubPhase[] = ["mafia", "doctor", "detective", "vigilante", "resolving"];
   const currentIdx = current ? phases.indexOf(current) : -1;
 
   // Try each subsequent phase after current
@@ -1207,6 +1317,17 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
       return { nextPhase: "detective", isFake: false };
     }
 
+    if (candidate === "vigilante") {
+      if (!game.settings.enableVigilante) continue; // disabled → skip entirely
+      // Phantom whenever NOT actionable: the "open eyes" phase runs EVERY night
+      // the role is enabled (even when the vigilante is dead or out of ammo) so
+      // its state can't be inferred. Actionable = a living vigilante with an
+      // unused bullet exists.
+      const actionable = getAliveByRole(game, "vigilante").some((v) => !v.vigilanteBulletUsed);
+      game.nightSubPhase = "vigilante";
+      return { nextPhase: "vigilante", isFake: !actionable };
+    }
+
 }
 
   // Fallback (shouldn't happen, resolving always catches)
@@ -1242,7 +1363,17 @@ export function resolveNight(game: Game): NightResult {
   if (game.mafiaTarget !== null) {
     intents.push({
       targetId: game.mafiaTarget, source: "mafia",
-      deathMessage: (v) => Narrator.nightKill(v.username),
+      deathMessage: (v) => Narrator.diedInNight(v.username),
+    });
+  }
+  // Vigilante shot resolves AFTER the mafia kill, BEFORE the joker haunt. A
+  // doctor save on this target (and not the mafia's) blocks it (one save, one
+  // source); the shooter may already be dead tonight — the field is read, not
+  // the shooter's liveness (D2 simultaneity).
+  if (game.vigilanteTarget !== null) {
+    intents.push({
+      targetId: game.vigilanteTarget, source: "vigilante",
+      deathMessage: (v) => Narrator.diedInNight(v.username),
     });
   }
   if (game.jokerHauntTarget !== null) {
@@ -1250,7 +1381,7 @@ export function resolveNight(game: Game): NightResult {
     // resolveVote's official branch.
     intents.push({
       targetId: game.jokerHauntTarget, source: "joker_haunt",
-      deathMessage: (v) => Narrator.jokerHauntKill(v.username),
+      deathMessage: (v) => Narrator.diedInNight(v.username),
     });
   }
   if (intents.length === 0) return result;
@@ -1267,6 +1398,13 @@ export function resolveNight(game: Game): NightResult {
   // consumes the save; a later intent on the same target kills anyway. A
   // target already dead from an earlier intent (or its cascade) is skipped.
   let saveUsed = false;
+  // DIRECT victim names (mafia + vigilante + joker haunt), folded into ONE
+  // cause-neutral announcement after the loop. Lover cascades are tracked
+  // separately below and announced as their OWN public heartbreak lines.
+  const nightDeadNames: string[] = [];
+  // Heartbroken partners (lover cascades), in kill order. Each gets its own
+  // public "died of heartbreak" dawn line, sequenced AFTER the combined line.
+  const heartbreakNames: string[] = [];
   for (const intent of intents) {
     const target = game.players.get(intent.targetId);
     if (!target) continue;
@@ -1295,11 +1433,33 @@ export function resolveNight(game: Game): NightResult {
     } else if (target.isAlive) {
       const deaths = applyDeath(game, intent.targetId, intent.source, intent.deathMessage(target));
       for (const d of deaths) {
-        result.messages.push(d.message);
-        result.killed.push(d);
+        if (d.cause === "lover_cascade") {
+          // Public heartbreak (owner ruling): the partner's death gets its OWN
+          // dawn line AFTER the combined direct-victim line. d.message is left
+          // as Narrator.loverDeath(...) (you_died reads it) — NOT overridden.
+          heartbreakNames.push(d.player.username);
+        } else {
+          nightDeadNames.push(d.player.username);
+        }
+        result.killed.push(d); // killed[] unchanged: drives triggers/events/UI
       }
     }
     // already dead and not saved: no additional effect
+  }
+
+  // ONE cause-neutral announcement for the DIRECT night batch (mafia +
+  // vigilante + joker haunt). Names only WHO, never HOW; joinNames() sorts so
+  // the kill ORDER can't out the target. Hunter revenge is NOT folded in — it
+  // is gated/post-dawn (concludeRound defers the dawn) and keeps its own line.
+  if (nightDeadNames.length > 0) {
+    result.messages.push(Narrator.nightDeaths(nightDeadNames));
+  }
+  // Then each lover cascade as its OWN public "died of heartbreak" line,
+  // sequenced AFTER the combined line — the heartbroken partner is named, the
+  // original (already-announced) lover is not. Owner ruling reverses the prior
+  // concealment; the bond is revealed, the direct kills' causes stay ambiguous.
+  for (const name of heartbreakNames) {
+    result.messages.push(Narrator.loverDeath(name));
   }
 
   if (result.killed.length === 0 && !result.saved) {
@@ -1366,6 +1526,9 @@ export function concludeRound(game: Game, messages: string[], opts: ConcludeRoun
           autoNight: opts.autoNight,
           ...(opts.preserveHauntVoters !== undefined ? { preserveHauntVoters: opts.preserveHauntVoters } : {}),
         },
+        // Killed AT NIGHT (eyes closed) ⇒ wake the Hunter with open/close cues;
+        // a daytime-lynch gate opens at "voting"/"day" with eyes already open.
+        wakeHunter: game.phase === "night",
       };
     }
     slog("hunter_gate", {

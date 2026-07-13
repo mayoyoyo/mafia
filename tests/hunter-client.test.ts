@@ -188,34 +188,31 @@ describe("C5a: decline affordance", () => {
     expect(ws.sent.length).toBe(1);
   });
 
-  test("confirming the kill via slide removes the decline button", () => {
+  test("confirming the kill removes the decline button", () => {
     startGame("hunter");
     serverSays({ type: "phase_change", phase: "night", round: 2 });
     dieAndGetPrompt();
     ws.sent.length = 0;
 
     $("action-targets").querySelector("li").click(); // select Bob
-    // Fire the armed slide callback through the wire path the drag handler
-    // uses: simulate completion by invoking the confirm the same way the
-    // threshold crossing does — via the registered callback.
-    window.__testFireSlideConfirm();
+    // Confirm via the actual button the player taps.
+    $("btn-action-confirm").click();
     expect(ws.sent).toEqual([{ type: "hunter_revenge", targetId: 3 }]);
     expect(isHidden("btn-decline-revenge")).toBe(true);
   });
 });
 
-describe("C5a: slide-to-confirm skin", () => {
-  test("selecting a target arms the hunter_revenge slide (class, label, icon)", () => {
+describe("C5a: confirm-button skin", () => {
+  test("selecting a target arms the hunter_revenge confirm group (role class + Avenge label)", () => {
     startGame("hunter");
     serverSays({ type: "phase_change", phase: "night", round: 2 });
     dieAndGetPrompt();
 
     $("action-targets").querySelector("li").click();
-    const container = $("slide-confirm");
+    const container = $("action-confirm");
     expect(container.classList.contains("role-hunter_revenge")).toBe(true);
     expect(container.classList.contains("hidden")).toBe(false);
-    expect($("slide-label").textContent).toBe("slide to avenge");
-    expect($("slide-icon").innerHTML).toContain("<svg");
+    expect($("btn-action-confirm").textContent).toBe("Avenge");
   });
 
   test("BOW_ART is a 10x10 grid exported on window", () => {

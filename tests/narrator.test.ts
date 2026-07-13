@@ -2,11 +2,6 @@ import { describe, test, expect } from "bun:test";
 import { Narrator } from "../src/narrator";
 
 describe("Narrator", () => {
-  test("nightKill includes player name", () => {
-    const msg = Narrator.nightKill("Alice");
-    expect(msg).toContain("Alice");
-  });
-
   test("doctorSave includes player name", () => {
     const msg = Narrator.doctorSave("Bob");
     expect(msg).toContain("Bob");
@@ -27,9 +22,17 @@ describe("Narrator", () => {
     expect(msg).toContain("Dave");
   });
 
-  test("loverDeath includes both names", () => {
-    const msg = Narrator.loverDeath("Eve", "Frank");
+  test("loverDeath names ONLY the heartbroken partner and says heartbreak", () => {
+    const msg = Narrator.loverDeath("Eve");
+    // Owner ruling: heartbreak IS public. The line names the heartbroken
+    // partner and says "heartbreak" plainly.
     expect(msg).toContain("Eve");
+    expect(msg).toMatch(/heartbreak/i);
+    // Invariant: it must NEVER interpolate/name the original lover — the only
+    // name the generator is given is the partner's, so any other capitalized
+    // stand-in would be a regression. Guard the old {lover} placeholder is gone.
+    expect(msg).not.toMatch(/\{\w+\}/);
+    expect(msg).not.toContain("Frank"); // no other-victim tell
   });
 
   test("jokerWin includes player name", () => {
@@ -126,49 +129,66 @@ describe("Narrator template injection (M13)", () => {
   // A username that is a literal placeholder must NOT be re-expanded into
   // mad-libs filler. Templates are picked at random, so run many trials to
   // cover every template; the name must survive in EVERY output.
-  test("nightKill preserves a literal {tool} username", () => {
+  test("loverDeath does not spoof a literal placeholder victim name", () => {
     for (let i = 0; i < 100; i++) {
-      const msg = Narrator.nightKill("{tool}");
-      expect(msg).toContain("{tool}");
-    }
-  });
-
-  test("nightKill preserves a literal {food} username", () => {
-    for (let i = 0; i < 100; i++) {
-      const msg = Narrator.nightKill("{food}");
-      expect(msg).toContain("{food}");
-    }
-  });
-
-  test("loverDeath does not spoof a literal {lover} victim name to the partner", () => {
-    for (let i = 0; i < 100; i++) {
-      const msg = Narrator.loverDeath("{lover}", "Bob");
-      // The victim's literal name must be preserved...
-      expect(msg).toContain("{lover}");
-      // ...and the partner's name must still be substituted into the template.
-      expect(msg).toContain("Bob");
-    }
-  });
-
-  test("jokerHauntKill preserves a literal {lastWords} username", () => {
-    for (let i = 0; i < 100; i++) {
-      const msg = Narrator.jokerHauntKill("{lastWords}");
-      expect(msg).toContain("{lastWords}");
-    }
-  });
-
-  test('nightKill preserves a name containing replacement patterns like "$&"', () => {
-    for (let i = 0; i < 100; i++) {
-      expect(Narrator.nightKill("$&")).toContain("$&");
-      expect(Narrator.nightKill("Eve$'")).toContain("Eve$'");
+      const msg = Narrator.loverDeath("{name}");
+      // The victim's literal name must be preserved (no re-expansion).
+      expect(msg).toContain("{name}");
     }
   });
 
   test("normal names are still substituted across many trials", () => {
     for (let i = 0; i < 50; i++) {
-      expect(Narrator.nightKill("Alice")).toContain("Alice");
-      expect(Narrator.loverDeath("Eve", "Frank")).toContain("Eve");
+      expect(Narrator.loverDeath("Eve")).toContain("Eve");
       expect(Narrator.execution("Charlie")).toContain("Charlie");
+    }
+  });
+});
+
+describe("Narrator.nightDeaths — cause-neutral dawn batch", () => {
+  // The single combined dawn announcement. It names WHO died, never HOW —
+  // a leak of mafia/vigilante/joker/heartbreak here would re-out the role
+  // the whole night-batch fix exists to hide.
+  const FORBIDDEN = /vigilante|gunshot|bullet|joker|playing card|heartbreak|knife|wire|pistol|razor|shot|clean shot|mafia/i;
+  const TRIALS = 200;
+
+  test("one death: names the single victim, never reveals the cause", () => {
+    for (let i = 0; i < TRIALS; i++) {
+      const msg = Narrator.nightDeaths(["Alice"]);
+      expect(msg).toContain("Alice");
+      expect(msg).not.toMatch(FORBIDDEN);
+      expect(msg).not.toMatch(/\{\w+\}/);
+    }
+  });
+
+  test("two deaths: names BOTH victims, sorted, never reveals the cause", () => {
+    for (let i = 0; i < TRIALS; i++) {
+      // pass in reverse order — the announcer must sort so the kill ORDER
+      // (targeted-first vs lover cascade) can't be inferred.
+      const msg = Narrator.nightDeaths(["Zed", "Anna"]);
+      expect(msg).toContain("Anna");
+      expect(msg).toContain("Zed");
+      expect(msg.indexOf("Anna")).toBeLessThan(msg.indexOf("Zed")); // alphabetical
+      expect(msg).not.toMatch(FORBIDDEN);
+    }
+  });
+
+  test("three+ deaths: names every victim, sorted, never reveals the cause", () => {
+    for (let i = 0; i < TRIALS; i++) {
+      const msg = Narrator.nightDeaths(["Carol", "Bob", "Dave"]);
+      for (const n of ["Bob", "Carol", "Dave"]) expect(msg).toContain(n);
+      expect(msg.indexOf("Bob")).toBeLessThan(msg.indexOf("Carol"));
+      expect(msg.indexOf("Carol")).toBeLessThan(msg.indexOf("Dave"));
+      expect(msg).not.toMatch(FORBIDDEN);
+    }
+  });
+
+  test("diedInNight: neutral per-victim line names only the victim", () => {
+    for (let i = 0; i < TRIALS; i++) {
+      const msg = Narrator.diedInNight("Mallory");
+      expect(msg).toContain("Mallory");
+      expect(msg).not.toMatch(FORBIDDEN);
+      expect(msg).not.toContain("Frank"); // no partner / other-victim tell
     }
   });
 });

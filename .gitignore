@@ -9,3 +9,9 @@ dist/
 # Scratch screenshots dropped at repo root (e.g. d9-*.png) — root-only so the
 # tracked docs/mockups/pixel-noir/*.png renders are unaffected.
 /*.png
+
+# Real-Chrome grid per-seat screenshots (tests/playtest/chrome-grid.ts)
+tests/playtest/screenshots/
+
+# Test-dashboard generated output (tools/test-dashboard/runner.ts)
+tools/test-dashboard/last-run.json

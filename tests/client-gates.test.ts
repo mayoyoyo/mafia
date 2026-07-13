@@ -55,6 +55,7 @@ describe("B6: derived hold-and-replay gate lists", () => {
     "mafia_targets",
     "doctor_targets",
     "detective_targets",
+    "vigilante_targets",
     "joker_haunt_targets",
     "hunter_revenge_pending",
     "hunter_revenge_targets",

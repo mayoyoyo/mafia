@@ -69,7 +69,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "british": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -78,7 +82,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "australian": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -87,7 +95,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "indian": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -96,7 +108,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "irish": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -105,7 +121,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "south-african": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -114,7 +134,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "new-zealand": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -123,7 +147,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "nigerian": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -132,7 +160,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "canadian": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -141,7 +173,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "hong-kong": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -150,7 +186,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "kenyan": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -159,7 +199,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "filipino": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -168,7 +212,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "singaporean": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -177,7 +225,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     },
     "tanzanian": {
       "everyone_close": "Night falls over the town. Everyone, close your eyes.",
@@ -186,7 +238,11 @@
       "doctor_open": "Doctor, open your eyes.",
       "doctor_close": "Doctor, close your eyes.",
       "detective_open": "Detective, open your eyes.",
-      "detective_close": "Detective, close your eyes."
+      "detective_close": "Detective, close your eyes.",
+      "vigilante_open": "Vigilante, open your eyes.",
+      "vigilante_close": "Vigilante, close your eyes.",
+      "hunter_open": "Hunter, open your eyes.",
+      "hunter_close": "Hunter, close your eyes."
     }
   }
 }

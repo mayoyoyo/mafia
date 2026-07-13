@@ -211,6 +211,16 @@ export class PlaytestClient {
     return p;
   }
 
+  /**
+   * Vigilante shoot (targetId === null = hold fire / keep the bullet).
+   * Resolves on night_action_done (sent for both a real shot and a pass).
+   */
+  async vigilanteShoot(targetId: number | null): Promise<WSMessage> {
+    const p = this.waitFor("night_action_done");
+    this.send({ type: "vigilante_shoot", targetId });
+    return p;
+  }
+
   /** Joker haunt (official mode). */
   jokerHaunt(targetId: number): void {
     this.send({ type: "joker_haunt", targetId });
@@ -282,15 +292,21 @@ export async function bootServer(opts: {
   port: number;
   roles: Role[];
   lovers?: [number, number];
+  /** Join-order index of the mafioso to flag as Godfather (reads innocent). */
+  godfather?: number;
   dbPath?: string;
 }): Promise<{ proc: ReturnType<typeof Bun.spawn>; port: number; dbPath: string; teardown: () => Promise<void> }> {
   const dbPath = opts.dbPath ?? join(tmpdir(), `mafia-proof-${Date.now()}-${opts.port}.db`);
-  const fixedDeal = JSON.stringify({ roles: opts.roles, ...(opts.lovers ? { lovers: opts.lovers } : {}) });
+  const fixedDeal = JSON.stringify({
+    roles: opts.roles,
+    ...(opts.lovers ? { lovers: opts.lovers } : {}),
+    ...(opts.godfather != null ? { godfather: opts.godfather } : {}),
+  });
   const proc = Bun.spawn(["bun", "run", SERVER_ENTRY], {
     env: { ...process.env, PORT: String(opts.port), DATABASE_PATH: dbPath, MAFIA_FIXED_DEAL: fixedDeal },
     cwd: join(import.meta.dir, "..", ".."),
-    stdout: "ignore",
-    stderr: "ignore",
+    stdout: process.env.MAFIA_SERVER_LOG ? "inherit" : "ignore",
+    stderr: process.env.MAFIA_SERVER_LOG ? "inherit" : "ignore",
   });
   await waitForServer(opts.port);
   const teardown = async () => {
@@ -379,6 +395,8 @@ export interface ScenarioSpec {
   roles: Role[];
   /** Optional lover pair (join-order indices). */
   lovers?: [number, number];
+  /** Optional Godfather pin (join-order index of the mafioso to flag). */
+  godfather?: number;
   /** Optional lobby settings to apply (admin) before start_game. */
   settings?: Record<string, unknown>;
   /** Whether the admin should send narrator_ready automatically after start. Default false (let the timeline do it). */
@@ -416,7 +434,11 @@ export async function runScenario(spec: ScenarioSpec): Promise<ScenarioResult> {
   const runId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
   const prefix = spec.namePrefix ?? "bot";
 
-  const fixedDeal = JSON.stringify({ roles: spec.roles, ...(spec.lovers ? { lovers: spec.lovers } : {}) });
+  const fixedDeal = JSON.stringify({
+    roles: spec.roles,
+    ...(spec.lovers ? { lovers: spec.lovers } : {}),
+    ...(spec.godfather != null ? { godfather: spec.godfather } : {}),
+  });
 
   const serverProc = Bun.spawn(["bun", "run", SERVER_ENTRY], {
     env: { ...process.env, PORT: String(port), DATABASE_PATH: dbPath, MAFIA_FIXED_DEAL: fixedDeal },

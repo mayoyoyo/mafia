@@ -13,7 +13,7 @@
 //   - each file keeps its OWN port band and its OWN /tmp DATABASE_PATH
 //     (spawnServer takes the port + a dbLabel and writes
 //     /tmp/mafia-hunter-ws-${dbLabel}-…);
-//   - the fixed deal, lover pair, extra env (e.g. MAFIA_REVENGE_TIMER_MS),
+//   - the fixed deal, lover pair, extra env (test-only env overrides),
 //     and the join-order role assertion are spawnServer/setupGame args;
 //   - setupGame's username prefix is a parameter (hwn_/hwv_/hwr_), so the
 //     E13 role-secrecy sweep's "no username contains 'hunter'" guarantee is
@@ -46,7 +46,7 @@ export interface HunterServer {
 export interface SpawnServerOptions {
   /** Lover pair as JOIN-ORDER indices, threaded into MAFIA_FIXED_DEAL (assignFixedRoles pairs them directly). */
   lovers?: [number, number];
-  /** Extra env for the spawned server (e.g. MAFIA_REVENGE_TIMER_MS). */
+  /** Extra env for the spawned server (test-only env overrides). */
   extraEnv?: Record<string, string>;
 }
 
@@ -56,11 +56,9 @@ export interface SpawnServerOptions {
  * isolated /tmp DATABASE_PATH keyed on `dbLabel`+`label`+port, stdout piped
  * for slog assertions. Resolves once the WS endpoint accepts a connection.
  *
- * Stdout capture (structured-logging.test.ts pattern): the revenge-timer and
- * gate-reject lifecycles are slog-only observables — a cleared/orphaned/
- * re-armed timer is wire-identical inside a test window, and the M7 sweep's
- * rejections are deliberately silent on the wire, so the server's own
- * "revenge_timer" / "revenge_gate_reject" lines are the only positive trace.
+ * Stdout capture (structured-logging.test.ts pattern): the M7 gate-reject
+ * sweep's rejections are deliberately silent on the wire, so the server's own
+ * "revenge_gate_reject" slog lines are the only positive trace.
  */
 export async function spawnServer(
   port: number,
@@ -355,16 +353,6 @@ export function slogEvents(srv: HunterServer, slogName: string, code: string): a
     .filter((l) => l.startsWith("{"))
     .map((l) => { try { return JSON.parse(l); } catch { return null; } })
     .filter((e) => e && e.slog === slogName && e.code === code);
-}
-
-/**
- * THIS game's revenge-timer lifecycle ("armed"/"cleared"/"fired"/
- * "overwritten"), in server stdout order — parsed from the slog
- * "revenge_timer" lines, filtered by game code (other games on the same
- * server keep their own lifecycles out of the assertion).
- */
-export function revengeTimerEvents(srv: HunterServer, code: string): string[] {
-  return slogEvents(srv, "revenge_timer", code).map((e) => e.event as string);
 }
 
 /** THIS game's M7 sweep rejections: the message types the dispatch-level gate check bounced. */

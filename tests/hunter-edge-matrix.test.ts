@@ -93,7 +93,9 @@ describe("E1 — official-joker haunt kills the Hunter", () => {
       cause: "direct", source: "joker_haunt",
     });
     // ...and THEN the gate opened, deferring the day transition + win check.
-    expect(game.pendingRevenge).toEqual({ hunterId: 3, resume: { autoNight: false } });
+    // A night-kill gate (haunt resolves at night) wakes the Hunter: wakeHunter
+    // true, resume.autoNight false.
+    expect(game.pendingRevenge).toEqual({ hunterId: 3, resume: { autoNight: false }, wakeHunter: true });
     expect(game.phase).toBe("night");
     expect(game.winner).toBeNull();
     expect(assertInvariants(game, AT)).toEqual([]);
@@ -117,7 +119,7 @@ describe("E1 — official-joker haunt kills the Hunter", () => {
 // ── E2 — Hunter-as-lover, heartbreak direction (engine half) ────────────────
 
 describe("E2 — mafia kills the Hunter's lover; the cascade kills the Hunter", () => {
-  test("trigger fires for the CASCADE death (B3 bypass-fix payoff); both deaths recorded, then the gate; revenge works", () => {
+  test("the cascade death still flows through applyDeath (B3 bypass-fix payoff), but a heartbreak (lover-cascade) Hunter takes NO revenge: both deaths recorded, NO gate, resolution proceeds to day", () => {
     // Hunter (seat 2) paired with citizen X (seat 3) via the fixed deal
     // (join-order indices 1 and 2).
     const game = makeGame(
@@ -128,7 +130,9 @@ describe("E2 — mafia kills the Hunter's lover; the cascade kills the Hunter", 
 
     // Observe the death-trigger hook itself: on pre-P2 code the lover
     // cascade bypassed applyDeath, so the hook NEVER saw the Hunter's
-    // heartbreak death — this assertion is the bypass-fix payoff.
+    // heartbreak death — the cascade flowing through applyDeath (so the hook
+    // sees it) is the bypass-fix payoff and is UNCHANGED by the no-heartbreak-
+    // revenge rule.
     const seen: Array<{ id: number; role: Role | null; cause: string; source: string }> = [];
     setDeathTriggerSpy((_g, d) => seen.push({
       id: d.player.id, role: d.player.role, cause: d.cause, source: d.source,
@@ -150,18 +154,12 @@ describe("E2 — mafia kills the Hunter's lover; the cascade kills the Hunter", 
       { type: "kill", playerName: "Player3", cause: "direct", source: "mafia" },
       { type: "lover_death", playerName: "Player2", cause: "lover_cascade", source: "mafia" },
     ]);
-    // ...THEN the gate, opened by the cascade death.
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false } });
-    expect(game.phase).toBe("night");
-    expect(game.winner).toBeNull();
-    expect(assertInvariants(game, AT)).toEqual([]);
-
-    // Revenge works from the heartbreak-opened gate.
-    const res = submitHunterRevenge(game, 2, 4);
-    expect(res.ok).toBe(true);
-    expect(res.deaths.map((d) => [d.player.id, d.cause])).toEqual([[4, "direct"]]);
+    // ...but the Hunter died as the SECONDARY lover-cascade (heartbreak)
+    // death, NOT a direct kill — so NO revenge gate opens. The night
+    // resolution proceeds straight through to day with the win check run.
     expect(game.pendingRevenge).toBeNull();
-    expect(game.phase).toBe("day"); // 1 mafia vs 2 citizens: game continues
+    expect(game.phase).toBe("day"); // 1 mafia vs 3 citizens: game continues
+    expect(game.winner).toBeNull();
     expect(assertInvariants(game, AT)).toEqual([]);
   });
 });
@@ -182,7 +180,8 @@ describe("E3 — the revenge target is a lover", () => {
       [2, 3],
     );
     runNight(game, 2); // mafia night-kills the hunter
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false } });
+    // Direct night kill -> wakeHunter true, resume.autoNight false.
+    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false }, wakeHunter: true });
 
     const eventsBefore = game.eventHistory.length;
     const res = submitHunterRevenge(game, 2, 3);
@@ -222,7 +221,7 @@ describe("E3 — the revenge target is a lover", () => {
 // ── E4 — Heartbreak-during-vote (engine half) ───────────────────────────────
 
 describe("E4 — the lynch target is the Hunter's lover (Hunter NOT executed)", () => {
-  test("execution + cascade recorded; gate opens BEFORE the auto-night; phase held at voting with the ballot cleared; resume.autoNight true; revenge -> night", () => {
+  test("execution + cascade recorded; the heartbreak (lover-cascade) Hunter death opens NO gate; the vote resolution proceeds straight through the auto-night", () => {
     // Hunter seat 2, lover citizen X seat 3 (join-order indices 1 and 2).
     const game = makeGame(
       ["mafia", "hunter", "citizen", "citizen", "citizen", "citizen"],
@@ -238,29 +237,20 @@ describe("E4 — the lynch target is the Hunter's lover (Hunter NOT executed)", 
       [2, "execution", "lover_cascade"],
     ]);
 
-    // Gate open BEFORE the auto-transition to night: held at "voting" with
-    // the ballot already cleared, the resume carrying the auto-night.
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: true } });
-    expect(game.phase).toBe("voting");
-    expect(game.round).toBe(1); // no night entered yet
-    expect(game.votes.size).toBe(0);
-    expect(game.voteTarget).toBeNull();
-    expect(game.winner).toBeNull();
-    expect(assertInvariants(game, AT)).toEqual([]);
-
-    // After revenge -> night begins (the deferred auto-night).
-    const res = submitHunterRevenge(game, 2, 4);
-    expect(res.ok).toBe(true);
-    expect(res.messages.length).toBe(2); // revenge line, then night-falls
-    expect(res.messages[0]).toContain("Player4");
+    // The Hunter died as the SECONDARY lover-cascade (heartbreak) death, NOT a
+    // direct lynch — so NO revenge gate opens. The vote resolution is not held
+    // at "voting"; it proceeds straight through the auto-night to round 2.
     expect(game.pendingRevenge).toBeNull();
     expect(game.phase).toBe("night");
     expect(game.round).toBe(2);
     expect(game.nightSubPhase).toBe("mafia");
+    expect(game.votes.size).toBe(0);
+    expect(game.voteTarget).toBeNull();
+    expect(game.winner).toBeNull();
     expect(assertInvariants(game, AT)).toEqual([]);
   });
 
-  test("VARIANT: official-mode joker lynched, joker's lover is the Hunter — resume.preserveHauntVoters true; post-revenge the haunt night still happens with jokerHauntVoters intact", () => {
+  test("VARIANT: official-mode joker lynched, joker's lover is the Hunter — the heartbreak Hunter death opens NO gate; the haunt night begins IMMEDIATELY (no longer deferred) with jokerHauntVoters intact", () => {
     // Joker seat 2 + Hunter seat 3 are the lover pair (indices 1 and 2).
     const game = makeGame(
       ["mafia", "joker", "hunter", "citizen", "citizen", "citizen"],
@@ -277,34 +267,24 @@ describe("E4 — the lynch target is the Hunter's lover (Hunter NOT executed)", 
       [3, "execution", "lover_cascade"], // the Hunter, heartbreak-dead
     ]);
 
-    // The gate holds the OFFICIAL-JOKER epilogue: preserveHauntVoters rides
-    // the resume (its reason to exist), and the captured FOR-voters survive
-    // the gated wait untouched. The assertInvariants line is the fix(C2b)
-    // regression: this REAL engine state used to flag
+    // The Hunter died as the SECONDARY lover-cascade (heartbreak) death, NOT a
+    // direct lynch — so NO revenge gate opens. The official-joker epilogue is
+    // no longer deferred: the haunt night begins immediately with the captured
+    // FOR-voters preserved straight through beginNight. The assertInvariants
+    // line is the fix(C2b) regression: this REAL engine state used to flag
     // night_scope_dirty:jokerHauntVoters, which would make the server's
-    // handleMessage choke point throw on EVERY message while the gate is
-    // open (test mode throws; production logs per message).
-    expect(game.pendingRevenge).toEqual({
-      hunterId: 3,
-      resume: { autoNight: true, preserveHauntVoters: true },
-    });
-    expect(game.phase).toBe("voting");
-    expect(game.votes.size).toBe(0);
-    expect(game.voteTarget).toBeNull();
-    // Membership + size, not insertion order: no consumer is order-sensitive.
-    expect([...game.jokerHauntVoters].sort((a, b) => a - b)).toEqual([1, 4, 5, 6]);
-    expect(game.jokerJointWinner).toBe(true);
-    expect(game.winner).toBeNull();
-    expect(assertInvariants(game, AT)).toEqual([]);
-
-    // Revenge resolves -> the deferred haunt night begins WITH the voters.
-    const res = submitHunterRevenge(game, 3, 4);
-    expect(res.ok).toBe(true);
-    expect(res.messages.length).toBe(2); // revenge line, then night-falls
+    // handleMessage choke point throw on EVERY message (test mode throws;
+    // production logs per message).
     expect(game.pendingRevenge).toBeNull();
     expect(game.phase).toBe("night");
     expect(game.round).toBe(2);
-    expect([...game.jokerHauntVoters].sort((a, b) => a - b)).toEqual([1, 4, 5, 6]); // preserved through beginNight
+    expect(game.votes.size).toBe(0);
+    expect(game.voteTarget).toBeNull();
+    // Membership + size, not insertion order: no consumer is order-sensitive.
+    // Preserved through beginNight (the preserveHauntVoters carve-out).
+    expect([...game.jokerHauntVoters].sort((a, b) => a - b)).toEqual([1, 4, 5, 6]);
+    expect(game.jokerJointWinner).toBe(true);
+    expect(game.winner).toBeNull();
     expect(assertInvariants(game, AT)).toEqual([]);
 
     // The haunt still happens: the dead joker can pick a (living) FOR-voter
@@ -360,7 +340,7 @@ describe("E5 — win-condition interactions", () => {
     // The pre-revenge board ALREADY sits at M8 parity (1 mafia vs 1 townie,
     // joker excluded) — the gate opening here proves the check is deferred,
     // never skipped (§7: "the gate defers, never skips, the check").
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false } });
+    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false }, wakeHunter: true });
     expect(game.winner).toBeNull();
 
     const res = submitHunterRevenge(game, 2, 4); // the last townie
@@ -432,7 +412,8 @@ describe("E5 — win-condition interactions", () => {
     expect(game.round).toBe(2);
 
     runNight(game, 3); // mafia kills the Hunter; no haunt submitted
-    expect(game.pendingRevenge).toEqual({ hunterId: 3, resume: { autoNight: false } });
+    // Direct night kill -> wakeHunter true, resume.autoNight false.
+    expect(game.pendingRevenge).toEqual({ hunterId: 3, resume: { autoNight: false }, wakeHunter: true });
     expect(game.winner).toBeNull();
 
     const res = submitHunterRevenge(game, 3, 4);
@@ -466,7 +447,7 @@ describe("E7 — doctor protection does not stop the revenge shot", () => {
     expect(dawn.killed.map((d) => [d.player.id, d.source])).toEqual([[2, "mafia"]]);
     expect(dawn.saved).toBe(false); // the save sat on X, who was not attacked
     expect(game.lastDoctorTarget).toBe(4); // tonight's protection, captured at dawn
-    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false } });
+    expect(game.pendingRevenge).toEqual({ hunterId: 2, resume: { autoNight: false }, wakeHunter: true });
 
     // Revenge targets the PROTECTED player: the shot resolves outside the
     // night-action fold and never consults the doctor's pick — X dies.

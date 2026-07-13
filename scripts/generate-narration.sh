@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate the narrator-voice audio for the Mafia game.
 #
-# 14 accents x {male, female} = 28 voices, 7 cues each = 196 MP3s.
+# 14 accents x {male, female} = 28 voices, 11 cues each = 308 MP3s.
 # Uses edge-tts (Microsoft Edge neural voices) — free, no account, no API key.
 #
 # Requires `uv` (https://docs.astral.sh/uv/). Runs edge-tts via `uvx`.
@@ -25,6 +25,10 @@ CUES=(
   "doctor_close|Doctor, close your eyes."
   "detective_open|Detective, open your eyes."
   "detective_close|Detective, close your eyes."
+  "vigilante_open|Vigilante, open your eyes."
+  "vigilante_close|Vigilante, close your eyes."
+  "hunter_open|Hunter, open your eyes."
+  "hunter_close|Hunter, close your eyes."
 )
 
 # <accent>-<gender> | edge-tts voice

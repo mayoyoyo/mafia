@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach } from "bun:test";
 import {
   createGame, addPlayer, updateSettings, startGame,
   submitMafiaVote, submitDoctorSave, submitJokerHaunt,
-  advanceNightSubPhase, transitionToDay,
+  advanceNightSubPhase, transitionToDay, resolveNight,
   callVote, castVote, resolveVote,
   getAliveByRole, getAlivePlayers, removeGame,
   applyDeath, deriveDeathEventType, setDeathTriggerSpy,
@@ -134,11 +134,14 @@ describe("B3 pins — cascade sub-branches the goldens don't cover", () => {
     expect(l.isAlive).toBe(false);
     expect(result.saved).toBe(false);
 
-    // message order mirrors the killed order, one line per death
-    expect(result.messages.length).toBe(3);
-    expect(result.messages[0]).toBe(result.killed[0].message);
-    expect(result.messages[1]).toBe(result.killed[1].message);
-    expect(result.messages[2]).toBe(result.killed[2].message);
+    // Combined cause-neutral line for the DIRECT victims (a, b), then a
+    // SEPARATE public "died of heartbreak" line for the cascade partner (l).
+    expect(result.messages.length).toBe(2);
+    expect(result.messages[0]).toContain(a.username);
+    expect(result.messages[0]).toContain(b.username);
+    expect(result.messages[0]).not.toMatch(/joker|playing card|heartbreak/i);
+    expect(result.messages[1]).toContain(l.username);
+    expect(result.messages[1]).toMatch(/heartbreak/i);
 
     // event labels: haunt victim is joker_haunt (NOT lover_death — M5),
     // partner is lover_death, in kill order
@@ -213,10 +216,13 @@ describe("B3 pins — cascade sub-branches the goldens don't cover", () => {
       [l.id, "mafia"],
       [b.id, "joker_haunt"],
     ]);
-    expect(result.messages.length).toBe(3);
-    expect(result.messages[0]).toBe(result.killed[0].message);
-    expect(result.messages[1]).toBe(result.killed[1].message);
-    expect(result.messages[2]).toBe(result.killed[2].message);
+    // Combined dawn line for the DIRECT victims (a, b), then a separate public
+    // heartbreak line for the mafia victim's cascade partner (l).
+    expect(result.messages.length).toBe(2);
+    expect(result.messages[0]).toContain(a.username);
+    expect(result.messages[0]).toContain(b.username);
+    expect(result.messages[1]).toContain(l.username);
+    expect(result.messages[1]).toMatch(/heartbreak/i);
     expect(eventsOfRound(game, 2)).toEqual([
       ["kill", a.username],
       ["lover_death", l.username],
@@ -258,9 +264,11 @@ describe("B3 pins — one save blocks one source (resolveNight fold semantics)",
     expect(y.isAlive).toBe(false);
     expect(result.killed.map(k => [k.player.id, k.source])).toEqual([[y.id, "mafia"]]);
 
-    // messages chronological: the mafia kill line, then the (house) save line
+    // messages: the (house) save line (names the saved x) + ONE combined death
+    // line (names the mafia victim y). No per-death cause stream.
     expect(result.messages.length).toBe(2);
-    expect(result.messages[0]).toBe(result.killed[0].message);
+    expect(result.messages.some(m => m.includes(y.username))).toBe(true);
+    expect(result.messages.some(m => m.includes(x.username))).toBe(true);
 
     // eventHistory presentation: save FIRST, then the kill — even though the
     // kill resolved first (today: transitionToDay pushes the save event ahead
@@ -290,15 +298,48 @@ describe("B3 pins — one save blocks one source (resolveNight fold semantics)",
     expect(x.isAlive).toBe(false);
     expect(result.killed.map(k => [k.player.id, k.source])).toEqual([[x.id, "joker_haunt"]]);
 
-    // messages chronological: save line first (mafia source resolves first),
-    // then the haunt kill line
+    // messages: the save line (mafia source blocked) + ONE combined death line
+    // naming the haunt victim x — cause-neutral (no "Joker"/"playing card").
     expect(result.messages.length).toBe(2);
-    expect(result.messages[1]).toBe(result.killed[0].message);
+    expect(result.messages[1]).toContain(x.username);
+    expect(result.messages[1]).not.toMatch(/joker|playing card/i);
 
     // events: save first, then the haunt kill
     expect(eventsOfRound(game, 2)).toEqual([
       ["save", x.username],
       ["joker_haunt", x.username],
+    ]);
+    removeGame(game.code);
+  });
+
+  // ── RULING PIN (wire-neutralization workstream) ───────────────────────────
+  // When the mafia AND the vigilante BOTH target X and the doctor saves X, the
+  // save blocks only the FIRST source in resolution order (mafia) and X STILL
+  // DIES to the vigilante shot. resolveNight's fold consumes the single save on
+  // the first intent that matches the doctor's pick (intents resolve
+  // mafia → vigilante → joker_haunt); a later same-target intent is unaffected.
+  // result.saved stays TRUE even though X ends up dead — a save DID fire, it
+  // just wasn't enough. Under house mode the save event precedes the kill it
+  // could not stop in eventHistory. This double-covers the finding cited in the
+  // dawn cause-neutralization spec (game-engine.ts resolveNight fold).
+  test("mafia + vigilante both target X, doctor saves X → save blocks mafia, X dies to vigilante", () => {
+    const game = setupGame(6, { enableDoctor: true, doctorMode: "house", enableVigilante: true });
+    startGame(game);
+    const x = getCitizens(game)[0];
+    game.mafiaTarget = x.id;      // first intent — consumes the save
+    game.vigilanteTarget = x.id;  // second intent — lands, X dies
+    game.doctorTarget = x.id;
+
+    const result = resolveNight(game);
+
+    expect(result.saved).toBe(true);
+    expect(result.savedName).toBe(x.username);
+    expect(x.isAlive).toBe(false); // the vigilante shot got through the spent save
+    expect(result.killed.map(k => [k.player.id, k.source])).toEqual([[x.id, "vigilante"]]);
+    // house mode: the save event precedes the kill it couldn't stop.
+    expect(eventsOfRound(game, game.round)).toEqual([
+      ["save", x.username],
+      ["vigilante_shot", x.username],
     ]);
     removeGame(game.code);
   });

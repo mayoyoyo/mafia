@@ -10,6 +10,12 @@
   let gameCode = null;
   let isAdmin = false;
   let myRole = null;
+  // Roles whose night sub-phase emits its own "<role>_close" sound_cue
+  // (mirrors CueSubPhase in src/types.ts — joker haunt / hunter revenge have
+  // no close cue, so they're intentionally excluded here).
+  const CLOSEABLE_NIGHT_ROLES = new Set(["mafia", "doctor", "detective", "vigilante"]);
+  let myIsGodfather = false;
+  let vigilanteBulletUsed = false; // Vigilante own-screen indicator: true once the bullet is spent
   let isLover = false;
   let isDead = false;
   let jokerWonOverlayShown = false;
@@ -36,11 +42,19 @@
   let knownPlayers = [];
   let deathOrderCounter = 0;
   let mafiaTeam = [];
+  let godfatherName = null;
+  let currentRoster = null; // public lineup summary for the "Roles in Play" modal
   let dayVoteCount = 0;
   let suspenseActive = false;
   let suspenseQueue = [];
   let nightTransitionActive = false;
   let nightTransitionQueue = [];
+  // Round the NIGHTFALL overlay has already been shown for (Bug 2). The first
+  // night's transition is triggered off the opening "night" sound cue (the
+  // phase_change landed at start_game with previousPhase null, so
+  // handlePhaseChange skipped it); this marker fires that trigger exactly once
+  // and skips it when the day->night path already ran showNightTransition.
+  let nightTransitionRound = 0;
   let executionTransitionActive = false;
   let heartbreakTransitionActive = false;
   let pendingGameOver = null; // game_over held while an overlay chain animates (L5)
@@ -226,6 +240,7 @@
     "mafia_targets",
     "doctor_targets",
     "detective_targets",
+    "vigilante_targets",
     "joker_haunt_targets",
     "hunter_revenge_pending",
     "hunter_revenge_targets",
@@ -263,6 +278,23 @@
     if ((suspenseActive || executionTransitionActive || heartbreakTransitionActive || nightTransitionActive) && msg.type === "game_over") {
       pendingGameOver = msg;
       return;
+    }
+    // Bug 2: on the FIRST night the night phase_change landed at start_game
+    // (previousPhase reset to null), so handlePhaseChange never ran the shared
+    // NIGHTFALL overlay. Trigger it off the opening "night" sound cue instead,
+    // so the mafia kill screen (and every role prompt) is gated behind the
+    // transition. applyPhaseChange already ran on the first night, so the
+    // callback is a no-op; the night tone is re-dispatched through the queue so
+    // it still plays after the overlay. Must run BEFORE the queue gate below or
+    // the cue would be swallowed before it could trigger.
+    if (msg.type === "sound_cue" && msg.sound === "night" && currentPhase === "night" && !nightTransitionActive) {
+      const round = parseInt($("round-number").textContent) || 0;
+      if (nightTransitionRound !== round) {
+        nightTransitionRound = round;
+        nightTransitionQueue.push(msg); // replay the night tone after the overlay
+        showNightTransition(() => {});
+        return;
+      }
     }
     // During night/execution transition, queue sound_cues and night action prompts
     if ((nightTransitionActive || executionTransitionActive) && TRANSITION_GATE_TYPES.has(msg.type)) {
@@ -344,9 +376,13 @@
 
       case "game_started":
         myRole = msg.role;
+        myIsGodfather = !!msg.isGodfather;
+        vigilanteBulletUsed = false; // fresh game: bullet unused
         isLover = msg.isLover;
         myVariant = msg.variant || 0;
         mafiaTeam = msg.mafiaTeam || [];
+        godfatherName = msg.godfatherName || null;
+        currentRoster = msg.roster || null;
         isDead = false;
         jokerWonOverlayShown = false;
         // Fresh game start — reset all state
@@ -366,6 +402,7 @@
         lastVoteResult = null;
         jokerJointWinner = false;
         previousPhase = null;
+        nightTransitionRound = 0; // Bug 2: re-arm the first-night NIGHTFALL trigger
         pendingGameOver = null; // discard any game_over held by a still-animating chain (L5)
         // Fresh game: re-roll the "random" narrator and re-preload so this
         // game's cues all use the newly chosen voice (no-op for a real accent).
@@ -410,6 +447,20 @@
         // Hide awaiting-ready when night narration actually starts
         $("awaiting-ready").classList.add("hidden");
         $("btn-begin-night").classList.add("hidden");
+        // Bug fix: the server broadcasts "<role>_close" to EVERY client when a
+        // sub-phase ends, but only mafia/doctor/detective/vigilante ever emit
+        // one (joker haunt / hunter revenge have no close cue — their teardown
+        // is the deferred phase_change). When it's OUR role's own close cue,
+        // revert to the neutral night view so the finished action doesn't sit
+        // on screen (shoulder-surf risk) for the rest of the night.
+        if (CLOSEABLE_NIGHT_ROLES.has(myRole) && msg.sound === myRole + "_close") {
+          $("night-actions").classList.add("hidden");
+          hideSlideConfirm(); // defensive: mid-selection force-advance race
+          if (myRole === "mafia") {
+            $("mafia-vote-status").classList.add("hidden");
+            $("mafia-vote-details").innerHTML = "";
+          }
+        }
         queueSound(msg.sound);
         break;
 
@@ -423,6 +474,12 @@
 
       case "detective_targets":
         showNightAction("Choose someone to investigate", msg.players, "detective_investigate");
+        break;
+
+      case "vigilante_targets":
+        vigilanteBulletUsed = msg.bulletUsed;
+        updateBulletIndicator();
+        showNightAction("Choose someone to shoot — or hold your fire", msg.players, "vigilante_shoot");
         break;
 
       case "joker_haunt_targets":
@@ -456,10 +513,6 @@
       case "joker_win_overlay":
         jokerWonOverlayShown = true;
         showJokerWinOverlay(msg.jokerName);
-        break;
-
-      case "doctor_save_private":
-        showDoctorSavePrivate(msg.message);
         break;
 
       case "mafia_vote_update":
@@ -529,7 +582,11 @@
         break;
 
       case "player_died":
-        showNarratorMessage(msg.message);
+        // No public per-death narration: the whole night batch is announced
+        // as ONE cause-neutral line via phase_change.messages (and the dawn
+        // verdict beat). Re-narrating each death here would replay the kills
+        // one-by-one and re-introduce an order/cause tell. The roster "mark
+        // dead" + death-order tracking happen in the early interceptor above.
         break;
 
       case "you_died":
@@ -538,7 +595,8 @@
         // If joker win overlay is already showing, skip the death overlay
         if (!jokerWonOverlayShown) {
           $("dead-overlay").classList.remove("hidden");
-          // D3b: pixel art skull or heartbreak art instead of emoji
+          // Pixel art skull, or heartbreak art on the dead player's OWN screen
+          // when they died of heartbreak (owner ruling: heartbreak is public).
           $("dead-emoji").innerHTML = pixelArtToSvg(msg.isLoverDeath ? HEARTBREAK_ART : CARD_BACK_DEAD_ART);
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
@@ -591,9 +649,13 @@
 
     // 3. Set role
     myRole = msg.role;
+    myIsGodfather = !!msg.isGodfather;
+    vigilanteBulletUsed = !!msg.vigilanteBulletUsed; // restore spent-bullet indicator before the card renders
     isLover = msg.isLover;
     myVariant = msg.variant;
     mafiaTeam = msg.mafiaTeam || [];
+    godfatherName = msg.godfatherName || null;
+    currentRoster = msg.roster || null;
     isDead = msg.isDead;
 
     // 4. Set phase
@@ -673,6 +735,7 @@
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
+    $("btn-vigilante-pass").classList.add("hidden");
     // C5b: gate-closed baseline (E10d — rejoin after resolution must leave
     // no stale wait view); the pendingRevenge branch below re-shows it.
     $("revenge-wait").classList.add("hidden");
@@ -770,7 +833,7 @@
           // Show locked-in action
           const panel = $("night-actions");
           panel.classList.remove("hidden");
-          const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : "Investigating";
+          const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : myRole === "vigilante" ? "Shooting" : "Investigating";
           $("action-title").textContent = roleLabel;
           $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
           hideSlideConfirm();
@@ -782,7 +845,7 @@
             // reached but the kill is NOT yet confirmed — the server
             // re-sends mafia_confirm_ready right after game_sync. Leave
             // the action unlocked so handleMafiaConfirmReady can restore
-            // the slide-to-confirm UI.
+            // the confirm/cancel buttons.
             if (msg.nightSubPhase === "mafia") {
               nightActionLocked = false;
             }
@@ -792,10 +855,12 @@
           const actionType = myRole === "mafia" ? "mafia_vote"
             : myRole === "doctor" ? "doctor_save"
             : myRole === "joker" ? "joker_haunt"
+            : myRole === "vigilante" ? "vigilante_shoot"
             : "detective_investigate";
           const title = myRole === "mafia" ? "Choose a victim"
             : myRole === "doctor" ? "Choose someone to protect"
             : myRole === "joker" ? "Choose someone to haunt"
+            : myRole === "vigilante" ? "Choose someone to shoot — or hold your fire"
             : "Choose someone to investigate";
           showNightAction(title, na.targets, actionType, myRole === "doctor" ? na.lastDoctorTarget : undefined);
 
@@ -943,7 +1008,7 @@
     }
   });
 
-  ["doctor", "detective", "joker", "hunter", "lovers"].forEach((role) => {
+  ["doctor", "detective", "joker", "hunter", "vigilante", "lovers", "godfather"].forEach((role) => {
     const key = role === "lovers" ? "enableLovers" : `enable${role.charAt(0).toUpperCase() + role.slice(1)}`;
     $(`toggle-${role}`).addEventListener("change", (e) => {
       wsSend({ type: "update_settings", settings: { [key]: e.target.checked } });
@@ -1025,7 +1090,9 @@
     $("toggle-detective").checked = settings.enableDetective;
     $("toggle-joker").checked = settings.enableJoker;
     $("toggle-hunter").checked = settings.enableHunter;
+    $("toggle-vigilante").checked = settings.enableVigilante;
     $("toggle-lovers").checked = settings.enableLovers;
+    $("toggle-godfather").checked = settings.enableGodfather;
     if (settings.narratorGender) setGender(settings.narratorGender);
     if (settings.narrationAccent) {
       setAccent(settings.narrationAccent);
@@ -1044,8 +1111,8 @@
         t.classList.toggle("active", t.dataset.mode === settings.doctorMode);
       });
       $("doctor-mode-hint").textContent = settings.doctorMode === "official"
-        ? "Save is secret \u2014 only victim is notified"
-        : "Narrator reveals who was saved";
+        ? "Save is secret \u2014 no one is told who was saved, not even the victim"
+        : "Narrator announces who was saved";
     }
     if (settings.jokerMode) {
       $("joker-mode-tabs").querySelectorAll(".rule-tab").forEach((t) => {
@@ -1122,7 +1189,9 @@
     if (settings.enableDetective) roles.push("Detective");
     if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
     if (settings.enableHunter) roles.push("Hunter");
+    if (settings.enableVigilante) roles.push("Vigilante");
     if (settings.enableLovers) roles.push("Lovers");
+    if (settings.enableGodfather) roles.push("Godfather");
 
     container.innerHTML = `
       <div class="lobby-settings-row">
@@ -1144,14 +1213,17 @@
   // Pixel art data loaded from pixel-art.js (window globals)
 
   function updateRoleCard() {
+    // Display-only role: the Godfather sees a distinct card but myRole stays
+    // "mafia" so the mafia night-action UI keeps gating correctly.
+    const displayRole = myIsGodfather ? "godfather" : myRole;
     const card = $("role-card");
-    card.className = `role-card ${ROLE_COLORS[myRole] || ""}`;
-    $("role-name").textContent = myRole ? myRole.toUpperCase() : "";
-    $("role-description").textContent = ROLE_DESCRIPTIONS[myRole] || "";
+    card.className = `role-card ${ROLE_COLORS[displayRole] || ""}`;
+    $("role-name").textContent = displayRole ? displayRole.toUpperCase() : "";
+    $("role-description").textContent = ROLE_DESCRIPTIONS[displayRole] || "";
     // Pixel art role image
     const imgEl = $("role-image");
-    if (myRole) {
-      imgEl.innerHTML = getRoleImage(myRole, myVariant);
+    if (displayRole) {
+      imgEl.innerHTML = getRoleImage(displayRole, myVariant);
     } else {
       imgEl.innerHTML = "";
     }
@@ -1162,8 +1234,8 @@
     }
     // Mini role icon in bottom-right of card-front for quick-peek
     const miniEl = $("role-icon-mini");
-    if (myRole) {
-      miniEl.innerHTML = getRoleImage(myRole, myVariant);
+    if (displayRole) {
+      miniEl.innerHTML = getRoleImage(displayRole, myVariant);
     } else {
       miniEl.innerHTML = "";
     }
@@ -1172,6 +1244,57 @@
       $("role-mini-balloon").classList.remove("hidden");
     } else {
       $("role-mini-balloon").classList.add("hidden");
+    }
+    updateBulletIndicator();
+    fitRoleCardText();
+    // Re-fit once the pixel font (Silkscreen) is loaded — measuring the
+    // single-line name against a fallback font under-reports its width and
+    // leaves long names (GODFATHER/VIGILANTE/DETECTIVE) overflowing.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitRoleCardText());
+  }
+
+  // Force every role's membership card to the SAME fixed size (CSS gives the
+  // card its fixed box): shrink the single-line role name to fit the card
+  // width, and the description to fit the remaining height — only as far as
+  // needed, so short cards keep the full font and only long ones (e.g. the
+  // Vigilante) shrink. Re-runs on resize via the listener below.
+  function fitRoleCardText(attempt) {
+    attempt = attempt || 0;
+    const front = document.querySelector("#role-card .card-front");
+    const name = $("role-name");
+    const desc = $("role-description");
+    if (!front || !name || !desc) return;
+    name.style.fontSize = "";
+    desc.style.fontSize = "";
+    // The card may not be laid out yet (screen hidden / fonts loading) — retry.
+    if (front.clientHeight === 0) {
+      if (attempt < 8) requestAnimationFrame(() => fitRoleCardText(attempt + 1));
+      return;
+    }
+    // Name: keep it on ONE line — shrink until it fits the card width.
+    for (let s = 28; s > 12 && name.scrollWidth > name.clientWidth; s--) {
+      name.style.fontSize = s + "px";
+    }
+    // Description: shrink until the whole front content fits the fixed height.
+    for (let s = 14; s > 8 && front.scrollHeight > front.clientHeight + 1; s--) {
+      desc.style.fontSize = s + "px";
+    }
+  }
+  window.addEventListener("resize", () => fitRoleCardText());
+
+  // Vigilante-only one-shot indicator on the role card. Persistent across
+  // day/death (the bullet count is a fact about the role, not the night).
+  function updateBulletIndicator() {
+    const el = $("bullet-indicator");
+    if (!el) return;
+    const status = $("bullet-status");
+    if (myRole === "vigilante") {
+      el.classList.remove("hidden");
+      el.classList.toggle("spent", vigilanteBulletUsed);
+      if (status) status.textContent = vigilanteBulletUsed ? "bullet used" : "1 bullet";
+    } else {
+      el.classList.add("hidden");
+      el.classList.remove("spent");
     }
   }
 
@@ -1346,145 +1469,44 @@
   // ============================================================
   // SLIDE-TO-CONFIRM
   // ============================================================
-  let slideCallback = null;
+  // ── Confirm / Cancel action buttons (replaced the slide-to-confirm) ──
+  // The names setupSlideConfirm / hideSlideConfirm are kept so every call site
+  // stays agnostic to the confirm mechanism; tests click the real buttons.
+  let confirmCallback = null;
+  let cancelCallback = null;
 
-  function setupSlideConfirm(role, callback) {
-    const container = $("slide-confirm");
-    const icon = $("slide-icon");
-    const label = $("slide-label");
-    const fill = $("slide-fill");
+  // role → the Confirm button's verb (Cancel is always "Cancel").
+  const ACTION_VERBS = { mafia: "Kill", doctor: "Save", detective: "Investigate", joker_haunt: "Haunt", hunter_revenge: "Avenge", vigilante: "Shoot" };
 
-    // Reset state
-    container.className = "slide-confirm";
-    container.classList.add(`role-${role}`);
-    container.classList.remove("confirmed", "dragging");
-    icon.style.left = "4px";
-    fill.style.width = "0";
-    fill.classList.remove("dripping");
-
-    // Set role-specific icon and label
-    const iconArt = role === "mafia" ? KNIFE_ART
-      : role === "doctor" ? CROSS_ART
-      : role === "joker_haunt" ? CLOWN_ART
-      : role === "hunter_revenge" ? BOW_ART : MAGNIFIER_ART;
-    icon.innerHTML = pixelArtToSvg(iconArt);
-
-    const labels = { mafia: "slide to kill", doctor: "slide to save", detective: "slide to investigate", joker_haunt: "slide to haunt", hunter_revenge: "slide to avenge" };
-    label.textContent = labels[role] || "slide to confirm";
-
-    slideCallback = callback;
+  // Arm the two-button group for `role`. onConfirm fires on Confirm; optional
+  // onCancel fires on Cancel (deselect a target, or withdraw a mafia lock).
+  function setupSlideConfirm(role, onConfirm, onCancel) {
+    const container = $("action-confirm");
+    container.className = "action-confirm role-" + role;
+    container.classList.remove("hidden");
+    $("btn-action-confirm").textContent = ACTION_VERBS[role] || "Confirm";
+    confirmCallback = onConfirm || null;
+    cancelCallback = onCancel || null;
   }
 
   function hideSlideConfirm() {
-    const container = $("slide-confirm");
-    container.classList.add("hidden");
-    container.classList.remove("confirmed", "dragging");
-    slideCallback = null;
+    $("action-confirm").classList.add("hidden");
+    confirmCallback = null;
+    cancelCallback = null;
   }
 
-  // Test handle: happy-dom can't drive the pointer drag (zero-size layout
-  // rects), so client tests fire the armed confirm directly, mirroring the
-  // threshold branch of onEnd below. Not read by any app code.
-  window.__testFireSlideConfirm = () => {
-    if (!slideCallback) return;
-    const cb = slideCallback;
-    slideCallback = null;
-    cb();
-  };
-
-  // Slide drag handlers
-  (function () {
-    const container = $("slide-confirm");
-    const icon = $("slide-icon");
-    const fill = $("slide-fill");
-    const THRESHOLD = 0.85;
-    let dragging = false;
-    let startX = 0;
-    let trackWidth = 0;
-    // iconWidth (handle size) and padding (resting inset) are MEASURED at
-    // drag-start from the live layout instead of hardcoded 48/4 — the D1c
-    // reskin changes the handle's box, and measuring keeps the drag
-    // thresholds locked to whatever the rendered geometry actually is. The
-    // handle is laid out (not display:none) whenever onStart can fire, so the
-    // reads are valid; see the getBoundingClientRect hit-test below.
-    let iconWidth = 48;
-    let padding = 4;
-
-    function onStart(e) {
-      if (!slideCallback) return;
-      if (container.classList.contains("confirmed")) return;
-      const touch = e.touches ? e.touches[0] : e;
-      // Only start if touching the icon
-      const iconRect = icon.getBoundingClientRect();
-      const dx = touch.clientX - iconRect.left;
-      const dy = touch.clientY - iconRect.top;
-      if (dx < 0 || dx > iconRect.width || dy < 0 || dy > iconRect.height) return;
-      e.preventDefault();
-      dragging = true;
-      // Measure the live handle geometry while it is at rest (left:4px from
-      // setup/snap-back) — offsetWidth is the rendered handle box; the resting
-      // computed `left` is the symmetric track inset the math clamps against.
-      iconWidth = icon.offsetWidth || iconWidth;
-      const restingLeft = parseFloat(getComputedStyle(icon).left);
-      if (!Number.isNaN(restingLeft)) padding = restingLeft;
-      startX = touch.clientX - icon.offsetLeft;
-      const trackEl = container.querySelector(".slide-track");
-      trackWidth = trackEl.offsetWidth;
-      container.classList.add("dragging");
-    }
-
-    function onMove(e) {
-      if (!dragging) return;
-      e.preventDefault();
-      const touch = e.touches ? e.touches[0] : e;
-      const maxLeft = trackWidth - iconWidth - padding;
-      let newLeft = Math.max(padding, Math.min(maxLeft, touch.clientX - startX));
-      icon.style.left = newLeft + "px";
-      fill.style.width = (newLeft + iconWidth / 2) + "px";
-
-      const pct = (newLeft - padding) / (maxLeft - padding);
-      if (pct > 0.3 && container.classList.contains("role-mafia")) {
-        fill.classList.add("dripping");
-      } else {
-        fill.classList.remove("dripping");
-      }
-    }
-
-    function onEnd(e) {
-      if (!dragging) return;
-      e.preventDefault();
-      dragging = false;
-      container.classList.remove("dragging");
-
-      const maxLeft = trackWidth - iconWidth - padding;
-      const currentLeft = icon.offsetLeft;
-      const pct = (currentLeft - padding) / (maxLeft - padding);
-
-      if (pct >= THRESHOLD && slideCallback) {
-        // Confirmed
-        container.classList.add("confirmed");
-        $("slide-label").textContent = "confirmed";
-        fill.classList.remove("dripping");
-        const cb = slideCallback;
-        slideCallback = null;
-        cb();
-        setTimeout(() => hideSlideConfirm(), 400);
-      } else {
-        // Snap back to the measured resting inset (matches the CSS left:4px,
-        // but stays locked to whatever the reskin's inset actually is).
-        icon.style.left = padding + "px";
-        fill.style.width = "0";
-        fill.classList.remove("dripping");
-      }
-    }
-
-    container.addEventListener("touchstart", onStart, { passive: false });
-    document.addEventListener("touchmove", onMove, { passive: false });
-    document.addEventListener("touchend", onEnd, { passive: false });
-    container.addEventListener("mousedown", onStart);
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onEnd);
-  })();
+  // Wire the buttons once. Capture the armed callback, tear the group down,
+  // THEN run it — so a callback that re-arms (e.g. a re-render) sticks.
+  $("btn-action-confirm").addEventListener("click", () => {
+    const cb = confirmCallback;
+    hideSlideConfirm();
+    if (cb) cb();
+  });
+  $("btn-action-cancel").addEventListener("click", () => {
+    const cb = cancelCallback;
+    hideSlideConfirm();
+    if (cb) cb();
+  });
 
   // ============================================================
   // PULL-TO-REFRESH (works on game screen and menu screen)
@@ -1610,6 +1632,10 @@
 
     // Day/voting → night transition
     if ((previousPhase === "day" || previousPhase === "voting") && msg.phase === "night") {
+      // This path owns the NIGHTFALL overlay for this night — mark the round so
+      // the first-night sound-cue trigger (Bug 2) skips when the queued "night"
+      // cue replays after the overlay completes.
+      nightTransitionRound = msg.round;
       const voteResult = lastVoteResult;
       lastVoteResult = null;
       if (voteResult) {
@@ -1636,7 +1662,8 @@
       showSuspenseTransition(msg, () => {
         applyPhaseChange(msg);
       });
-    // Execution → game_over with lover death
+    // Execution → game_over with lover death (owner ruling: public heartbreak
+    // beat before the game-over reveal).
     } else if (msg.loverDeathName && msg.phase === "game_over") {
       const voteResult = lastVoteResult;
       lastVoteResult = null;
@@ -1700,6 +1727,7 @@
     // Hide all action panels
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
+    $("btn-vigilante-pass").classList.add("hidden");
     // C5b: the deferred phase_change IS the revenge-resolution signal — the
     // room-wide wait view (and its admin skip control) comes down with it.
     $("revenge-wait").classList.add("hidden");
@@ -1825,6 +1853,9 @@
     }, 2000);
   }
 
+  // Public heartbreak beat (owner ruling): a full-screen "X died of heartbreak"
+  // overlay for the heartbroken partner, chained AFTER the execution/dawn beat
+  // and BEFORE nightfall / game_over. This terminal flushes any held game_over.
   function showHeartbreakTransition(loverName, callback) {
     heartbreakTransitionActive = true;
     const overlay = $("suspense-overlay");
@@ -1930,16 +1961,29 @@
     // Official doctor mode sends an anonymous `saved` flag (no named save event);
     // house mode and older payloads still carry a named "save" event.
     const hasSave = msg.saved === true || roundEvents.some((e) => e.type === "save");
-    const hasKill = roundEvents.some((e) => e.type === "kill" || e.type === "lover_death");
-    const killEvent = roundEvents.find((e) => e.type === "kill");
-    const victimName = killEvent ? killEvent.playerName : "Someone";
+    // Count EVERY night-death type so a vigilante-only / joker-only / lover-only
+    // night isn't mis-read as peaceful. In-game the server now ships the ONE
+    // neutral "death" type (projectEventsForClients) — the legacy cause-bearing
+    // labels are kept here only for the game_over full-detail replay.
+    // Owner ruling: a lover cascade (lover_death) gets its OWN public "died of
+    // heartbreak" beat below, so it is NOT folded into the direct-victim
+    // singling here — direct kills stay cause-ambiguous, the partner is named.
+    const directDeaths = roundEvents.filter((e) =>
+      e.type === "death" || e.type === "kill" || e.type === "vigilante_shot" || e.type === "joker_haunt"
+    );
+    const hasLoverDeath = roundEvents.some((e) => e.type === "lover_death");
+    const hasKill = directDeaths.length > 0 || hasLoverDeath;
+    // Only name a victim when EXACTLY ONE died; multi-death nights stay neutral
+    // so the verdict can't single out (and thereby cause-tag) the mafia victim
+    // \u2014 the combined narrator line already carries all the names.
+    const victimName = directDeaths.length === 1 ? directDeaths[0].playerName : null;
     // D5: verdict returns an art GRID + plain text + tint, painted into the
     // dedicated stage slots (the writer uses .textContent, so the relayed
     // username never reaches innerHTML \u2014 strictly safer than the prior
     // escapeHtml-into-innerHTML path).
-    if (hasSave && hasKill) return { art: CROSS_ART, text: `A life was saved... but ${victimName} didn\u2019t make it.`, color: "#2196f3", beatClass: "beat-dawn" };
+    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? `A life was saved... but ${victimName} didn\u2019t make it.` : "A life was saved... but others didn\u2019t make it.", color: "#2196f3", beatClass: "beat-dawn" };
     if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "#2196f3", beatClass: "beat-dawn" };
-    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: `${victimName} didn\u2019t survive the night.`, color: "#d32f2f", beatClass: "beat-death" };
+    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? `${victimName} didn\u2019t survive the night.` : "Several didn\u2019t survive the night.", color: "#d32f2f", beatClass: "beat-death" };
     return { art: SUN_ART, text: "A peaceful night... somehow.", color: "#8e8e93", beatClass: "beat-dawn" };
   }
 
@@ -1948,6 +1992,9 @@
     suspenseQueue = [];
     const overlay = $("suspense-overlay");
     const text = $("suspense-text");
+    // Owner ruling: a night lover cascade gets a dedicated public heartbreak
+    // beat after the verdict; it lengthens the dawn overlay so game_over/night
+    // don't stomp it (extraDelay pushes the fade-out + teardown timers).
     const hasLoverDeath = !!msg.loverDeathName;
     const extraDelay = hasLoverDeath ? 2800 : 0;
 
@@ -1983,7 +2030,7 @@
     if (hasLoverDeath) {
       setTimeout(() => {
         // D5: heartbreak art into the stage slot; text node carries the sentence
-        // (textContent — relayed name stays XSS-inert).
+        // (textContent — relayed name stays XSS-inert). Names only the partner.
         setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
         text.textContent = msg.loverDeathName + " died of heartbreak.";
         text.style.color = "#9c27b0";
@@ -2065,17 +2112,34 @@
     const container = $("event-history-list");
     container.innerHTML = "";
 
+    // In-game event tab is visible to LIVING players, so the four NIGHT death
+    // labels are neutralized to a cause-neutral line — naming the mafia /
+    // vigilante / joker / heartbreak here would re-leak exactly what the dawn
+    // fix hides. Day-public outcomes (execution/spared), positive save, and
+    // the detective's private investigations keep their descriptive labels.
+    // hunter_revenge is already a PUBLIC reveal (the gate announces the Hunter).
+    // The end-game history (GAME_HISTORY_LABELS) stays a FULL reveal.
     const EVENT_LABELS = {
-      kill: "Killed by Mafia",
+      death: "Died in the night",
+      kill: "Died in the night",
       save: "Saved by Doctor",
       execution: "Executed",
       lover_death: "Died of heartbreak",
       spared: "Spared by vote",
-      joker_haunt: "Haunted by the Joker",
+      joker_haunt: "Died in the night",
       hunter_revenge: "Shot by the Hunter",
+      vigilante_shot: "Died in the night",
       investigation_mafia: "Investigated — MAFIA",
       investigation_clear: "Investigated — Clear",
     };
+    // Living clients only ever receive the neutral "death" type for DIRECT night
+    // kills (projectEventsForClients), but map any cause-bearing direct-death
+    // label to the SAME neutral CSS class defensively so the class attribute
+    // can never out the cause even if a full-detail event reaches this in-game
+    // renderer (e.g. the game_over full-history replay). lover_death is
+    // DELIBERATELY EXCLUDED (owner ruling): heartbreak is public, so it keeps
+    // its own "lover_death" class + "Died of heartbreak" label.
+    const NIGHT_DEATH_CLASS = new Set(["death", "kill", "vigilante_shot", "joker_haunt"]);
 
     // Merge detective history (private) into events for display
     let allEvents = [...events];
@@ -2104,7 +2168,8 @@
 
       for (const ev of grouped[round]) {
         const item = document.createElement("div");
-        item.className = `event-item ${ev.type}`;
+        const cls = NIGHT_DEATH_CLASS.has(ev.type) ? "death" : ev.type;
+        item.className = `event-item ${cls}`;
         item.textContent = `${ev.playerName} — ${EVENT_LABELS[ev.type] || ev.type}`;
         container.appendChild(item);
       }
@@ -2138,12 +2203,14 @@
         const dotStyle = p.isAlive && p.color ? `style="background:${p.color}"` : '';
         const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
         const showMafiaTag = isMafiaTeammate && !hideMafiaTag;
+        // The mafia (incl. the Godfather themselves) know who the Godfather is.
+        const isGodfatherMember = godfatherName != null && p.username === godfatherName;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
         return `<div class="player-status-item">
           <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
-          ${showMafiaTag ? '<span class="mafia-tag">MAFIA</span>' : ''}
+          ${showMafiaTag ? (isGodfatherMember ? '<span class="mafia-tag godfather-tag">&#128081; GODFATHER</span>' : '<span class="mafia-tag">MAFIA</span>') : ''}
           ${investigated ? (isMafia ? '<span class="detective-tag mafia">' + pixelArtToSvg(THUMB_DOWN_ART) + '</span>' : '<span class="detective-tag clear">' + pixelArtToSvg(THUMB_UP_ART) + '</span>') : ''}
         </div>`;
       })
@@ -2209,14 +2276,27 @@
     hideSlideConfirm();
 
     // Decline affordance is exclusive to the hunter's revenge prompt
-    // (slide-confirm is reserved for the kill; declining is a plain button).
+    // (the Confirm button is reserved for the kill; declining is a plain button).
     $("btn-decline-revenge").classList.toggle("hidden", actionType !== "hunter_revenge");
+    // The vigilante's "hold fire" button (parallel to the hunter's decline).
+    $("btn-vigilante-pass").classList.toggle("hidden", actionType !== "vigilante_shoot");
 
     const list = $("action-targets");
 
     if (actionType === "mafia_vote") {
       mafiaTargetPlayers = players;
       pendingMafiaLockTarget = null; // fresh night render (M11)
+      // A new mafia night opens with a clean slate. These vote-state globals are
+      // otherwise only reset on game_started / game_sync, so without this a prior
+      // night's Spare (objection), my own votes, and the voter chips would leak
+      // into this night's cards — a spared target would render "Blocked" with no
+      // buttons, and if the objector was lynched the remaining mafia couldn't act
+      // on it. The engine already clears its state every night (NIGHT_RESETS); the
+      // server echoes fresh state on the first vote. Reset the client mirror here.
+      mafiaObjectedTargets = {};
+      myMafiaVotes = [];
+      lastVoterTargets = {};
+      aliveMafiaCount = 0;
       // Branch on single vs multi mafia
       if (mafiaTeam.length <= 1) {
         renderSingleMafiaTargets(list, players);
@@ -2235,7 +2315,7 @@
         })
         .join("");
 
-      // Doctor/Detective/Joker haunt/Hunter revenge: clicking selects visually, slide-to-confirm sends to server
+      // Doctor/Detective/Joker haunt/Hunter revenge: clicking selects visually, the Confirm button sends to server
       let selectedTargetId = null;
       let selectedName = null;
       const slideRole = (actionType === "joker_haunt" || actionType === "hunter_revenge") ? actionType : myRole;
@@ -2251,11 +2331,22 @@
             nightActionLocked = true;
             // Keep deadActionActive true for the entire night (reset when the next night begins)
             wsSend({ type: actionType, targetId: selectedTargetId });
+            // A fired vigilante shot spends the bullet \u2014 reflect it on the card now.
+            if (actionType === "vigilante_shoot") {
+              vigilanteBulletUsed = true;
+              updateBulletIndicator();
+            }
             // Collapse to show only chosen target
             list.innerHTML = `<li class="selected">${escapeHtml(selectedName)} \u2714</li>`;
-            // Action resolved: the hunter's decline affordance goes with it
-            // (no-op for every other action type; the button is already hidden)
+            // Action resolved: the hunter's decline / vigilante's hold-fire
+            // affordances go with it (no-op for other action types; already hidden)
             $("btn-decline-revenge").classList.add("hidden");
+            $("btn-vigilante-pass").classList.add("hidden");
+          }, () => {
+            // Cancel: deselect so the player can choose a different target.
+            selectedTargetId = null;
+            selectedName = null;
+            list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
           });
         });
       });
@@ -2287,7 +2378,7 @@
     wsSend({ type: "force_skip_revenge" });
   });
 
-  // C5a: declining the revenge shot is a plain button (slide-confirm is
+  // C5a: declining the revenge shot is a plain button (the Confirm button is
   // reserved for the kill). Only visible while the hunter_revenge prompt is
   // up; null targetId is the wire shape for a decline.
   $("btn-decline-revenge").addEventListener("click", () => {
@@ -2297,6 +2388,17 @@
     $("btn-decline-revenge").classList.add("hidden");
     hideSlideConfirm();
     $("action-status").textContent = "You lower your bow.";
+  });
+
+  // The vigilante holds fire — keep the bullet for a later night (null = pass).
+  $("btn-vigilante-pass").addEventListener("click", () => {
+    if (nightActionLocked) return;
+    nightActionLocked = true;
+    wsSend({ type: "vigilante_shoot", targetId: null });
+    $("btn-vigilante-pass").classList.add("hidden");
+    hideSlideConfirm();
+    $("action-targets").innerHTML = "";
+    $("action-status").textContent = "You hold your fire.";
   });
 
   function renderSingleMafiaTargets(list, players) {
@@ -2427,7 +2529,7 @@
             actions.appendChild(btn);
           }
         } else if (cardState === "unanimous") {
-          // No buttons — slide-to-kill takes over
+          // No buttons — the Confirm button takes over
         } else if (cardState === "idle") {
           const nomBtn = document.createElement("button");
           nomBtn.className = "mtc-btn mtc-btn-suggest";
@@ -2568,7 +2670,7 @@
     lastVoterTargets = msg.voterTargets;
 
     // If consensus reached (lockedTarget set), don't re-render cards —
-    // handleMafiaConfirmReady will collapse the list and show slide-to-kill
+    // handleMafiaConfirmReady will collapse the list and show the Confirm button
     if (msg.lockedTarget) return;
 
     // For single mafia, don't re-render cards (consensus will trigger confirm)
@@ -2661,13 +2763,19 @@
     renderSpectatorLog();
 
     $("action-title").textContent = "Dawn approaches\u2026";
+    // Cause-neutral for the night batch: the dead-spectator list names WHO died,
+    // not by whose hand. (This also fixes the old bug where a vigilante/joker
+    // kill was mislabeled "killed by the Mafia".) The full reveal lives on the
+    // end-game history screen.
     if (msg.kills && msg.kills.length > 0) {
-      $("action-targets").innerHTML = msg.kills.map(k => {
-        const label = k.source === "joker_haunt" ? "haunted by the Joker" : "killed by the Mafia";
-        return `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 ${label}</li>`;
-      }).join("");
+      $("action-targets").innerHTML = msg.kills.map(k =>
+        `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 died in the night</li>`
+      ).join("");
     } else {
-      $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(msg.targetName)} \u2014 killed by the Mafia</li>`;
+      // No kills \u27f9 a save-only night: no one died. Never name msg.targetName here
+      // (in official mode it is null, and it would otherwise leak the saved
+      // player's identity \u2014 and wrongly imply they died).
+      $("action-targets").innerHTML = `<li class="spectator-kill-result">No one died in the night</li>`;
     }
     $("action-status").textContent = msg.doctorMessage || "";
   }
@@ -2697,6 +2805,16 @@
         $("action-title").textContent = "The Detective has fallen\u2026";
         list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No investigation tonight</li>`;
       }
+    } else if (msg.subPhase === "vigilante") {
+      // Phantom-safe: identical when the vigilante is dead vs out of ammo
+      // (server sends isRoleAlive=false for both), so state can't be inferred.
+      if (msg.isRoleAlive) {
+        $("action-title").textContent = "Vigilante is taking aim\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Deciding whether to shoot\u2026</li>`;
+      } else {
+        $("action-title").textContent = "The night stays quiet\u2026";
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No shot is fired tonight</li>`;
+      }
     } else if (msg.subPhase === "resolving") {
       $("action-title").textContent = "Dawn approaches\u2026";
       list.innerHTML = "";
@@ -2709,8 +2827,12 @@
     if (entry.phase === "mafia") {
       div.innerHTML = `Mafia chose to kill <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
     } else if (entry.phase === "doctor") {
-      if (entry.alive) {
+      if (entry.alive && entry.targetName) {
         div.innerHTML = `Doctor chose to protect <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else if (entry.alive) {
+        // Official mode: the save is secret \u2014 the target name is withheld, so
+        // render an anonymous line (mirrors the vigilante's held-fire phrasing).
+        div.textContent = "Doctor made a choice";
       } else {
         div.textContent = "Doctor has fallen \u2014 no protection tonight";
       }
@@ -2719,6 +2841,14 @@
         div.innerHTML = `Detective chose to investigate <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
       } else {
         div.textContent = "Detective has fallen \u2014 no investigation tonight";
+      }
+    } else if (entry.phase === "vigilante") {
+      if (entry.alive && entry.targetName) {
+        div.innerHTML = `Vigilante took aim at <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      } else if (entry.alive) {
+        div.textContent = "Vigilante held their fire";
+      } else {
+        div.textContent = "Vigilante \u2014 no shot tonight";
       }
     }
     return div;
@@ -2781,6 +2911,19 @@
       wsSend({ type: "confirm_mafia_kill" });
       // Show confirmed state
       list.innerHTML = `<li class="selected">${escapeHtml(mafiaConfirmTarget)} \u2714</li>`;
+    }, () => {
+      // Cancel: withdraw my lock to reopen the team vote. Toggling a lock off is
+      // the same wire frame as locking; the server re-broadcasts the (now
+      // unconsensused) state. Restore the picking UI now so there's no dead gap.
+      mafiaConfirmTarget = null;
+      wsSend({ type: "mafia_vote", targetId: msg.targetId, voteType: "lock" });
+      if (mafiaTeam.length <= 1) {
+        renderSingleMafiaTargets(list, mafiaTargetPlayers);
+        $("mafia-vote-status").classList.add("hidden");
+      } else {
+        renderMafiaTargetCards(list, mafiaTargetPlayers, computeVoteCounts(lastVoterTargets));
+        $("mafia-vote-status").classList.remove("hidden");
+      }
     });
   }
 
@@ -2975,15 +3118,6 @@
       : "You achieved a joint victory!";
   }
 
-  // Doctor save private notification (official mode)
-  function showDoctorSavePrivate(message) {
-    // Show as a detective-result-style notification
-    const el = $("detective-result");
-    el.textContent = message;
-    el.style.borderColor = "var(--role-doctor)";
-    el.classList.remove("hidden");
-  }
-
   // ============================================================
   // SETTINGS MODAL
   // ============================================================
@@ -3026,6 +3160,42 @@
   function closeSettingsModal() {
     $("modal-settings").classList.add("hidden");
   }
+
+  // ============================================================
+  // ROLES IN PLAY MODAL (public lineup — every player, any time)
+  // ============================================================
+  const ROSTER_ROLE_NAMES = { mafia: "Mafia", doctor: "Doctor", detective: "Detective", vigilante: "Vigilante", hunter: "Hunter", joker: "Joker", citizen: "Citizen" };
+
+  function renderRoster(roster) {
+    const list = $("roster-list");
+    if (!roster || !Array.isArray(roster.roles) || roster.roles.length === 0) {
+      list.innerHTML = `<p class="roster-empty">No roster available.</p>`;
+      return;
+    }
+    let html = roster.roles.map((e) => `
+      <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role})">
+        <span class="roster-name">${ROSTER_ROLE_NAMES[e.role] || e.role}</span>
+        <span class="roster-count">×${e.count}</span>
+      </div>`).join("");
+    const mods = [];
+    if (roster.godfather) mods.push("Godfather");
+    if (roster.lovers) mods.push("Lovers");
+    if (mods.length) html += `<div class="roster-mods">+ ${mods.join(" · ")}</div>`;
+    list.innerHTML = html;
+  }
+
+  function openRosterModal() {
+    renderRoster(currentRoster);
+    $("modal-roster").classList.remove("hidden");
+  }
+  function closeRosterModal() {
+    $("modal-roster").classList.add("hidden");
+  }
+  $("btn-roster").addEventListener("click", openRosterModal);
+  $("btn-close-roster").addEventListener("click", closeRosterModal);
+  $("modal-roster").addEventListener("click", (e) => {
+    if (e.target === $("modal-roster")) closeRosterModal();
+  });
 
   // ============================================================
   // D8: IN-WORLD CONFIRM SHEET (replaces native confirm())
@@ -3216,8 +3386,11 @@
     // Reset gameplay state but keep gameCode/isAdmin for Play Again
     const savedIsAdmin = isAdmin;
     myRole = null;
+    myIsGodfather = false;
+    vigilanteBulletUsed = false;
     isLover = false;
     mafiaTeam = [];
+    godfatherName = null;
     isDead = false;
     jokerWonOverlayShown = false;
     currentPhase = null;
@@ -3278,6 +3451,8 @@
     lover_death: "Died of heartbreak",
     joker_haunt: "Haunted by the Joker",
     hunter_revenge: "Shot by the Hunter",
+    vigilante_shot: "Shot by the Vigilante",
+    death: "Died in the night", // defensive fallback (see renderGameHistory)
   };
   // Test handle: pins the game-over history labels. Not read by any app code.
   window.__gameOverHistoryLabels = GAME_HISTORY_LABELS;
@@ -3298,7 +3473,11 @@
     let lastPhase = "night";
     for (const ev of events) {
       if (!grouped[ev.round]) grouped[ev.round] = { night: [], day: [] };
-      if (ev.type === "kill" || ev.type === "save" || ev.type === "joker_haunt") {
+      // "death" is the defensive neutral fallback if a projected event ever
+      // reaches this FULL-detail reveal (game_over ships the unprojected
+      // history, so normally the real cause labels arrive — including
+      // vigilante_shot, which must group as a night death like the mafia kill).
+      if (ev.type === "kill" || ev.type === "save" || ev.type === "joker_haunt" || ev.type === "vigilante_shot" || ev.type === "death") {
         grouped[ev.round].night.push(ev);
         lastPhase = "night";
       } else if (ev.type === "execution") {
@@ -3438,9 +3617,11 @@
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
         const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
         const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
-        return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${p.role || ""}">
+        // The Godfather reveals as "GODFATHER" (role stays "mafia" under the hood).
+        const revealRole = p.isGodfather ? "godfather" : (p.role || "?");
+        return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${revealRole}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
-          <span class="role-reveal-role ${p.role || ""}">${(p.role || "?").toUpperCase()}</span>
+          <span class="role-reveal-role ${revealRole}">${revealRole.toUpperCase()}</span>
           ${trophyText}
           ${loverText}
           ${deadText}
@@ -3456,8 +3637,9 @@
       return;
     }
 
-    // Find the boundary between non-mafia and mafia
-    const firstMafiaIdx = items.findIndex((el) => el.dataset.role === "mafia");
+    // Find the boundary between non-mafia and mafia (the Godfather sorts into
+    // the mafia block but carries data-role="godfather", so match both).
+    const firstMafiaIdx = items.findIndex((el) => el.dataset.role === "mafia" || el.dataset.role === "godfather");
     const DELAY_PER_CARD = 300;
     const PAUSE_BEFORE_MAFIA = 800;
 
@@ -3499,6 +3681,9 @@
     $("event-history").classList.add("hidden");
     narratorTranscript = [];
     mafiaTeam = [];
+    godfatherName = null;
+    myIsGodfather = false;
+    vigilanteBulletUsed = false;
     resetEventHistoryTabs();
     closeSettingsModal();
     gameCode = null;
@@ -3614,6 +3799,8 @@
     "mafia_open", "mafia_close",
     "doctor_open", "doctor_close",
     "detective_open", "detective_close",
+    "vigilante_open", "vigilante_close",
+    "hunter_open", "hunter_close",
   ];
 
   function queueSound(type) {
@@ -3971,8 +4158,8 @@
   // ============================================================
   // INIT
   // ============================================================
-  const APP_VERSION = "v1.4_202606191044";
-  const APP_VERSION_STAGING = "staging.24_202606191034";
+  const APP_VERSION = "v1.5_202607130233";
+  const APP_VERSION_STAGING = "staging.33_202607130233";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);

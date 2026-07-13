@@ -106,15 +106,13 @@ describe("C7: app.css per-role classes", () => {
     expect(css).toContain(".game-history-item.hunter_revenge { color: var(--role-hunter); }");
   });
 
-  test("the revenge slide-fill is re-pointed at the --role-hunter token (D1c: every role's slide skin now derives from its CSS variable, not a baked rgba literal)", () => {
-    // D1c reskin: the slide fills were re-pointed at the token palette via
-    // color-mix(in srgb, var(--role-X) N%, transparent) so a token change can
-    // never leave the slide skin stale. The hunter block must reference the
-    // --role-hunter variable directly rather than a hardcoded rgba of #ef6c00.
-    const block = css.match(/\.slide-confirm\.role-hunter_revenge \.slide-fill\s*\{([^}]*)\}/);
+  test("the revenge Confirm button is re-pointed at the --role-hunter token (every role's confirm tint derives from its CSS variable, not a baked literal)", () => {
+    // The Confirm/Cancel buttons replaced the slide-to-confirm. The hunter's
+    // Confirm tint must still derive from the --role-hunter token directly
+    // (via --slide-tint) rather than a hardcoded rgba/hex of #ef6c00.
+    const block = css.match(/\.action-confirm\.role-hunter_revenge \.ac-confirm\s*\{([^}]*)\}/);
     expect(block).not.toBeNull();
     expect(block![1]).toContain("var(--role-hunter)");
-    expect(block![1]).toContain("color-mix(in srgb");
     // The C5a ad-hoc green must be gone (no green leak in any form).
     expect(css).not.toContain("rgba(46,125,50");
     expect(css).not.toContain("#2e7d32");
@@ -124,7 +122,7 @@ describe("C7: app.css per-role classes", () => {
 describe("C7: README Role Roster (CLAUDE.md mandate)", () => {
   test("the Special Roles table contains the exact §10 Hunter row", () => {
     expect(readme).toContain(
-      "| **Hunter** | Town | None — acts only on death | When the Hunter dies — by Mafia kill, day-vote execution, Joker haunt, or lover heartbreak — they are revealed and may immediately take one living player down with them. The shot cannot be blocked by the Doctor and resolves before the win check. Revenge is optional in both modes — the Hunter may decline (and the host may skip a stalled Hunter). |"
+      "| **Hunter** | Town | None — acts only on death | When the Hunter dies a **direct** death — Mafia kill, day-vote execution, or Joker haunt — they are revealed and may immediately take one living player down with them. A Hunter who dies of **lover heartbreak** (their lover was killed) does **not** get a shot. If killed at night, the narrator wakes the Hunter (\"open your eyes\") to take the revenge, then sends them back to sleep. The shot cannot be blocked by the Doctor and resolves before the win check. Revenge is optional and has **no time limit** — the Hunter may decline, and the host may skip a stalled Hunter. |"
     );
   });
 

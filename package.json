@@ -8,12 +8,15 @@
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
     "generate-voices": "bun run scripts/generate-voices.ts",
-    "generate-voices:dry": "bun run scripts/generate-voices.ts --dry-run"
+    "generate-voices:dry": "bun run scripts/generate-voices.ts --dry-run",
+    "dashboard": "bun run tools/test-dashboard/server.ts",
+    "chrome-grid": "bun run tests/playtest/chrome-grid.ts"
   },
   "dependencies": {},
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.10.2",
     "@types/bun": "latest",
+    "playwright": "^1.61.1",
     "typescript": "^6.0.3"
   }
 }
