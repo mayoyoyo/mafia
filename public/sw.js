@@ -1,4 +1,4 @@
-const CACHE_NAME = "mafia-v6";
+const CACHE_NAME = "mafia-v7";
 const ASSETS = [
   "/",
   "/index.html",
@@ -8,6 +8,9 @@ const ASSETS = [
   "/manifest.json",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg",
+  // P3: the auth/menu chibi hero is part of the shell (it paints on the very
+  // first screen), unlike the per-role card art which stays runtime-cached.
+  "/img/ui/hero.png",
   "/fonts/grandstander.css",
   "/fonts/grandstander/grandstander-latin-400.woff2",
   "/fonts/grandstander/grandstander-latin-700.woff2",

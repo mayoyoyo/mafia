@@ -19,66 +19,77 @@
 <body>
   <div id="app">
 
-    <!-- AUTH SCREEN -->
+    <!-- AUTH SCREEN — Figma 42:678 -->
     <div id="screen-auth" class="screen active">
       <div class="logo">
-        <div class="logo-icon" id="logo-icon-auth"></div>
+        <!-- "Skull" frame: 244x245 radial #218BE1@60% -> #000@60% behind a
+             200x200 chibi raster (spec 42-678:48-51). Glow lives on .logo-icon. -->
+        <div class="logo-icon" id="logo-icon-auth"><img src="/img/ui/hero.png" alt="" width="200" height="200"></div>
         <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="auth-form">
         <div class="input-pxb"><input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off"></div>
         <div class="passcode-row">
-          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4-digit PIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
+          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4 Digit Pin" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
         </div>
-        <button id="btn-login" class="btn btn-primary btn-large">Log In</button>
-        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc">Create Account</button></div>
+        <button id="btn-login" class="btn btn-primary btn-large">Log in</button>
+        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc">Create an account</button></div>
       </div>
       <div id="auth-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
     </div>
 
-    <!-- MAIN MENU -->
+    <!-- MAIN MENU — Figma 42:766 (empty code) / 287:3259 (valid code).
+         F2: the room-code field is ALWAYS visible (the old #btn-join-show
+         reveal step is gone). F3: Join is the primary CTA and starts
+         disabled; Host game drops to the secondary #232729 CTA below it. -->
     <div id="screen-menu" class="screen">
       <!-- Pull to Refresh -->
       <div id="pull-refresh-menu" class="pull-refresh">
         <div class="pull-refresh-spinner" id="pull-refresh-spinner-menu"></div>
       </div>
       <div class="logo logo-small">
-        <div class="logo-icon" id="logo-icon-menu"></div>
+        <div class="logo-icon" id="logo-icon-menu"><img src="/img/ui/hero.png" alt="" width="200" height="200"></div>
         <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="header">
         <h2>Welcome, <span id="menu-username"></span></h2>
-        <button id="btn-logout" class="btn btn-small btn-ghost">Log Out</button>
+        <button id="btn-logout" class="btn btn-small btn-ghost">Log out</button>
+      </div>
+      <div id="join-section" class="join-section">
+        <div class="input-pxb"><input type="text" id="join-code" placeholder="Room code" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
       </div>
       <div class="menu-buttons">
-        <button id="btn-host" class="btn btn-primary btn-large">Host Game</button>
-        <div class="btn-pxb pxc"><button id="btn-join-show" class="btn btn-secondary btn-large pxc">Join Game</button></div>
-      </div>
-      <div id="join-section" class="join-section hidden">
-        <div class="input-pxb" style="flex:1"><input type="text" id="join-code" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
-        <button id="btn-join" class="btn btn-primary">Join</button>
+        <button id="btn-join" class="btn btn-primary btn-large" disabled>Join</button>
+        <div class="btn-pxb pxc"><button id="btn-host" class="btn btn-secondary btn-large pxc">Host game</button></div>
       </div>
       <div id="menu-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
     </div>
 
-    <!-- LOBBY (ADMIN VIEW) -->
+    <!-- LOBBY (ADMIN VIEW) — Figma 45:466.
+         Nav: Lobby / Code E92G / people icon (Roles in play, 268:566) / gear.
+         The Leave control has no Figma affordance but is KEPT (R7) — without it
+         a host cannot exit the lobby. -->
     <div id="screen-lobby-admin" class="screen">
-      <div class="header">
+      <div class="header lobby-nav">
         <button id="btn-leave-admin" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
         <div class="header-right">
-          <div class="room-code">Code: <span id="lobby-code"></span></div>
+          <div class="room-code"><span class="room-code-label">Code</span> <span id="lobby-code"></span></div>
+          <button id="btn-roster-lobby-admin" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play">
+            <svg class="icon-people" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7.5" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.9c2.4.6 4 2.5 4 5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
           <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings">&#9881;</button>
         </div>
       </div>
 
-      <div class="settings-panel">
-        <h3>Game Settings</h3>
+      <h2 class="screen-title">Choose how to play</h2>
+
+      <div class="settings-panel card-primary">
 
         <div class="setting-row">
-          <span>Mafia Members</span>
+          <span>Mafia members</span>
           <div class="counter">
             <button id="mafia-minus" class="btn btn-counter">-</button>
             <span id="mafia-count">1</span>
@@ -135,59 +146,67 @@
           <label class="toggle"><input type="checkbox" id="toggle-godfather"><span class="slider"></span></label>
         </div>
 
-        <div id="lobby-accent" class="accent-picker setting-row collapsed">
-          <span class="accent-picker-title">Narrator Voice</span>
-          <button type="button" class="accent-picker-toggle" id="accent-picker-toggle" aria-expanded="false">
-            <span class="accent-picker-current" id="accent-picker-current"></span>
-            <span class="accent-picker-caret" aria-hidden="true"></span>
-          </button>
-          <div class="accent-picker-expanded" id="accent-picker-expanded" hidden>
+        <!-- Narrator block, Figma 45:466 lines 153-181: ALWAYS EXPANDED (F7).
+             Top row = "Narrator's voice" + the Genders pills; below it the
+             arrow / accent / arrow stage. The disclosure toggle and the
+             outside-click collapse are gone with the collapsed state. -->
+        <div id="lobby-accent" class="accent-picker setting-row expanded">
+          <span class="accent-picker-title">Narrator&rsquo;s voice</span>
+          <div id="narrator-gender-control" class="narrator-gender-control" role="group" aria-label="Narrator gender">
+            <button type="button" class="narrator-gender-btn" data-gender="male" aria-pressed="false">Male</button>
+            <button type="button" class="narrator-gender-btn" data-gender="female" aria-pressed="false">Female</button>
+          </div>
+          <div class="accent-picker-expanded" id="accent-picker-expanded">
             <div class="accent-picker-stage">
               <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice">&#9664;</button>
               <span class="accent-picker-label" id="accent-picker-label"></span>
               <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice">&#9654;</button>
             </div>
             <p class="accent-picker-desc" id="accent-picker-desc"></p>
-            <div class="narrator-gender-row">
-              <span class="narrator-gender-title">Voice</span>
-              <div id="narrator-gender-control" class="narrator-gender-control" role="group" aria-label="Narrator gender">
-                <button type="button" class="narrator-gender-btn" data-gender="male" aria-pressed="false">Male</button>
-                <button type="button" class="narrator-gender-btn" data-gender="female" aria-pressed="false">Female</button>
-              </div>
-            </div>
           </div>
         </div>
 
       </div>
 
-      <div class="players-section">
-        <h3>Players (<span id="player-count-admin">0</span>/20)</h3>
+      <!-- GM-12: the Figma host frame also draws a read-only Roles summary card
+           (45:466 lines 182-205) duplicating values the host edits 200px above.
+           Dropped as a mock artefact — the editable card is the single source. -->
+      <div class="players-section card-primary">
+        <div class="lobby-card-head"><span>Players</span><span><span id="player-count-admin">0</span>/20</span></div>
         <ul id="players-list-admin" class="players-list"></ul>
       </div>
 
-      <div id="color-picker-admin" class="color-picker-section"></div>
+      <div id="color-picker-admin" class="color-picker-section card-primary"></div>
 
-      <button id="btn-start" class="btn btn-primary btn-large">Start Game</button>
+      <button id="btn-start" class="btn btn-primary btn-large">Start game</button>
       <div id="lobby-error" class="error-msg"></div>
     </div>
 
-    <!-- LOBBY (PLAYER VIEW) -->
+    <!-- LOBBY (PLAYER VIEW) — Figma 42:782 -->
     <div id="screen-lobby-player" class="screen">
-      <div class="header">
+      <div class="header lobby-nav">
         <button id="btn-leave-player" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
         <div class="header-right">
-          <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+          <div class="room-code"><span class="room-code-label">Code</span> <span id="lobby-code-player"></span></div>
+          <button id="btn-roster-lobby-player" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play">
+            <svg class="icon-people" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7.5" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.9c2.4.6 4 2.5 4 5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
           <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings">&#9881;</button>
         </div>
       </div>
       <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
-      <div id="player-lobby-settings" class="player-lobby-settings"></div>
-      <div class="players-section">
-        <h3>Players (<span id="player-count-player">0</span>/20)</h3>
+      <div id="player-lobby-settings" class="player-lobby-settings card-primary"></div>
+      <div class="players-section card-primary">
+        <div class="lobby-card-head"><span>Players</span><span><span id="player-count-player">0</span>/20</span></div>
         <ul id="players-list-player" class="players-list"></ul>
       </div>
-      <div id="color-picker-player" class="color-picker-section"></div>
+      <div id="color-picker-player" class="color-picker-section card-primary"></div>
+      <!-- Pre-existing silent-error gap: showError() writes into the ACTIVE
+           screen's .error-msg and this screen had none, so e.g. "Invalid color"
+           (src/server.ts:1976) was swallowed. Fixed here (in scope: the screen
+           is rebuilt). -->
+      <div id="lobby-player-error" class="error-msg"></div>
     </div>
 
     <!-- GAME SCREEN -->
@@ -441,12 +460,15 @@
           <button id="btn-close-settings" class="btn btn-icon">&times;</button>
         </div>
         <div class="settings-modal-body">
+          <!-- F9: room code is shown to EVERY member of a room, not just the
+               admin (Figma 130:370 draws it unconditionally). Not a new leak —
+               players already read the code off the lobby nav. -->
           <div id="settings-room-code" class="setting-row hidden">
-            <span>Room Code</span>
-            <span id="settings-room-code-value" style="font-weight:700;letter-spacing:2px;font-size:18px"></span>
+            <span>Room code</span>
+            <span id="settings-room-code-value" class="settings-room-code-value"></span>
           </div>
           <div class="setting-row">
-            <span>Sound Effects</span>
+            <span>Sound effects</span>
             <label class="toggle"><input type="checkbox" id="toggle-sound"><span class="slider"></span></label>
           </div>
           <div class="setting-row">
@@ -457,14 +479,14 @@
             </div>
           </div>
           <div class="setting-row">
-            <span>Hide Mafia Tag</span>
+            <span>Hide mafia tag</span>
             <label class="toggle"><input type="checkbox" id="toggle-hide-mafia-tag"><span class="slider"></span></label>
           </div>
           <div id="settings-end-game" class="settings-end-game hidden">
-            <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End Game</button>
+            <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End game</button>
           </div>
           <div id="settings-leave-game" class="hidden" style="margin-top:12px">
-            <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%">Leave Game</button>
+            <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%">Leave game</button>
           </div>
         </div>
       </div>

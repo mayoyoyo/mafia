@@ -44,6 +44,10 @@
   let mafiaTeam = [];
   let godfatherName = null;
   let currentRoster = null; // public lineup summary for the "Roles in Play" modal
+  // Pre-game inputs for the SAME modal opened from the lobby (F6). Both come
+  // straight off lobby_update; neither carries any player→role pairing.
+  let lobbySettings = null;
+  let lobbyPlayerCount = 0;
   let dayVoteCount = 0;
   // Player-initiated accusations (day phase). pendingAccusations mirrors the
   // server's un-seconded list; accusationsMade/secondsMade are the per-day usage
@@ -994,13 +998,23 @@
     wsSend({ type: "create_game" });
   });
 
-  $("btn-join-show").addEventListener("click", () => {
-    $("join-section").classList.toggle("hidden");
-    $("join-code").focus();
-  });
+  // F3 (Figma 42:766 -> 287:3259): the Join CTA is disabled/grey until the code
+  // field holds a valid code, then flips to the orange primary fill. "Valid" is
+  // a purely CLIENT-SIDE 4-character length check (GM-11 default) — no probe is
+  // sent to the server, so this costs zero wire traffic. Server-side rejections
+  // ("Game not found" src/server.ts:1142, "Cannot join: game full or already
+  // started" :1205) still land in #menu-error exactly as before.
+  function syncJoinEnabled() {
+    const code = $("join-code").value.trim();
+    $("btn-join").disabled = code.length !== 4;
+  }
+  $("join-code").addEventListener("input", syncJoinEnabled);
+  syncJoinEnabled();
 
   $("btn-join").addEventListener("click", () => {
     const code = $("join-code").value.trim().toUpperCase();
+    // Defensive only — the disabled CTA makes this branch unreachable from the
+    // UI. The string is kept so a programmatic click still reports the reason.
     if (code.length !== 4) return showError("Enter a 4-character room code");
     wsSend({ type: "join_game", code });
   });
@@ -1106,9 +1120,17 @@
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
 
+    // Feed the pre-game "Roles in Play" derivation (F6). lobby_update is the
+    // only source — nothing role-identifying is stored.
+    lobbySettings = settings;
+    lobbyPlayerCount = players.length;
+
+    // Figma 42:782 lines 80-90: name (+ a host marker) on the left, the
+    // player's colour ellipse right-aligned on the row.
     const renderPlayerItem = (p) => {
       const colorDot = p.color ? `<span class="player-color-dot" style="background:${nearestPlayerColor(p.color)}"></span>` : '';
-      return `<li>${colorDot}${escapeHtml(p.username)}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`;
+      const host = p.isAdmin ? ' <span class="admin-badge">HOST</span>' : "";
+      return `<li><span class="player-row-name">${escapeHtml(p.username)}${host}</span>${colorDot}</li>`;
     };
 
     $("player-count-admin").textContent = players.length;
@@ -1189,7 +1211,7 @@
       }
     }
 
-    container.innerHTML = '<h4>Your Color</h4>';
+    container.innerHTML = '<h4>Choose your color</h4>'; // Figma 42:782 line 132
     const grid = document.createElement("div");
     grid.className = "color-picker-grid";
 
@@ -1244,7 +1266,7 @@
 
     container.innerHTML = `
       <div class="lobby-settings-row">
-        <span class="lobby-settings-label">Mafia Members</span>
+        <span class="lobby-settings-label">Mafia members</span>
         <span class="lobby-settings-value">${settings.mafiaCount}</span>
       </div>
       <div class="lobby-settings-row">
@@ -3343,8 +3365,10 @@
     $("toggle-sound").checked = soundEnabled;
     updateThemeModeControl(); // D5.5b: reflect the active theme mode in the segmented control
     $("toggle-hide-mafia-tag").checked = hideMafiaTag;
-    // Show room code for admin
-    if (isAdmin && gameCode) {
+    // F9 (Figma 130:370 lines 245-253): the Room code row is unconditional for
+    // everyone in a room, not admin-only. Not a new leak — every player already
+    // reads the code off the lobby nav (index.html #lobby-code-player).
+    if (gameCode) {
       $("settings-room-code").classList.remove("hidden");
       $("settings-room-code-value").textContent = gameCode;
     } else {
@@ -3395,7 +3419,7 @@
       const mode = modes[e.role];
       const badge = mode ? `<span class="roster-mode-badge roster-mode-${mode}">${mode.toUpperCase()}</span>` : "";
       return `
-      <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role})">
+      <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role});--rc-ink:var(--role-${e.role}-ink)">
         <span class="roster-name">${ROSTER_ROLE_NAMES[e.role] || e.role}</span>
         ${badge}
         <span class="roster-count">×${e.count}</span>
@@ -3408,14 +3432,72 @@
     list.innerHTML = html;
   }
 
+  // ── Pre-game "Roles in Play" (Figma F6 — 268:566 people icon -> 268:640) ──
+  //
+  // PREMISE VERIFIED: the pre-game lineup is derivable EXACTLY on the client,
+  // so P3 ships no server change for this. `lobby_update` already carries the
+  // whole `game.settings` object plus the `players` array (src/server.ts:80-92),
+  // and role COUNTS in assignRoles() are a pure function of (player count,
+  // settings) — the shuffle only decides WHICH player gets a role, never how
+  // many of each exist. Nothing identity-bearing is added to the wire.
+  //
+  // Mirrors src/game-engine.ts assignRoles() step for step:
+  //   :831-832  mafia = min(settings.mafiaCount, floor(total/3)), floored at 1
+  //   :837-839  mafia seats consumed only while idx < total
+  //   :842-865  doctor, detective, joker, hunter, vigilante — in THAT order,
+  //             one seat each, and only if enabled with a seat left
+  //   :868-871  every remaining seat is a citizen
+  //   :888      lovers is a per-player FLAG (needs total >= 2), not a seat
+  //   :903-907  godfather is a FLAG on one mafioso (enabled && mafia >= 2)
+  // ...and rosterSummary() for presentation (src/game-engine.ts:660-678):
+  //   ROSTER_ORDER (:651) row order, zero-count roles omitted, doctor/joker
+  //   mode badges only when that role is actually dealt.
+  function deriveLobbyRoster(settings, total) {
+    if (!settings) return null;
+    let mafia = Math.min(Number(settings.mafiaCount), Math.floor(total / 3));
+    if (!(mafia >= 1)) mafia = 1;                                  // engine :832
+    let idx = Math.min(mafia, total);                              // engine :837
+    const counts = { mafia: idx };
+    const take = (role, enabled) => {                              // engine :842-865
+      if (enabled && idx < total) { counts[role] = 1; idx++; }
+    };
+    take("doctor", settings.enableDoctor);
+    take("detective", settings.enableDetective);
+    take("joker", settings.enableJoker);
+    take("hunter", settings.enableHunter);
+    take("vigilante", settings.enableVigilante);
+    counts.citizen = Math.max(0, total - idx);                     // engine :868-871
+
+    const ROSTER_ORDER = ["mafia", "doctor", "detective", "vigilante", "hunter", "joker", "citizen"];
+    const roles = ROSTER_ORDER
+      .filter((r) => (counts[r] || 0) > 0)
+      .map((r) => ({ role: r, count: counts[r] }));
+    const modes = {};
+    if (counts.doctor) modes.doctor = settings.doctorMode;
+    if (counts.joker) modes.joker = settings.jokerMode;
+    return {
+      roles,
+      godfather: !!settings.enableGodfather && mafia >= 2,         // engine :903
+      lovers: !!settings.enableLovers && total >= 2,               // engine :888
+      ...(Object.keys(modes).length ? { modes } : {}),
+    };
+  }
+
   function openRosterModal() {
     renderRoster(currentRoster);
+    $("modal-roster").classList.remove("hidden");
+  }
+  /** Same modal, pre-game: the lineup only — never a player→role pairing. */
+  function openLobbyRosterModal() {
+    renderRoster(deriveLobbyRoster(lobbySettings, lobbyPlayerCount));
     $("modal-roster").classList.remove("hidden");
   }
   function closeRosterModal() {
     $("modal-roster").classList.add("hidden");
   }
   $("btn-roster").addEventListener("click", openRosterModal);
+  $("btn-roster-lobby-admin").addEventListener("click", openLobbyRosterModal);
+  $("btn-roster-lobby-player").addEventListener("click", openLobbyRosterModal);
   $("btn-close-roster").addEventListener("click", closeRosterModal);
   $("modal-roster").addEventListener("click", (e) => {
     if (e.target === $("modal-roster")) closeRosterModal();
@@ -3568,9 +3650,9 @@
 
   $("btn-end-game").addEventListener("click", () => {
     showConfirmSheet(
-      "End Game",
+      "End game",
       "Are you sure you want to end the game?",
-      "End Game",
+      "End game",
       () => {
         wsSend({ type: "end_game" });
         closeSettingsModal();
@@ -3581,9 +3663,9 @@
 
   $("btn-settings-leave").addEventListener("click", () => {
     showConfirmSheet(
-      "Leave Game",
+      "Leave game",
       "Leave the game? You can rejoin later with the same room code.",
-      "Leave Game",
+      "Leave game",
       () => {
         wsSend({ type: "leave_game" });
         localStorage.removeItem("mafia_game_code");
@@ -4249,28 +4331,9 @@
   function setupAccentPicker() {
     const root = $("lobby-accent");
     if (!root) return;
-    const toggle = $("accent-picker-toggle");
-    const expanded = $("accent-picker-expanded");
-
-    const setExpanded = (open) => {
-      root.classList.toggle("collapsed", !open);
-      root.classList.toggle("expanded", open);
-      if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      if (expanded) expanded.hidden = !open;
-    };
-
-    // Tapping the collapsed row (or the affordance again) toggles open/closed.
-    if (toggle) {
-      toggle.addEventListener("click", () => {
-        setExpanded(root.classList.contains("collapsed"));
-      });
-    }
-    // Collapse behavior: tapping outside the picker closes it (keeps the panel
-    // tidy and prevents the expanded stage from lingering). Documented choice.
-    document.addEventListener("click", (e) => {
-      if (root.classList.contains("collapsed")) return;
-      if (!root.contains(e.target)) setExpanded(false);
-    });
+    // P3/F7 (Figma 45:466 lines 153-181): the narrator block is drawn ALWAYS
+    // EXPANDED, so the disclosure toggle and its outside-click collapse are
+    // gone. The arrows keep firing the same update_settings call.
 
     const prev = $("accent-arrow-prev");
     const next = $("accent-arrow-next");
@@ -4335,12 +4398,10 @@
     const info = narrationData.accents[currentAccent];
     const label = info ? info.label : currentAccent;
     const desc = info ? info.description : "";
-    const cur = $("accent-picker-current");
     const lbl = $("accent-picker-label");
     const dsc = $("accent-picker-desc");
-    if (cur) cur.textContent = label;      // collapsed row: label only (no bleed)
-    if (lbl) lbl.textContent = label;      // expanded: prominent label
-    if (dsc) dsc.textContent = desc;       // expanded: wrapped description below
+    if (lbl) lbl.textContent = label;      // prominent label between the arrows
+    if (dsc) dsc.textContent = desc;       // wrapped description below
   }
 
   // Kept for the init fetch call site below; now paints the picker + gender toggle.
@@ -4383,7 +4444,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.35_202607131225";
+  const APP_VERSION_STAGING = "staging.38_202607251817";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at
@@ -4393,14 +4454,12 @@
   $("btn-vote-yes").innerHTML = '<img class="thumb-art" src="/img/ui/thumb-up.png" alt="Yes" draggable="false">';
   $("btn-vote-no").innerHTML = '<img class="thumb-art" src="/img/ui/thumb-down.png" alt="No" draggable="false">';
 
-  // D3b: Mascot single-sourcing — render MASCOT_ART into both logo containers
-  (function() {
-    var mascotSvg = pixelArtToSvg(MASCOT_ART, 16);
-    var authIcon = document.getElementById("logo-icon-auth");
-    var menuIcon = document.getElementById("logo-icon-menu");
-    if (authIcon) authIcon.innerHTML = mascotSvg;
-    if (menuIcon) menuIcon.innerHTML = mascotSvg;
-  })();
+  // P3: the auth/menu hero is now the Figma chibi raster
+  // (specs/game-menu/42-678--auth.md:48-51, image fill
+  // e721e25818db0cf44d23ba66f5720bb5dc2c04a7 -> /img/ui/hero.png), declared
+  // statically in index.html so it is precached with the shell. MASCOT_ART is
+  // no longer injected here; it stays in pixel-art.js (registry test) and its
+  // retirement is logged in docs/figma-raw/analysis/pixel-art-retirement.md.
 
   // D3b: Wire pixel icons into all static emoji/entity sites
   (function() {

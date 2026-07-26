@@ -75,6 +75,13 @@
      knob (69:265). */
   --radius-pill: 8px;
   --radius-round: 100px;
+  /* P3: the in-card divider. Figma draws it as LINE / stroke #FFFFFF 1px
+     inside every menu card (spec:42-782 lines 54,78; spec:45-466 line 46;
+     spec:130-370 line 205; spec:268-640 line 208). Two weights: the strong
+     rule under a card head, and the lighter one between sibling rows. Tokenised
+     so the light theme can flip it instead of drawing white on paper. */
+  --rule-strong: rgba(255, 255, 255, 0.55);
+  --rule-soft: rgba(255, 255, 255, 0.35);
 
   /* ---- Membership Card gradient ends, AS APPLIED on the dark app frames -----
      The Components page draws the card on white (#FCFCFC -> swatch); every real
@@ -172,10 +179,10 @@
 .awaiting-ready,
 .settings-panel,
 .player-lobby-settings,
-.players-list li,
+.players-section,
+.color-picker-section,
 .role-reveal-item,
 .theme-mode-control,
-.accent-picker-toggle,
 .accent-arrow {
   position: relative;
   background: var(--pxb-surface, var(--bg-card));
@@ -274,6 +281,9 @@
   --role-vigilante: #67401E;    --role-vigilante-ink: #CDB198;
   --role-godfather: #5C3D00;    --role-godfather-ink: #FFC24B;
   /* Lovers is already dark-fill/light-label, so it does NOT swap. */
+  /* Card dividers invert with the ink — a white rule is invisible on paper. */
+  --rule-strong: rgba(35, 39, 41, 0.30);
+  --rule-soft: rgba(35, 39, 41, 0.18);
 }
 [data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
 /* Light theme: suppress the radial vignette on auth/game/gameover screens.
@@ -502,6 +512,14 @@ html, body {
 }
 .btn:active { transform: scale(0.97); opacity: 0.8; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
+/* Disabled CTA is a real Figma state, not a dimmed primary: fill flips to
+   #A0A0A0 with the label still legible (spec:42-766 line 32, the Join CTA
+   before a valid code; it flips to #FF6C02 in spec:287-3259 line 32). */
+.btn-primary:disabled {
+  background: #A0A0A0;
+  color: #FFFFFF;
+  opacity: 1;
+}
 /* Primary: spec orange fill. Ink is the token pair decided at the top of this
    file — dark #141008 by default (6.68:1), white only on the display-weight
    .btn-large label below. The Pixel-Noir pressed-edge inset is retired. */
@@ -547,8 +565,6 @@ html, body {
 /* D3b: btn-icon now hosts pixel art SVGs — drop font-size, size SVG via child rule */
 .btn-icon { background: none; border: none; box-shadow: none; color: var(--text); padding: 4px 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .btn-icon svg { width: 24px; height: 24px; image-rendering: pixelated; vertical-align: middle; }
-#btn-close-settings.btn-icon,
-#btn-close-transcript.btn-icon,
 #btn-settings-lobby-admin.btn-icon,
 #btn-settings-lobby-player.btn-icon,
 #btn-settings.btn-icon {
@@ -559,22 +575,43 @@ html, body {
   box-shadow: none;
   border-radius: 0;
 }
+/* P3: sheet close control — the Figma 32px radius=100 circle wrapping a 20px
+   X (spec:130-370 lines 199-203, spec:268-640 lines 202-206). */
+#btn-close-settings.btn-icon,
+#btn-close-roster.btn-icon,
+#btn-close-transcript.btn-icon {
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: normal;
+  box-shadow: none;
+  width: 32px; height: 32px;
+  padding: 0;
+  border: 2px solid var(--text);
+  border-radius: var(--radius-round);
+}
 /* D2.5: +/- stepper reverted to STOCK pre-D1 round button (user amendment).
    Restore border-radius:50% and drop the stepped clip-path. Do NOT re-step. */
+/* P3: the Figma stepper is a circular OUTLINE icon — 32px, 3px stroke, no fill
+   (spec:45-466 lines 51-61 "Minus circle" / "Plus circle"). */
 .btn-counter {
-  width: 40px; height: 40px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  width: 32px; height: 32px;
+  background: transparent;
+  border: 2.5px solid var(--text);
   border-radius: 50%;
   color: var(--text);
-  font-size: 20px;
+  font-size: 18px;
+  line-height: 1;
   font-family: inherit;
   font-weight: 400;
   letter-spacing: normal;
   box-shadow: none;
+  padding: 0;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
 }
+.btn-counter:active { background: rgba(255, 255, 255, 0.12); }
 /* Legacy wrapper around secondary/ghost buttons. The stepped ring is retired —
    the button now owns its own radius/shadow, so the wrapper is a pass-through. */
 .btn-pxb {
@@ -620,21 +657,26 @@ input::placeholder { color: var(--text-secondary); }
 }
 .input-pxb input { display: block; }
 
-/* AUTH */
-.logo { text-align: center; padding: 60px 0 40px; }
+/* AUTH — Figma 42:678.
+   "Skull": a 244x245 frame filled with a radial #218BE1@60% -> #000000@60%
+   gradient, holding the 200x200 chibi raster (spec:42-678 lines 48-51). The
+   glow is the container background; the hero is a real <img> in the markup. */
+.logo { text-align: center; padding: 40px 0 24px; }
 .logo-icon {
-  width: 80px; height: 80px; margin: 0 auto 16px;
+  width: 200px; height: 200px; margin: 0 auto 8px;
   display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 50%, rgba(33,139,225,0.60) 0%, rgba(0,0,0,0.60) 70%, transparent 72%);
 }
+.logo-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
-.logo h1 { font-size: 32px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
+.logo h1 { font-size: 48px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
 /* Wordmark blood period (mockup .wordmark .dot) — subtle blood-red accent after
    MAFIA, inherits the Grandstander size; just recolored. */
 .wordmark-dot { color: var(--danger-bright); }
-.logo-small { padding: 24px 0 8px; }
-.logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
+.logo-small { padding: 16px 0 4px; }
+.logo-small .logo-icon { width: 120px; height: 120px; margin-bottom: 4px; }
 .logo-small .logo-icon svg { width: 48px; height: 48px; }
-.logo-small h1 { font-size: 22px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
+.logo-small h1 { font-size: 32px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
 .passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: var(--font-mono); }
@@ -647,42 +689,82 @@ input::placeholder { color: var(--text-secondary); }
 .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .header h2 { font-size: 20px; flex: 1; }
 
-/* MENU */
-.menu-buttons { display: flex; flex-direction: column; gap: 12px; margin-top: 40px; }
-.join-section { display: flex; gap: 8px; margin-top: 8px; }
+/* LOBBY NAV — Figma 42:782 / 45:466 line 14: "Lobby" 16px, then the right
+   cluster (Code E92G, the people icon that opens Roles in play, the gear).
+   Leave has no Figma affordance but is KEPT (R7) at the head of the row. */
+.lobby-nav h2 { font-size: var(--fs-md); font-weight: var(--fw-body); flex: 1; }
+.lobby-nav .header-right { display: flex; align-items: center; gap: 12px; }
+.btn-icon-glyph { padding: 0; }
+.btn-icon-glyph .icon-people {
+  width: 24px; height: 24px;
+  image-rendering: auto;   /* vector glyph — must NOT inherit the pixel-art rule */
+  color: var(--text);
+}
+
+/* Screen title — Figma "Choose how to play" / "Waiting for host to start...",
+   Grandstander 24px w400 (spec:45-466 line 37, spec:42-782 line 37). */
+.screen-title {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  font-family: var(--font-display);
+  margin-top: 24px;
+}
+
+/* MENU — Figma 42:766 / 287:3259.
+   Frame 2 is a 24px-gap vertical stack: greeting row, the always-visible code
+   field, then the CTA pair (Join primary, Host game secondary), then the error
+   line. The old reveal button is gone (F2). */
+.menu-buttons { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+.join-section { display: flex; gap: 8px; margin-top: 24px; }
+.join-section .input-pxb { flex: 1; }
 .join-section input { flex: 1; text-align: center; font-size: 24px; letter-spacing: 6px; text-transform: uppercase; }
+.join-section input::placeholder { letter-spacing: normal; font-size: 16px; text-transform: none; }
 .hidden { display: none !important; }
 
-/* ROOM CODE */
-.room-code { font-size: 14px; color: var(--text-secondary); }
-.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; font-family: var(--font-mono); }
+/* ROOM CODE — nav pair: "Code" @50% 14px + the value in Grandstander 18px
+   #FF6C02 (spec:42-782 lines 20-28). No mono face: the Figma nav is Grandstander. */
+.room-code { font-size: 14px; color: var(--text); display: inline-flex; align-items: baseline; gap: 4px; }
+.room-code-label { opacity: 0.5; }
+.room-code span:not(.room-code-label) {
+  font-weight: var(--fw-body);
+  color: var(--primary);
+  font-size: 18px;
+  letter-spacing: 0;
+  font-family: var(--font-display);
+}
 
-/* SETTINGS */
+/* SETTINGS — the Figma "Lobby rules" card (spec:45-466 lines 41-181):
+   radius-16 #232729 with the white 2px stroke (.card-primary), pad 8/16,
+   rows divided by a 1px white rule. */
 .settings-panel {
-  /* two-layer stepped border via shared .pxframe rule above */
   --pxb-surface: var(--bg-card);
   border-radius: var(--radius-card);
-  padding: 16px;
+  padding: 8px 16px;
 }
 .settings-panel h3 { font-size: 16px; margin-bottom: 12px; color: var(--text-secondary); }
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+  min-height: 47px;                                /* spec: 326x47 row */
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--fs-sm);
 }
 .setting-row:last-of-type { border-bottom: none; }
-/* D2.5: custom narrator-voice picker (replaces the native <select> whose long
-   "label — description" option strings bled out of the panel). Noir-styled —
-   arrows are unambiguous affordances. Collapsed: label-only row. Expanded:
-   ◀ ▶ arrows (44px tap targets) flank the prominent label, description wraps below. */
+/* A role's rules sub-row belongs to the row above it — no divider between them. */
+.setting-row:has(+ .setting-sub-row:not(.hidden)) { border-bottom: none; }
+/* Narrator-voice picker. P3/F7: ALWAYS EXPANDED, matching the Figma Narrator
+   frame (spec:45-466 lines 153-181) — top row is "Narrator's voice" + the
+   Genders pills, and the ◀ label ▶ stage sits on its own line below. The
+   collapsed state and its disclosure toggle are gone. */
 .accent-picker {
-  /* It's a .setting-row too. Title + collapsed-toggle stay a row (the row's own
-     space-between handles that); the expanded block wraps to its own full-width
-     line below via flex-wrap. */
+  /* It's a .setting-row too: title + gender pills form the header row (the
+     row's own space-between handles that); the stage wraps onto its own
+     full-width line below via flex-wrap. */
   flex-wrap: wrap;
   gap: 8px 0;
+  padding: 12px 0;
 }
 .accent-picker-title {
   font-size: inherit;
@@ -692,66 +774,34 @@ input::placeholder { color: var(--text-secondary); }
   flex-basis: 100%;       /* force onto its own line below the header row */
   width: 100%;
 }
-.accent-picker-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;            /* allow the label to shrink/ellipsis, never overflow */
-  max-width: 60%;
-  --pxb-surface: var(--bg-input);
-  --pxb-w: 1px;
-  color: var(--text);
-  border-radius: var(--radius-pill);
-  padding: 8px 12px;
-  font-size: 14px;
-  font-family: inherit;
-  cursor: pointer;
-  outline: none;
-}
-.accent-picker-current {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Caret affordance: pixel-style down/up chevron via borders. */
-.accent-picker-caret {
-  flex-shrink: 0;
-  width: 0; height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid var(--text-secondary);
-}
-.accent-picker.expanded .accent-picker-caret {
-  border-top: none;
-  border-bottom: 6px solid var(--primary);
-}
-.accent-picker-toggle:focus-visible { --pxb-color: var(--primary); }
-.accent-picker-expanded[hidden] { display: none; }
 .accent-picker-stage {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
+/* Circular outline arrows (spec:45-466 lines 172-181 "Arrow left/right-circle",
+   32px, 3px stroke). Hit area stays 44px via padding on the row. */
 .accent-arrow {
   flex-shrink: 0;
-  min-width: 44px;
-  min-height: 44px;
+  width: 32px; height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  --pxb-surface: var(--bg-elevated);
-  --pxb-w: 1px;
-  color: var(--primary);
-  border-radius: var(--radius-pill);
+  --pxb-surface: transparent;
+  --pxb-color: var(--text);
+  --pxb-w: 2.5px;
+  color: var(--text);
+  border-radius: 50%;
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 11px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-.accent-arrow:active { --pxb-surface: var(--border); }
+.accent-arrow:active { --pxb-surface: rgba(255, 255, 255, 0.12); }
 /* Arrow glyphs (◀ ▶) live in the button's HTML text content, not on a
    pseudo-element — kept that way after the pixel-bevel layers retired. */
 .accent-arrow {
@@ -785,23 +835,9 @@ input::placeholder { color: var(--text-secondary); }
 @media (max-width: 360px) {
   .accent-picker-label { font-size: 13px; }
 }
-/* NARRATOR GENDER TOGGLE (Male / Female) — sits under the accent picker in the
-   expanded Narrator Voice panel. Two-state segmented control styled to match the
-   theme-mode-control. Greyed/inert when the accent is "random" (.disabled). */
-.narrator-gender-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 10px;
-}
-.narrator-gender-title {
-  font-family: var(--font-display);
-  font-size: 10px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
+/* NARRATOR GENDER TOGGLE (Male / Female) — the Genders instance
+   (spec:45-466 lines 159-170), now inline with the "Narrator's voice" label on
+   the header row. Greyed/inert when the accent is "random" (.disabled). */
 /* ---- GENDERS — specs/components/55-61--genders.md
    Two pills, gap=16 pad=8 radius=8, Grandstander 14px w400. Active Male
    #039BE5 / Female #E876A0 with #FFFFFF label; inactive transparent + body ink. */
@@ -948,20 +984,39 @@ input::placeholder { color: var(--text-secondary); }
   color: var(--cta-ink);
 }
 
-/* PLAYERS LIST */
-.players-section { flex: 1; }
-.players-section h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
-.players-list { list-style: none; }
-.players-list li {
-  --pxb-w: 1px;
-  padding: 12px 16px;
-  border-radius: var(--radius-card);
-  margin-bottom: 6px;
+/* PLAYERS LIST — the Figma "Players" card (spec:42-782 lines 65-125):
+   one radius-16 card, a "Players … 6/20" head row, a 1px white rule, then
+   plain 14px rows (name left, 14px colour ellipse right). The rows are NOT
+   individual cards any more. */
+.lobby-card { border-radius: var(--radius-card); padding: 16px; }
+.players-section,
+.color-picker-section,
+.player-lobby-settings {
+  padding: 16px;
+  margin-top: 16px;
+}
+/* Card head row + its divider — shared by the Players and Roles cards. */
+.lobby-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 500;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-strong);
+  margin-bottom: 10px;
 }
+/* No flex:1 — the Players card sizes to its rows now (spec:42-782 line 65),
+   it is not the screen's growing column. */
+.players-section h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
+.players-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.players-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--fs-sm);
+}
+.players-list li .player-row-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .players-list li .admin-badge {
   font-size: 11px;
   background: var(--primary);
@@ -972,7 +1027,8 @@ input::placeholder { color: var(--text-secondary); }
   font-family: var(--font-display);
 }
 .players-list li .dead-badge { color: var(--text-secondary); text-decoration: line-through; }
-.waiting-text { text-align: center; color: var(--text-secondary); padding: 20px 0; }
+/* spec:42-782 line 37 — Grandstander 24px, left-aligned with the cards. */
+.waiting-text { color: var(--text); font-size: var(--fs-xl); padding: 24px 0 0; }
 
 /* GAME SCREEN */
 /* D5.5b: a 3-cell grid (1fr auto 1fr) so "Round N" sits VISUALLY CENTERED in the
@@ -1858,35 +1914,34 @@ input::placeholder { color: var(--text-secondary); }
 }
 .role-reveal-trophy svg { width: 16px; height: 16px; image-rendering: pixelated; }
 
-/* ROLES IN PLAY MODAL — text rows (no icons): role name + count, role-tinted */
-.roster-list { display: flex; flex-direction: column; gap: 8px; }
+/* ROLES IN PLAY MODAL — Figma 268:640 lines 207-241. Each row is a pastel
+   role CHIP (fill = the role swatch, ink = its paired --role-*-ink, radius 8,
+   pad 8) with the count in Grandstander 18px white, rows separated by a 1px
+   white rule. Reachable pre-game from the lobby nav (F6) and in-game from the
+   header button — same modal, same renderer. */
+.roster-list { display: flex; flex-direction: column; }
 .roster-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 2px solid color-mix(in srgb, var(--rc, var(--border)) 55%, var(--border));
-  background: color-mix(in srgb, var(--rc, transparent) 9%, var(--bg-elevated));
+  gap: 10px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule-strong);
 }
+.roster-row:last-child { border-bottom: none; }
 .roster-name {
   font-family: var(--font-display);
-  font-size: 13px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--rc, var(--text));
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--rc, var(--bg-elevated));
+  color: var(--rc-ink, var(--text));
 }
 .roster-count {
   margin-left: auto;
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: var(--fs-lg);
   color: var(--text);
-  background: var(--bg);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  padding: 4px 10px;
-  min-width: 44px;
-  text-align: center;
 }
 .roster-mode-badge {
   font-family: var(--font-mono);
@@ -1915,9 +1970,17 @@ input::placeholder { color: var(--text-secondary); }
 }
 .roster-empty { text-align: center; color: var(--text-secondary); font-size: 13px; }
 
-/* SETTINGS MODAL */
-.settings-modal-body { display: flex; flex-direction: column; gap: 12px; }
-.settings-end-game { margin-top: 8px; }
+/* SETTINGS MODAL — Figma 130:370. Title 24px + circular X, then 47px rows
+   divided by a 1px white rule; the Room code row shows the value in
+   Grandstander 24px (spec:130-370 lines 243-251). */
+.settings-modal-body { display: flex; flex-direction: column; }
+.settings-modal-body .setting-row:last-of-type { border-bottom: 1px solid var(--rule-soft); }
+.settings-room-code-value {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  letter-spacing: 0;
+}
+.settings-end-game { margin-top: 16px; }
 
 /* GAME OVER */
 .gameover-header {
@@ -1961,17 +2024,21 @@ input::placeholder { color: var(--text-secondary); }
   z-index: 200;
 }
 .modal-content {
-  background: var(--bg-elevated);
+  /* spec:130-370 / 268:640 — the sheet is the #232729 card surface with the
+     shared card drop-shadow. */
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
   /* Bottom sheet: radius on the top corners only. */
   border-radius: var(--radius-card) var(--radius-card) 0 0;
   width: 100%;
   max-width: 430px;
   max-height: 60vh;
-  padding: 20px;
+  padding: 16px;
   overflow-y: auto;
 }
-.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.modal-header h3 { font-size: 18px; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+/* Sheet title: Grandstander 24px w400 (spec:130-370 line 197). */
+.modal-header h3 { font-size: var(--fs-xl); font-weight: var(--fw-body); }
 .empty-text { text-align: center; color: var(--text-secondary); padding: 20px; }
 
 /* D8: IN-WORLD CONFIRM SHEET — noir bottom-sheet replacing native confirm().
@@ -2367,30 +2434,29 @@ input::placeholder { color: var(--text-secondary); }
 .header-right { display: flex; align-items: center; gap: 4px; }
 
 /* COLOR PICKER */
-.color-picker-section { padding: 8px 0; }
-.color-picker-section h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
+/* COLORS card — Figma spec:42-782 lines 126-191: radius-16 card, a
+   "Choose your color" 14px head, then 3 rows x 6 swatches. */
+.color-picker-section h4 { font-size: var(--fs-sm); font-weight: var(--fw-body); color: var(--text); margin-bottom: 16px; }
+/* 3 rows x 6 = the 18 Figma swatches (spec:42-782 lines 135-191). */
 .color-picker-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
-  max-width: 300px;
-  margin: 0 auto;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px 10px;
+  margin: 0;
 }
 .color-picker-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+/* 34px ellipse, white 2px stroke; unselected swatches sit at 60% opacity. */
 .color-circle {
-  width: 44px; height: 44px; border-radius: 50%;
-  border: 3px solid transparent;
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid #FFFFFF;
+  opacity: 0.6;
   cursor: pointer;
-  transition: all 0.15s ease;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -2px 0 rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3);
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .color-circle:hover { transform: scale(1.1); }
-.color-circle:active {
-  transform: scale(0.95);
-  box-shadow: inset 0 2px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-}
-.color-circle.selected { border-color: var(--text); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -2px 0 rgba(0,0,0,0.2), 0 0 0 2px var(--text); }
-.color-circle.taken { opacity: 0.7; }
+.color-circle:active { transform: scale(0.95); }
+.color-circle.selected { opacity: 1; border-color: #FFFFFF; }
+.color-circle.taken { opacity: 0.3; }
 .color-circle-label {
   font-size: 10px; color: var(--text-secondary);
   text-align: center; max-width: 48px;
@@ -2403,20 +2469,23 @@ input::placeholder { color: var(--text-secondary); }
   display: inline-block;
 }
 
-/* READ-ONLY SETTINGS DISPLAY (player lobby) */
+/* READ-ONLY ROLES CARD (player lobby) — Figma "Roles" card, spec:42-782
+   lines 41-64: "Mafia members / 2", a 1px white rule, "Special Roles / …".
+   GM-12: this card is deliberately NOT duplicated on the host screen, where
+   the same values are live-editable in the rules card above. */
 .player-lobby-settings {
   border-radius: var(--radius-card);
-  padding: 12px 16px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .player-lobby-settings:empty { display: none; }
 .lobby-settings-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 4px 0;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
 }
-.lobby-settings-row + .lobby-settings-row { border-top: 1px solid var(--border); }
-.lobby-settings-label { color: var(--text-secondary); }
-.lobby-settings-value { font-weight: 600; }
+.lobby-settings-row + .lobby-settings-row { border-top: 1px solid var(--rule-strong); padding-top: 10px; margin-top: 5px; }
+.lobby-settings-label { color: var(--text); white-space: nowrap; }
+.lobby-settings-value { text-align: right; }
 
 /* Responsive fixes */
 @media (max-height: 700px) {

@@ -55,7 +55,7 @@ Notes:
 | `HEARTBREAK_ART` | `app.js:642`, `1950`, `2117` |
 | `REFRESH_ART` | `app.js:4414` (pull-to-refresh spinner) |
 | `MOON_ART` / `SUN_ART` | `app.js:773/775`, `1777/1779`, `2003`, `2070`, `2087` (phase pill + suspense beats) |
-| `MASCOT_ART` | `app.js:4396` (both logo containers) |
+| ~~`MASCOT_ART`~~ | **RETIRED in P3** — the auth/menu hero is now the Figma chibi raster `/img/ui/hero.png` (image fill `e721e258…`, `specs/game-menu/42-678--auth.md:48-51`), declared statically in `index.html`. The grid stays in `pixel-art.js` (registry test asserts its 16x16 shape) but has no injection site. |
 | `pixelArtToSvg` | the renderer for every row above |
 
 ## Orphaned before P2 (P2 did not cause these)

@@ -109,7 +109,7 @@ Two ship today:
 |---------|----------|
 | register | `#auth-username`, `#auth-passcode`, `#btn-register` → `#screen-menu.active` |
 | host game | `#btn-host` → `#screen-lobby-admin.active`; code in `#lobby-code` |
-| join game | `#btn-join-show` (reveals), `#join-code`, `#btn-join` → `#screen-lobby-player.active` |
+| join game | `#join-code` (always visible), `#btn-join` → `#screen-lobby-player.active` |
 | lobby seat count (admin) | `#player-count-admin` (textContent = N) |
 | mafia count | `#mafia-plus` / `#mafia-minus`, `#mafia-count` |
 | role toggles | `#toggle-doctor`, `#toggle-detective`, `#toggle-vigilante`, `#toggle-hunter`, `#toggle-godfather`, `#toggle-joker`, `#toggle-lovers` |
