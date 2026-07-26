@@ -1,4 +1,4 @@
-const CACHE_NAME = "mafia-v7";
+const CACHE_NAME = "mafia-v8";
 const ASSETS = [
   "/",
   "/index.html",

@@ -216,6 +216,11 @@
         <div class="round-indicator">Round <span id="round-number">1</span></div>
         <div class="game-header-right">
           <div id="day-timer" class="day-timer hidden">00:00</div>
+          <!-- G1: the Figma night Nav carries a room-code chip (Code + E92G in
+               orange). The app only had the code inside the settings modal. Not a
+               new disclosure — every member of a room already reads it off the
+               lobby nav (P3/F9). -->
+          <div class="room-code game-room-code"><span class="room-code-label">Code</span> <span id="game-room-code"></span></div>
           <button id="btn-roster" class="btn btn-icon" title="Roles in play">&#9776;</button>
           <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
         </div>
@@ -267,15 +272,6 @@
         </div>
       </div>
 
-      <!-- Narrator Messages -->
-      <div id="narrator-area" class="narrator-area">
-        <div class="narrator-header">
-          <span class="narrator-label">Narrator</span>
-          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript"></button>
-        </div>
-        <div id="narrator-messages" class="narrator-messages"></div>
-      </div>
-
       <!-- Awaiting Narrator Ready (Begin Night gate) -->
       <div id="awaiting-ready" class="awaiting-ready hidden">
         <p id="awaiting-ready-msg">Check your role card!</p>
@@ -297,14 +293,33 @@
       <!-- Detective Result (persistent) -->
       <div id="detective-result" class="detective-result hidden"></div>
 
+      <!-- Night idle line (Figma 74:335 / 130:243) — the neutral status every
+           role sees at night once no night panel of its own is up. Gated on
+           "no panel active", NOT on role, so a doctor whose sub-phase already
+           closed gets the same screen as a citizen (shoulder-surf parity). -->
+      <div id="night-idle" class="night-idle hidden">The town goes to sleep&#8230;&#127769;</div>
+
       <!-- Night Actions -->
       <div id="night-actions" class="action-panel hidden">
         <h3 id="action-title"></h3>
         <div id="spectator-night-log" class="hidden"></div>
         <div id="joker-spectator-status" class="joker-spectator-status hidden"></div>
-        <ul id="action-targets" class="target-list"></ul>
-        <button id="btn-decline-revenge" class="btn btn-secondary btn-small hidden">Decline revenge</button>
-        <button id="btn-vigilante-pass" class="btn btn-secondary btn-small hidden">Hold fire</button>
+        <!-- N-D2: Hunter (130:573) and Vigilante (225:542) open on a two-CTA
+             GATE — one primary ("Take revenge" / "Shoot") and one decline —
+             and only reveal the target list once the primary is tapped.
+             #action-list-wrap is the gate's shutter: the list is rendered but
+             its wrapper is .hidden, so the gate is a real interaction step
+             while every existing #action-targets query keeps working. -->
+        <div id="night-choice" class="night-choice">
+          <button id="btn-night-gate-go" class="btn-gate btn-gate-primary hidden"></button>
+          <div id="action-list-wrap" class="action-list-wrap">
+            <ul id="action-targets" class="target-list"></ul>
+          </div>
+          <!-- N-D6: ONE shared style, Figma's per-frame string. The label is
+               rewritten by showNightAction / the gate resolve. -->
+          <button id="btn-decline-revenge" class="btn-gate btn-gate-alt hidden">Spare the others</button>
+          <button id="btn-vigilante-pass" class="btn-gate btn-gate-alt hidden">Hold fire</button>
+        </div>
         <div id="action-confirm" class="action-confirm hidden">
           <button id="btn-action-cancel" class="ac-btn ac-cancel pxc">Cancel</button>
           <button id="btn-action-confirm" class="ac-btn ac-confirm pxc">Confirm</button>
@@ -356,6 +371,20 @@
         </div>
         <div id="vote-progress" class="vote-progress"></div>
         <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel Vote</button>
+      </div>
+
+      <!-- Narrator Messages — N-D1a/R7: no Figma night frame draws a narrator
+           block, but it is the game's primary channel and the ONLY route to the
+           transcript, so it is kept and re-seated as a restyled block directly
+           ABOVE Game Tabs, matching the Figma vertical order
+           (Nav → Membership Card → prompt → Players → [Narrator] → Game Tabs).
+           Content, transcript button and message plumbing are untouched. -->
+      <div id="narrator-area" class="narrator-area">
+        <div class="narrator-header">
+          <span class="narrator-label">Narrator</span>
+          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript"></button>
+        </div>
+        <div id="narrator-messages" class="narrator-messages"></div>
       </div>
 
       <!-- Event History (always visible during game) -->
@@ -415,12 +444,18 @@
     <div id="dead-overlay" class="dead-overlay hidden">
       <div class="dead-poster">
         <div id="dead-emoji" class="dead-skull-art"></div>
-        <p class="dead-pre">YOU ARE</p>
-        <p class="dead-text">DEAD</p>
+        <!-- N-D11 (Figma 245:344 vs 254:865): the headline is variant-aware —
+             "You are / DEAD" for every death, "You died of / HEARTBREAK" for a
+             lover cascade. Both now carry ids so you_died can swap them
+             alongside the existing art swap. The MESSAGE stays the server's
+             cause-neutral pool (R5) — Figma's "stabbed in the night" is
+             placeholder copy and would re-open the dawn leak. -->
+        <p id="dead-pre" class="dead-pre">You are</p>
+        <p id="dead-text" class="dead-text">DEAD</p>
         <p id="death-message" class="death-message"></p>
         <div class="dither-h dead-div"></div>
-        <p class="dead-note">stay quiet. you can still watch the town squirm.</p>
-        <button id="btn-watch-town" class="btn-watch pxc">WATCH THE TOWN</button>
+        <p class="dead-note">Stay quiet, you can still watch the town squirm.</p>
+        <button id="btn-watch-town" class="btn-watch pxc">Watch the town</button>
         <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
       </div>
     </div>

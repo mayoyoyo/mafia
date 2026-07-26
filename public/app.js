@@ -305,7 +305,40 @@
     narration: Object.freeze([...NARRATION_GATE_TYPES]),
   });
 
+  // N-D1 / Figma 74:335 + 130:243: every night frame that has no panel of its
+  // own shows one neutral status line. It must be gated on "no night panel is
+  // up", NOT on role — otherwise a doctor whose sub-phase already closed
+  // (the <role>_close teardown) would sit on a blank screen while citizens saw
+  // the line, which is itself a tell. Wrapping the dispatcher keeps it in sync
+  // after EVERY message, including dispatchServerMessage's early-return gate
+  // paths (suspense queue, game_over hold, nightfall trigger).
   function handleServerMessage(msg) {
+    try {
+      dispatchServerMessage(msg);
+    } finally {
+      updateNightIdle();
+      // G1: keep the game-header code chip in sync with whatever set gameCode
+      // (create / join / rejoin / leave) without hunting every assignment site.
+      const chip = $("game-room-code");
+      if (chip) {
+        chip.textContent = gameCode || "";
+        chip.parentElement.classList.toggle("hidden", !gameCode);
+      }
+    }
+  }
+
+  function updateNightIdle() {
+    const el = $("night-idle");
+    if (!el) return;
+    const anyPanelUp =
+      !$("night-actions").classList.contains("hidden") ||
+      !$("awaiting-ready").classList.contains("hidden") ||
+      !$("revenge-wait").classList.contains("hidden") ||
+      !$("dead-overlay").classList.contains("hidden");
+    el.classList.toggle("hidden", !(currentPhase === "night" && !anyPanelUp));
+  }
+
+  function dispatchServerMessage(msg) {
     // During suspense, queue the death beats
     if (suspenseActive && SUSPENSE_GATE_TYPES.has(msg.type)) {
       suspenseQueue.push(msg);
@@ -498,6 +531,7 @@
         if (CLOSEABLE_NIGHT_ROLES.has(myRole) && msg.sound === myRole + "_close") {
           $("night-actions").classList.add("hidden");
           hideSlideConfirm(); // defensive: mid-selection force-advance race
+          clearNightGate();
           if (myRole === "mafia") {
             $("mafia-vote-status").classList.add("hidden");
             $("mafia-vote-details").innerHTML = "";
@@ -644,6 +678,14 @@
           // Pixel art skull, or heartbreak art on the dead player's OWN screen
           // when they died of heartbreak (owner ruling: heartbreak is public).
           $("dead-emoji").innerHTML = pixelArtToSvg(msg.isLoverDeath ? HEARTBREAK_ART : CARD_BACK_DEAD_ART);
+          // N-D11 (Figma 254:865): the heartbreak overlay gets its own headline
+          // pair alongside the art swap. Still cause-GENERIC for every other
+          // death — heartbreak is public by owner ruling
+          // (src/game-engine.ts:1271-1273) and names nobody, so this is the one
+          // variant that may differ. The message line stays msg.message, the
+          // server's neutral pool, untouched.
+          $("dead-pre").textContent = msg.isLoverDeath ? "You died of" : "You are";
+          $("dead-text").textContent = msg.isLoverDeath ? "HEARTBREAK" : "DEAD";
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
@@ -785,6 +827,7 @@
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
     $("btn-vigilante-pass").classList.add("hidden");
+    clearNightGate();
     // C5b: gate-closed baseline (E10d — rejoin after resolution must leave
     // no stale wait view); the pendingRevenge branch below re-shows it.
     $("revenge-wait").classList.add("hidden");
@@ -1826,6 +1869,7 @@
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
     $("btn-vigilante-pass").classList.add("hidden");
+    clearNightGate();
     // C5b: the deferred phase_change IS the revenge-resolution signal — the
     // room-wide wait view (and its admin skip control) comes down with it.
     $("revenge-wait").classList.add("hidden");
@@ -2380,6 +2424,60 @@
     return true;
   }
 
+  // ── N-D2: pre-choice gates (Figma 130:573 Hunter, 225:542 Vigilante) ──────
+  // Both roles open on a two-CTA screen — a primary that reveals the target
+  // list and a decline that resolves the action outright — instead of showing
+  // the list and the decline button together. The decline BUTTON is the same
+  // element in both states (N-D6: one shared style), only its label changes to
+  // the Figma per-frame string: gate vs. target-list frame.
+  const NIGHT_GATES = {
+    hunter_revenge: {
+      go: "Take revenge",          // 130:573
+      declineId: "btn-decline-revenge",
+      gateDecline: "Spare the others", // 130:573
+      listDecline: "Don't shoot",      // 225:364
+    },
+    vigilante_shoot: {
+      go: "Shoot",                 // 225:542
+      declineId: "btn-vigilante-pass",
+      gateDecline: "Hold fire",    // 225:542
+      listDecline: "Hold fire",    // 234:1332 — same string on both frames
+    },
+  };
+  let activeNightGate = null;
+
+  /** Drop any gate state: list visible, primary CTA gone. The default for every
+   *  role/spectator surface that renders into #action-targets. */
+  function clearNightGate() {
+    activeNightGate = null;
+    $("night-choice").classList.remove("gate-mode");
+    $("action-list-wrap").classList.remove("hidden");
+    $("btn-night-gate-go").classList.add("hidden");
+  }
+
+  /** Enter the gate: list shuttered, primary + decline side by side. */
+  function openNightGate(actionType) {
+    const gate = NIGHT_GATES[actionType];
+    activeNightGate = actionType;
+    $("btn-night-gate-go").textContent = gate.go;
+    $("btn-night-gate-go").classList.remove("hidden");
+    $("night-choice").classList.add("gate-mode");
+    $("action-list-wrap").classList.add("hidden");
+    $(gate.declineId).textContent = gate.gateDecline;
+  }
+
+  /** The primary CTA was tapped: reveal the target list (Figma wiring
+   *  225:417 → 225:364 hunter, 225:557 → 234:1332 vigilante). */
+  $("btn-night-gate-go").addEventListener("click", () => {
+    if (!activeNightGate || nightActionLocked) return;
+    const gate = NIGHT_GATES[activeNightGate];
+    activeNightGate = null;
+    $("night-choice").classList.remove("gate-mode");
+    $("action-list-wrap").classList.remove("hidden");
+    $("btn-night-gate-go").classList.add("hidden");
+    $(gate.declineId).textContent = gate.listDecline;
+  });
+
   function showNightAction(title, players, actionType, disabledId) {
     // A dead player may only act while their own dead action is active
     // (deadActionActive — joker haunting or hunter revenge from beyond the grave)
@@ -2392,6 +2490,7 @@
     nightActionLocked = false;
 
     hideSlideConfirm();
+    clearNightGate();
 
     // Decline affordance is exclusive to the hunter's revenge prompt
     // (the Confirm button is reserved for the kill; declining is a plain button).
@@ -2425,11 +2524,28 @@
         $("mafia-vote-status").classList.remove("hidden");
       }
     } else {
+      // N-D4 (Figma 130:625 / 140:1186): the detective's own past results are
+      // annotated inline on the night list, sourced CLIENT-SIDE from
+      // detectiveHistory — no new server field, no wire change. Gated on
+      // `myRole === "detective"` exactly like updatePlayerStatus's tag column,
+      // so no other role can ever render an "investigated as" string.
+      // Rows stay SELECTABLE: the engine imposes no re-investigation ban
+      // (submitDetectiveInvestigation, src/game-engine.ts:1062-1075, and
+      // sendDetectivePrompts, src/server.ts:301-309, both send/accept every
+      // living non-detective every night), so disabling them would invent a
+      // rule the server does not enforce.
+      const investigated = {};
+      if (myRole === "detective" && actionType === "detective_investigate") {
+        for (const inv of detectiveHistory) investigated[inv.targetName] = inv.isMafia;
+      }
       list.innerHTML = players
         .map((p) => {
           const isDisabled = disabledId != null && p.id === disabledId;
           const suffix = isDisabled ? " (protected last night)" : "";
-          return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}">${escapeHtml(p.username)}${suffix}</li>`;
+          const note = Object.prototype.hasOwnProperty.call(investigated, p.username)
+            ? `<span class="tl-note${investigated[p.username] ? " tl-note-mafia" : ""}">investigated as ${investigated[p.username] ? "MAFIA" : "NOT MAFIA"}</span>`
+            : "";
+          return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}"><span class="tl-name">${escapeHtml(p.username)}${suffix}</span>${note}</li>`;
         })
         .join("");
 
@@ -2443,7 +2559,11 @@
           list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
           li.classList.add("selected");
           selectedTargetId = parseInt(li.dataset.id);
-          selectedName = li.textContent;
+          // Read the NAME cell, not the row: the detective's rows also carry an
+          // inline "investigated as …" note that must never reach the
+          // collapsed confirmation row.
+          const nameCell = li.querySelector(".tl-name");
+          selectedName = nameCell ? nameCell.textContent : li.textContent;
           setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
@@ -2460,6 +2580,7 @@
             // affordances go with it (no-op for other action types; already hidden)
             $("btn-decline-revenge").classList.add("hidden");
             $("btn-vigilante-pass").classList.add("hidden");
+            clearNightGate();
           }, () => {
             // Cancel: deselect so the player can choose a different target.
             selectedTargetId = null;
@@ -2469,6 +2590,10 @@
         });
       });
     }
+
+    // N-D2: the two gated roles land on the two-CTA screen first. Opened AFTER
+    // the list is built so the shutter has something to reveal.
+    if (NIGHT_GATES[actionType]) openNightGate(actionType);
   }
 
   // C5b: the room-wide wait view while the revenge gate is open. The reveal
@@ -2505,6 +2630,7 @@
     wsSend({ type: "hunter_revenge", targetId: null });
     $("btn-decline-revenge").classList.add("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("action-status").textContent = "You lower your bow.";
   });
 
@@ -2515,8 +2641,13 @@
     wsSend({ type: "vigilante_shoot", targetId: null });
     $("btn-vigilante-pass").classList.add("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("action-targets").innerHTML = "";
-    $("action-status").textContent = "You hold your fire.";
+    // N-D8: ONE hold-fire string on both sides. The server's night_action_done
+    // (src/server.ts:1489) overwrites this line a moment later, so the transient
+    // client copy is unified to the settled server wording instead of flashing
+    // a shorter variant first.
+    $("action-status").textContent = "You hold your fire and keep your bullet.";
   });
 
   function renderSingleMafiaTargets(list, players) {
@@ -2833,6 +2964,7 @@
     panel.classList.remove("hidden");
     $("action-status").textContent = "";
     hideSlideConfirm();
+    clearNightGate(); // spectator surfaces are never gated
 
     const list = $("action-targets");
 
@@ -2877,6 +3009,7 @@
     const panel = $("night-actions");
     panel.classList.remove("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("mafia-vote-status").classList.add("hidden");
     renderSpectatorLog();
 
@@ -2903,6 +3036,7 @@
     const panel = $("night-actions");
     panel.classList.remove("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("mafia-vote-status").classList.add("hidden");
     $("action-status").textContent = "";
     renderSpectatorLog();
@@ -4444,7 +4578,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.38_202607251817";
+  const APP_VERSION_STAGING = "staging.39_202607251908";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at

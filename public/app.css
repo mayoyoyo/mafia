@@ -1047,6 +1047,9 @@ input::placeholder { color: var(--text-secondary); }
 }
 .game-header .phase-indicator { justify-self: start; }
 .game-header .round-indicator { justify-self: center; text-align: center; white-space: nowrap; }
+/* G1: the night Nav's code chip, reusing the lobby chip's type (Code @50% +
+   the code in --primary). */
+.game-room-code { font-size: var(--fs-sm); }
 .game-header-right {
   justify-self: end;
   display: flex;
@@ -1182,6 +1185,10 @@ input::placeholder { color: var(--text-secondary); }
   line-height: 1.2;
   width: 100%;
   box-sizing: border-box;
+  /* N-D7: the Vigilante description carries an explicit second line (the
+     friendly-fire rule Figma's one-liner drops). Every other description is a
+     single line, so this is inert for them. */
+  white-space: pre-line;
 }
 /* The 10 variants — gradient end per role (tokens cite their frame above). */
 .role-card.citizen   .card-front { --card-grad: var(--rolecard-citizen); }
@@ -1345,7 +1352,9 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.narrator-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px; font-family: var(--font-display); }
+/* R7/N-D1a: the narrator survives the re-skin as a Figma card sitting directly
+   above Game Tabs. Sentence case + the 14px label scale, no pixel-era tracking. */
+.narrator-label { font-size: var(--fs-sm); color: var(--text-secondary); text-transform: none; letter-spacing: 0; font-family: var(--font-body); }
 /* D3b: transcript button now hosts pixel scroll SVG */
 .btn-transcript { padding: 2px 6px; }
 .btn-transcript svg { width: 20px; height: 20px; image-rendering: pixelated; }
@@ -1433,7 +1442,70 @@ input::placeholder { color: var(--text-secondary); }
   border-radius: var(--radius-card);
   padding: 16px;
 }
-.action-panel h3 { font-size: 16px; margin-bottom: 12px; }
+/* Figma night prompt: Grandstander 24px w400, lh 24px, white
+   (130-323--mafia-nominate.md "Choose a victim"; same on every role frame). */
+.action-panel h3 {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+/* ── P4 night idle line (74:335 / 130:243) ───────────────────────────────── */
+.night-idle {
+  font-size: var(--fs-lg);
+  font-style: italic;
+  color: var(--text);
+  opacity: 0.85;
+  padding: 4px 2px;
+}
+
+/* ── P4 two-CTA gate + target-list shutter (130:573 / 225:542) ───────────── */
+.night-choice { display: flex; flex-direction: column; gap: 10px; }
+/* Gate frame "Frame 3": 358x60 HORIZONTAL, gap 12, two 173x60 CTAs. */
+.night-choice.gate-mode { flex-direction: row; gap: 12px; }
+.night-choice.gate-mode > .btn-gate { flex: 1 1 0; min-width: 0; }
+.action-list-wrap { min-width: 0; }
+.btn-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 60px;
+  padding: 16px;
+  border: none;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: opacity 0.15s ease;
+}
+.btn-gate:active { transform: scale(0.98); opacity: 0.85; }
+/* Primary CTA: #FF6C02 (both gate frames). Body-size label -> dark ink per the
+   P1 contrast ruling. */
+.btn-gate-primary { background: var(--primary); color: var(--cta-ink); }
+/* Decline: #232729 on the gate frames, #A0A0A0 as the trailing list row on
+   225:364 / 234:1332. ONE style, per N-D6; the label is the per-frame string. */
+.btn-gate-alt { background: var(--bg-card); color: var(--text); }
+.night-choice:not(.gate-mode) > .btn-gate-alt {
+  background: var(--text-secondary);
+  color: var(--cta-ink);
+}
+
+/* Target-row name / detective annotation (N-D4, 130:625). The note is
+   detective-only by construction — app.js gates it on myRole. */
+.tl-name { flex: 1 1 auto; min-width: 0; }
+.tl-note {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  text-align: right;
+}
+.tl-note-mafia { color: var(--danger-bright); }
 .mafia-action-buttons { display: flex; gap: 8px; margin-top: 10px; }
 
 /* Mafia target cards */
@@ -1441,9 +1513,16 @@ input::placeholder { color: var(--text-secondary); }
   /* surface tint lives on --pxb-surface so the stepped border (::before) is
      unaffected by per-state background changes */
   --pxb-surface: var(--bg-elevated);
+  /* The mafia protocol card stacks a header, an objection line and a button
+     row, so it opts OUT of the shared single-row `.target-list li` flex box
+     (Figma left the whole nominate/lock/object protocol undesigned — N-5.3/5.4;
+     the row surface is restyled, the structure is the app's). Row spacing now
+     comes from the list's `gap`. */
+  display: block;
+  min-height: 0;
   padding: 12px 14px;
   border-radius: var(--radius-card);
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 .mafia-target-card.idle { --pxb-color: var(--border); }
 .mafia-target-card.suggested { --pxb-color: rgba(232,163,61,0.45); }
@@ -1634,21 +1713,40 @@ input::placeholder { color: var(--text-secondary); }
   from { opacity: 0; transform: translateX(-8px); }
   to { opacity: 1; transform: translateX(0); }
 }
-.target-list { list-style: none; }
+/* Figma player row ("CTA" 326x70): fill #232729, radius 16, pad 16, gap 10,
+   name at Grandstander 14px w400 white, card drop-shadow
+   (130-323--mafia-nominate.md Players frame; identical on every role frame). */
+.target-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
 .target-list li {
-  --pxb-surface: var(--bg-elevated);
-  padding: 14px 16px;
+  --pxb-surface: var(--bg-card);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 70px;
+  padding: 16px;
   border-radius: var(--radius-card);
-  margin-bottom: 6px;
   cursor: pointer;
-  font-weight: 500;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
 }
 .target-list li:not(:has(.mafia-icons)):active { --pxb-surface: var(--primary); }
+/* Selected row (135:489 "natasha - kill?", 130:529 jenny): fill #FF6C02 with the
+   applied white 2px stroke. */
 .target-list li.selected {
   --pxb-surface: var(--primary);
-  --pxb-color: var(--primary);
+  --pxb-color: #FFFFFF;
+  color: var(--cta-ink);
 }
-.target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
+.target-list li.selected .tl-note { color: var(--cta-ink); opacity: 0.75; }
+/* Disabled row (135:961 kevin): fill #A0A0A0 at 60% opacity. */
+.target-list li.disabled {
+  --pxb-surface: var(--text-secondary);
+  color: var(--cta-ink);
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+  font-style: italic;
+}
 
 /* ── Player accusations (day phase) ─────────────────────────────────────── */
 .day-accuse-controls { margin-top: 14px; }
@@ -1802,26 +1900,33 @@ input::placeholder { color: var(--text-secondary); }
 .dead-skull-art { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 30px; }
 .dead-skull-art svg { width: 132px; height: 132px; image-rendering: pixelated; filter: drop-shadow(0 0 28px rgba(179,32,42,0.45)); }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+/* Death overlay type per 245:344 / 254:848 / 254:865:
+   "You are" / "You died of" 24px w400 white, "DEAD" / "HEARTBREAK" 48px w900
+   #E53935, message 14px w400 white, sub-line 14px @60%, CTA 358x60 #FF6C02. */
 .dead-pre {
-  font-family: var(--font-display);
-  font-size: 13px;
+  font-family: var(--font-body);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
   letter-spacing: 0;
-  color: var(--primary);
-  text-transform: uppercase;
-  margin-bottom: 12px;
-}
-.dead-text { font-size: var(--fs-3xl); font-weight: var(--fw-heading); color: var(--danger-bright); text-transform: uppercase; letter-spacing: 0; font-family: var(--font-display); }
-.death-message { color: var(--text-secondary); font-size: 14.5px; font-style: italic; margin-top: 20px; padding: 0 16px; text-align: center; max-width: 350px; }
-.dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
-.dead-note { color: #62626e; font-size: 13px; font-style: italic; margin-bottom: 26px; }
-.btn-watch {
-  background: #0c0c12;
-  border: 2px solid var(--border);
   color: var(--text);
-  font-family: var(--font-display);
-  font-size: 11px;
+  text-transform: none;
+  margin-bottom: 10px;
+}
+.dead-text { font-size: var(--fs-3xl); font-weight: var(--fw-heading); color: var(--danger); letter-spacing: 0; line-height: 1.05; font-family: var(--font-display); }
+.death-message { color: var(--text); font-size: var(--fs-sm); margin-top: 24px; padding: 0 16px; text-align: center; max-width: 350px; }
+.dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
+.dead-note { color: var(--text); opacity: 0.6; font-size: var(--fs-sm); margin-bottom: 26px; }
+.btn-watch {
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  color: var(--cta-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
   letter-spacing: 0;
-  padding: 15px 30px;
+  min-height: 60px;
+  padding: 16px 30px;
   cursor: pointer;
 }
 .btn-watch:active { box-shadow: inset 0 -3px 0 rgba(0,0,0,0.35); }
