@@ -4800,7 +4800,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.41_202607252028";
+  const APP_VERSION_STAGING = "staging.42_202607252053";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at
