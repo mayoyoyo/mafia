@@ -41,9 +41,14 @@
   --danger-bright: #FF5C58;      /* derived: +12% lightness on #E53935 */
   --success: #34C759;            /* spec */
   --warning: #FFB300;            /* spec */
-  /* CTA label ink on the orange primary. #FFFFFF on #FF6C02 measures 2.84:1, so
-     this is defined but NOT yet applied — per-button ink is decided in P2. */
-  --cta-ink: #FFFFFF;
+  /* P2 CTA ink ruling. Measured (WCAG 2.x relative luminance, re-derived):
+     #FFFFFF on #FF6C02 = 2.84:1 — BELOW the 3:1 large-text floor, so white is
+     restricted to display-weight labels only (w900, >=18px), where the stroke
+     mass carries it and the Figma CTA frames use it (specs/night-actions/
+     254-848--death-by-vote.md:37-42). Every body-size button keeps dark ink:
+     #141008 on #FF6C02 = 6.68:1, comfortably AA at 14px. */
+  --cta-ink: #141008;          /* default: small/body-size labels on --primary */
+  --cta-ink-display: #FFFFFF;  /* w900 >=18px only (large-text exception) */
 
   /* ---- Type (specs/typography.md) ------------------------------------
      Grandstander is the whole system: w400 dominant (704+149+89 uses at
@@ -65,6 +70,30 @@
   /* ---- Card chrome (defined in P1, applied to components in P2) ---- */
   --radius-card: 16px;                            /* spec: radius=16 on every card/CTA */
   --shadow-card: 0 4px 23.8px rgba(0, 0, 0, 0.2); /* spec: DROP_SHADOW r23.8 offset 0,4 #000000 @ 20% */
+  /* P2: the two smaller Figma radii. 8px = every segmented pill (Tabs 185:1613,
+     Rules 55:138, Genders 55:61, Lovers 257:686). 100px = the Toggle track and
+     knob (69:265). */
+  --radius-pill: 8px;
+  --radius-round: 100px;
+
+  /* ---- Membership Card gradient ends, AS APPLIED on the dark app frames -----
+     The Components page draws the card on white (#FCFCFC -> swatch); every real
+     screen overrides the instance to #000000 -> a brighter swatch with white ink
+     and a white 2px stroke (specs/night-actions/135-961--doctor.md:44-46 and the
+     sibling frames). These are those applied ends — deliberately separate from
+     --role-* (which stays the reveal-chip pair from P1). */
+  --rolecard-citizen: #E3DAB5;    /* night-actions/74-335--main-game-screen.md:45 */
+  --rolecard-mafia: #D18D83;      /* night-actions/130-323--mafia-nominate.md:45 */
+  --rolecard-doctor: #B5DCE3;     /* night-actions/135-961--doctor.md:45 */
+  --rolecard-detective: #F9F9B4;  /* night-actions/140-1186--investigate.md:45 */
+  --rolecard-joker: #D5B5E3;      /* night-actions/257-1595--joker.md:45 */
+  --rolecard-hunter: #C1E3B5;     /* night-actions/130-573--hunter.md:45 */
+  --rolecard-vigilante: #E3CBB5;  /* night-actions/225-542--vigilante.md:45 */
+  --rolecard-dead: #B5C9E3;       /* night-actions/245-716--spectating-doctor.md:45 */
+  /* Godfather has no applied frame (Figma only draws the Components variant, which
+     collapses onto Mafia). Kept DISTINCT per R4 as the gold that --role-godfather
+     already carries, lifted to the same brightness band as its siblings. */
+  --rolecard-godfather: #E3C68B;
 
   /* ---- Role palette (specs/components/77-528--membership-card.md) -----
      Each role is a PAIR: --role-X is the card's gradient-end swatch (the
@@ -98,49 +127,37 @@
 .mono { font-family: var(--font-mono); }
 
 /* ============================================================
-   PIXEL NOIR — D1b: Stepped-corner chrome + texture utilities
+   P2 — FIGMA CARD SURFACE SYSTEM
+   Spec: specs/components/287-3437--game-tabs.md (radius=16, pad=16,
+   fill #232729, stroke #FFFFFF 2px as APPLIED in-frame — see
+   specs/night-actions/135-961--doctor.md:96-98 — plus DROP_SHADOW
+   r23.8 offset 0,4 #000000 @ 20%). The Pixel-Noir stepped clip-path and
+   its two-layer ::before/::after border chrome are RETIRED here (R4).
    ============================================================ */
 
-/* Pixel-stepped corner clip-path (12px/4px — standard) */
-.pxc { clip-path: polygon(
-  0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-  calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-  100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-  calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-  12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-); }
+/* .pxc / .pxc-sm survive as radius utilities so the markup that carries
+   them (index.html:34,56,283-284,369,373,395,494) needs no churn: the
+   pixel step becomes the Figma radius, large and small. */
+.pxc { clip-path: none; border-radius: var(--radius-card); }
+.pxc-sm { clip-path: none; border-radius: var(--radius-pill); }
 
-/* Pixel-stepped corner clip-path (6px/2px — small chips) */
-.pxc-sm { clip-path: polygon(
-  0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
-  calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
-  100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
-  calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
-  6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
-); }
-
-/* Stepped-border wrapper: outer = border color bg + .pxc, inner = surface bg + .pxc */
-.pxb { padding: 2px; }
+/* Wrapper that used to paint the stepped border ring. Now a plain
+   radius carrier — the child owns its own border. */
+.pxb { padding: 0; border-radius: var(--radius-card); }
 .pxb > .in { width: 100%; height: 100%; }
 
 /* ====================================================================
-   STEPPED-CORNER PANEL BORDER (two-layer, CSS-only)
+   SHARED CARD SURFACE
    --------------------------------------------------------------------
-   An inset box-shadow traces only the four straight box edges, so on a
-   clip-path() stepped panel the diagonal corner steps came out EMPTY.
-   This replicates the .btn-pxb / .input-pxb wrapper mechanism with no
-   markup change, using pseudo-elements:
-     ::before  = BORDER layer  — fills the panel's full stepped shape
-                 with the border colour (var(--pxb-color)).
-     ::after   = SURFACE layer — same stepped shape, inset by the border
-                 width, filled with the surface colour (var(--pxb-surface)).
-                 Carries the subtle 3D bevel so it is ALSO clipped to the
-                 stepped outline and never reintroduces empty corners.
-   Because both layers use clip-path:inherit, they take the panel's own
-   stepped polygon — the ::after's inset box re-derives the same steps
-   2px smaller, leaving a complete stepped border (corners included).
-   Real content sits above via z-index. Per-panel/per-state colour is
-   driven purely by the --pxb-* custom properties below.
+   Every panel below is a Figma card: radius-16 surface + the card
+   drop-shadow, with an OPTIONAL 2px stroke. The --pxb-* custom
+   properties that per-panel rules already set are kept as the styling
+   seam, re-pointed at real CSS border/background:
+     --pxb-surface : card fill        (default var(--bg-card) = #232729)
+     --pxb-color   : stroke colour    (default transparent = plain CTA card)
+     --pxb-w       : stroke width     (default 2px, per spec)
+   `.card-primary` opts a panel into the white 2px stroke that the Figma
+   frames apply to the two hero cards (Membership Card, Game Tabs).
    ==================================================================== */
 .narrator-area,
 .action-panel,
@@ -161,67 +178,14 @@
 .accent-picker-toggle,
 .accent-arrow {
   position: relative;
-  z-index: 0;                /* own stacking context so the -1 layers stay contained */
-  background: transparent;   /* colour comes from the ::before/::after layers */
-  border: none;
-  box-shadow: none;          /* kill any leftover inset-shadow border */
-}
-.narrator-area::before,
-.action-panel::before,
-.admin-controls::before,
-.voting-panel::before,
-.vote-status::before,
-.mafia-target-card::before,
-.single-mafia-target::before,
-.target-list li::before,
-.event-history::before,
-.detective-result::before,
-.awaiting-ready::before,
-.settings-panel::before,
-.player-lobby-settings::before,
-.players-list li::before,
-.role-reveal-item::before,
-.theme-mode-control::before,
-.accent-picker-toggle::before,
-.accent-arrow::before {           /* BORDER layer */
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--pxb-color, var(--border));
-  clip-path: inherit;
-  pointer-events: none;
-}
-.narrator-area::after,
-.action-panel::after,
-.admin-controls::after,
-.voting-panel::after,
-.vote-status::after,
-.mafia-target-card::after,
-.single-mafia-target::after,
-.target-list li::after,
-.event-history::after,
-.detective-result::after,
-.awaiting-ready::after,
-.settings-panel::after,
-.player-lobby-settings::after,
-.players-list li::after,
-.role-reveal-item::after,
-.theme-mode-control::after,
-.accent-picker-toggle::after,
-.accent-arrow::after {            /* SURFACE layer + bevel */
-  content: "";
-  position: absolute;
-  inset: var(--pxb-w, 2px);
-  z-index: -1;
   background: var(--pxb-surface, var(--bg-card));
-  clip-path: inherit;
-  box-shadow:
-    inset 2px 2px 0 0 rgba(255,255,255,0.05),
-    inset -2px -2px 0 0 rgba(0,0,0,0.28);
-  pointer-events: none;
+  border: var(--pxb-w, 2px) solid var(--pxb-color, transparent);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
-
+/* The two hero cards carry the applied white 2px stroke
+   (specs/night-actions/135-961--doctor.md:46,98). */
+.card-primary { --pxb-color: #FFFFFF; --pxb-w: 2px; }
 /* ---- Texture utilities (static — zero new animations) ---- */
 /* NOTE: .scanlines / .vignette remain unused as standalone utility classes —
    screen/overlay texture is applied via element-scoped ::after/::before
@@ -329,8 +293,9 @@
 /* Keep membership card dark regardless of theme. Because the surface stays
    dark, the DARK-theme role pair must be re-declared here too — otherwise the
    light theme's swapped (dark-ink) role colours would paint dark text on this
-   dark card. P2 replaces this card with the Figma light-gradient card, at which
-   point this override retires. */
+   dark card. P2 kept the card dark (the applied Figma treatment is a
+   #000000 -> swatch gradient), so the override stays: the chips that live on the
+   card (Lovers, bullet indicator) must keep the dark-theme pair. */
 .role-card {
   --bg-card: #151515;
   --border: #2c2c2e;
@@ -511,63 +476,68 @@ html, body {
   z-index: 9998;
 }
 
-/* BUTTONS */
+/* ============================================================
+   BUTTONS / CTA SYSTEM
+   Spec: the "CTA" frame shared by every Figma screen —
+   358x60 (action) / 326x70 (row), layout=HORIZONTAL gap=10, pad=16,
+   radius=16, DROP_SHADOW r23.8 0,4 #000 20%; label Grandstander 14px
+   w400. Primary fill #FF6C02, secondary fill #232729, disabled #A0A0A0
+   @60%. (specs/night-actions/135-961--doctor.md:68-93,
+   specs/game-over/278-2701--game-options.md CTA rows.)
+   ============================================================ */
 .btn {
   border: none;
-  border-radius: 0;
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-  );
-  font-size: 16px;
-  font-weight: 600;
-  padding: 14px 24px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  padding: 16px 24px;
   cursor: pointer;
   transition: opacity 0.15s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   font-family: var(--font-display);
-  letter-spacing: 1px;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 .btn:active { transform: scale(0.97); opacity: 0.8; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
-/* Primary: amber fill, ink Grandstander label, pressed-edge shadow */
+/* Primary: spec orange fill. Ink is the token pair decided at the top of this
+   file — dark #141008 by default (6.68:1), white only on the display-weight
+   .btn-large label below. The Pixel-Noir pressed-edge inset is retired. */
 .btn-primary {
   background: var(--primary);
-  color: #141008;
-  box-shadow: inset 0 -5px 0 rgba(70,40,0,.35);
+  color: var(--cta-ink);
 }
 .btn-primary:active { background: var(--primary-dark); }
-/* Secondary: uses pxb wrapper in HTML for stepped border; standalone keeps subtle border bg */
+/* Secondary: the plain #232729 CTA card. */
 .btn-secondary {
-  background: var(--bg-elevated);
+  background: var(--bg-card);
   color: var(--text);
 }
-/* Ghost: minimal; no clip-path so inline ghost can sit freely */
+/* Ghost: minimal inline affordance, no card chrome. */
 .btn-ghost {
   background: transparent;
   color: var(--text-secondary);
   padding: 8px 12px;
-  font-size: 14px;
-  clip-path: none;
-  border-radius: 6px;
+  font-size: var(--fs-sm);
+  border-radius: var(--radius-pill);
+  box-shadow: none;
 }
 .btn-danger { background: var(--danger); color: #fff; }
-.btn-large { padding: 18px 32px; font-size: 18px; width: 100%; }
+/* Display-weight CTA: Grandstander Black at 18px is the large-text case where
+   the spec's white-on-orange is used. */
+.btn-large {
+  padding: 18px 32px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-heading);
+  width: 100%;
+}
+.btn-primary.btn-large { color: var(--cta-ink-display); }
 .btn-small {
   padding: 8px 16px;
   font-size: 13px;
-  clip-path: polygon(
-    0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
-    calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
-    100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
-    calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
-    6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
-  );
+  border-radius: var(--radius-pill);
 }
 /* D2.5: settings-modal close X reverted to STOCK pre-D1 plain dismiss affordance
    (user amendment). Neutralize the inherited .btn chrome (Grandstander, padding,
@@ -575,7 +545,7 @@ html, body {
    D3.5: settings gear buttons (#btn-settings-lobby-admin, #btn-settings-lobby-player,
    #btn-settings) also reverted to stock &#9881; per §3.3 extension 2026-06-12. */
 /* D3b: btn-icon now hosts pixel art SVGs — drop font-size, size SVG via child rule */
-.btn-icon { background: none; border: none; color: var(--text); padding: 4px 8px; cursor: pointer; clip-path: none; display: inline-flex; align-items: center; justify-content: center; }
+.btn-icon { background: none; border: none; box-shadow: none; color: var(--text); padding: 4px 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .btn-icon svg { width: 24px; height: 24px; image-rendering: pixelated; vertical-align: middle; }
 #btn-close-settings.btn-icon,
 #btn-close-transcript.btn-icon,
@@ -604,62 +574,49 @@ html, body {
   box-shadow: none;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  clip-path: none;
 }
-/* Stepped border wrapper for secondary/ghost buttons (outer = border bg, inner = surface bg) */
+/* Legacy wrapper around secondary/ghost buttons. The stepped ring is retired —
+   the button now owns its own radius/shadow, so the wrapper is a pass-through. */
 .btn-pxb {
-  background: var(--border);
-  padding: 2px;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  background: transparent;
+  padding: 0;
+  border-radius: var(--radius-card);
   display: block;
 }
 .btn-pxb .btn { display: block; width: 100%; }
 
-/* VOTE BUTTONS */
+/* VOTE BUTTONS — the Thumbs component (specs/components/225-918--thumbs.md)
+   at its Medium (32px) band and above, so the chibi raster is used here. */
 .btn-vote {
   width: 80px; height: 80px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   font-size: 40px; display: flex; align-items: center; justify-content: center;
 }
-.btn-vote svg { width: 40px; height: 40px; image-rendering: pixelated; }
+.btn-vote img.thumb-art { width: 40px; height: 40px; display: block; }
 .btn-vote-yes { background: var(--success); }
 .btn-vote-no { background: var(--danger); }
 .btn-vote.selected { outline: 4px solid #fff; outline-offset: 2px; }
 
-/* INPUTS — stepped corners via clip-path; border shown through pxb wrapper in HTML */
+/* INPUTS — radius-16 fields to match the CTA family (the stepped clip-path and
+   its wrapper ring retire with the rest of the Pixel-Noir chrome). */
 input[type="text"], input[type="tel"] {
   width: 100%;
   padding: 17px 18px;
-  border: none;
-  border-radius: 0;
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-  );
+  border: 2px solid var(--border);
+  border-radius: var(--radius-card);
   background: var(--bg-input);
   color: var(--text);
   font-size: 16px;
   outline: none;
   transition: none;
 }
-/* Input focus: outline on wrapper (can't use border-color inside clip-path) */
-input:focus { background: var(--bg-elevated); }
+input:focus { background: var(--bg-elevated); border-color: var(--primary); }
 input::placeholder { color: var(--text-secondary); }
-/* Input wrapper for stepped border */
+/* Legacy input wrapper — pass-through now that the field owns its own border. */
 .input-pxb {
-  background: var(--border);
-  padding: 2px;
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-  );
+  background: transparent;
+  padding: 0;
+  border-radius: var(--radius-card);
 }
 .input-pxb input { display: block; }
 
@@ -670,14 +627,14 @@ input::placeholder { color: var(--text-secondary); }
   display: flex; align-items: center; justify-content: center;
 }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
-.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: var(--fw-heading); font-family: var(--font-display); }
+.logo h1 { font-size: 32px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
 /* Wordmark blood period (mockup .wordmark .dot) — subtle blood-red accent after
    MAFIA, inherits the Grandstander size; just recolored. */
 .wordmark-dot { color: var(--danger-bright); }
 .logo-small { padding: 24px 0 8px; }
 .logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
 .logo-small .logo-icon svg { width: 48px; height: 48px; }
-.logo-small h1 { font-size: 22px; letter-spacing: 6px; font-weight: var(--fw-heading); font-family: var(--font-display); }
+.logo-small h1 { font-size: 22px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
 .passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: var(--font-mono); }
@@ -704,8 +661,7 @@ input::placeholder { color: var(--text-secondary); }
 .settings-panel {
   /* two-layer stepped border via shared .pxframe rule above */
   --pxb-surface: var(--bg-card);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
 }
 .settings-panel h3 { font-size: 16px; margin-bottom: 12px; color: var(--text-secondary); }
@@ -745,8 +701,7 @@ input::placeholder { color: var(--text-secondary); }
   --pxb-surface: var(--bg-input);
   --pxb-w: 1px;
   color: var(--text);
-  border-radius: 0;
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  border-radius: var(--radius-pill);
   padding: 8px 12px;
   font-size: 14px;
   font-family: inherit;
@@ -789,8 +744,7 @@ input::placeholder { color: var(--text-secondary); }
   --pxb-surface: var(--bg-elevated);
   --pxb-w: 1px;
   color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  border-radius: var(--radius-pill);
   font-family: var(--font-display);
   font-size: 14px;
   cursor: pointer;
@@ -798,10 +752,8 @@ input::placeholder { color: var(--text-secondary); }
   touch-action: manipulation;
 }
 .accent-arrow:active { --pxb-surface: var(--border); }
-/* Arrow glyphs (◀ ▶) live in the button's HTML text content, not on ::before:
-   ::before/::after are claimed by the pixel-bevel border+surface layers (both
-   z-index:-1, content:""), so a glyph placed there renders behind the opaque
-   surface and reads as an empty square. The text node sits above the surface. */
+/* Arrow glyphs (◀ ▶) live in the button's HTML text content, not on a
+   pseudo-element — kept that way after the pixel-bevel layers retired. */
 .accent-arrow {
   position: relative;
   line-height: 1;
@@ -850,33 +802,37 @@ input::placeholder { color: var(--text-secondary); }
   text-transform: uppercase;
   color: var(--text-secondary);
 }
+/* ---- GENDERS — specs/components/55-61--genders.md
+   Two pills, gap=16 pad=8 radius=8, Grandstander 14px w400. Active Male
+   #039BE5 / Female #E876A0 with #FFFFFF label; inactive transparent + body ink. */
 .narrator-gender-control {
   display: inline-flex;
   flex-shrink: 0;
-  border: 1px solid var(--border);
+  gap: 16px;
+  border: none;
   border-radius: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .narrator-gender-btn {
-  min-height: 32px;
-  padding: 7px 14px;
+  min-height: 30px;
+  padding: 8px;
   border: none;
-  border-right: 1px solid var(--border);
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text);
   font-family: var(--font-display);
-  font-size: 9px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.narrator-gender-btn:last-child { border-right: none; }
 .narrator-gender-btn:hover { color: var(--text); }
-.narrator-gender-btn.active {
-  background: var(--primary);
-  color: #141008;
-}
+.narrator-gender-btn.active { color: #FFFFFF; }
+.narrator-gender-btn[data-gender="male"].active { background: #039BE5; }
+.narrator-gender-btn[data-gender="female"].active { background: #E876A0; }
 .narrator-gender-control.disabled {
   opacity: 0.4;
 }
@@ -886,54 +842,61 @@ input::placeholder { color: var(--text-secondary); }
 }
 .counter { display: flex; align-items: center; gap: 12px; }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
-/* RULE MODE TABS (Official vs House) */
+/* ---- RULES cards — specs/components/55-138--rules.md (visual only; the copy
+   stays the app's per R5/GM-8). Two 155x30 pills, gap=16, pad=8, radius=8:
+   active #FF6C02 + #FFFFFF label, inactive transparent + body ink. Hint line
+   below at 10px, 50% opacity. Role Toggle's expanded On state
+   (specs/components/55-215--role-toggle.md) is the .setting-sub-row that
+   reveals this block. */
 .setting-sub-row {
   padding: 4px 0 8px 16px;
 }
 .rule-tabs {
   display: flex;
-  gap: 2px;
-  border-radius: 0;
-  border: 1px solid var(--border);
-  width: fit-content;
+  gap: 16px;
+  border: none;
+  width: 100%;
 }
 .rule-tab {
+  flex: 1;
   border: none;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 16px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  padding: 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: all 0.15s;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 .rule-tab.active {
   background: var(--primary);
-  color: #141008;
-  font-family: var(--font-display);
+  color: #FFFFFF;
 }
 .rule-tab:not(.active):active {
-  background: var(--bg-card);
+  background: var(--bg-elevated);
 }
 .rule-hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  font-style: italic;
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.5;
+  margin-top: 10px;
+  font-style: normal;
 }
 
-/* TOGGLE SWITCH */
+/* ---- TOGGLE — specs/components/69-265--toggle.md
+   Track 51x31 radius=100: On #34C759, Off #787880 @16%. Knob 27x27 radius=100
+   #FFFFFF with the spec's three stacked shadows. */
 .toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; }
 .toggle input { opacity: 0; width: 0; height: 0; }
-/* D2.5: reverted to STOCK pre-D1 styling (user amendment) — pill track + round
-   knob. Colors stay tokenized so both themes still work. Do NOT re-step. */
 .slider {
   position: absolute; inset: 0;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 31px;
+  background: rgba(120, 120, 128, 0.16);   /* spec: #787880 @ 16% */
+  border: none;
+  border-radius: var(--radius-round);
   transition: all 0.3s;
   cursor: pointer;
 }
@@ -941,12 +904,16 @@ input::placeholder { color: var(--text-secondary); }
   content: "";
   position: absolute;
   width: 27px; height: 27px;
-  left: 2px; bottom: 1px;
-  background: #fff;
-  border-radius: 50%;
+  left: 2px; top: 2px;
+  background: #FFFFFF;
+  border-radius: var(--radius-round);
+  box-shadow:
+    0 3px 1px rgba(0, 0, 0, 0.06),
+    0 3px 8px rgba(0, 0, 0, 0.15),
+    0 0 0 rgba(0, 0, 0, 0.04);
   transition: transform 0.3s;
 }
-.toggle input:checked + .slider { background: var(--success); border-color: var(--success); }
+.toggle input:checked + .slider { background: #34C759; }
 .toggle input:checked + .slider::before { transform: translateX(20px); }
 
 /* Two-way theme preference — a noir segmented control (Dark/Light). The active
@@ -956,9 +923,9 @@ input::placeholder { color: var(--text-secondary); }
   display: inline-flex;
   flex-shrink: 0;
   --pxb-surface: var(--bg-elevated);
-  padding: 2px;              /* inset the segmented buttons so the 2px stepped frame shows around them */
+  padding: 2px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
 }
 .theme-mode-btn {
   min-height: 32px;
@@ -978,7 +945,7 @@ input::placeholder { color: var(--text-secondary); }
 .theme-mode-btn:hover { color: var(--text); }
 .theme-mode-btn.active {
   background: var(--primary);
-  color: #141008;
+  color: var(--cta-ink);
 }
 
 /* PLAYERS LIST */
@@ -988,8 +955,7 @@ input::placeholder { color: var(--text-secondary); }
 .players-list li {
   --pxb-w: 1px;
   padding: 12px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  border-radius: var(--radius-card);
   margin-bottom: 6px;
   display: flex;
   align-items: center;
@@ -999,10 +965,9 @@ input::placeholder { color: var(--text-secondary); }
 .players-list li .admin-badge {
   font-size: 11px;
   background: var(--primary);
-  color: #141008;
+  color: var(--cta-ink);
   padding: 2px 8px;
-  border-radius: 0;
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  border-radius: var(--radius-pill);
   font-weight: 600;
   font-family: var(--font-display);
 }
@@ -1037,8 +1002,7 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 14px;
   font-weight: 700;
   padding: 6px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  border-radius: var(--radius-pill);
   text-transform: uppercase;
   letter-spacing: 2px;
   font-family: var(--font-display);
@@ -1048,14 +1012,14 @@ input::placeholder { color: var(--text-secondary); }
    The stepped clip-path already shapes the chip; no outline needed. */
 .phase-indicator.night {
   background: var(--primary);
-  color: #141008;
+  color: var(--cta-ink);
   box-shadow: none;
 }
 /* D0 iter2: moon SVG cells are amber (#e8a33d) — invisible on the amber pill.
    Force every rect in the night-pill SVG to ink (#141008) so the crescent
    reads as a dark silhouette, matching the NIGHT text. */
-.phase-indicator.night svg rect { fill: #141008 !important; }
-.phase-indicator.day { background: var(--primary); color: #141008; }
+.phase-indicator.night svg rect { fill: var(--cta-ink) !important; }
+.phase-indicator.day { background: var(--primary); color: var(--cta-ink); }
 .phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
 /* D3b: phase pill now has inline svg + text — align them */
@@ -1064,46 +1028,121 @@ input::placeholder { color: var(--text-secondary); }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
 .day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: var(--font-mono); }
 
-/* ROLE CARD */
+/* ============================================================
+   MEMBERSHIP CARD  —  specs/components/77-528--membership-card.md
+   (10 variants) rendered in its APPLIED dark form, which every real
+   screen overrides the instance to: 357x222 radius=16, fill
+   GRADIENT_LINEAR #000000 -> <role swatch>, stroke #FFFFFF 2px,
+   DROP_SHADOW r23.8 0,4 #000 20%, all ink #FFFFFF
+   (specs/night-actions/135-961--doctor.md:44-61).
+   Layout per spec: "Your role is" 16px w400 eyebrow, role name 48px w900,
+   description 12px w400 (266px text column) beside a 78x78 art region.
+   Godfather = the Mafia layout with the distinct gold accent (R4).
+   ============================================================ */
 .role-card {
   background: transparent;
   border: none;
-  border-radius: 20px;
-  text-align: center;
+  border-radius: var(--radius-card);
+  text-align: left;
   position: relative;
-  /* Fixed membership-card size: every role's card is identical regardless of
-     name/description length. The front fills this box and its text auto-shrinks
-     to fit (fitRoleCardText in app.js). */
-  height: 320px;
-  /* no perspective — flat stacking */
+  /* Spec card is 357x222. Hold that ratio so the card scales with the column
+     instead of being pinned to a fixed pixel height. */
+  aspect-ratio: 357 / 222;
+  min-height: 190px;
 }
 .card-inner {
   position: relative;
   width: 100%;
   height: 100%;
-  /* flat stacking — no 3D transforms */
 }
 .card-front, .card-back {
-  border-radius: 0;
-  padding: 24px;
-  background: var(--bg-card);
-  border: 2px solid var(--border);
-  /* no backface-visibility */
+  border-radius: var(--radius-card);
+  padding: 16px;
+  border: 2px solid #FFFFFF;          /* spec: applied white 2px stroke */
+  box-shadow: var(--shadow-card);
 }
 .card-front {
   /* sits below .card-back in the stack; visible when card-back clips away */
   position: relative;
-  /* Fill the fixed card box and center the stacked content; clip any overflow
-     (the JS auto-fit shrinks text so nothing actually clips). */
   height: 100%;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
   overflow: hidden;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  color: #FFFFFF;
+  /* Default (roleless) gradient; each .role-card.<role> re-points --card-grad.
+     The REST dump records the two stops but not the gradient ANGLE, so 160deg is
+     chosen, not cited: it pools the light stop behind the art on the right and
+     keeps the text column over the dark stop, which the white spec ink needs. */
+  background: linear-gradient(160deg, #000000 0%, var(--card-grad, #AEB4BC) 100%);
 }
+/* The 266px text column of the spec card. */
+.card-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* "Your role is" / "You are" — spec TEXT 16px w400 */
+.role-eyebrow {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-body);
+  font-family: var(--font-display);
+  line-height: 1.1;
+}
+/* Spec art region: RECTANGLE "image 1" 78x78, the chibi raster fill. */
+.role-image {
+  width: 78px;
+  height: 78px;
+  flex: 0 0 78px;
+  align-self: center;
+}
+.role-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+/* Spec role name: Grandstander-Black 48px w900. No tracking — the Silkscreen
+   3px letter-spacing retires with the pixel face. */
+.role-name {
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-heading);
+  font-family: var(--font-display);
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+  color: #FFFFFF;
+}
+/* Spec description: 12px w400, same white ink. */
+.role-description {
+  color: #FFFFFF;
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+  width: 100%;
+  box-sizing: border-box;
+}
+/* The 10 variants — gradient end per role (tokens cite their frame above). */
+.role-card.citizen   .card-front { --card-grad: var(--rolecard-citizen); }
+.role-card.mafia     .card-front { --card-grad: var(--rolecard-mafia); }
+.role-card.doctor    .card-front { --card-grad: var(--rolecard-doctor); }
+.role-card.detective .card-front { --card-grad: var(--rolecard-detective); }
+.role-card.joker     .card-front { --card-grad: var(--rolecard-joker); }
+.role-card.hunter    .card-front { --card-grad: var(--rolecard-hunter); }
+.role-card.vigilante .card-front { --card-grad: var(--rolecard-vigilante); }
+.role-card.godfather .card-front { --card-grad: var(--rolecard-godfather); }
+/* Role=Dead (spec 77-528:145-162). The app keeps the player's OWN role on the
+   card front (peeling after death still shows who you were), so the dead
+   treatment lands on the card BACK — which is the face a dead player is
+   looking at, and which app.js already swaps to CARD_BACK_DEAD_ART. */
+.role-card.dead .card-back { --card-grad: var(--rolecard-dead); }
+
+/* ---- Card back = spec "Role=Default": "Your role is / ? / Peel to reveal" --- */
 .card-back {
   position: absolute;
   inset: 0;
@@ -1111,58 +1150,27 @@ input::placeholder { color: var(--text-secondary); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: transparent;   /* fill + border are drawn by the two stepped layers below */
-  border: none;              /* override the shared .card-front,.card-back 2px box border */
+  gap: 6px;
+  color: #FFFFFF;
+  /* Spec Role=Default gradient end #AEB4BC; the Dead variant re-points it. */
+  background: linear-gradient(160deg, #000000 0%, var(--card-grad, #AEB4BC) 100%);
   z-index: 2;                /* sits above .card-front; also its own stacking context */
-  /* REVEAL MASK. clip-path is JS-driven during the peel (the fold polygon). The
-     RESTING value is a full rectangle on purpose: the noir stepped SHAPE is carried
-     by the ::before/::after layers (each with its own FIXED stepped clip-path), and
-     this mask intersects them. So at rest the card reads stepped; during the fold the
-     mask ∩ stepped-layer keeps the un-peeled corners stepped while the crease cuts
-     cleanly; and on release the peel clears the inline clip-path back to this rect,
-     restoring the stepped resting shape with no JS change and no rectangle leak. */
+  /* REVEAL MASK. clip-path is JS-driven during the peel (the fold polygon); the
+     resting value is a full rectangle so the radius/stroke below survive, and on
+     release the peel clears the inline clip-path back to this rect. */
   clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
   transition: clip-path 0.3s ease;
 }
 .card-back.dragging {
   transition: none; /* disable snap-back animation during active drag */
 }
-/* BORDER layer — fills the full stepped outline with the card-edge colour. */
-.card-back::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: #3a3a5c;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  pointer-events: none;
-}
-/* SURFACE layer — same stepped outline inset 2px: the printed midnight card face,
-   with a faint scanline grain, an edge bevel, and the inner vignette darkening.
-   Both layers are clipped by the parent reveal mask, so they fold with the peel. */
-.card-back::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  z-index: -1;
-  background:
-    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,0.12) 3px 4px),
-    #1a1a2e;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  box-shadow:
-    inset 2px 2px 0 0 rgba(255,255,255,0.05),
-    inset -2px -2px 0 0 rgba(0,0,0,0.28),
-    inset 0 0 30px rgba(0,0,0,0.5);
-  pointer-events: none;
-}
-.card-back-art { width: 64px; height: 64px; image-rendering: pixelated; margin-bottom: 12px; }
+.card-back-art { width: 64px; height: 64px; image-rendering: pixelated; }
 .card-back-art svg { width: 64px; height: 64px; display: block; }
 .card-back-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: #5a5a8a;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  color: #FFFFFF;
   font-family: var(--font-display);
 }
 .peel-flap {
@@ -1174,116 +1182,73 @@ input::placeholder { color: var(--text-secondary); }
   z-index: 3;
   pointer-events: none;
   /* Resting dog-ear: the corner lifted just enough to show the pale card-stock
-     underside (reads as "peel here"). Light steel gradient = the back of the
-     lifted paper; hard 50% stop keeps a crisp fold crease. */
-  background: linear-gradient(225deg, #3a3a52 0%, #2d2d44 50%, transparent 50%);
-  /* Squared + stepped to sit inside the card's bottom-right notch (matches .pxc). */
-  border-radius: 0;
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 0 100%);
-  border-left: 2px solid #23233a;
-  border-top: 2px solid #23233a;
+     underside (reads as "peel here"). */
+  background: linear-gradient(225deg, #6b7076 0%, #3a3f43 50%, transparent 50%);
+  border-radius: 0 0 var(--radius-card) 0;
   opacity: 0.95;
   transition: opacity 0.3s;
   filter: drop-shadow(-1px -1px 1.5px rgba(0,0,0,0.45));
 }
 .peel-flap.dragging {
-  /* D7: spans the whole card; JS clips it to the live fold triangle.
-     Card-stock underside gradient (lighter than the card-back face) reads as
-     the back of the lifted paper; drop-shadow lifts it off the card. */
+  /* D7: spans the whole card; JS clips it to the live fold triangle. */
   inset: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, #3a3a52 0%, #2a2a40 45%, #1d1d30 100%);
+  background: linear-gradient(135deg, #6b7076 0%, #4a4f53 45%, #2a2e30 100%);
   border: none;
   border-radius: 0;
   opacity: 1;
-  /* No opacity transition while dragging — the flap opacity is driven inline by
-     JS in lock-step with the card-back's instant crossfade; the resting 0.3s
-     transition would otherwise lag the back on fast drags. */
   transition: none;
   filter: drop-shadow(-3px -3px 4px rgba(0,0,0,0.45));
   /* clip-path (the fold triangle) is set inline by the drag handler */
 }
-.role-card.mafia .card-front { border-color: var(--role-mafia); }
-.role-card.citizen .card-front { border-color: var(--role-citizen); }
-.role-card.doctor .card-front { border-color: var(--role-doctor); }
-.role-card.detective .card-front { border-color: var(--role-detective); }
-.role-card.joker .card-front { border-color: var(--role-joker); }
-.role-card.hunter .card-front { border-color: var(--role-hunter); }
-.role-card.vigilante .card-front { border-color: var(--role-vigilante); }
-.role-card.godfather .card-front { border-color: var(--role-godfather); }
-.role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
-.role-image svg { width: 64px; height: 64px; display: block; }
-.role-name { font-size: 28px; font-weight: var(--fw-heading); text-transform: uppercase; letter-spacing: 3px; font-family: var(--font-display); white-space: nowrap; width: 100%; box-sizing: border-box; }
-.role-card.mafia .role-name { color: var(--role-mafia); }
-.role-card.citizen .role-name { color: var(--role-citizen); }
-.role-card.doctor .role-name { color: var(--role-doctor); }
-.role-card.detective .role-name { color: var(--role-detective); }
-.role-card.joker .role-name { color: var(--role-joker); }
-.role-card.hunter .role-name { color: var(--role-hunter); }
-.role-card.vigilante .role-name { color: var(--role-vigilante); }
-.role-card.godfather .role-name { color: var(--role-godfather); }
-.role-description { color: var(--text-secondary); font-size: 14px; margin-top: 8px; width: 100%; box-sizing: border-box; }
 /* Vigilante one-shot indicator on the role card */
 .bullet-indicator {
-  display: inline-block;
-  margin-top: 12px;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
   background: var(--role-vigilante);
   color: var(--role-vigilante-ink);
-  padding: 4px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  padding: 4px 8px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
   font-family: var(--font-display);
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  border-radius: var(--radius-pill);
 }
 .bullet-indicator.spent {
   background: transparent;
-  color: var(--text-secondary);
+  color: #FFFFFF;
   text-decoration: line-through;
   opacity: 0.75;
 }
+/* ---- LOVERS chip — specs/components/257-686--lovers.md
+   83x32, layout=HORIZONTAL gap=8 pad=8 radius=8, fill #AD1F1C,
+   label Grandstander 14px w400 #F5F5F5, 16px heart with a #F5F5F5 stroke.
+   (--role-lover / --role-lover-ink are exactly that pair, set in P1.) */
 .lover-badge {
-  display: inline-block;
-  margin-top: 12px;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
   background: var(--role-lover);
   color: var(--role-lover-ink);
-  padding: 4px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
-  font-size: 14px;
-  font-weight: 600;
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
   font-family: var(--font-display);
+  line-height: 1;
 }
-/* D3b: pixel heart icon in lover-badge */
-.lover-badge-icon { display: inline-flex; vertical-align: middle; margin-right: 2px; }
-.lover-badge-icon svg { width: 14px; height: 14px; image-rendering: pixelated; vertical-align: middle; }
-.role-icon-mini {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
-  opacity: 0.85;
-}
-.role-icon-mini svg { width: 32px; height: 32px; display: block; }
-.role-mini-balloon {
-  position: absolute;
-  bottom: 36px;
-  right: 21px;
-  width: 14px;
-  height: 20px;
-  image-rendering: pixelated;
-  pointer-events: none;
-  animation: balloon-float 3s ease-in-out infinite;
-}
-.role-mini-balloon svg { width: 14px; height: 20px; display: block; }
-@keyframes balloon-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-}
+.lover-badge-icon { display: inline-flex; align-items: center; }
+.lover-badge-icon svg { width: 16px; height: 16px; image-rendering: pixelated; display: block; }
+/* The bottom-right quick-peek mini icon and its lover balloon predate the card
+   having a permanent art region. The spec card carries a 78x78 chibi on the
+   front at all times (and the Lovers chip states the pairing in words), so both
+   would now be a duplicate stacked on top of the real art. Hidden, not deleted:
+   the elements + their JS writers stay put so nothing else has to change. */
+.role-icon-mini, .role-mini-balloon { display: none; }
 
 /* PULL TO REFRESH */
 .pull-refresh {
@@ -1314,8 +1279,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* NARRATOR */
 .narrator-area {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
   min-height: 60px;
 }
@@ -1341,8 +1305,7 @@ input::placeholder { color: var(--text-secondary); }
 /* AWAITING NARRATOR READY */
 .awaiting-ready {
   --pxb-color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 20px;
   text-align: center;
   animation: fadeIn 0.5s ease;
@@ -1380,18 +1343,16 @@ input::placeholder { color: var(--text-secondary); }
 .revenge-wait-headline {
   font-family: var(--font-display);
   font-size: 12px;
-  letter-spacing: 4px;
+  letter-spacing: 0;
   color: var(--role-hunter);
   text-transform: uppercase;
   margin-bottom: 10px;
-  padding-left: 4px;
 }
 
 /* DETECTIVE RESULT */
 .detective-result {
   --pxb-color: var(--role-detective);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 14px 16px;
   font-size: 15px;
   line-height: 1.5;
@@ -1413,8 +1374,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ACTION PANEL */
 .action-panel {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
 }
 .action-panel h3 { font-size: 16px; margin-bottom: 12px; }
@@ -1426,8 +1386,7 @@ input::placeholder { color: var(--text-secondary); }
      unaffected by per-state background changes */
   --pxb-surface: var(--bg-elevated);
   padding: 12px 14px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   margin-bottom: 8px;
 }
 .mafia-target-card.idle { --pxb-color: var(--border); }
@@ -1598,8 +1557,7 @@ input::placeholder { color: var(--text-secondary); }
 .single-mafia-target {
   --pxb-surface: var(--bg-elevated);
   padding: 14px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   margin-bottom: 8px;
   cursor: pointer;
   font-weight: 500;
@@ -1624,8 +1582,7 @@ input::placeholder { color: var(--text-secondary); }
 .target-list li {
   --pxb-surface: var(--bg-elevated);
   padding: 14px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   margin-bottom: 6px;
   cursor: pointer;
   font-weight: 500;
@@ -1701,8 +1658,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* VOTE STATUS */
 .vote-status {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
 }
 .vote-status h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
@@ -1710,8 +1666,7 @@ input::placeholder { color: var(--text-secondary); }
 /* VOTING PANEL */
 .voting-panel {
   --pxb-color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 24px;
   text-align: center;
 }
@@ -1722,8 +1677,7 @@ input::placeholder { color: var(--text-secondary); }
 /* ADMIN CONTROLS */
 .admin-controls {
   --pxb-color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
 }
 .admin-controls h3 { font-size: 16px; margin-bottom: 12px; color: var(--primary); }
@@ -1795,13 +1749,12 @@ input::placeholder { color: var(--text-secondary); }
 .dead-pre {
   font-family: var(--font-display);
   font-size: 13px;
-  letter-spacing: 9px;
+  letter-spacing: 0;
   color: var(--primary);
   text-transform: uppercase;
-  padding-left: 9px;
   margin-bottom: 12px;
 }
-.dead-text { font-size: var(--fs-3xl); font-weight: var(--fw-heading); color: var(--danger-bright); text-transform: uppercase; letter-spacing: 9px; padding-left: 9px; font-family: var(--font-display); }
+.dead-text { font-size: var(--fs-3xl); font-weight: var(--fw-heading); color: var(--danger-bright); text-transform: uppercase; letter-spacing: 0; font-family: var(--font-display); }
 .death-message { color: var(--text-secondary); font-size: 14.5px; font-style: italic; margin-top: 20px; padding: 0 16px; text-align: center; max-width: 350px; }
 .dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
 .dead-note { color: #62626e; font-size: 13px; font-style: italic; margin-bottom: 26px; }
@@ -1811,7 +1764,7 @@ input::placeholder { color: var(--text-secondary); }
   color: var(--text);
   font-family: var(--font-display);
   font-size: 11px;
-  letter-spacing: 3px;
+  letter-spacing: 0;
   padding: 15px 30px;
   cursor: pointer;
 }
@@ -1870,10 +1823,9 @@ input::placeholder { color: var(--text-secondary); }
 .joker-win-pre {
   font-family: var(--font-display);
   font-size: 12px;
-  letter-spacing: 7px;
+  letter-spacing: 0;
   color: var(--primary);
   text-transform: uppercase;
-  padding-left: 7px;
   margin-bottom: 12px;
 }
 .joker-win-title {
@@ -1882,8 +1834,7 @@ input::placeholder { color: var(--text-secondary); }
   font-weight: var(--fw-heading);
   color: var(--role-joker);
   text-transform: uppercase;
-  letter-spacing: 6px;
-  padding-left: 6px;
+  letter-spacing: 0;
 }
 .joker-win-name {
   color: var(--text-secondary);
@@ -1985,7 +1936,7 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center;
   gap: 20px;
 }
-.gameover-content h1 { font-size: var(--fs-2xl); font-weight: var(--fw-heading); text-transform: uppercase; letter-spacing: 4px; font-family: var(--font-display); }
+.gameover-content h1 { font-size: var(--fs-2xl); font-weight: var(--fw-heading); text-transform: uppercase; letter-spacing: 0; font-family: var(--font-display); }
 .gameover-content p { color: var(--text-secondary); font-size: 16px; padding: 0 16px; }
 
 /* D6: TROPHY_ART centerpiece, faction-tinted (same filter language as the D5
@@ -2011,13 +1962,8 @@ input::placeholder { color: var(--text-secondary); }
 }
 .modal-content {
   background: var(--bg-elevated);
-  border-radius: 0;
-  /* Stepped corners top-only for bottom-sheet feel */
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% 100%, 0 100%
-  );
+  /* Bottom sheet: radius on the top corners only. */
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   width: 100%;
   max-width: 430px;
   max-height: 60vh;
@@ -2111,8 +2057,7 @@ input::placeholder { color: var(--text-secondary); }
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  border-radius: var(--radius-card);
   margin-bottom: 6px;
 }
 .role-reveal-item.dead { opacity: 0.5; }
@@ -2132,8 +2077,7 @@ input::placeholder { color: var(--text-secondary); }
   text-transform: uppercase;
   letter-spacing: 1px;
   padding: 2px 10px;
-  border-radius: 0;
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  border-radius: var(--radius-pill);
   font-family: var(--font-display);
 }
 .role-reveal-role.mafia { background: var(--role-mafia); color: var(--role-mafia-ink); }
@@ -2149,42 +2093,72 @@ input::placeholder { color: var(--text-secondary); }
 .role-reveal-lover svg { width: 12px; height: 12px; image-rendering: pixelated; }
 .role-reveal-dead { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
 
-/* EVENT HISTORY */
+/* ============================================================
+   GAME TABS — specs/components/287-3437--game-tabs.md
+   Card: 358x254 layout=VERTICAL gap=10 pad=16 radius=16, fill #232729 with
+   the applied #FFFFFF 2px stroke + card shadow
+   (specs/night-actions/135-961--doctor.md:96-98).
+   Header is the Tabs component (specs/components/185-1613--tabs.md): two
+   155x30 pills, gap=16 pad=8 radius=8, active #FF6C02 + #FFFFFF label,
+   inactive transparent + body ink.
+   Events body is a TWO-COLUMN grid — "Round N" in the left column, that
+   round's event lines stacked (gap=8) in the right column — with a 1px
+   divider LINE between rounds. Player rows are name + a 14px colour dot,
+   dead rows at 30% opacity.
+   ============================================================ */
 .event-history {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  padding: 12px 16px;
+  border-radius: var(--radius-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.eh-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.eh-tabs { display: flex; gap: 16px; }
 .eh-tab {
   flex: 1;
-  padding: 6px 0;
+  padding: 8px;
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  text-transform: none;
+  letter-spacing: 0;
   cursor: pointer;
   transition: all 0.15s;
   font-family: var(--font-display);
 }
 .eh-tab.active {
-  background: var(--bg-elevated);
-  color: var(--text);
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  background: var(--primary);
+  color: #FFFFFF;
 }
 .eh-panel { /* default visible */ }
-.player-status-list { font-size: 13px; line-height: 1.8; }
-.player-status-item { display: flex; align-items: center; gap: 8px; }
+
+/* ---- Events tab: Round N | events, divider between rounds ---- */
+.event-history-list { font-size: var(--fs-sm); line-height: 1.4; }
+.eh-round {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #FFFFFF;
+}
+.eh-round:first-child { padding-top: 0; }
+.eh-round:last-child { border-bottom: none; padding-bottom: 0; }
+.event-history-round { white-space: nowrap; }
+.eh-round-events { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* ---- Players tab ---- */
+.player-status-list { font-size: var(--fs-sm); line-height: 1.4; display: flex; flex-direction: column; gap: 10px; }
+.player-status-item { display: flex; align-items: center; gap: 10px; }
+.player-status-item.dead { opacity: 0.3; }   /* spec: dead rows at 30% */
 .player-status-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
 }
 .player-status-dot.alive { background: var(--success); }
 .player-status-dot.dead { background: var(--danger); }
-.player-status-name.dead { text-decoration: line-through; color: var(--text-secondary); }
+.player-status-name.dead { text-decoration: line-through; }
 
 .mafia-tag {
   font-size: 10px; font-weight: 700; color: var(--role-mafia);
@@ -2194,20 +2168,18 @@ input::placeholder { color: var(--text-secondary); }
 .mafia-tag.godfather-tag {
   color: var(--role-godfather); border-color: var(--role-godfather);
 }
-/* D3b: detective-tag now hosts pixel thumbs art */
+/* Thumbs at the SMALL band. specs/components/225-918--thumbs.md ships a 14px
+   raster variant, but the Figma emoji PNG downscaled to 14-16px loses the
+   finger separations and reads as an amber blob — up and down stop being
+   distinguishable. So this 16px site keeps the pixel-art THUMB_*_ART grids and
+   only the >=32px site (the vote buttons) takes the raster. */
 .detective-tag { margin-left: auto; display: inline-flex; align-items: center; }
 .detective-tag svg { width: 16px; height: 16px; image-rendering: pixelated; }
-.event-history-list { font-size: 13px; line-height: 1.6; }
-.event-history-round {
-  font-size: 11px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 6px;
-  margin-bottom: 2px;
-}
-.event-history-round:first-child { margin-top: 0; }
-.event-item { padding: 2px 0; }
+/* Spec: the round label is plain Grandstander 14px w400 in the same ink as the
+   event lines (287-3437 "Round 01".."Round 04") — no uppercase, no tracking.
+   The per-type colours below are the app's own semantic layer (no Figma
+   equivalent) and are left for the P4/P5 Events-tab pass. */
+.event-item { padding: 0; }
 .event-item.kill, .event-item.joker_haunt { color: var(--danger); }
 .event-item.lover_death { color: var(--role-lover); }
 .event-item.save { color: var(--success); }
@@ -2269,10 +2241,9 @@ input::placeholder { color: var(--text-secondary); }
 .suspense-pre {
   font-family: var(--font-display);
   font-size: 12px;
-  letter-spacing: 6px;
+  letter-spacing: 0;
   color: var(--primary);
   text-transform: uppercase;
-  padding-left: 6px; /* visual-center the tracked caps */
 }
 .suspense-pre:empty { display: none; }
 /* Pixel art centerpiece — static, pixelated, sized between the mockup's 96-120px.
@@ -2434,8 +2405,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* READ-ONLY SETTINGS DISPLAY (player lobby) */
 .player-lobby-settings {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 12px 16px;
   font-size: 14px;
 }

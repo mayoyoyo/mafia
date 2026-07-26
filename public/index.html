@@ -210,12 +210,17 @@
       <!-- Role Card -->
       <div id="role-card" class="role-card">
         <div class="card-inner">
+          <!-- Membership Card (specs/components/77-528--membership-card.md):
+               eyebrow / name / description in the text column, chibi art beside it. -->
           <div class="card-front">
+            <div class="card-text">
+              <div id="role-eyebrow" class="role-eyebrow">Your role is</div>
+              <div id="role-name" class="role-name"></div>
+              <div id="role-description" class="role-description"></div>
+              <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lovers</div>
+              <div id="bullet-indicator" class="bullet-indicator hidden"><span id="bullet-status"></span></div>
+            </div>
             <div id="role-image" class="role-image"></div>
-            <div id="role-name" class="role-name"></div>
-            <div id="role-description" class="role-description"></div>
-            <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lover</div>
-            <div id="bullet-indicator" class="bullet-indicator hidden"><span id="bullet-status"></span></div>
             <div id="role-icon-mini" class="role-icon-mini"></div>
             <div id="role-mini-balloon" class="role-mini-balloon hidden">
               <svg viewBox="0 0 7 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
@@ -233,9 +238,11 @@
               </svg>
             </div>
           </div>
+          <!-- Spec "Role=Default": "Your role is / ? / Peel to reveal". -->
           <div class="card-back">
+            <div class="role-eyebrow">Your role is</div>
             <div id="card-back-art" class="card-back-art"></div>
-            <div class="card-back-label">MEMBERSHIP CARD</div>
+            <div class="card-back-label">Peel to reveal</div>
           </div>
           <div class="peel-flap"></div>
         </div>
@@ -333,7 +340,9 @@
       </div>
 
       <!-- Event History (always visible during game) -->
-      <div id="event-history" class="event-history hidden">
+      <!-- Game Tabs (specs/components/287-3437--game-tabs.md) — a hero card, so
+           it carries the applied white 2px stroke via .card-primary. -->
+      <div id="event-history" class="event-history card-primary hidden">
         <div class="eh-tabs">
           <button class="eh-tab active" data-tab="events">Events</button>
           <button class="eh-tab" data-tab="players">Players</button>

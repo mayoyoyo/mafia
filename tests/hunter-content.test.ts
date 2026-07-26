@@ -93,9 +93,12 @@ describe("C7: app.css per-role classes", () => {
     expect(m).not.toBeNull();
   });
 
-  test("role card border + name color classes exist", () => {
-    expect(css).toContain(".role-card.hunter .card-front { border-color: var(--role-hunter); }");
-    expect(css).toContain(".role-card.hunter .role-name { color: var(--role-hunter); }");
+  test("role card per-role variant class exists", () => {
+    // P2: the Membership Card is drawn per spec 77-528 — a #000000 -> role-swatch
+    // gradient behind white ink and a white 2px stroke — so the per-role hook is
+    // the gradient token, not a tinted border + tinted name.
+    expect(css).toContain(".role-card.hunter    .card-front { --card-grad: var(--rolecard-hunter); }");
+    expect(css).toMatch(/--rolecard-hunter:\s*#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\s*;/);
   });
 
   test("game-over role reveal badge class exists", () => {

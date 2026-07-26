@@ -453,7 +453,7 @@
         updateRoleCard();
         // Card starts face-down
         resetCardPeel();
-        $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_ART);
+        setCardBack(false);
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
         $("event-history-list").innerHTML = "";
@@ -633,7 +633,7 @@
 
       case "you_died":
         isDead = true;
-        $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+        setCardBack(true);
         // If joker win overlay is already showing, skip the death overlay
         if (!jokerWonOverlayShown) {
           $("dead-overlay").classList.remove("hidden");
@@ -762,7 +762,7 @@
     applyEffectiveTheme();
     updateRoleCard();
     resetCardPeel();
-    $("card-back-art").innerHTML = pixelArtToSvg(isDead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
+    setCardBack(isDead);
     $("dead-dismiss-hint").classList.add("hidden");
     $("round-number").textContent = msg.round;
 
@@ -950,7 +950,7 @@
 
     // 12. Dead player state (card back only — overlay only shows on real-time you_died)
     if (isDead) {
-      $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+      setCardBack(true);
     }
   }
 
@@ -1261,18 +1261,52 @@
 
   // Pixel art data loaded from pixel-art.js (window globals)
 
+  // Membership Card display names, spec casing
+  // (specs/components/77-528--membership-card.md TEXT nodes). pixel-art.js owns
+  // ROLE_DESCRIPTIONS/ROLE_COLORS and is untouched, so the titles live here.
+  const ROLE_TITLES = {
+    citizen: "Citizen",
+    mafia: "Mafia",
+    doctor: "Doctor",
+    detective: "Detective",
+    joker: "Joker",
+    hunter: "Hunter",
+    vigilante: "Vigilante",
+    godfather: "Godfather",
+  };
+
+  // Card back = spec "Role=Default" ("Your role is / ? / Peel to reveal") until
+  // the player dies, at which point it becomes spec "Role=Dead"
+  // ("You are / DEAD / Stay quiet and continue to watch the town").
+  function setCardBack(dead) {
+    $("card-back-art").innerHTML = pixelArtToSvg(dead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
+    const back = document.querySelector("#role-card .card-back");
+    if (!back) return;
+    const eyebrow = back.querySelector(".role-eyebrow");
+    const label = back.querySelector(".card-back-label");
+    if (eyebrow) eyebrow.textContent = dead ? "You are" : "Your role is";
+    if (label) label.textContent = dead ? "DEAD" : "Peel to reveal";
+    $("role-card").classList.toggle("dead", !!dead);
+  }
+
   function updateRoleCard() {
     // Display-only role: the Godfather sees a distinct card but myRole stays
     // "mafia" so the mafia night-action UI keeps gating correctly.
     const displayRole = myIsGodfather ? "godfather" : myRole;
     const card = $("role-card");
-    card.className = `role-card ${ROLE_COLORS[displayRole] || ""}`;
-    $("role-name").textContent = displayRole ? displayRole.toUpperCase() : "";
+    // `dead` is re-applied here because this assignment replaces the whole class
+    // list and setCardBack() may have already set it (rejoin / game-sync order).
+    card.className = `role-card ${ROLE_COLORS[displayRole] || ""}${isDead ? " dead" : ""}`;
+    // Membership Card (specs/components/77-528--membership-card.md): the name is
+    // set in the spec's own casing ("Doctor", not "DOCTOR") — the card face is
+    // Grandstander Black 48px, which no longer needs all-caps to read as display.
+    $("role-name").textContent = displayRole ? ROLE_TITLES[displayRole] || displayRole : "";
     $("role-description").textContent = ROLE_DESCRIPTIONS[displayRole] || "";
-    // Pixel art role image
+    // Chibi raster art region (spec RECTANGLE "image 1" 78x78) — the per-role
+    // PNGs copied out of the Figma fills into /img/roles/.
     const imgEl = $("role-image");
     if (displayRole) {
-      imgEl.innerHTML = getRoleImage(displayRole, myVariant);
+      imgEl.innerHTML = `<img src="/img/roles/${displayRole}.png" alt="" draggable="false">`;
     } else {
       imgEl.innerHTML = "";
     }
@@ -1280,13 +1314,6 @@
       $("lover-badge").classList.remove("hidden");
     } else {
       $("lover-badge").classList.add("hidden");
-    }
-    // Mini role icon in bottom-right of card-front for quick-peek
-    const miniEl = $("role-icon-mini");
-    if (displayRole) {
-      miniEl.innerHTML = getRoleImage(displayRole, myVariant);
-    } else {
-      miniEl.innerHTML = "";
     }
     // Heart balloon for lovers
     if (isLover) {
@@ -1320,12 +1347,12 @@
       if (attempt < 8) requestAnimationFrame(() => fitRoleCardText(attempt + 1));
       return;
     }
-    // Name: keep it on ONE line — shrink until it fits the card width.
-    for (let s = 28; s > 12 && name.scrollWidth > name.clientWidth; s--) {
+    // Name: keep it on ONE line — shrink from the spec's 48px until it fits.
+    for (let s = 48; s > 20 && name.scrollWidth > name.clientWidth; s--) {
       name.style.fontSize = s + "px";
     }
-    // Description: shrink until the whole front content fits the fixed height.
-    for (let s = 14; s > 8 && front.scrollHeight > front.clientHeight + 1; s--) {
+    // Description: shrink from the spec's 12px until the front content fits.
+    for (let s = 12; s > 8 && front.scrollHeight > front.clientHeight + 1; s--) {
       desc.style.fontSize = s + "px";
     }
   }
@@ -2218,19 +2245,30 @@
       grouped[ev.round].push(ev);
     }
 
+    // Game Tabs Events grid (specs/components/287-3437--game-tabs.md): each round
+    // is ONE row — "Round N" in the left column, that round's lines stacked in
+    // the right column — with a divider between rounds. Strings and the privacy
+    // projection above are unchanged; this is layout only.
     for (const round of Object.keys(grouped).sort((a, b) => a - b)) {
+      const row = document.createElement("div");
+      row.className = "eh-round";
+
       const header = document.createElement("div");
       header.className = "event-history-round";
       header.textContent = `Round ${round}`;
-      container.appendChild(header);
+      row.appendChild(header);
 
+      const cell = document.createElement("div");
+      cell.className = "eh-round-events";
       for (const ev of grouped[round]) {
         const item = document.createElement("div");
         const cls = NIGHT_DEATH_CLASS.has(ev.type) ? "death" : ev.type;
         item.className = `event-item ${cls}`;
         item.textContent = `${ev.playerName} — ${EVENT_LABELS[ev.type] || ev.type}`;
-        container.appendChild(item);
+        cell.appendChild(item);
       }
+      row.appendChild(cell);
+      container.appendChild(row);
     }
 
     updatePlayerStatus();
@@ -2265,7 +2303,7 @@
         const isGodfatherMember = godfatherName != null && p.username === godfatherName;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
-        return `<div class="player-status-item">
+        return `<div class="player-status-item ${status}">
           <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
           ${showMafiaTag ? (isGodfatherMember ? '<span class="mafia-tag godfather-tag">&#128081; GODFATHER</span>' : '<span class="mafia-tag">MAFIA</span>') : ''}
@@ -4348,8 +4386,12 @@
   const APP_VERSION_STAGING = "staging.35_202607131225";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
-  $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
-  $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
+  // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at
+  // or above the spec's Medium (32px) band, where the chibi raster stays crisp,
+  // so they take the PNG. The 16px detective tag keeps THUMB_*_ART — see the
+  // crispness note on .detective-tag in app.css.
+  $("btn-vote-yes").innerHTML = '<img class="thumb-art" src="/img/ui/thumb-up.png" alt="Yes" draggable="false">';
+  $("btn-vote-no").innerHTML = '<img class="thumb-art" src="/img/ui/thumb-down.png" alt="No" draggable="false">';
 
   // D3b: Mascot single-sourcing — render MASCOT_ART into both logo containers
   (function() {
