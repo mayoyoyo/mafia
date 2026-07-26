@@ -43,7 +43,7 @@ Notes:
 | `CARD_BACK_DEAD_ART` | `app.js:642`, `1282`, `1914`, `2069`, `4422` |
 | `THUMB_UP_ART` / `THUMB_DOWN_ART` | `app.js:2308` (detective result tag, 16px). **Deliberately kept**: the Figma emoji raster (`225-918--thumbs.md`) loses its finger separations below ~32px and stops reading as up-vs-down — see the note on `.detective-tag` in `app.css`. The ≥32px site (40px vote buttons, `app.js:4390-4391`) took the raster. |
 | `CROSS_ART` | `app.js:2067`, `2068` (dawn save beat) |
-| `MAGNIFIER_ART` | `app.js:2152` (detective result line) |
+| ~~`MAGNIFIER_ART`~~ | **RETIRED in P5** — the detective reveal is now the Figma card (`140:1315` / `143:1463`), whose leading glyph is the 34px detective chibi raster `/img/roles/detective.png` (image fill `469ed27d…`, the same asset the Membership Card uses). The grid stays in `pixel-art.js` (registry test pins its shape) but has no injection site. |
 | `CLOWN_ART` | `app.js:3330`, `4427` (joker win overlay) |
 | `BOW_ART` | `app.js:4436` (hunter revenge-wait panel) |
 | `TROPHY_ART` | `app.js:3640`, `3768`, `3841` (game-over centrepiece, verdict beat, joker joint-win tag) |

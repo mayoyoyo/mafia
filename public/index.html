@@ -290,9 +290,6 @@
         <button id="btn-skip-revenge" class="btn btn-danger btn-small hidden">Skip revenge</button>
       </div>
 
-      <!-- Detective Result (persistent) -->
-      <div id="detective-result" class="detective-result hidden"></div>
-
       <!-- Night idle line (Figma 74:335 / 130:243) — the neutral status every
            role sees at night once no night panel of its own is up. Gated on
            "no panel active", NOT on role, so a doctor whose sub-phase already
@@ -327,32 +324,50 @@
         <div id="action-status" class="action-status"></div>
       </div>
 
-      <!-- Admin Day Controls (nomination, end day) -->
-      <div id="admin-day-controls" class="admin-controls hidden">
-        <h3>Admin Controls <span id="vote-count-label" class="vote-count-label"></span></h3>
-        <div id="admin-status-msg" class="admin-status-msg"></div>
-        <div class="admin-target-section">
-          <p>Nominate a player for execution:</p>
-          <ul id="admin-target-list" class="target-list"></ul>
-        </div>
-        <div class="admin-buttons">
-          <button id="btn-end-day" class="btn btn-primary">End Day</button>
-        </div>
-      </div>
-
-      <!-- Player Accusations (all LIVING players, day phase) -->
+      <!-- Player Accusations (day phase).
+           LIVING players get the full flow (mockup states 1/2/3/5a/6); DEAD
+           players now get the same list READ-ONLY (state 7) — accusations are
+           public by construction (server.ts broadcasts accusations_update to
+           the whole room and narrates every one), so the old client-side
+           suppression hid public information from spectators for no privacy
+           gain. Client-only change, zero wire impact.
+           While a ballot is live the whole block still HIDES (rule 9,
+           handleVoteCalled) — the mockups' dim-in-place variant was not
+           adopted. -->
       <div id="day-accuse-controls" class="day-accuse-controls hidden">
+        <h3 id="accusations-heading" class="accusations-heading hidden">Standing accusations</h3>
         <div id="accusations-panel" class="accusations-panel"></div>
-        <div class="accuse-launch">
-          <button id="btn-accuse" class="btn btn-primary btn-small">Accuse someone</button>
+        <p id="accuse-spectator-note" class="accuse-spectator-note hidden">You&rsquo;re watching the town. You can&rsquo;t accuse or second.</p>
+        <div id="accuse-launch" class="accuse-launch">
+          <button id="btn-accuse" class="btn btn-primary btn-large">Accuse someone</button>
         </div>
         <div id="accuse-picker" class="accuse-picker hidden">
           <p class="accuse-picker-title">Point a finger &mdash; or move that the town sleeps:</p>
           <ul id="accuse-target-list" class="target-list"></ul>
           <div class="accuse-picker-buttons">
-            <button id="btn-accuse-cancel" class="btn btn-secondary btn-small">Cancel</button>
-            <button id="btn-accuse-confirm" class="btn btn-primary btn-small" disabled>Confirm</button>
+            <button id="btn-accuse-cancel" class="btn btn-secondary">Cancel</button>
+            <button id="btn-accuse-confirm" class="btn btn-primary" disabled>Confirm</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Admin Day Controls (nomination, end day) — Figma 270:1471 "Lobby
+           rules": #232729 card, 2px white stroke, radius 16, pad 16; a header
+           row with a 1px bottom rule; player rows as 326x60 BLACK CTAs; and
+           "End day" as the orange 5th row INSIDE the same stack (not a
+           detached button). The two app-only strings Figma has no slot for —
+           "(Vote #N done)" and the failed-vote line — are parked in the header
+           row and directly beneath it (mockup-spec state 6). -->
+      <div id="admin-day-controls" class="admin-controls card-primary hidden">
+        <div class="admin-head">
+          <h3>Admin controls</h3>
+          <span id="vote-count-label" class="vote-count-label"></span>
+        </div>
+        <div id="admin-status-msg" class="admin-status-msg"></div>
+        <div class="admin-target-section">
+          <p class="admin-nominate-label">Nominate a player for execution</p>
+          <ul id="admin-target-list" class="target-list admin-target-list"></ul>
+          <button id="btn-end-day" class="btn btn-primary admin-end-day">End day</button>
         </div>
       </div>
 
@@ -362,15 +377,22 @@
         <div id="mafia-vote-details"></div>
       </div>
 
-      <!-- Day Voting -->
+      <!-- Day Voting — Figma 270:1649: 78x78 target portrait, 24px
+           "Execute X?" headline, the tally, two 173x100 thumb CTAs, then the
+           admin-only "Cancel vote". Post-vote (270:1741 Execute / 270:1801
+           Spare) the target block dims (.voted) and the thumb CTAs come down;
+           the admin's Cancel vote STAYS (Day-8, app wins).
+           A sleep ballot carries no target, so the portrait is dropped and the
+           thumbs take "Sleep" / "Stay up" labels (mockup state 5b). -->
       <div id="voting-panel" class="voting-panel hidden">
-        <h3 id="voting-title">Vote: Execute <span id="vote-target-name"></span>?</h3>
+        <div id="vote-target-art" class="vote-target-art hidden"></div>
+        <h3 id="voting-title">Execute <span id="vote-target-name"></span>?</h3>
+        <div id="vote-progress" class="vote-progress"></div>
         <div id="vote-buttons-wrapper" class="vote-buttons">
           <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes"></button>
           <button id="btn-vote-no" class="btn btn-vote btn-vote-no"></button>
         </div>
-        <div id="vote-progress" class="vote-progress"></div>
-        <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel Vote</button>
+        <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel vote</button>
       </div>
 
       <!-- Narrator Messages — N-D1a/R7: no Figma night frame draws a narrator
@@ -386,6 +408,11 @@
         </div>
         <div id="narrator-messages" class="narrator-messages"></div>
       </div>
+
+      <!-- Detective Result (persistent through the day, cleared at night).
+           140:1315 / 143:1463 seat the reveal card BETWEEN the narrator line
+           and Game Tabs, so it moved down here from the top of the screen. -->
+      <div id="detective-result" class="detective-result hidden"></div>
 
       <!-- Event History (always visible during game) -->
       <!-- Game Tabs (specs/components/287-3437--game-tabs.md) — a hero card, so

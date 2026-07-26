@@ -376,14 +376,11 @@
    [data-theme="light"] body[data-phase="day"] block only re-set --primary to the
    same value the base light theme already has, so it was a no-op and is dropped. */
 
-/* VOTING — bg stays phase-neutral dark; blood tint is SCOPED to the voting
-   panel only (verdict beats own red later — don't flood the screen). */
-body[data-phase="voting"] .voting-panel {
-  --pxb-color: var(--danger-bright);
-}
-body[data-phase="voting"] .voting-panel h3 {
-  color: var(--danger-bright);
-}
+/* VOTING — P5/R4: the Figma ballot (270:1649) is a bare vertical stack on the
+   black frame with a WHITE 24px headline; the only surfaces are the two thumb
+   CTAs and the Cancel-vote row. The Pixel-Noir blood tint on the panel border
+   and headline retires with the rest of that language — data-phase="voting" is
+   still set (handleVoteCalled) and still drives the ambience elsewhere. */
 
 /* GAME_OVER — neutral: no remap (handled by clearing data-phase off the game
    screen; the gameover screen never carries a phase). */
@@ -624,12 +621,16 @@ html, body {
 
 /* VOTE BUTTONS — the Thumbs component (specs/components/225-918--thumbs.md)
    at its Medium (32px) band and above, so the chibi raster is used here. */
+/* 270:1649: two 173x100 CTAs holding a 32x32 Thumbs instance. On a sleep
+   ballot each also carries a 14px label ("Sleep" / "Stay up"). */
 .btn-vote {
-  width: 80px; height: 80px;
+  flex: 1 1 0; min-width: 0; height: 100px;
   border-radius: var(--radius-card);
-  font-size: 40px; display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-card);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
 }
-.btn-vote img.thumb-art { width: 40px; height: 40px; display: block; }
+.btn-vote img.thumb-art { width: 32px; height: 32px; display: block; }
+.btn-vote .vote-cta-label { font-size: var(--fs-sm); line-height: 1; color: #FFFFFF; }
 .btn-vote-yes { background: var(--success); }
 .btn-vote-no { background: var(--danger); }
 .btn-vote.selected { outline: 4px solid #fff; outline-offset: 2px; }
@@ -1358,7 +1359,9 @@ input::placeholder { color: var(--text-secondary); }
 /* D3b: transcript button now hosts pixel scroll SVG */
 .btn-transcript { padding: 2px 6px; }
 .btn-transcript svg { width: 20px; height: 20px; image-rendering: pixelated; }
-.narrator-messages { font-size: 15px; line-height: 1.6; }
+/* Narrator prompt type (270:1067 / 270:1294): Grandstander-Italic 18px, white,
+   lh 19.8px. The card + label around it are the R7 keeps. */
+.narrator-messages { font-size: var(--fs-lg); line-height: 1.1; font-style: italic; }
 .narrator-messages .narrator-line {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
@@ -1414,28 +1417,24 @@ input::placeholder { color: var(--text-secondary); }
   margin-bottom: 10px;
 }
 
-/* DETECTIVE RESULT */
+/* DETECTIVE RESULT — 140:1315 / 143:1463: a 326x70 #232729 CTA card holding
+   the 34x34 detective art beside the 14px reveal sentence (lh 15.4px). No
+   colour differentiation between MAFIA and CLEAR — Figma draws one card for
+   both, and the app never differentiated either. */
 .detective-result {
-  --pxb-color: var(--role-detective);
+  --pxb-color: transparent;
   border-radius: var(--radius-card);
-  padding: 14px 16px;
-  font-size: 15px;
-  line-height: 1.5;
+  min-height: 70px;
+  padding: 16px;
+  font-size: var(--fs-sm);
+  line-height: 1.1;
   animation: fadeIn 0.5s ease;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-/* D3b: pixel magnifier icon in detective result */
-.detective-result svg {
-  width: 18px; height: 18px; image-rendering: pixelated; flex-shrink: 0;
-  /* 1px ink outline so the glassy magnifier's silver rim reads on light paper too. */
-  filter:
-    drop-shadow(1px 0 0 rgba(0,0,0,0.55))
-    drop-shadow(-1px 0 0 rgba(0,0,0,0.55))
-    drop-shadow(0 1px 0 rgba(0,0,0,0.55))
-    drop-shadow(0 -1px 0 rgba(0,0,0,0.55));
-}
+.detective-result-art { width: 34px; height: 34px; display: block; flex-shrink: 0; }
+.detective-result-text { line-height: 1.25; }
 
 /* ACTION PANEL */
 .action-panel {
@@ -1748,26 +1747,85 @@ input::placeholder { color: var(--text-secondary); }
   font-style: italic;
 }
 
-/* ── Player accusations (day phase) ─────────────────────────────────────── */
-.day-accuse-controls { margin-top: 14px; }
-.accuse-launch { margin: 8px 0; }
-.accuse-picker { margin-top: 10px; }
-.accuse-picker-title { margin: 0 0 8px; opacity: 0.85; font-size: 0.95em; }
-.accuse-picker-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
-.accuse-sleep-row { font-style: italic; --pxb-surface: var(--bg-elevated); opacity: 0.9; }
-.accusations-panel { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+/* ════════════════════════════════════════════════════════════════════════
+   P5 — PLAYER ACCUSATIONS (day phase)
+   ------------------------------------------------------------------------
+   No Figma frame exists for this flow (the file predates it), so every
+   primitive here is lifted from a drawn frame, per
+   docs/figma-raw/analysis/day-accusation-mockups.html:
+     row        = Mafia/Nominate player row, 326x70 #232729 radius-16 (130:323)
+     dot        = 14x14 Players-tab ellipse (261:2092)
+     pill       = Tabs pill geometry, radius 8 / pad 8 (185:1612)
+     thumb      = Thumbs small 14px (225:918)
+     launcher   = the 358x60 #FF6C02 "End day" CTA row (270:1471)
+     picker CTAs= the End Day drawer's two 173x60 buttons (271:1932)
+   ════════════════════════════════════════════════════════════════════════ */
+.day-accuse-controls { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+/* 24px section headline — the "Choose a victim" pattern (130:323). */
+.accusations-heading {
+  font-size: var(--fs-xl);
+  line-height: 1.1;
+  font-weight: var(--fw-body);
+  color: var(--text);
+  margin: 0;
+}
+.accuse-launch { margin: 0; }
+.accuse-launch .btn { width: 100%; }
+.accuse-picker { margin-top: 0; display: flex; flex-direction: column; gap: 10px; }
+.accuse-picker-title { margin: 0; font-size: var(--fs-xl); line-height: 1.1; color: var(--text); }
+/* Two equal CTAs side by side: Cancel #000000, Confirm #FF6C02 (271:1932). */
+.accuse-picker-buttons { display: flex; gap: 12px; margin-top: 0; }
+.accuse-picker-buttons .btn { flex: 1 1 0; min-width: 0; min-height: 60px; }
+/* The drawer's Cancel is BLACK on 271:1932, not the #232729 secondary. */
+.accuse-picker-buttons .btn-secondary { background: #000000; box-shadow: var(--shadow-card); }
+.accuse-sleep-row { --pxb-surface: var(--bg-card); }
+/* 14x14 colour dot; the sleep row swaps it for the moon glyph. */
+.accuse-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  flex: 0 0 14px; background: var(--text-secondary);
+}
+.accuse-dot-moon { background: none; font-size: 13px; line-height: 14px; text-align: center; }
+
+.accusations-panel { display: flex; flex-direction: column; gap: 10px; margin-bottom: 0; }
 .accusation-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  background: var(--bg-elevated);
-  border-left: 3px solid var(--danger);
+  min-height: 70px;
+  padding: 16px;
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
-.accusation-text { flex: 1; font-size: 0.95em; }
-.accusation-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.acc-second { --pxb-surface: var(--danger); }
+.accusation-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.accusation-text { font-size: var(--fs-sm); line-height: 1.25; }
+.acc-moon { margin-right: 8px; }
+.accusation-status { font-size: var(--fs-xs); line-height: 1.35; opacity: 0.5; }
+/* You are the accused: no action, whole row at 60% (mockup state 3, row 2). */
+.accusation-row-accused { opacity: 0.6; }
+/* Spectator (dead) rows: read-only at 30% — the Players-tab dead treatment. */
+.accusation-row-readonly { opacity: 0.3; }
+.accuse-spectator-note { font-size: var(--fs-xs); line-height: 1.35; opacity: 0.5; margin: 0; }
+
+.accusation-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.acc-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; cursor: pointer;
+  border-radius: var(--radius-pill);
+  padding: 8px 12px;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  background: var(--primary);
+  color: var(--cta-ink);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.acc-pill:active { transform: scale(0.97); opacity: 0.85; }
+/* Withdraw = the black-on-card CTA pattern (270:1471 admin rows). */
+.acc-pill-alt { background: #000000; color: var(--text); }
+.acc-pill-thumb { width: 14px; height: 14px; display: block; }
 /* ACTION CONFIRM — two-button Confirm/Cancel group (replaced the slide-to-
    confirm). The Confirm button is tinted by the active role via --slide-tint
    (derived from the --role-* token palette so a token change can't leave it
@@ -1817,27 +1875,79 @@ input::placeholder { color: var(--text-secondary); }
 }
 .vote-status h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
 
-/* VOTING PANEL */
+/* ════════════════════════════════════════════════════════════════════════
+   P5 — VOTING PANEL (270:1649 Voting / 270:1741 Execute / 270:1801 Spare)
+   Vertical stack, gap 16: 78x78 target art → 24px "Execute X?" → 14px tally
+   → two 173x100 thumb CTAs → the 358x60 #232729 "Cancel vote".
+   Post-vote the target block dims (art 30%, headline + tally 60%) and the
+   thumbs come down; the admin's Cancel vote stays up (Day-8).
+   ════════════════════════════════════════════════════════════════════════ */
 .voting-panel {
-  --pxb-color: var(--primary);
+  /* Not a card in Figma — a bare stack on the frame; the CTAs carry the surfaces. */
+  --pxb-surface: transparent;
+  --pxb-color: transparent;
+  box-shadow: none;
   border-radius: var(--radius-card);
-  padding: 24px;
-  text-align: center;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
 }
-.voting-panel h3 { font-size: 18px; margin-bottom: 20px; }
-.vote-buttons { display: flex; justify-content: center; gap: 40px; margin-bottom: 16px; }
-.vote-progress { font-size: 14px; color: var(--text-secondary); }
+.vote-target-art { display: flex; }
+.vote-target-art img { width: 78px; height: 78px; display: block; image-rendering: auto; }
+.voting-panel h3 {
+  font-size: var(--fs-xl);
+  line-height: 1.1;
+  font-weight: var(--fw-body);
+  margin: 0;
+}
+.vote-progress { font-size: var(--fs-sm); color: var(--text); }
+.vote-buttons { display: flex; justify-content: stretch; gap: 12px; margin-bottom: 0; }
+.voting-panel .btn-cancel-vote, .voting-panel #btn-cancel-vote {
+  width: 100%; min-height: 60px;
+  background: var(--bg-card); color: var(--text);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-size: var(--fs-sm);
+}
+.voting-panel.voted .vote-target-art { opacity: 0.3; }
+.voting-panel.voted h3,
+.voting-panel.voted .vote-progress { opacity: 0.6; }
 
-/* ADMIN CONTROLS */
+/* ════════════════════════════════════════════════════════════════════════
+   P5 — ADMIN DAY CONTROLS (270:1471 "Lobby rules" frame)
+   #232729 card + 2px white stroke (.card-primary) + radius 16 + pad 16;
+   header row with a 1px bottom rule; 326x60 BLACK player rows; "End day"
+   as the orange 5th row inside the same stack.
+   ════════════════════════════════════════════════════════════════════════ */
 .admin-controls {
-  --pxb-color: var(--primary);
   border-radius: var(--radius-card);
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.admin-controls h3 { font-size: 16px; margin-bottom: 12px; color: var(--primary); }
-.admin-target-section p { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
-.admin-buttons { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.admin-buttons .btn { flex: 1; min-width: 0; }
+.admin-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.admin-controls h3 {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  color: var(--text);
+  margin: 0;
+}
+.vote-count-label { font-size: var(--fs-sm); opacity: 0.5; }
+.admin-status-msg:empty { display: none; }
+.admin-status-msg { font-size: var(--fs-sm); opacity: 0.5; padding: 8px 0; }
+.admin-target-section { display: flex; flex-direction: column; gap: 10px; }
+.admin-nominate-label { font-size: var(--fs-sm); color: var(--text); margin: 0; padding: 8px 0; }
+/* Admin rows are BLACK CTAs (the player-picker rows elsewhere are #232729). */
+.admin-target-list li { --pxb-surface: #000000; min-height: 60px; }
+.admin-target-list li.selected { --pxb-surface: var(--primary); }
+.admin-end-day { width: 100%; min-height: 60px; }
 
 /* DEAD OVERLAY */
 /* ============================================================
@@ -2166,24 +2276,31 @@ input::placeholder { color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) {
   .confirm-sheet .modal-content { animation: none; }
 }
+/* 271:1932 "Drawer": #232729 radius-16, pad 16, gap 24 — title 24px white
+   (sentence case, no tracking), body 14px white, then two 173x60 CTAs
+   (confirm #FF6C02 / cancel #000000). The uppercase orange Pixel-Noir title
+   retires with the rest of that language (R4). */
 .confirm-sheet-title {
   font-family: var(--font-display);
-  font-size: 17px;
-  letter-spacing: 1px;
-  color: var(--primary);
-  text-transform: uppercase;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  color: var(--text);
+  text-transform: none;
   margin-bottom: 10px;
 }
 .confirm-sheet-body {
-  font-size: 15px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text);
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 .confirm-sheet-actions {
   display: flex;
-  gap: 10px;
+  gap: 12px;
 }
+.confirm-sheet-actions .btn { min-height: 60px; }
+.confirm-sheet-actions .btn-secondary { background: #000000; box-shadow: var(--shadow-card); }
 /* Both halves flex evenly; min-width:0 lets the bare .btn (white-space:nowrap)
    shrink below its content width so the wider labels ("FORCE DAWN") don't
    overflow at 320px. Tighter horizontal padding + a hair smaller label keep the
@@ -2325,8 +2442,11 @@ input::placeholder { color: var(--text-secondary); }
 .player-status-list { font-size: var(--fs-sm); line-height: 1.4; display: flex; flex-direction: column; gap: 10px; }
 .player-status-item { display: flex; align-items: center; gap: 10px; }
 .player-status-item.dead { opacity: 0.3; }   /* spec: dead rows at 30% */
+/* 261:2092: the ellipse is the row's RIGHT-hand element (name + optional
+   detective thumb sit on the left). */
 .player-status-dot {
   width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  margin-left: auto;
 }
 .player-status-dot.alive { background: var(--success); }
 .player-status-dot.dead { background: var(--danger); }

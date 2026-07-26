@@ -689,6 +689,10 @@
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
+        // Dying mid-day (e.g. a Hunter's revenge shot) must drop the accuse
+        // affordances immediately — the read-only spectator view takes over
+        // without waiting for the next accusations_update.
+        renderAccusePanel();
         break;
 
       case "game_over":
@@ -1970,22 +1974,26 @@
 
     overlay.classList.remove("hidden", "fade-out");
 
-    const msg = voteResult.executed
-      ? `${voteResult.targetName} was executed.`
-      : "The vote was abstained.";
-    const color = voteResult.executed ? "var(--danger)" : "var(--text-secondary)";
-
-    // D5: staged composition — execution beat = skull + blood tint when a player
-    // hangs; abstain is a neutral verdict (no skull). Composition only; the text
-    // node and its timing are untouched.
-    if (voteResult.executed) {
-      setSuspenseStage(CARD_BACK_DEAD_ART, "THE VERDICT", "beat-execution");
-    } else {
-      setSuspenseStage("", "THE VERDICT", "");
+    // Day-9 (ONE SPARE STRING): a non-executed ballot has exactly one voice —
+    // the engine narrator's EXECUTION_SPARED_MESSAGES line, delivered on the
+    // spared phase_change. The old client-side "The vote was abstained." beat
+    // contradicted it (and the old "{name} has been spared." narrator line),
+    // so the verdict overlay now plays for EXECUTIONS ONLY and a spare goes
+    // straight through to the caller.
+    if (!voteResult.executed) {
+      overlay.classList.add("hidden");
+      executionTransitionActive = false;
+      callback();
+      return;
     }
 
+    const msg = `${voteResult.targetName} was executed.`;
+
+    // D5: staged composition — execution beat = skull + blood tint.
+    setSuspenseStage(CARD_BACK_DEAD_ART, "THE VERDICT", "beat-execution");
+
     text.textContent = msg;
-    text.style.color = color;
+    text.style.color = "var(--danger)";
     text.style.animation = "none";
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -2216,8 +2224,11 @@
 
   function showDetectiveResult(msg) {
     const el = $("detective-result");
-    // D3b: pixel magnifier icon instead of emoji
-    const magSvg = pixelArtToSvg(MAGNIFIER_ART);
+    // 140:1315 / 143:1463 — the reveal is a 326x70 #232729 card carrying the
+    // 34x34 DETECTIVE art (the same asset as the Membership Card) beside the
+    // sentence, shipped as designed. The COPY stays the app's: Figma's
+    // "…reveals jenny NOT a member of the mafia" is ungrammatical.
+    const magSvg = '<img class="detective-result-art" src="/img/roles/detective.png" alt="" draggable="false">';
     const plainText = msg.isMafia
       ? `Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
       : `Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
@@ -2227,7 +2238,7 @@
     const htmlText = msg.isMafia
       ? `Your investigation reveals: ${safeName} IS a member of the Mafia!`
       : `Your investigation reveals: ${safeName} is NOT a member of the Mafia.`;
-    el.innerHTML = magSvg + " " + htmlText;
+    el.innerHTML = magSvg + '<span class="detective-result-text">' + htmlText + '</span>';
     el.classList.remove("hidden");
     narratorTranscript.push(plainText);
     detectiveHistory.push({
@@ -2369,11 +2380,13 @@
         const isGodfatherMember = godfatherName != null && p.username === godfatherName;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
+        // 261:2092 row order: name (+ the detective's 14px thumb) on the LEFT,
+        // the 14x14 colour ellipse on the RIGHT.
         return `<div class="player-status-item ${status}">
-          <span class="player-status-dot ${status}" ${dotStyle}></span>
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
           ${showMafiaTag ? (isGodfatherMember ? '<span class="mafia-tag godfather-tag">&#128081; GODFATHER</span>' : '<span class="mafia-tag">MAFIA</span>') : ''}
           ${investigated ? (isMafia ? '<span class="detective-tag mafia">' + pixelArtToSvg(THUMB_DOWN_ART) + '</span>' : '<span class="detective-tag clear">' + pixelArtToSvg(THUMB_UP_ART) + '</span>') : ''}
+          <span class="player-status-dot ${status}" ${dotStyle}></span>
         </div>`;
       })
       .join("");
@@ -3230,40 +3243,70 @@
   function iAccusedToday() { return accusationsMade.indexOf(userId) !== -1; }
   function iSecondedToday() { return secondsMade.indexOf(userId) !== -1; }
 
-  // The accuse UI shows only for LIVING players during the day. Voting, night
-  // and game_over hide it (their phase handlers hide day-accuse-controls).
+  // The accuse UI shows during the day only (voting, night and game_over hide
+  // day-accuse-controls in their phase handlers).
+  // LIVING players get the launcher + picker + per-row actions; DEAD players
+  // get the same standing-accusations list READ-ONLY (mockup state 7): the
+  // launcher and every row action come down and a spectator note takes their
+  // place. Accusations are public by construction — accuser/target/seconder
+  // names are broadcast room-wide and narrated to everyone — so nothing
+  // role-derived reaches this surface.
   function renderAccusePanel() {
     const wrap = $("day-accuse-controls");
-    if (currentPhase !== "day" || isDead) {
+    if (currentPhase !== "day") {
       wrap.classList.add("hidden");
       $("accuse-picker").classList.add("hidden");
       return;
     }
     wrap.classList.remove("hidden");
 
-    const btn = $("btn-accuse");
-    if (iAccusedToday()) {
-      btn.disabled = true;
-      btn.textContent = "You've made your accusation";
-    } else {
-      btn.disabled = false;
-      btn.textContent = "Accuse someone";
+    // Spectator: no launcher, no picker, one status line instead.
+    $("accuse-launch").classList.toggle("hidden", isDead);
+    $("accuse-spectator-note").classList.toggle("hidden", !isDead);
+    if (isDead) $("accuse-picker").classList.add("hidden");
+
+    if (!isDead) {
+      const btn = $("btn-accuse");
+      if (iAccusedToday()) {
+        btn.disabled = true;
+        btn.textContent = "You've made your accusation";
+      } else {
+        btn.disabled = false;
+        btn.textContent = "Accuse someone";
+      }
     }
 
     renderAccusationsList();
   }
 
   function accusationLabel(a) {
+    // A sleep proposal is the SAME object as an accusation (targetId === null);
+    // the moon glyph is the mockup's visual marker for it, decoration only.
     return a.targetId === null
-      ? escapeHtml(a.accuserName) + " moves that the town sleeps"
+      ? '<span class="acc-moon">\u{1F319}</span>' + escapeHtml(a.accuserName) + " moves that the town sleeps"
       : escapeHtml(a.accuserName) + " accuses " + escapeHtml(a.targetName);
   }
 
+  // Standing accusations — mockup states 3 / 5a / 6 / 7. Rows are the Figma
+  // 326x70 card with the label + a 12px status line on the left and exactly the
+  // ONE action this viewer may take on the right. The engine drops invalid
+  // messages silently, so eligibility is enforced here, locally:
+  //   accuser  → Withdraw only   (own_accusation / withdraw is accuser-only)
+  //   accused  → nothing, row dimmed  (accused_cannot_second)
+  //   second already spent → nothing  (already_seconded)
+  //   dead     → nothing at all, read-only spectator view
   function renderAccusationsList() {
     const panel = $("accusations-panel");
-    if (!pendingAccusations.length) { panel.innerHTML = ""; return; }
+    const heading = $("accusations-heading");
+    if (!pendingAccusations.length) {
+      panel.innerHTML = "";
+      heading.classList.add("hidden");
+      return;
+    }
+    heading.classList.remove("hidden");
     panel.innerHTML = pendingAccusations.map((a) => {
       const mine = a.accuserId === userId;
+      const accused = a.targetId === userId;
       // Eligible to second: living, not the accuser, not the accused, and
       // haven't already spent this day's second.
       const canSecond = !isDead
@@ -3271,13 +3314,28 @@
         && a.targetId !== userId
         && !iSecondedToday();
       const secondBtn = canSecond
-        ? '<button class="btn btn-small acc-second" data-id="' + a.id + '">Second</button>'
+        ? '<button class="acc-pill acc-second" data-id="' + a.id + '">'
+          + '<img class="acc-pill-thumb" src="/img/ui/thumb-up.png" alt="" draggable="false">Second</button>'
         : "";
-      const withdrawBtn = mine
-        ? '<button class="btn btn-small btn-secondary acc-withdraw" data-id="' + a.id + '">Withdraw</button>'
+      const withdrawBtn = (mine && !isDead)
+        ? '<button class="acc-pill acc-pill-alt acc-withdraw" data-id="' + a.id + '">Withdraw</button>'
         : "";
-      return '<div class="accusation-row" data-id="' + a.id + '">'
+      // Spectators get the label alone (mockup 7); the living get the status line.
+      let status = "";
+      if (!isDead) {
+        if (mine) status = "Yours — waiting for a second";
+        else if (accused) status = "You're accused — you can't second this";
+        else if (canSecond) status = "Needs a second";
+        else status = "Second spent for today";
+      }
+      const rowCls = "accusation-row"
+        + (accused && !isDead ? " accusation-row-accused" : "")
+        + (isDead ? " accusation-row-readonly" : "");
+      return '<div class="' + rowCls + '" data-id="' + a.id + '">'
+        + '<span class="accusation-main">'
         + '<span class="accusation-text">' + accusationLabel(a) + '</span>'
+        + (status ? '<span class="accusation-status">' + status + '</span>' : "")
+        + '</span>'
         + '<span class="accusation-actions">' + secondBtn + withdrawBtn + '</span>'
         + '</div>';
     }).join("");
@@ -3291,11 +3349,21 @@
 
   function populateAccuseTargets() {
     const list = $("accuse-target-list");
+    // Picker rows = the Figma player row (326x70 #232729 card) + the 14x14
+    // colour dot from the Players tab. Self is excluded (the engine rejects a
+    // self-accusation), and the sleep motion is the final row.
     const rows = knownPlayers
       .filter((p) => p.isAlive && p.id !== userId)
-      .map((p) => '<li data-id="' + p.id + '">' + escapeHtml(p.username) + '</li>')
+      .map((p) => {
+        const dot = p.color
+          ? '<span class="accuse-dot" style="background:' + nearestPlayerColor(p.color) + '"></span>'
+          : '<span class="accuse-dot"></span>';
+        return '<li data-id="' + p.id + '">' + dot + escapeHtml(p.username) + '</li>';
+      })
       .join("");
-    list.innerHTML = rows + '<li data-id="sleep" class="accuse-sleep-row">Propose the town sleeps on it</li>';
+    list.innerHTML = rows
+      + '<li data-id="sleep" class="accuse-sleep-row">'
+      + '<span class="accuse-dot accuse-dot-moon">\u{1F319}</span>Propose the town sleeps on it</li>';
     accuseSelectedTarget = null;
     $("btn-accuse-confirm").disabled = true;
     list.querySelectorAll("li").forEach((li) => {
@@ -3334,9 +3402,9 @@
 
   $("btn-end-day").addEventListener("click", () => {
     showConfirmSheet(
-      "End Day",
+      "End day",
       "End the day and transition to night?",
-      "End Day",
+      "End day",
       () => {
         // AUDIO GESTURE CHAIN (spec §10): ensureAudioReady() runs FIRST, here,
         // synchronously inside the Confirm-button click handler's call stack —
@@ -3362,15 +3430,29 @@
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
+    // .voted dims the target block (270:1741 Execute / 270:1801 Spare); a fresh
+    // ballot starts undimmed.
+    panel.classList.toggle("voted", !!(isDead || hasVoted));
     $("admin-day-controls").classList.add("hidden");
     // Accusations hide while the ballot is live (rule 9).
     $("day-accuse-controls").classList.add("hidden");
     // Sleep ("town considers sleeping") ballot vs an ordinary execution vote.
+    // 270:1649 copy: "Execute X?" (Figma drops the app's old "Vote:" prefix).
+    // A sleep ballot carries targetName:"" on the wire, so it gets no portrait
+    // and its thumbs take labels — a bare thumb is ambiguous with no target.
     if (msg.sleep) {
       $("voting-title").textContent = "The town considers sleeping. Turn in for the night?";
+      $("vote-target-art").classList.add("hidden");
+      $("vote-target-art").innerHTML = "";
+      setVoteButtonFaces(true);
     } else {
-      $("voting-title").innerHTML = 'Vote: Execute <span id="vote-target-name"></span>?';
+      $("voting-title").innerHTML = 'Execute <span id="vote-target-name"></span>?';
       $("vote-target-name").textContent = msg.targetName;
+      // 270:1649 "image 1" (78x78) — the generic verdict art, not a per-player
+      // portrait (the app has none and the wire carries no image).
+      $("vote-target-art").innerHTML = '<img src="/img/roles/dead.png" alt="" draggable="false">';
+      $("vote-target-art").classList.remove("hidden");
+      setVoteButtonFaces(false);
     }
 
     // Hide vote buttons if dead or already voted (rejoin), show otherwise
@@ -3392,6 +3474,16 @@
     }
   }
 
+  // 270:1649 thumb CTAs. A target-less (sleep) ballot adds the invented
+  // "Sleep" / "Stay up" labels — Figma's Voting frame has no label slot
+  // because it never modelled a no-target ballot.
+  function setVoteButtonFaces(sleep) {
+    const up = '<img class="thumb-art" src="/img/ui/thumb-up.png" alt="Yes" draggable="false">';
+    const down = '<img class="thumb-art" src="/img/ui/thumb-down.png" alt="No" draggable="false">';
+    $("btn-vote-yes").innerHTML = up + (sleep ? '<span class="vote-cta-label">Sleep</span>' : "");
+    $("btn-vote-no").innerHTML = down + (sleep ? '<span class="vote-cta-label">Stay up</span>' : "");
+  }
+
   $("btn-vote-yes").addEventListener("click", () => {
     if (hasVoted || isDead) return;
     ensureAudioReady();
@@ -3399,6 +3491,8 @@
     $("btn-vote-yes").classList.add("selected");
     $("btn-vote-yes").disabled = true;
     $("btn-vote-no").disabled = true;
+    // 270:1741 Execute: the target block dims once your ballot is in.
+    $("voting-panel").classList.add("voted");
     wsSend({ type: "cast_vote", approve: true });
   });
 
@@ -3409,6 +3503,8 @@
     $("btn-vote-no").classList.add("selected");
     $("btn-vote-yes").disabled = true;
     $("btn-vote-no").disabled = true;
+    // 270:1801 Spare: same dimmed treatment.
+    $("voting-panel").classList.add("voted");
     wsSend({ type: "cast_vote", approve: false });
   });
 
@@ -3417,7 +3513,8 @@
   });
 
   function updateVoteProgress(msg) {
-    $("vote-progress").textContent = `${msg.totalVotes} / ${msg.total} votes cast`;
+    // 270:1649 tally copy: "2/4 votes cast" (no spaces around the slash).
+    $("vote-progress").textContent = `${msg.totalVotes}/${msg.total} votes cast`;
   }
 
   function handleVoteResult(msg) {
@@ -3440,10 +3537,11 @@
 
     lastVoteResult = msg;
 
-    const resultText = msg.executed
-      ? `${msg.targetName} has been executed.`
-      : `${msg.targetName} has been spared.`;
-    showNarratorMessage(resultText);
+    // Day-9: only the EXECUTED outcome gets a client-side line. A spare is
+    // narrated once, by the engine (EXECUTION_SPARED_MESSAGES on the spared
+    // phase_change) — the old "{name} has been spared." here was a second,
+    // contradicting string for the same event.
+    if (msg.executed) showNarratorMessage(`${msg.targetName} has been executed.`);
   }
 
   // ============================================================
@@ -4578,15 +4676,14 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.39_202607251908";
+  const APP_VERSION_STAGING = "staging.40_202607251919";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at
   // or above the spec's Medium (32px) band, where the chibi raster stays crisp,
   // so they take the PNG. The 16px detective tag keeps THUMB_*_ART — see the
   // crispness note on .detective-tag in app.css.
-  $("btn-vote-yes").innerHTML = '<img class="thumb-art" src="/img/ui/thumb-up.png" alt="Yes" draggable="false">';
-  $("btn-vote-no").innerHTML = '<img class="thumb-art" src="/img/ui/thumb-down.png" alt="No" draggable="false">';
+  setVoteButtonFaces(false);
 
   // P3: the auth/menu hero is now the Figma chibi raster
   // (specs/game-menu/42-678--auth.md:48-51, image fill

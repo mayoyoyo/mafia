@@ -1780,9 +1780,16 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
             startNightSequence(game);
           } else {
-            // Spared — stay in day
+            // Spared — stay in day.
+            // Day-9 (ONE SPARE STRING): the engine's EXECUTION_SPARED_MESSAGES
+            // line was recorded to narrator history above but never put on the
+            // wire, so the live client had to invent its own "spared" copy —
+            // which contradicted both the engine line and the overlay's "The
+            // vote was abstained.". Broadcasting voteResult.messages here makes
+            // the engine narration the single source; the client's competing
+            // strings are gone.
             game.dayStartedAt = Date.now();
-            broadcastPhaseChange(game, { from, messages: [], events: true });
+            broadcastPhaseChange(game, { from, messages: voteResult.messages, events: true });
           }
         }
       }
