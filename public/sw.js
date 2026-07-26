@@ -1,4 +1,4 @@
-const CACHE_NAME = "mafia-v4";
+const CACHE_NAME = "mafia-v5";
 const ASSETS = [
   "/",
   "/index.html",
@@ -8,10 +8,10 @@ const ASSETS = [
   "/manifest.json",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg",
-  "/fonts/silkscreen-400.woff2",
-  "/fonts/silkscreen-700.woff2",
-  "/fonts/libre-franklin-var.woff2",
-  "/fonts/libre-franklin-var-italic.woff2",
+  "/fonts/grandstander.css",
+  "/fonts/grandstander/grandstander-latin-400.woff2",
+  "/fonts/grandstander/grandstander-latin-700.woff2",
+  "/fonts/grandstander/grandstander-latin-900.woff2",
   "/fonts/ibm-plex-mono-400.woff2",
   "/fonts/ibm-plex-mono-500.woff2",
 ];

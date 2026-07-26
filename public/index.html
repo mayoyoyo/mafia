@@ -6,12 +6,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Mafia">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#000000">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.svg">
   <link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg">
-  <link rel="preload" href="/fonts/silkscreen-700.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/libre-franklin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/grandstander/grandstander-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/grandstander/grandstander-latin-900.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/grandstander.css">
   <link rel="stylesheet" href="/app.css">
   <title>Mafia</title>
 </head>
@@ -257,7 +258,7 @@
 
       <!-- Hunter Revenge Wait (C5b: room-wide while the revenge gate is open;
            the skip button shows for the admin only). D5 noir restyle: BOW
-           centerpiece + Silkscreen headline; show/hide logic is untouched
+           centerpiece + Grandstander headline; show/hide logic is untouched
            plumbing — only the painted chrome changed. -->
       <div id="revenge-wait" class="awaiting-ready revenge-wait hidden">
         <div id="revenge-wait-art" class="revenge-wait-art"></div>
@@ -412,7 +413,7 @@
 
     <!-- SUSPENSE OVERLAY -->
     <!-- z-index 300, topmost; death overlays reveal BENEATH it. Staged
-         composition (D5): pre-line (amber Silkscreen) + pixel art centerpiece
+         composition (D5): pre-line (amber Grandstander) + pixel art centerpiece
          + display text. #suspense-text KEEPS its id — the five beat writers
          target it. -->
     <div id="suspense-overlay" class="suspense-overlay hidden">

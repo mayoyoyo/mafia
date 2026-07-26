@@ -5,8 +5,7 @@
  * included as a standard bold weight), 900 (black, used for headings).
  * No italic styles are used in the Figma spec.
  *
- * NOTE: This stylesheet is not linked anywhere yet. It is prepared ahead of
- * a later CSS migration phase that will wire it into index.html/app.css.
+ * Linked from public/index.html ahead of app.css.
  *
  * Source: https://fonts.google.com/specimen/Grandstander
  * License: SIL Open Font License 1.1 — see ./grandstander/OFL.txt

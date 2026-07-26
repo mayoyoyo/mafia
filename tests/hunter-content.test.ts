@@ -99,7 +99,9 @@ describe("C7: app.css per-role classes", () => {
   });
 
   test("game-over role reveal badge class exists", () => {
-    expect(css).toContain(".role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }");
+    // P1: the label ink is now the role's paired --role-*-ink token (the Figma
+    // reveal chip is pastel fill + dark role ink), not a flat white.
+    expect(css).toContain(".role-reveal-role.hunter { background: var(--role-hunter); color: var(--role-hunter-ink); }");
   });
 
   test("game-history hunter_revenge events get the hunter color (DeathEventType renders as game-history-item class)", () => {

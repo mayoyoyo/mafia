@@ -1,26 +1,8 @@
 /* ============================================================
-   PIXEL NOIR — D1: @font-face declarations
+   @font-face declarations
+   Grandstander (the whole type system) is declared in /fonts/grandstander.css,
+   linked from index.html before this file.
    ============================================================ */
-@font-face {
-  font-family: 'Silkscreen';
-  src: url('/fonts/silkscreen-400.woff2') format('woff2');
-  font-weight: 400; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'Silkscreen';
-  src: url('/fonts/silkscreen-700.woff2') format('woff2');
-  font-weight: 700; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'Libre Franklin';
-  src: url('/fonts/libre-franklin-var.woff2') format('woff2');
-  font-weight: 100 900; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'Libre Franklin';
-  src: url('/fonts/libre-franklin-var-italic.woff2') format('woff2');
-  font-weight: 100 900; font-style: italic; font-display: swap;
-}
 @font-face {
   font-family: 'IBM Plex Mono';
   src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
@@ -38,38 +20,82 @@
   padding: 0;
 }
 
+/* ============================================================
+   P1 — FIGMA DESIGN TOKENS (dark base)
+   Values marked "spec" come from docs/figma-raw/specs/palette.md and the
+   component specs; values marked "derived" have no Figma ground truth (the
+   Figma system only draws one surface level) and are computed from a spec
+   colour. Token NAMES are unchanged so every downstream rule keeps working.
+   ============================================================ */
 :root {
-  /* Pixel Noir palette — D1 token swap (names unchanged, values updated) */
-  --bg: #0b0b10;
-  --bg-card: #1a1a2e;
-  --bg-elevated: #15152a;
-  --bg-input: #15152a;
-  --text: #ece5d8;
-  --text-secondary: #8a8a96;
-  --border: #34345c;
-  --primary: #e8a33d;
-  --primary-dark: #b87d24;
-  --danger: #b3202a;
-  --danger-bright: #d4313c;
-  --success: #388e3c;
-  /* --warning: gold, clearly separated from hunter orange (#ef6c00) and amber primary (#e8a33d) */
-  --warning: #ffc107;
-  --role-mafia: #d32f2f;
-  --role-citizen: #388e3c;
-  --role-doctor: #2196f3;
-  --role-detective: #9c27b0;
-  --role-joker: #26c6da;
-  --role-hunter: #ef6c00;
-  --role-vigilante: #7f8c8d;
-  --role-lover: #e91e63;
-  --role-godfather: #c9a227;
+  --bg: #000000;                 /* spec: palette.md, frame fill */
+  --bg-card: #232729;            /* spec: palette.md, every card/CTA surface */
+  --bg-elevated: #2E3335;        /* derived: +6% lightness on #232729 (no 3rd Figma surface level) */
+  --bg-input: #2E3335;           /* derived: same step as --bg-elevated */
+  --text: #FFFFFF;               /* spec */
+  --text-secondary: #A0A0A0;     /* spec */
+  --border: #3A4042;             /* derived: +10% lightness on #232729 */
+  --primary: #FF6C02;            /* spec */
+  --primary-dark: #CC5602;       /* derived: -20% lightness on #FF6C02 */
+  --danger: #E53935;             /* spec */
+  --danger-bright: #FF5C58;      /* derived: +12% lightness on #E53935 */
+  --success: #34C759;            /* spec */
+  --warning: #FFB300;            /* spec */
+  /* CTA label ink on the orange primary. #FFFFFF on #FF6C02 measures 2.84:1, so
+     this is defined but NOT yet applied — per-button ink is decided in P2. */
+  --cta-ink: #FFFFFF;
+
+  /* ---- Type (specs/typography.md) ------------------------------------
+     Grandstander is the whole system: w400 dominant (704+149+89 uses at
+     14/16/24), w900 reserved for the 36/48 display headlines. Helvetica Neue
+     is the spec's own secondary family, so it heads the fallback stack. */
+  --font-display: 'Grandstander', 'Helvetica Neue', system-ui, sans-serif;
+  --font-body: 'Grandstander', 'Helvetica Neue', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --fs-xs: 12px;
+  --fs-sm: 14px;
+  --fs-md: 16px;
+  --fs-lg: 18px;
+  --fs-xl: 24px;
+  --fs-2xl: 36px;
+  --fs-3xl: 48px;
+  --fw-body: 400;
+  --fw-heading: 900;
+
+  /* ---- Card chrome (defined in P1, applied to components in P2) ---- */
+  --radius-card: 16px;                            /* spec: radius=16 on every card/CTA */
+  --shadow-card: 0 4px 23.8px rgba(0, 0, 0, 0.2); /* spec: DROP_SHADOW r23.8 offset 0,4 #000000 @ 20% */
+
+  /* ---- Role palette (specs/components/77-528--membership-card.md) -----
+     Each role is a PAIR: --role-X is the card's gradient-end swatch (the
+     accent/fill) and --role-X-ink is the text colour drawn on it. The
+     game-over reveal chips (specs/game-over/278-2810) use exactly this pair
+     as fill + label. Citizen deliberately uses the CARD swatch
+     #D1CFC7/#5C4B0D, not the reveal-frame chip, which mistakenly repeats the
+     Vigilante palette (analysis/matrix-game-over.md §A.3, D4). */
+  --role-citizen: #D1CFC7;      --role-citizen-ink: #5C4B0D;
+  --role-mafia: #DC998F;        --role-mafia-ink: #67281E;
+  --role-doctor: #B3D1D6;       --role-doctor-ink: #1E5C67;
+  --role-detective: #F9F9B4;    --role-detective-ink: #93791D;
+  --role-joker: #C9B9D0;        --role-joker-ink: #511E67;
+  --role-hunter: #A9B8A4;       --role-hunter-ink: #204B12;
+  --role-vigilante: #CDB198;    --role-vigilante-ink: #67401E;
+  /* Godfather: Figma collapses it onto the Mafia swatch, erasing a distinction
+     the app draws deliberately (R4 / matrix-game-over.md §B.5, D8). Kept
+     distinct as gold — echoes the app's existing godfather signal and stays
+     clear of Mafia's dusty rose. Ink derived for AA on the gold. */
+  --role-godfather: #FFC24B;    --role-godfather-ink: #5C3D00;
+  /* Lovers chip (specs/components/257-686--lovers.md) is the one inverted
+     pair: dark fill, light label. */
+  --role-lover: #AD1F1C;        --role-lover-ink: #F5F5F5;
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Font utilities — D1 */
-.disp { font-family: 'Silkscreen', monospace; }
-.mono { font-family: 'IBM Plex Mono', monospace; }
+/* Font utilities */
+.disp { font-family: var(--font-display); }
+.mono { font-family: var(--font-mono); }
 
 /* ============================================================
    PIXEL NOIR — D1b: Stepped-corner chrome + texture utilities
@@ -237,23 +263,53 @@
 }
 
 /* Light theme — warm-paper neutrals kept; sync amber primary + role fixes */
+/* ============================================================
+   LIGHT THEME — DERIVED (R7: the Figma file has no light frames)
+
+   Derivation rules, applied uniformly:
+   1. Surfaces INVERT, hues do NOT. Dark's black page / #232729 card becomes a
+      white page / warm-neutral card, so the layering direction (page darker
+      than card in dark; page lighter than card in light) is preserved.
+   2. The dark palette's text colour becomes the light palette's background
+      family and vice versa: text #232729 on bg #FFFFFF is the exact inverse of
+      #FFFFFF on #232729, so every body pairing keeps its dark-mode contrast
+      ratio (15.1:1).
+   3. Brand hue is invariant: --primary stays the spec orange #FF6C02 in both
+      themes, so the CTA reads identically. Only colours that FAIL on paper are
+      darkened: --danger #E53935 (4.2:1 on white) -> #C62828 (5.6:1), --warning
+      #FFB300 (1.8:1) -> #9A5C00 (5.4:1), and --success #34C759 (2.2:1, under
+      the 3:1 non-text threshold it needs as a status dot) -> #2E9E48 (3.4:1).
+   4. Role tokens SWAP with their inks. On black the pastel swatch is the legible
+      member of each pair; on paper the dark ink is. Swapping both keeps every
+      consumer correct with no per-site rules: a chip is still
+      background:--role-X / color:--role-X-ink, just inverted.
+   Per-component light polish is P6.5; this block is the palette only.
+   ============================================================ */
 [data-theme="light"] {
-  --bg: #f0ebe1;
-  --bg-card: #faf7f2;
-  --bg-elevated: #e8e3d9;
-  --bg-input: #faf7f2;
-  --text: #1a1a1a;
-  --text-secondary: #6b6b6b;
-  --border: #d1cbc0;
-  /* Amber primary (no pink remnants) */
-  --primary: #b87d24;
-  --primary-dark: #8a5c18;
-  /* Contrast-correct warning on paper bg (darkened for AA) */
-  --warning: #c47d00;
-  /* Fixed role-joker (no doctor collision) */
-  --role-joker: #0097a7;
-  /* Gunmetal vigilante, darkened for AA contrast on the paper background */
-  --role-vigilante: #5f6b6c;
+  --bg: #FFFFFF;
+  --bg-card: #F4F2EE;
+  --bg-elevated: #EAE7E1;   /* derived: one step below the card, mirrors the dark elevated step */
+  --bg-input: #FFFFFF;
+  --text: #232729;
+  --text-secondary: #5F6669; /* derived: 5.2:1 on #F4F2EE */
+  --border: #D8D4CC;         /* derived: warm-neutral hairline on the card */
+  --primary: #FF6C02;
+  --primary-dark: #CC5602;
+  --danger: #C62828;
+  --danger-bright: #E53935;
+  --success: #2E9E48;        /* derived: #34C759 darkened past 3:1 on paper */
+  --warning: #9A5C00;
+
+  /* Role pair swap (rule 4) */
+  --role-citizen: #5C4B0D;      --role-citizen-ink: #D1CFC7;
+  --role-mafia: #67281E;        --role-mafia-ink: #DC998F;
+  --role-doctor: #1E5C67;       --role-doctor-ink: #B3D1D6;
+  --role-detective: #93791D;    --role-detective-ink: #F9F9B4;
+  --role-joker: #511E67;        --role-joker-ink: #C9B9D0;
+  --role-hunter: #204B12;       --role-hunter-ink: #A9B8A4;
+  --role-vigilante: #67401E;    --role-vigilante-ink: #CDB198;
+  --role-godfather: #5C3D00;    --role-godfather-ink: #FFC24B;
+  /* Lovers is already dark-fill/light-label, so it does NOT swap. */
 }
 [data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
 /* Light theme: suppress the radial vignette on auth/game/gameover screens.
@@ -270,12 +326,24 @@
   opacity: 0;
 }
 
-/* Keep membership card dark regardless of theme */
+/* Keep membership card dark regardless of theme. Because the surface stays
+   dark, the DARK-theme role pair must be re-declared here too — otherwise the
+   light theme's swapped (dark-ink) role colours would paint dark text on this
+   dark card. P2 replaces this card with the Figma light-gradient card, at which
+   point this override retires. */
 .role-card {
   --bg-card: #151515;
   --border: #2c2c2e;
   --text: #f5f5f5;
   --text-secondary: #8e8e93;
+  --role-citizen: #D1CFC7;      --role-citizen-ink: #5C4B0D;
+  --role-mafia: #DC998F;        --role-mafia-ink: #67281E;
+  --role-doctor: #B3D1D6;       --role-doctor-ink: #1E5C67;
+  --role-detective: #F9F9B4;    --role-detective-ink: #93791D;
+  --role-joker: #C9B9D0;        --role-joker-ink: #511E67;
+  --role-hunter: #A9B8A4;       --role-hunter-ink: #204B12;
+  --role-vigilante: #CDB198;    --role-vigilante-ink: #67401E;
+  --role-godfather: #FFC24B;    --role-godfather-ink: #5C3D00;
 }
 
 /* ============================================================
@@ -293,20 +361,22 @@
 
 /* NIGHT — deep navy, the whole room goes midnight together (mockup screen 02).
    Gated to the DARK base. */
+/* P1: retuned onto the Figma system — the page stays spec black and the card
+   stays the spec surface; night is now a cool SHIFT of those two values only
+   (no navy takeover, no --primary override: the orange is invariant). */
 [data-theme="dark"] body[data-phase="night"],
 :root:not([data-theme]) body[data-phase="night"] {
-  --bg: #0d1126;
-  --bg-card: #161d3d;
-  --bg-elevated: #121736;
-  --bg-input: #121736;
-  --border: #2b3568;
+  --bg: #000000;
+  --bg-card: #1C2226;
+  --bg-elevated: #262D31;
+  --bg-input: #262D31;
+  --border: #33403F;
 }
 /* Forced-Light at night: NO navy takeover — paper holds. A subtle dusk accent
    only (cooler border, dimmed primary) so night still reads without flipping
    the base. The aggressive navy override is intentionally NOT applied here. */
 [data-theme="light"] body[data-phase="night"] {
-  --border: #b9b4c4;
-  --primary: #a06d1f;
+  --border: #C6C2BA;
 }
 /* D0 iter: moonlight radial wash removed — header floats on flat night-navy,
    no bright top panel fusing it to the role card. */
@@ -317,14 +387,15 @@
 
 /* DAY (dark base): ink warmed slightly + amber accent emphasis. Light base
    already IS day (warm paper) — lean in with no bg remap, just amber emphasis. */
+/* P1: warm SHIFT of the same two surfaces (mirror of the night block); the
+   orange primary is invariant so the amber override is gone. */
 [data-theme="dark"] body[data-phase="day"],
 :root:not([data-theme]) body[data-phase="day"] {
-  --bg: #14110d;
-  --bg-card: #20191f;
-  --bg-elevated: #1b1620;
-  --bg-input: #1b1620;
-  --border: #3a3550;
-  --primary: #f0ab43;
+  --bg: #000000;
+  --bg-card: #2A2725;
+  --bg-elevated: #35312E;
+  --bg-input: #35312E;
+  --border: #433D38;
 }
 /* Light base is already "day" (warm paper) — no day remap needed; the former
    [data-theme="light"] body[data-phase="day"] block only re-set --primary to the
@@ -346,8 +417,9 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Libre Franklin', 'Helvetica Neue', sans-serif;
-  font-size: 16px;
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
@@ -457,13 +529,13 @@ html, body {
   transition: opacity 0.15s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   letter-spacing: 1px;
   white-space: nowrap;
 }
 .btn:active { transform: scale(0.97); opacity: 0.8; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
-/* Primary: amber fill, ink Silkscreen label, pressed-edge shadow */
+/* Primary: amber fill, ink Grandstander label, pressed-edge shadow */
 .btn-primary {
   background: var(--primary);
   color: #141008;
@@ -498,7 +570,7 @@ html, body {
   );
 }
 /* D2.5: settings-modal close X reverted to STOCK pre-D1 plain dismiss affordance
-   (user amendment). Neutralize the inherited .btn chrome (Silkscreen, padding,
+   (user amendment). Neutralize the inherited .btn chrome (Grandstander, padding,
    letter-spacing, pressed-edge) so it reads as a bare glyph button. Do NOT re-step.
    D3.5: settings gear buttons (#btn-settings-lobby-admin, #btn-settings-lobby-player,
    #btn-settings) also reverted to stock &#9881; per §3.3 extension 2026-06-12. */
@@ -598,21 +670,21 @@ input::placeholder { color: var(--text-secondary); }
   display: flex; align-items: center; justify-content: center;
 }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
-.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 700; font-family: 'Silkscreen', monospace; }
+.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: var(--fw-heading); font-family: var(--font-display); }
 /* Wordmark blood period (mockup .wordmark .dot) — subtle blood-red accent after
-   MAFIA, inherits the Silkscreen size; just recolored. */
+   MAFIA, inherits the Grandstander size; just recolored. */
 .wordmark-dot { color: var(--danger-bright); }
 .logo-small { padding: 24px 0 8px; }
 .logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
 .logo-small .logo-icon svg { width: 48px; height: 48px; }
-.logo-small h1 { font-size: 22px; letter-spacing: 6px; font-family: 'Silkscreen', monospace; }
+.logo-small h1 { font-size: 22px; letter-spacing: 6px; font-weight: var(--fw-heading); font-family: var(--font-display); }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
-.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: 'IBM Plex Mono', monospace; }
+.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: var(--font-mono); }
 /* Keep the entered 4-digit value tracked at 8px, but the placeholder text is normal — at 8px tracking '4-digit PIN' overflows the 320px column and clips */
 .passcode-row input::placeholder { letter-spacing: normal; font-size: 16px; }
 .error-msg { color: var(--danger); font-size: 14px; text-align: center; min-height: 20px; }
-.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; font-family: 'IBM Plex Mono', monospace; }
+.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; font-family: var(--font-mono); }
 
 /* HEADER */
 .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -626,7 +698,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ROOM CODE */
 .room-code { font-size: 14px; color: var(--text-secondary); }
-.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; font-family: 'IBM Plex Mono', monospace; }
+.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; font-family: var(--font-mono); }
 
 /* SETTINGS */
 .settings-panel {
@@ -719,7 +791,7 @@ input::placeholder { color: var(--text-secondary); }
   color: var(--primary);
   border-radius: 0;
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 14px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -737,11 +809,11 @@ input::placeholder { color: var(--text-secondary); }
 .accent-picker-label {
   flex: 1;
   text-align: center;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 15px;
   color: var(--text);
   min-width: 0;
-  /* break-word (not anywhere) so a long Silkscreen accent label like
+  /* break-word (not anywhere) so a long Grandstander accent label like
      "TRANSYLVANIAN" wraps as a whole word instead of fracturing mid-word
      at 320px. */
   overflow-wrap: break-word;
@@ -756,7 +828,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 /* At very narrow widths the ~153px gap between the two 44px arrows is just shy
    of the longest label's intrinsic width ("TRANSYLVANIAN" ≈ 137px @15px), so it
-   wraps and break-word is forced to split the word. Shrink the Silkscreen label
+   wraps and break-word is forced to split the word. Shrink the Grandstander label
    a step so the whole word fits on one line and stays intact. */
 @media (max-width: 360px) {
   .accent-picker-label { font-size: 13px; }
@@ -772,7 +844,7 @@ input::placeholder { color: var(--text-secondary); }
   margin-top: 10px;
 }
 .narrator-gender-title {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 10px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -792,7 +864,7 @@ input::placeholder { color: var(--text-secondary); }
   border-right: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 9px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -840,7 +912,7 @@ input::placeholder { color: var(--text-secondary); }
 .rule-tab.active {
   background: var(--primary);
   color: #141008;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 .rule-tab:not(.active):active {
   background: var(--bg-card);
@@ -878,7 +950,7 @@ input::placeholder { color: var(--text-secondary); }
 .toggle input:checked + .slider::before { transform: translateX(20px); }
 
 /* Two-way theme preference — a noir segmented control (Dark/Light). The active
-   option is amber-filled with ink Silkscreen so it reads unambiguously as the
+   option is amber-filled with ink Grandstander so it reads unambiguously as the
    selection. Display-only pref — switching never touches game state. */
 .theme-mode-control {
   display: inline-flex;
@@ -895,7 +967,7 @@ input::placeholder { color: var(--text-secondary); }
   border-right: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 9px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -932,7 +1004,7 @@ input::placeholder { color: var(--text-secondary); }
   border-radius: 0;
   clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
   font-weight: 600;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 .players-list li .dead-badge { color: var(--text-secondary); text-decoration: line-through; }
 .waiting-text { text-align: center; color: var(--text-secondary); padding: 20px 0; }
@@ -969,7 +1041,7 @@ input::placeholder { color: var(--text-secondary); }
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   text-transform: uppercase;
   letter-spacing: 2px;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 /* D0 iter: night pill is now a SOLID amber fill (matches the "BEGIN NIGHT"
    primary button) — opaque amber background, ink/dark text + icon for legibility.
@@ -990,7 +1062,7 @@ input::placeholder { color: var(--text-secondary); }
 .phase-indicator { display: inline-flex; align-items: center; gap: 6px; }
 .phase-indicator svg { width: 16px; height: 16px; image-rendering: pixelated; flex-shrink: 0; }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
-.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
+.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: var(--font-mono); }
 
 /* ROLE CARD */
 .role-card {
@@ -1091,7 +1163,7 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 3px;
   text-transform: uppercase;
   color: #5a5a8a;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 .peel-flap {
   position: absolute;
@@ -1142,7 +1214,7 @@ input::placeholder { color: var(--text-secondary); }
 .role-card.godfather .card-front { border-color: var(--role-godfather); }
 .role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
 .role-image svg { width: 64px; height: 64px; display: block; }
-.role-name { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; font-family: 'Silkscreen', monospace; white-space: nowrap; width: 100%; box-sizing: border-box; }
+.role-name { font-size: 28px; font-weight: var(--fw-heading); text-transform: uppercase; letter-spacing: 3px; font-family: var(--font-display); white-space: nowrap; width: 100%; box-sizing: border-box; }
 .role-card.mafia .role-name { color: var(--role-mafia); }
 .role-card.citizen .role-name { color: var(--role-citizen); }
 .role-card.doctor .role-name { color: var(--role-doctor); }
@@ -1157,13 +1229,13 @@ input::placeholder { color: var(--text-secondary); }
   display: inline-block;
   margin-top: 12px;
   background: var(--role-vigilante);
-  color: #fff;
+  color: var(--role-vigilante-ink);
   padding: 4px 16px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
 }
 .bullet-indicator.spent {
@@ -1176,13 +1248,13 @@ input::placeholder { color: var(--text-secondary); }
   display: inline-block;
   margin-top: 12px;
   background: var(--role-lover);
-  color: #fff;
+  color: var(--role-lover-ink);
   padding: 4px 16px;
   border-radius: 0;
   clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
   font-size: 14px;
   font-weight: 600;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 /* D3b: pixel heart icon in lover-badge */
 .lover-badge-icon { display: inline-flex; vertical-align: middle; margin-right: 2px; }
@@ -1253,7 +1325,7 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.narrator-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px; font-family: 'Silkscreen', monospace; }
+.narrator-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px; font-family: var(--font-display); }
 /* D3b: transcript button now hosts pixel scroll SVG */
 .btn-transcript { padding: 2px 6px; }
 .btn-transcript svg { width: 20px; height: 20px; image-rendering: pixelated; }
@@ -1286,7 +1358,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 
 /* D5: hunter revenge-wait panel — noir restyle sweep. BOW centerpiece +
-   Silkscreen headline; the reveal/wait copy stays in the readable body face.
+   Grandstander headline; the reveal/wait copy stays in the readable body face.
    The hunter accent (--role-hunter) frames the panel. Restyle only — the
    show/hide logic and the reveal name are untouchable C5b plumbing. */
 .revenge-wait {
@@ -1306,7 +1378,7 @@ input::placeholder { color: var(--text-secondary); }
   filter: drop-shadow(0 0 10px rgba(239,108,0,.35));
 }
 .revenge-wait-headline {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 12px;
   letter-spacing: 4px;
   color: var(--role-hunter);
@@ -1400,7 +1472,7 @@ input::placeholder { color: var(--text-secondary); }
   padding: 2px 8px;
   border-radius: 0;
   clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
 }
 .mtc-blocked-label {
   font-size: 11px;
@@ -1463,10 +1535,10 @@ input::placeholder { color: var(--text-secondary); }
   gap: 4px;
   flex: 1;
 }
-/* D3b: pixel icon + Silkscreen label inside mtc buttons */
+/* D3b: pixel icon + Grandstander label inside mtc buttons */
 .mtc-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .mtc-icon svg { width: 16px; height: 16px; image-rendering: pixelated; }
-.mtc-label { font-family: 'Silkscreen', monospace; font-size: 11px; font-weight: 400; letter-spacing: 0.5px; }
+.mtc-label { font-family: var(--font-display); font-size: 11px; font-weight: 400; letter-spacing: 0.5px; }
 .mtc-btn:active { transform: scale(0.97); opacity: 0.8; }
 .mtc-btn-suggest { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 .mtc-btn-lock { background: var(--primary); color: #fff; }
@@ -1596,7 +1668,7 @@ input::placeholder { color: var(--text-secondary); }
   padding: 16px 12px;
   border: none;
   cursor: pointer;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 15px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -1615,16 +1687,16 @@ input::placeholder { color: var(--text-secondary); }
 /* Confirm — solid role-tinted fill, ink label, pressed bottom edge */
 .action-confirm .ac-confirm {
   background: var(--slide-tint, var(--primary));
-  color: #fff;
+  color: var(--slide-ink, var(--cta-ink));
   text-shadow: 0 2px 0 rgba(0,0,0,0.45);
   box-shadow: inset 0 -5px 0 rgba(0,0,0,0.28);
 }
-.action-confirm.role-mafia .ac-confirm { --slide-tint: var(--role-mafia); }
-.action-confirm.role-doctor .ac-confirm { --slide-tint: var(--role-doctor); }
-.action-confirm.role-detective .ac-confirm { --slide-tint: var(--role-detective); }
-.action-confirm.role-vigilante .ac-confirm { --slide-tint: var(--role-vigilante); }
-.action-confirm.role-joker_haunt .ac-confirm { --slide-tint: var(--role-joker); }
-.action-confirm.role-hunter_revenge .ac-confirm { --slide-tint: var(--role-hunter); }
+.action-confirm.role-mafia .ac-confirm { --slide-tint: var(--role-mafia); --slide-ink: var(--role-mafia-ink); }
+.action-confirm.role-doctor .ac-confirm { --slide-tint: var(--role-doctor); --slide-ink: var(--role-doctor-ink); }
+.action-confirm.role-detective .ac-confirm { --slide-tint: var(--role-detective); --slide-ink: var(--role-detective-ink); }
+.action-confirm.role-vigilante .ac-confirm { --slide-tint: var(--role-vigilante); --slide-ink: var(--role-vigilante-ink); }
+.action-confirm.role-joker_haunt .ac-confirm { --slide-tint: var(--role-joker); --slide-ink: var(--role-joker-ink); }
+.action-confirm.role-hunter_revenge .ac-confirm { --slide-tint: var(--role-hunter); --slide-ink: var(--role-hunter-ink); }
 .action-status { font-size: 14px; color: var(--text-secondary); margin-top: 8px; text-align: center; }
 
 /* VOTE STATUS */
@@ -1721,7 +1793,7 @@ input::placeholder { color: var(--text-secondary); }
 .dead-skull-art svg { width: 132px; height: 132px; image-rendering: pixelated; filter: drop-shadow(0 0 28px rgba(179,32,42,0.45)); }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 .dead-pre {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 13px;
   letter-spacing: 9px;
   color: var(--primary);
@@ -1729,7 +1801,7 @@ input::placeholder { color: var(--text-secondary); }
   padding-left: 9px;
   margin-bottom: 12px;
 }
-.dead-text { font-size: 48px; font-weight: 700; color: var(--danger-bright); text-transform: uppercase; letter-spacing: 9px; padding-left: 9px; font-family: 'Silkscreen', monospace; }
+.dead-text { font-size: var(--fs-3xl); font-weight: var(--fw-heading); color: var(--danger-bright); text-transform: uppercase; letter-spacing: 9px; padding-left: 9px; font-family: var(--font-display); }
 .death-message { color: var(--text-secondary); font-size: 14.5px; font-style: italic; margin-top: 20px; padding: 0 16px; text-align: center; max-width: 350px; }
 .dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
 .dead-note { color: #62626e; font-size: 13px; font-style: italic; margin-bottom: 26px; }
@@ -1737,7 +1809,7 @@ input::placeholder { color: var(--text-secondary); }
   background: #0c0c12;
   border: 2px solid var(--border);
   color: var(--text);
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 11px;
   letter-spacing: 3px;
   padding: 15px 30px;
@@ -1796,7 +1868,7 @@ input::placeholder { color: var(--text-secondary); }
 .joker-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 28px; }
 .joker-trophy svg { width: 120px; height: 120px; image-rendering: pixelated; filter: drop-shadow(0 0 26px rgba(232,163,61,0.45)); }
 .joker-win-pre {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 12px;
   letter-spacing: 7px;
   color: var(--primary);
@@ -1805,9 +1877,9 @@ input::placeholder { color: var(--text-secondary); }
   margin-bottom: 12px;
 }
 .joker-win-title {
-  font-family: 'Silkscreen', monospace;
-  font-size: 38px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-heading);
   color: var(--role-joker);
   text-transform: uppercase;
   letter-spacing: 6px;
@@ -1847,7 +1919,7 @@ input::placeholder { color: var(--text-secondary); }
   background: color-mix(in srgb, var(--rc, transparent) 9%, var(--bg-elevated));
 }
 .roster-name {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 13px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -1855,7 +1927,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 .roster-count {
   margin-left: auto;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 15px;
   color: var(--text);
   background: var(--bg);
@@ -1866,7 +1938,7 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center;
 }
 .roster-mode-badge {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 1px;
   color: var(--text-secondary);
@@ -1878,7 +1950,7 @@ input::placeholder { color: var(--text-secondary); }
 .roster-mods {
   margin-top: 4px;
   text-align: center;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 1px;
   color: var(--text-secondary);
@@ -1886,7 +1958,7 @@ input::placeholder { color: var(--text-secondary); }
 .roster-hint {
   margin: 12px 0 0;
   text-align: center;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
 }
@@ -1913,7 +1985,7 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center;
   gap: 20px;
 }
-.gameover-content h1 { font-size: 36px; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; font-family: 'Silkscreen', monospace; }
+.gameover-content h1 { font-size: var(--fs-2xl); font-weight: var(--fw-heading); text-transform: uppercase; letter-spacing: 4px; font-family: var(--font-display); }
 .gameover-content p { color: var(--text-secondary); font-size: 16px; padding: 0 16px; }
 
 /* D6: TROPHY_ART centerpiece, faction-tinted (same filter language as the D5
@@ -1977,7 +2049,7 @@ input::placeholder { color: var(--text-secondary); }
   .confirm-sheet .modal-content { animation: none; }
 }
 .confirm-sheet-title {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 17px;
   letter-spacing: 1px;
   color: var(--primary);
@@ -1997,11 +2069,11 @@ input::placeholder { color: var(--text-secondary); }
 /* Both halves flex evenly; min-width:0 lets the bare .btn (white-space:nowrap)
    shrink below its content width so the wider labels ("FORCE DAWN") don't
    overflow at 320px. Tighter horizontal padding + a hair smaller label keep the
-   widest Silkscreen label inside the 280px inner column at 320px. */
+   widest Grandstander label inside the 280px inner column at 320px. */
 .confirm-sheet-actions .btn-pxb,
 .confirm-sheet-actions > .btn { flex: 1 1 0; min-width: 0; }
 .confirm-sheet-actions .btn { width: 100%; padding-left: 12px; padding-right: 12px; font-size: 15px; }
-/* At very narrow widths the widest Silkscreen labels ("FORCE DAWN",
+/* At very narrow widths the widest Grandstander labels ("FORCE DAWN",
    "LEAVE GAME", "CLOSE ROOM") still clip inside the button content box;
    shrink the label + horizontal padding + letter-spacing so the worst case
    fits inside the ~133px half-column at 320px. */
@@ -2062,16 +2134,16 @@ input::placeholder { color: var(--text-secondary); }
   padding: 2px 10px;
   border-radius: 0;
   clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
-.role-reveal-role.mafia { background: var(--role-mafia); color: #fff; }
-.role-reveal-role.citizen { background: var(--role-citizen); color: #fff; }
-.role-reveal-role.doctor { background: var(--role-doctor); color: #fff; }
-.role-reveal-role.detective { background: var(--role-detective); color: #fff; }
-.role-reveal-role.joker { background: var(--role-joker); color: #fff; }
-.role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }
-.role-reveal-role.vigilante { background: var(--role-vigilante); color: #fff; }
-.role-reveal-role.godfather { background: var(--role-godfather); color: #fff; }
+.role-reveal-role.mafia { background: var(--role-mafia); color: var(--role-mafia-ink); }
+.role-reveal-role.citizen { background: var(--role-citizen); color: var(--role-citizen-ink); }
+.role-reveal-role.doctor { background: var(--role-doctor); color: var(--role-doctor-ink); }
+.role-reveal-role.detective { background: var(--role-detective); color: var(--role-detective-ink); }
+.role-reveal-role.joker { background: var(--role-joker); color: var(--role-joker-ink); }
+.role-reveal-role.hunter { background: var(--role-hunter); color: var(--role-hunter-ink); }
+.role-reveal-role.vigilante { background: var(--role-vigilante); color: var(--role-vigilante-ink); }
+.role-reveal-role.godfather { background: var(--role-godfather); color: var(--role-godfather-ink); }
 /* D3b: role-reveal-lover now has pixel heart art */
 .role-reveal-lover { display: inline-flex; align-items: center; gap: 3px; color: var(--role-lover); margin-left: 8px; font-size: 12px; }
 .role-reveal-lover svg { width: 12px; height: 12px; image-rendering: pixelated; }
@@ -2097,7 +2169,7 @@ input::placeholder { color: var(--text-secondary); }
   letter-spacing: 1px;
   cursor: pointer;
   transition: all 0.15s;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 .eh-tab.active {
   background: var(--bg-elevated);
@@ -2178,7 +2250,7 @@ input::placeholder { color: var(--text-secondary); }
   background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.65) 100%);
   z-index: 2;
 }
-/* D5: staged composition — pre-line (amber Silkscreen) + pixel art centerpiece
+/* D5: staged composition — pre-line (amber Grandstander) + pixel art centerpiece
    + display text, all stacked above the scanline/vignette pseudo-elements
    (z-index 3). Per-beat background washes ride the beat-* classes below. */
 .suspense-stage {
@@ -2192,10 +2264,10 @@ input::placeholder { color: var(--text-secondary); }
   padding: 0 32px;
   max-width: 430px;
 }
-/* Amber Silkscreen pre-line — the "verdict label" voice. Empty by default so it
+/* Amber Grandstander pre-line — the "verdict label" voice. Empty by default so it
    reserves no space until a beat sets it. */
 .suspense-pre {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 12px;
   letter-spacing: 6px;
   color: var(--primary);

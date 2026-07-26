@@ -82,12 +82,40 @@
   let spectatorNightLog = [];
   let hideMafiaTag = false;
   let myPlayerColor = null;
+  // The Figma "Choose your color" grid: 3 rows x 6, read in draw order from
+  // docs/figma-raw/specs/game-menu/42-782--lobby-player.md.
   const PLAYER_COLORS = [
-    "#E53935", "#EC407A", "#AB47BC", "#7E57C2", "#5C6BC0",
-    "#42A5F5", "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A",
-    "#9CCC65", "#C0CA33", "#FFEE58", "#FFA726", "#FF7043",
-    "#D84315", "#8D6E63", "#78909C", "#546E7A", "#F06292",
+    "#E53935", "#E876A0", "#8E24AA", "#5E35B1", "#3949AB", "#1E88E5",
+    "#039BE5", "#00ACC1", "#00897B", "#43A047", "#7CB342", "#C0CA33",
+    "#FDD835", "#FFB300", "#FB8C00", "#F4511E", "#6D4C41", "#757575",
   ];
+
+  // Stored player_color values predate this palette (only 2 of the old 20
+  // survive), and the picker matches by exact hex — a stale colour would render
+  // as "nothing selected". Map any off-palette hex to its nearest swatch by
+  // squared RGB distance so returning players keep a sensible selection.
+  const colorRemapCache = new Map();
+  function nearestPlayerColor(hex) {
+    if (!hex) return hex;
+    const h = String(hex).trim().toUpperCase();
+    if (PLAYER_COLORS.includes(h)) return h;
+    if (colorRemapCache.has(h)) return colorRemapCache.get(h);
+    // Anything that is not a plain 6-digit hex is not a colour we stored;
+    // fall back to a palette entry rather than echoing it into a style string.
+    const m = /^#([0-9A-F]{6})$/.exec(h);
+    if (!m) return PLAYER_COLORS[0];
+    const v = parseInt(m[1], 16);
+    const r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
+    let best = PLAYER_COLORS[0], bestD = Infinity;
+    for (const c of PLAYER_COLORS) {
+      const cv = parseInt(c.slice(1), 16);
+      const dr = r - ((cv >> 16) & 255), dg = g - ((cv >> 8) & 255), db = b - (cv & 255);
+      const d = dr * dr + dg * dg + db * db;
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    colorRemapCache.set(h, best);
+    return best;
+  }
   let jokerJointWinner = false;
 
   // ============================================================
@@ -328,7 +356,7 @@
         userId = msg.userId;
         username = msg.username;
         hideMafiaTag = !!msg.hide_mafia_tag;
-        myPlayerColor = msg.player_color || null;
+        myPlayerColor = nearestPlayerColor(msg.player_color) || null;
         if (msg.type === "registered") {
           const passcode = $("auth-passcode").value;
           localStorage.setItem("mafia_user", JSON.stringify({ username: msg.username, passcode }));
@@ -638,7 +666,7 @@
 
       case "player_prefs":
         hideMafiaTag = !!msg.hide_mafia_tag;
-        myPlayerColor = msg.player_color;
+        myPlayerColor = nearestPlayerColor(msg.player_color);
         $("toggle-hide-mafia-tag").checked = hideMafiaTag;
         updatePlayerStatus();
         break;
@@ -1079,7 +1107,7 @@
     const { players, settings, adminName } = msg;
 
     const renderPlayerItem = (p) => {
-      const colorDot = p.color ? `<span class="player-color-dot" style="background:${p.color}"></span>` : '';
+      const colorDot = p.color ? `<span class="player-color-dot" style="background:${nearestPlayerColor(p.color)}"></span>` : '';
       return `<li>${colorDot}${escapeHtml(p.username)}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`;
     };
 
@@ -1155,8 +1183,9 @@
     const colorOwners = {};
     for (const p of players) {
       if (p.color && p.id !== userId) {
-        if (!colorOwners[p.color]) colorOwners[p.color] = [];
-        colorOwners[p.color].push(p.username);
+        const c = nearestPlayerColor(p.color);
+        if (!colorOwners[c]) colorOwners[c] = [];
+        colorOwners[c].push(p.username);
       }
     }
 
@@ -1267,7 +1296,7 @@
     }
     updateBulletIndicator();
     fitRoleCardText();
-    // Re-fit once the pixel font (Silkscreen) is loaded — measuring the
+    // Re-fit once the display font (Grandstander) is loaded — measuring the
     // single-line name against a fallback font under-reports its width and
     // leaves long names (GODFATHER/VIGILANTE/DETECTIVE) overflowing.
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitRoleCardText());
@@ -1816,7 +1845,7 @@
   // (pre-line + pixel art + text) WITHOUT touching the timing/queue plumbing.
   // setSuspenseStage only changes WHAT is painted; the writers own WHEN.
   // art:  a 10x10 pixel grid (rendered via the existing pipeline) or null/"" to
-  //       clear the centerpiece. preText: amber Silkscreen pre-line, or "" to
+  //       clear the centerpiece. preText: amber Grandstander pre-line, or "" to
   //       clear it. beatClass: a single beat-tint class on the overlay (e.g.
   //       "beat-death") or "" for none. All beat classes are reset first so no
   //       beat inherits the previous beat's tint.
@@ -1851,7 +1880,7 @@
     const msg = voteResult.executed
       ? `${voteResult.targetName} was executed.`
       : "The vote was abstained.";
-    const color = voteResult.executed ? "#d32f2f" : "#8e8e93";
+    const color = voteResult.executed ? "var(--danger)" : "var(--text-secondary)";
 
     // D5: staged composition — execution beat = skull + blood tint when a player
     // hangs; abstain is a neutral verdict (no skull). Composition only; the text
@@ -1895,7 +1924,7 @@
     // The text node now carries only the (XSS-safe via textContent) sentence.
     setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
     text.textContent = loverName + " died of heartbreak.";
-    text.style.color = "#9c27b0";
+    text.style.color = "var(--role-lover)";
     text.style.animation = "none";
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -1955,7 +1984,7 @@
 
     setTimeout(() => {
       text.textContent = pair[1];
-      text.style.color = "#8e8e93";
+      text.style.color = "var(--text-secondary)";
       text.style.animation = "none";
       void text.offsetWidth;
       text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -2010,10 +2039,10 @@
     // dedicated stage slots (the writer uses .textContent, so the relayed
     // username never reaches innerHTML \u2014 strictly safer than the prior
     // escapeHtml-into-innerHTML path).
-    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? `A life was saved... but ${victimName} didn\u2019t make it.` : "A life was saved... but others didn\u2019t make it.", color: "#2196f3", beatClass: "beat-dawn" };
-    if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "#2196f3", beatClass: "beat-dawn" };
-    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? `${victimName} didn\u2019t survive the night.` : "Several didn\u2019t survive the night.", color: "#d32f2f", beatClass: "beat-death" };
-    return { art: SUN_ART, text: "A peaceful night... somehow.", color: "#8e8e93", beatClass: "beat-dawn" };
+    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? `A life was saved... but ${victimName} didn\u2019t make it.` : "A life was saved... but others didn\u2019t make it.", color: "var(--role-doctor)", beatClass: "beat-dawn" };
+    if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "var(--role-doctor)", beatClass: "beat-dawn" };
+    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? `${victimName} didn\u2019t survive the night.` : "Several didn\u2019t survive the night.", color: "var(--danger)", beatClass: "beat-death" };
+    return { art: SUN_ART, text: "A peaceful night... somehow.", color: "var(--text-secondary)", beatClass: "beat-dawn" };
   }
 
   function showSuspenseTransition(msg, callback) {
@@ -2062,7 +2091,7 @@
         // (textContent — relayed name stays XSS-inert). Names only the partner.
         setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
         text.textContent = msg.loverDeathName + " died of heartbreak.";
-        text.style.color = "#9c27b0";
+        text.style.color = "var(--role-lover)";
         text.style.animation = "none";
         void text.offsetWidth;
         text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -2229,7 +2258,7 @@
     container.innerHTML = sorted
       .map((p) => {
         const status = p.isAlive ? "alive" : "dead";
-        const dotStyle = p.isAlive && p.color ? `style="background:${p.color}"` : '';
+        const dotStyle = p.isAlive && p.color ? `style="background:${nearestPlayerColor(p.color)}"` : '';
         const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
         const showMafiaTag = isMafiaTeammate && !hideMafiaTag;
         // The mafia (incl. the Godfather themselves) know who the Godfather is.
@@ -2504,7 +2533,7 @@
               if (v.voteType !== "letsnot") {
                 const voterPlayer = knownPlayers.find(kp => kp.username === voterName);
                 if (voterPlayer && voterPlayer.color) {
-                  chip.style.background = voterPlayer.color;
+                  chip.style.background = nearestPlayerColor(voterPlayer.color);
                 }
               }
               chipsDiv.appendChild(chip);
@@ -2562,7 +2591,7 @@
         } else if (cardState === "idle") {
           const nomBtn = document.createElement("button");
           nomBtn.className = "mtc-btn mtc-btn-suggest";
-          // D3b: pixel POINT icon + Silkscreen label — mechanics unchanged
+          // D3b: pixel POINT icon + Grandstander label — mechanics unchanged
           nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
           nomBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -2573,7 +2602,7 @@
 
           const spareBtn = document.createElement("button");
           spareBtn.className = "mtc-btn mtc-btn-object";
-          // D3b: pixel X icon + Silkscreen label
+          // D3b: pixel X icon + Grandstander label
           spareBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span><span class="mtc-label">Spare</span>';
           spareBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -2599,14 +2628,14 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -2621,14 +2650,14 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -2640,7 +2669,7 @@
           } else {
             const nomBtn = document.createElement("button");
             nomBtn.className = "mtc-btn mtc-btn-suggest";
-            // D3b: pixel POINT icon + Silkscreen label
+            // D3b: pixel POINT icon + Grandstander label
             nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
             nomBtn.addEventListener("click", (e) => {
               e.stopPropagation();
