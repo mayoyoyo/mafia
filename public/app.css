@@ -125,6 +125,30 @@
      pair: dark fill, light label. */
   --role-lover: #AD1F1C;        --role-lover-ink: #F5F5F5;
 
+  /* ---- P6 win-band accents (specs/game-over/*) -----------------------
+     Each victory band paints ONE hex: the 48px w900 headline, the radial
+     glow behind the faction art, and the details-screen header all share it.
+     Citizens: the spec splits #E3DAB5 ("Before" halves) vs #E3CBB5 ("After"
+     halves) — GO-D5 rules that a one-digit split with no design intent is a
+     typo, and the "After" value is the one every settled frame uses
+     (278-2780 line 62, 278-2810 line 27), so #E3CBB5 is the single value.
+     --win-X is the band hex itself, --win-X-glow the halo drawn under the art
+     (identical in both themes — it always sits behind the raster) and
+     --win-X-ink the headline, which has to darken on paper the same way the
+     role pairs do. */
+  --win-town: #E3CBB5;      --win-town-ink: #E3CBB5;   /* specs/game-over/278-2780--game-options.md:62 */
+  --win-mafia: #D18D83;     --win-mafia-ink: #D18D83;  /* specs/game-over/332-5939--victory-screen.md */
+  --win-joker: #D5B5E3;     --win-joker-ink: #D5B5E3;  /* specs/game-over/332-6071--victory-screen.md */
+  /* Pre-mixed glow alphas (the same three hexes at 55%) — written out rather
+     than color-mix()'d so the halo survives on pre-16.2 iOS Safari, where an
+     unsupported color-mix() would drop the whole background declaration. */
+  --win-town-glow: rgba(227, 203, 181, 0.55);
+  --win-mafia-glow: rgba(209, 141, 131, 0.55);
+  --win-joker-glow: rgba(213, 181, 227, 0.55);
+  /* Force-ended games (GO-D13) have no winner and therefore no band colour:
+     the header stays plain body ink on the frame and no art is drawn. */
+  --win-neutral-ink: var(--text);
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -281,6 +305,13 @@
   --role-vigilante: #67401E;    --role-vigilante-ink: #CDB198;
   --role-godfather: #5C3D00;    --role-godfather-ink: #FFC24B;
   /* Lovers is already dark-fill/light-label, so it does NOT swap. */
+  /* P6 win bands: the pastel headline vanishes on paper (#E3CBB5 on #FFFFFF =
+     1.3:1), so only the INK darkens — to each band's role-ink partner, same
+     hue family and already AA on white. --win-X (the radial glow under the
+     art) keeps the spec pastel in both themes. */
+  --win-town-ink: #5C4B0D;
+  --win-mafia-ink: #67281E;
+  --win-joker-ink: #511E67;
   /* Card dividers invert with the ink — a white rule is invisible on paper. */
   --rule-strong: rgba(35, 39, 41, 0.30);
   --rule-soft: rgba(35, 39, 41, 0.18);
@@ -2044,15 +2075,18 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ============================================================
    D6 — JOKER WIN OVERLAY (#joker-win-overlay; its own element now,
-   no longer reuses the dead overlay). Clown centerpiece + amber
-   celebration. z-index 100, click-to-dismiss.
+   no longer reuses the dead overlay). z-index 100, click-to-dismiss.
+   GO-D6a (P6): kept, restyled to the Victory-screen language — the joker
+   raster on its #D5B5E3 radial, "The final verdict"-weight type, sentence
+   case. It stays a separate surface because official joker mode announces
+   this win MID-GAME, before any game-over screen exists.
    ============================================================ */
 .joker-win-overlay {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(232,163,61,0.18) 0%, transparent 64%),
-    rgba(8,8,13,0.96);
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(213, 181, 227, 0.18) 0%, transparent 64%),
+    rgba(0,0,0,0.96);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2087,36 +2121,42 @@ input::placeholder { color: var(--text-secondary); }
   padding: 0 32px;
   max-width: 430px;
 }
-/* D6: pixel CLOWN_ART centerpiece (set by showJokerWinOverlay). Amber celebration
-   glow via static drop-shadow; reuses the scale pulse (ceiling). */
-.joker-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 28px; }
-.joker-trophy svg { width: 120px; height: 120px; image-rendering: pixelated; filter: drop-shadow(0 0 26px rgba(232,163,61,0.45)); }
+/* Joker raster centerpiece on the band radial, matching the Victory frame's
+   244x245 "After" glow at overlay scale (set by showJokerWinOverlay). */
+.joker-trophy {
+  display: flex; align-items: center; justify-content: center;
+  width: 244px; height: 245px; max-width: 100%;
+  margin-bottom: 12px;
+  background: radial-gradient(circle at 50% 50%, var(--win-joker-glow) 0%, transparent 70%);
+  animation: pulse 2s ease-in-out infinite;
+}
+.joker-trophy img { width: 200px; height: 200px; max-width: 82%; object-fit: contain; display: block; }
 .joker-win-pre {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
   letter-spacing: 0;
-  color: var(--primary);
-  text-transform: uppercase;
-  margin-bottom: 12px;
+  color: #FFFFFF;   /* the overlay paints its own near-black ground in both themes */
+  margin-bottom: 10px;
 }
 .joker-win-title {
   font-family: var(--font-display);
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-3xl);
   font-weight: var(--fw-heading);
-  color: var(--role-joker);
-  text-transform: uppercase;
+  color: var(--win-joker);
+  text-transform: none;
   letter-spacing: 0;
+  line-height: 1.05;
 }
 .joker-win-name {
-  color: var(--text-secondary);
-  font-size: 15px;
-  font-style: italic;
-  margin-top: 18px;
+  color: #FFFFFF;
+  font-size: var(--fs-sm);
+  margin-top: 24px;
 }
-.joker-win-div { width: 130px; margin: 26px 0; opacity: 0.55; }
 .joker-win-hint {
-  color: var(--text-secondary);
+  color: rgba(255,255,255,0.7);
   font-size: 13px;
+  margin-top: 24px;
   opacity: 0.7;
   animation: pulse 2s ease-in-out infinite;
 }
@@ -2197,13 +2237,21 @@ input::placeholder { color: var(--text-secondary); }
 }
 .settings-end-game { margin-top: 16px; }
 
-/* GAME OVER */
+/* ============================================================
+   P6 — GAME OVER
+   Victory screen        278:2772 / 332:5939 / 332:6071  (= #suspense-overlay)
+   Game options          278:2780 / 332:5960 / 332:6092 / 332:6290 (admin)
+   View game details     278:2810 / 281:2972 / 281:3022
+   The three Figma frames per band collapse onto ONE app screen with two
+   views; the Victory frame is the suspense beat that already precedes it.
+   ============================================================ */
 .gameover-header {
   display: flex;
   justify-content: flex-end;
   padding: 12px 16px 0;
 }
-.gameover-content {
+.gameover-content,
+.gameover-details {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2214,19 +2262,117 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center;
   gap: 20px;
 }
-.gameover-content h1 { font-size: var(--fs-2xl); font-weight: var(--fw-heading); text-transform: uppercase; letter-spacing: 0; font-family: var(--font-display); }
-.gameover-content p { color: var(--text-secondary); font-size: 16px; padding: 0 16px; }
+/* Verdict block: 358x82 VERTICAL gap=10 — "The final verdict" 24px w400 white
+   over the 48px w900 band headline (278-2772 lines 15-26). Sentence case (R4);
+   the Pixel-Noir uppercase headline retires. */
+.gameover-verdict { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.gameover-pre {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  line-height: 24px;
+  color: var(--text);
+  letter-spacing: 0;
+}
+.gameover-pre.hidden { display: none; }
+.gameover-content h1 {
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-heading);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-display);
+  line-height: 1.05;
+  color: var(--win-ink, var(--text));
+}
+/* Narrative body: 14px w400 WHITE (278-2780 line 39) — not the muted grey the
+   Pixel-Noir screen used. */
+.gameover-content > p {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: 1.1;
+  padding: 0 16px;
+}
+.gameover-content > p:empty { display: none; }
 
-/* D6: TROPHY_ART centerpiece, faction-tinted (same filter language as the D5
-   suspense beat-win-* trophy — base art is amber/gold, hue-rotate per faction;
-   no new grids). Reuses the existing scale pulse (ceiling), static glow only. */
-.gameover-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
-.gameover-trophy:empty { display: none; }
-.gameover-trophy svg { width: 92px; height: 92px; image-rendering: pixelated; }
-.gameover-trophy.win-neutral svg { filter: drop-shadow(0 0 20px rgba(232,163,61,0.40)); }
-.gameover-trophy.win-town svg { filter: hue-rotate(85deg) saturate(1.1) drop-shadow(0 0 20px rgba(56,142,60,0.40)); }
-.gameover-trophy.win-mafia svg { filter: hue-rotate(-35deg) saturate(1.4) drop-shadow(0 0 20px rgba(211,47,47,0.40)); }
-.gameover-trophy.win-joker svg { filter: hue-rotate(150deg) saturate(1.3) drop-shadow(0 0 20px rgba(38,198,218,0.40)); }
+/* Faction art on its radial glow: FRAME "After" 244x245 filled
+   GRADIENT_RADIAL <band> @60% -> #000000 @60%, holding a 200x200 raster
+   (278-2780 lines 60-63). The two stops read as a soft halo behind the art;
+   rendered as the band hex fading out by 70% of the radius so it works on the
+   light frame too. Art files are the Figma fills downscaled to 800px
+   (docs/figma-raw/assets/fills -> public/img/ui/win-*.png). */
+.gameover-art {
+  width: 244px;
+  height: 245px;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, var(--win-glow, transparent) 0%, transparent 70%);
+}
+.gameover-art:empty { display: none; }
+.gameover-art img {
+  width: 200px;
+  height: 200px;
+  max-width: 82%;
+  object-fit: contain;
+  display: block;
+}
+/* Details header art: FRAME "Skull" 183x183.75 holding a 150x150 raster
+   (278-2810 lines 21-24). */
+.gameover-art-sm { width: 183px; height: 184px; }
+.gameover-art-sm img { width: 150px; height: 150px; }
+/* One band class on the screen drives BOTH views' headline ink and glow.
+   win-neutral (GO-D13, force-ended) deliberately sets neither, so the headline
+   falls back to body ink and no glow is painted. */
+#screen-gameover.win-town { --win-ink: var(--win-town-ink); --win-glow: var(--win-town-glow); }
+#screen-gameover.win-mafia { --win-ink: var(--win-mafia-ink); --win-glow: var(--win-mafia-glow); }
+#screen-gameover.win-joker { --win-ink: var(--win-joker-ink); --win-glow: var(--win-joker-glow); }
+#screen-gameover.win-neutral { --win-ink: var(--win-neutral-ink); }
+
+/* CTA stack: FRAME "CTAs" 358x132 VERTICAL gap=12 (278-2780 lines 41-54).
+   It fades in exactly where Figma animates opacity 0%->100%, which the app
+   already gates behind the staggered reveal completing. */
+.gameover-ctas {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  animation: fadeIn 0.5s ease;
+}
+.gameover-ctas.hidden { display: none; }
+
+/* ---- View game details (278:2810) ---- */
+.gameover-details.hidden { display: none; }
+.gameover-details-head { display: flex; flex-direction: column; align-items: center; gap: 7.5px; width: 100%; }
+/* The detail header steps down to 18/36 (278-2810 lines 13-19). */
+.gameover-details-head .gameover-pre { font-size: var(--fs-lg); line-height: 18px; }
+.gameover-details-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-heading);
+  letter-spacing: 0;
+  line-height: 1.05;
+  color: var(--win-ink, var(--text));
+}
+.gameover-details .event-history { width: 100%; }
+/* The details tabs reuse the Game Tabs pills (.eh-tab); .go-tab is the
+   game-over instance so its click handler stays independent of the in-game
+   one (which force-resets its tab on phase changes). */
+.go-tab {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-display);
+}
+.go-tab.active { background: var(--primary); color: #FFFFFF; }
 
 /* MODAL */
 .modal {
@@ -2321,11 +2467,25 @@ input::placeholder { color: var(--text-secondary); }
   }
 }
 
-/* GAME HISTORY (Game Over) */
-.game-history { width: 100%; margin-bottom: 16px; text-align: left; }
-.game-history-round { font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-top: 12px; margin-bottom: 4px; }
-.game-history-round:first-child { margin-top: 0; }
-.game-history-item { font-size: 14px; padding: 4px 0; color: var(--text); }
+/* GAME HISTORY (Game Over) — GO-D2b: the post-game round history is the
+   Events panel of the details screen's Game Tabs instance, so it takes the
+   component's two-column grid (Round label | that round's lines, 1px rule
+   between rounds — specs/components/287-3437--game-tabs.md), matching the
+   in-game Events tab exactly. The class names are unchanged; the grid row
+   .go-history-round is the new wrapper. */
+.game-history { width: 100%; text-align: left; font-size: var(--fs-sm); line-height: 1.4; }
+.go-history-round {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.go-history-round:first-child { padding-top: 0; }
+.go-history-round:last-child { border-bottom: none; padding-bottom: 0; }
+.go-history-events { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.game-history-round { font-weight: var(--fw-body); font-size: var(--fs-sm); color: var(--text); text-transform: none; letter-spacing: 0; white-space: nowrap; }
+.game-history-item { font-size: var(--fs-sm); padding: 0; color: var(--text); }
 .game-history-item.kill, .game-history-item.joker_haunt { color: var(--role-mafia); }
 .game-history-item.execution { color: var(--warning); }
 .game-history-item.save { color: var(--role-doctor); }
@@ -2334,20 +2494,26 @@ input::placeholder { color: var(--text-secondary); }
 .game-history-item.abstain { color: var(--text-secondary); font-style: italic; }
 .gameover-buttons { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
-/* ROLE REVEAL (Game Over) */
+/* ROLE REVEAL (Game Over) — 278:2810 "Players": a 326x70 row per player,
+   fill #232729, radius 16, pad 16, card shadow, name (14px white) left and the
+   role chip right. GO-D12 keeps the six app-only disclosures the Figma frame
+   drops: DEAD tag, GODFATHER (not MAFIA), joint-win trophy, lover PARTNER NAME
+   next to the heart, mafia-last ordering and the staggered reveal. */
 .role-reveal {
   width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .role-reveal-item {
-  --pxb-w: 1px;
+  --pxb-w: 0px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  gap: 10px;
+  min-height: 70px;
+  padding: 16px;
   border-radius: var(--radius-card);
-  margin-bottom: 6px;
 }
 .role-reveal-item.dead { opacity: 0.5; }
 .role-reveal-item.reveal-hidden { opacity: 0; transform: translateY(10px); }
@@ -2359,15 +2525,19 @@ input::placeholder { color: var(--text-secondary); }
 }
 @keyframes revealSlideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes revealSlideInDead { from { opacity: 0; transform: translateY(10px); } to { opacity: 0.5; transform: translateY(0); } }
-.role-reveal-name { font-weight: 600; flex: 1; }
+.role-reveal-name { font-weight: var(--fw-body); font-size: var(--fs-sm); flex: 1; text-align: left; }
+/* Chip: FRAME "Tag" pad=8 radius=8, label 14px w400 in the role ink. Citizen
+   uses the CARD swatch pair (#D1CFC7/#5C4B0D) — the detail frames' Citizen
+   chip wears the Vigilante palette, the known spec defect (GO-D4). */
 .role-reveal-role {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  padding: 2px 10px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  text-transform: capitalize;
+  letter-spacing: 0;
+  padding: 8px;
   border-radius: var(--radius-pill);
   font-family: var(--font-display);
+  white-space: nowrap;
 }
 .role-reveal-role.mafia { background: var(--role-mafia); color: var(--role-mafia-ink); }
 .role-reveal-role.citizen { background: var(--role-citizen); color: var(--role-citizen-ink); }
@@ -2377,10 +2547,15 @@ input::placeholder { color: var(--text-secondary); }
 .role-reveal-role.hunter { background: var(--role-hunter); color: var(--role-hunter-ink); }
 .role-reveal-role.vigilante { background: var(--role-vigilante); color: var(--role-vigilante-ink); }
 .role-reveal-role.godfather { background: var(--role-godfather); color: var(--role-godfather-ink); }
-/* D3b: role-reveal-lover now has pixel heart art */
-.role-reveal-lover { display: inline-flex; align-items: center; gap: 3px; color: var(--role-lover); margin-left: 8px; font-size: 12px; }
-.role-reveal-lover svg { width: 12px; height: 12px; image-rendering: pixelated; }
-.role-reveal-dead { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
+/* Lover marking: Figma draws a bare 16px Heart in the row (278-2810 lines
+   34-37). GO-D12 keeps the PARTNER NAME alongside it — the app has always
+   disclosed it and it is the only place the pairing is ever stated. */
+.role-reveal-lover { display: inline-flex; align-items: center; gap: 4px; color: var(--role-lover-ink); background: var(--role-lover); padding: 4px 8px; border-radius: var(--radius-pill); font-size: var(--fs-xs); white-space: nowrap; }
+.role-reveal-lover svg { width: 16px; height: 16px; image-rendering: pixelated; }
+.role-reveal-dead { font-size: var(--fs-xs); color: var(--text-secondary); }
+/* The row's right-hand cluster wraps on narrow screens instead of overflowing
+   the 326px card. */
+.role-reveal-tags { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 
 /* ============================================================
    GAME TABS — specs/components/287-3437--game-tabs.md
@@ -2552,6 +2727,31 @@ input::placeholder { color: var(--text-secondary); }
   height: 100%;
   image-rendering: pixelated;
   display: block;
+}
+/* P6 — the Victory screen (278:2772 / 332:5939 / 332:6071) IS this beat. It
+   swaps the pixel trophy for the band raster on the frame's radial glow, and
+   takes the spec's sentence-case 24px "The final verdict" pre-line instead of
+   the uppercase 12px cue the other beats use. The overlay is always black, so
+   the band hex (not its theme-aware ink) is the right colour here. */
+.suspense-overlay.beat-win-town { --win-glow: var(--win-town-glow); }
+.suspense-overlay.beat-win-mafia { --win-glow: var(--win-mafia-glow); }
+.suspense-overlay.beat-win-joker { --win-glow: var(--win-joker-glow); }
+.suspense-overlay.beat-win-town .suspense-art,
+.suspense-overlay.beat-win-mafia .suspense-art,
+.suspense-overlay.beat-win-joker .suspense-art {
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle at 50% 50%, var(--win-glow, transparent) 0%, transparent 70%);
+}
+.suspense-art img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.suspense-overlay.beat-win-town .suspense-pre,
+.suspense-overlay.beat-win-mafia .suspense-pre,
+.suspense-overlay.beat-win-joker .suspense-pre,
+.suspense-overlay.beat-gameover .suspense-pre {
+  text-transform: none;
+  font-size: var(--fs-xl);
+  line-height: 24px;
+  color: #FFFFFF;
 }
 .suspense-text {
   font-size: 26px;

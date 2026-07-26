@@ -1947,14 +1947,18 @@
   //       "beat-death") or "" for none. All beat classes are reset first so no
   //       beat inherits the previous beat's tint.
   const SUSPENSE_BEAT_CLASSES = ["beat-night", "beat-dawn", "beat-death", "beat-execution", "beat-heartbreak", "beat-gameover", "beat-win-town", "beat-win-mafia", "beat-win-joker"];
-  function setSuspenseStage(art, preText, beatClass) {
+  // P6: `winArtHtml` is the Victory-screen escape hatch — the game-over beat
+  // stages the band's raster (a fixed, app-authored <img> string, never user
+  // input) instead of a pixel grid. Sizing + the radial glow are scoped to the
+  // beat-win-* class in CSS.
+  function setSuspenseStage(art, preText, beatClass, winArtHtml) {
     const overlay = $("suspense-overlay");
     const artEl = $("suspense-art");
     const preEl = $("suspense-pre");
     overlay.classList.remove(...SUSPENSE_BEAT_CLASSES);
     if (beatClass) overlay.classList.add(beatClass);
     // art grids are static (pixelArtToSvg over registry grids) — no user input
-    artEl.innerHTML = art ? pixelArtToSvg(art) : "";
+    artEl.innerHTML = winArtHtml || (art ? pixelArtToSvg(art) : "");
     // pre-line is fixed copy set by the writers (never a relayed username) —
     // textContent keeps it XSS-inert regardless.
     preEl.textContent = preText || "";
@@ -3575,15 +3579,18 @@
   });
 
   // Joker win overlay (D6: its own #joker-win-overlay, no longer reuses the dead
-  // overlay). Clown centerpiece + amber celebration staging. Click-to-dismiss
-  // reveals the room/gameover view beneath, same as the dead overlay.
+  // overlay). Click-to-dismiss reveals the room/gameover view beneath, same as
+  // the dead overlay. GO-D6a: kept because official joker mode announces this
+  // win MID-GAME (the game then continues) — no game-over screen exists yet —
+  // and because it is the joint-victory carrier. Restyled to the Victory frame:
+  // the joker raster on its band radial.
   $("joker-win-overlay").addEventListener("click", () => {
     $("joker-win-overlay").classList.add("hidden");
   });
 
   function showJokerWinOverlay(jokerName) {
     $("joker-win-overlay").classList.remove("hidden");
-    $("joker-trophy-art").innerHTML = pixelArtToSvg(CLOWN_ART);
+    $("joker-trophy-art").innerHTML = winArtHtml("joker");
     // Winner name comes from the existing payload field only.
     $("joker-win-name").textContent = jokerName
       ? `${jokerName} had the last laugh`
@@ -3947,39 +3954,115 @@
     }
   }
 
+  // ---- P6 game-over constants -------------------------------------------
+  // Victory art: the Figma "image 8" raster of each band, downscaled to 800px
+  // from docs/figma-raw/assets/fills into public/img/ui/
+  // (c902a3b3… campfire → town, 6252da56… revolver → mafia,
+  //  f0e46bd3… jester mask → joker).
+  const WIN_ART_SRC = {
+    town: "/img/ui/win-town.png",
+    mafia: "/img/ui/win-mafia.png",
+    joker: "/img/ui/win-joker.png",
+  };
+  function winArtHtml(band) {
+    return WIN_ART_SRC[band] ? `<img src="${WIN_ART_SRC[band]}" alt="" draggable="false">` : "";
+  }
+  // Which of the three Figma bands a game_over payload belongs to. Force-ended
+  // games carry winner:"town" on the wire but concluded nothing, so they take
+  // the neutral variant (GO-D13) — checked FIRST.
+  function gameOverBand(msg) {
+    if (msg.forceEnded) return "neutral";
+    return WIN_ART_SRC[msg.winner] ? msg.winner : "neutral";
+  }
+  const WIN_TITLES = { town: "Citizens Win!", mafia: "Mafia Wins!", joker: "Joker Wins!" };
+  // GO-D3b: the canonical Figma narrative is what the SCREEN shows; the
+  // narrator's randomised pools (src/narrator.ts TOWN_WIN_MESSAGES /
+  // MAFIA_WIN_MESSAGES / JOKER_WIN_MESSAGES) keep feeding the transcript
+  // untouched — they still ride phase_change.messages, which is where the
+  // transcript is built. Nothing on the wire changes.
+  const FIGMA_WIN_LINES = {
+    town: "The last of the mafia falls. The street lamps come on early, and for the first time in a long time, no one is afraid to walk under them. The town wins.",
+    mafia: "It's over. There aren't enough honest hands left to hold the line. The lamp stays dark on whichever streets they choose. The Mafia wins.",
+    // 332:6071 is name-parameterised, matching Narrator.jokerWin(name)'s shape.
+    joker: "{name} is smiling as the rope goes taut. They wanted this. You gave it to them, and the joke was never yours to get.",
+  };
+  function gameOverNarrative(band, msg) {
+    const line = FIGMA_WIN_LINES[band];
+    if (!line) return msg.message || "";
+    if (band !== "joker") return line;
+    // The joker's name is not a wire field on game_over; it is derivable from
+    // the reveal roster the same payload already carries.
+    const joker = (msg.players || []).find((p) => p.role === "joker");
+    return joker ? line.replace("{name}", joker.username) : (msg.message || line.replace("{name}", "The joker"));
+  }
+
   function showGameOverScreen(msg, admin) {
     showScreen("gameover");
-    // D6: TROPHY_ART centerpiece, recolored per winning faction via a CSS filter
-    // class (reuses the D5 faction-tint approach — no new grids). Force-ended
-    // games have no winner → neutral trophy.
-    const trophyEl = $("gameover-trophy");
-    trophyEl.innerHTML = pixelArtToSvg(TROPHY_ART);
-    const winClass =
-      msg.forceEnded ? "win-neutral" :
-      msg.winner === "town" ? "win-town" :
-      msg.winner === "mafia" ? "win-mafia" :
-      msg.winner === "joker" ? "win-joker" : "win-neutral";
-    trophyEl.className = "gameover-trophy " + winClass;
-    const titles = {
-      town: "Citizens Win!",
-      mafia: "Mafia Wins!",
-      joker: "Joker Wins!",
-    };
-    if (msg.forceEnded) {
-      $("gameover-title").textContent = "Game Over";
-      $("gameover-title").style.color = "var(--text)";
-    } else {
-      $("gameover-title").textContent = titles[msg.winner] || "Game Over";
-      $("gameover-title").style.color =
-        msg.winner === "town" ? "var(--role-citizen)" :
-        msg.winner === "mafia" ? "var(--role-mafia)" :
-        msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
-    }
-    $("gameover-message").textContent = msg.message;
+    const band = gameOverBand(msg);
+    const screenEl = $("screen-gameover");
+    screenEl.classList.remove("win-town", "win-mafia", "win-joker", "win-neutral");
+    screenEl.classList.add("win-" + band);
+
+    // Victory art on its band radial (278-2780 "After" 244x245 / 278-2810
+    // "Skull" 183x183.75). GO-D13: the force-ended variant draws no art and no
+    // verdict line — there is no winner to celebrate.
+    const art = band === "neutral" ? "" : winArtHtml(band);
+    $("gameover-art").innerHTML = art;
+    $("gameover-art-sm").innerHTML = art;
+    $("gameover-pre").classList.toggle("hidden", band === "neutral");
+    $("gameover-details-pre").classList.toggle("hidden", band === "neutral");
+
+    const title = band === "neutral" ? "Game over" : WIN_TITLES[msg.winner];
+    $("gameover-title").textContent = title;
+    $("gameover-details-title").textContent = title;
+    // Headline ink now rides the screen's band class (--win-ink); clear any
+    // inline colour a previous game left behind.
+    $("gameover-title").style.color = "";
+    // Force-ended games keep the server's explanatory line ("The host has left
+    // the game.") — it is information, not narrative.
+    $("gameover-message").textContent = band === "neutral" ? (msg.message || "") : gameOverNarrative(band, msg);
+
+    // CTAs animate in only once the reveal has played (Figma animates the same
+    // group opacity 0% → 100%).
+    $("gameover-ctas").classList.add("hidden");
     $("gameover-buttons").classList.add("hidden");
     $("gameover-buttons-player").classList.add("hidden");
+    $("gameover-danger").classList.add("hidden");
+    roleRevealReplayed = false;
+    setGameOverTab("players");
+    showGameOverOptionsView();
     renderGameHistory();
   }
+
+  // ---- The two game-over views (Figma "Game options" ↔ "View game details") --
+  function showGameOverOptionsView() {
+    $("gameover-view-options").classList.remove("hidden");
+    $("gameover-view-details").classList.add("hidden");
+  }
+  function showGameOverDetailsView() {
+    $("gameover-view-options").classList.add("hidden");
+    $("gameover-view-details").classList.remove("hidden");
+    replayRoleReveal();
+  }
+  // GO-D2b: the details screen's Game Tabs instance. Independent of the in-game
+  // #event-history tabs, which are force-reset on phase changes.
+  function setGameOverTab(tab) {
+    document.querySelectorAll(".go-tab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.gotab === tab);
+    });
+    $("go-panel-events").classList.toggle("hidden", tab !== "events");
+    $("go-panel-players").classList.toggle("hidden", tab !== "players");
+  }
+  document.querySelectorAll(".go-tab").forEach((b) => {
+    b.addEventListener("click", () => setGameOverTab(b.dataset.gotab));
+  });
+  $("btn-view-details").addEventListener("click", showGameOverDetailsView);
+  $("btn-details-back").addEventListener("click", showGameOverOptionsView);
+  $("btn-details-lobby").addEventListener("click", () => {
+    // Same capability split the options view draws (C12): the admin's lobby
+    // return re-opens settings for everyone, a player's returns only them.
+    wsSend({ type: isAdmin ? "return_to_lobby" : "player_return_to_lobby" });
+  });
 
   // Game-over history label map (death causes → readable text).
   const GAME_HISTORY_LABELS = {
@@ -4030,43 +4113,54 @@
       }
     }
 
+    // GO-D2b: rendered as Game Tabs' two-column Events grid: the "Night N" /
+    // "Day N" label in the left column, that block's lines stacked in the
+    // right, a 1px rule between blocks (specs/components/287-3437). The
+    // .game-history-round / .game-history-item classes are unchanged.
+    const appendBlock = (label, evs) => {
+      if (evs.length === 0) return;
+      const row = document.createElement("div");
+      row.className = "go-history-round";
+      const header = document.createElement("div");
+      header.className = "game-history-round";
+      header.textContent = label;
+      row.appendChild(header);
+      const list = document.createElement("div");
+      list.className = "go-history-events";
+      for (const ev of evs) {
+        const item = document.createElement("div");
+        item.className = `game-history-item ${ev.type}`;
+        item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
+        list.appendChild(item);
+      }
+      row.appendChild(list);
+      container.appendChild(row);
+    };
+
     for (const round of Object.keys(grouped).sort((a, b) => a - b)) {
       const { night, day } = grouped[round];
-      if (night.length > 0) {
-        const header = document.createElement("div");
-        header.className = "game-history-round";
-        header.textContent = `Night ${round}`;
-        container.appendChild(header);
-        for (const ev of night) {
-          const item = document.createElement("div");
-          item.className = `game-history-item ${ev.type}`;
-          item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
-          container.appendChild(item);
-        }
-      }
-      if (day.length > 0) {
-        const header = document.createElement("div");
-        header.className = "game-history-round";
-        header.textContent = `Day ${round}`;
-        container.appendChild(header);
-        for (const ev of day) {
-          const item = document.createElement("div");
-          item.className = `game-history-item ${ev.type}`;
-          item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
-          container.appendChild(item);
-        }
-      }
+      appendBlock(`Night ${round}`, night);
+      appendBlock(`Day ${round}`, day);
     }
   }
 
+  // GO-D1c: Figma's Game options frame offers ONE CTA ("Return to lobby", to
+  // Lobby/Host for the admin per 332:6290, Lobby/Player otherwise). The app's
+  // three wired admin capabilities have no Figma equivalent and are kept (R7):
+  // Play again (restart_game) is the primary, Return to lobby (return_to_lobby)
+  // the secondary, Close room (close_room) the destructive tail. Players get
+  // Return to lobby (player_return_to_lobby) and the header's Leave room.
   function showGameOverButtons(admin) {
     if (admin) {
       $("gameover-buttons").classList.remove("hidden");
       $("gameover-buttons-player").classList.add("hidden");
+      $("gameover-danger").classList.remove("hidden");
     } else {
       $("gameover-buttons-player").classList.remove("hidden");
       $("gameover-buttons").classList.add("hidden");
+      $("gameover-danger").classList.add("hidden");
     }
+    $("gameover-ctas").classList.remove("hidden");
   }
 
   function showGameOverSuspense(msg, admin) {
@@ -4074,28 +4168,28 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
-    // D5: trophy centerpiece, recolored per winning faction via a beat-win-*
-    // CSS class (filter recolor — no new grids). The trophy holds from the
-    // opening line through the winner reveal.
-    const winBeat =
-      msg.winner === "town" ? "beat-win-town" :
-      msg.winner === "mafia" ? "beat-win-mafia" :
-      msg.winner === "joker" ? "beat-win-joker" : "beat-gameover";
-    setSuspenseStage(TROPHY_ART, "FINAL VERDICT", winBeat);
+    // P6: this beat IS Figma's Victory screen (278:2772 / 332:5939 / 332:6071)
+    // — the band raster on its radial glow under the sentence-case 24px
+    // "The final verdict", holding from the opening line through the winner
+    // reveal. A winnerless end keeps the neutral trophy.
+    const band = gameOverBand(msg);
+    const winBeat = band === "neutral" ? "beat-gameover" : "beat-win-" + band;
+    setSuspenseStage(
+      band === "neutral" ? TROPHY_ART : null,
+      "The final verdict",
+      winBeat,
+      band === "neutral" ? "" : winArtHtml(band),
+    );
     text.textContent = "The game is over...";
     text.style.color = "";
     text.style.animation = "none";
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
 
-    const winColor =
-      msg.winner === "town" ? "var(--role-citizen)" :
-      msg.winner === "mafia" ? "var(--role-mafia)" :
-      msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
-    const winText =
-      msg.winner === "town" ? "Citizens Win!" :
-      msg.winner === "mafia" ? "Mafia Wins!" :
-      msg.winner === "joker" ? "Joker Wins!" : "Game Over";
+    // The overlay is always black, so the band hex is used directly (its
+    // theme-aware --win-*-ink partner is for the game-over screen).
+    const winColor = band === "neutral" ? "#FFFFFF" : `var(--win-${band})`;
+    const winText = band === "neutral" ? "Game over" : WIN_TITLES[msg.winner];
 
     // Beat 2: winner reveal
     setTimeout(() => {
@@ -4147,25 +4241,55 @@
       return aIsMafia - bIsMafia;
     });
 
+    // 278:2810 row: name on the left, the role chip on the right. GO-D12 keeps
+    // the app's five other disclosures in the right-hand cluster (the sixth,
+    // mafia-last ordering, is the sort above). Chip labels are Title Case via
+    // CSS text-transform, so the raw role name stays in the DOM.
     const hiddenClass = hidden ? " reveal-hidden" : "";
     container.innerHTML = sorted
       .map((p) => {
         const dead = !p.isAlive;
-        // D3b: pixel art icons instead of emoji
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
-        const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
+        const deadText = dead ? '<span class="role-reveal-dead">Dead</span>' : "";
         const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
-        // The Godfather reveals as "GODFATHER" (role stays "mafia" under the hood).
+        // The Godfather reveals as "Godfather" (role stays "mafia" under the hood).
         const revealRole = p.isGodfather ? "godfather" : (p.role || "?");
         return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${revealRole}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
-          <span class="role-reveal-role ${revealRole}">${revealRole.toUpperCase()}</span>
-          ${trophyText}
-          ${loverText}
-          ${deadText}
+          <span class="role-reveal-tags">
+            ${trophyText}
+            ${loverText}
+            ${deadText}
+            <span class="role-reveal-role ${revealRole}">${escapeHtml(revealRole)}</span>
+          </span>
         </div>`;
       })
       .join("");
+  }
+
+  // GO-D12: the staggered reveal is one of the six kept disclosures, but the
+  // Figma flow puts the roster behind a tap, so the auto-stagger (which gates
+  // the CTAs) would play on a view nobody is looking at. Opening the details
+  // view replays it ONCE, and only if the auto-stagger already finished — a
+  // mid-flight reveal is left alone.
+  let roleRevealReplayed = false;
+  function replayRoleReveal() {
+    if (roleRevealReplayed) return;
+    const items = Array.from($("role-reveal").querySelectorAll(".role-reveal-item"));
+    if (items.length === 0) return;
+    if (!items.every((el) => el.classList.contains("reveal-show"))) return;
+    roleRevealReplayed = true;
+    items.forEach((el) => {
+      el.classList.remove("reveal-show");
+      el.classList.add("reveal-hidden");
+    });
+    void $("role-reveal").offsetWidth;
+    items.forEach((el, i) => {
+      setTimeout(() => {
+        el.classList.remove("reveal-hidden");
+        el.classList.add("reveal-show");
+      }, i * 120);
+    });
   }
 
   function revealRolesStaggered(players, admin) {
@@ -4235,9 +4359,9 @@
 
   $("btn-close-room").addEventListener("click", () => {
     showConfirmSheet(
-      "Close Room",
+      "Close room",
       "All players will be removed.",
-      "Close Room",
+      "Close room",
       () => { wsSend({ type: "close_room" }); },
       { danger: true }
     );
@@ -4676,7 +4800,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.40_202607251919";
+  const APP_VERSION_STAGING = "staging.41_202607252028";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at
@@ -4713,10 +4837,11 @@
     var deadEl = document.getElementById("dead-emoji");
     if (deadEl) deadEl.innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
 
-    // Clown into joker win overlay (D6: default state — showJokerWinOverlay also
-    // (re)sets it on every show). The container id keeps "joker-trophy-art".
+    // Joker raster into the joker win overlay (P6 — default state;
+    // showJokerWinOverlay also (re)sets it on every show). The container id
+    // keeps "joker-trophy-art".
     var trophyEl = document.getElementById("joker-trophy-art");
-    if (trophyEl) trophyEl.innerHTML = pixelArtToSvg(CLOWN_ART);
+    if (trophyEl) trophyEl.innerHTML = winArtHtml("joker");
 
     // Heart icon into lover-badge
     var loverIcon = document.querySelector(".lover-badge-icon");

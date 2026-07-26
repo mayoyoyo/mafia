@@ -437,24 +437,79 @@
 
     </div>
 
-    <!-- GAME OVER SCREEN -->
+    <!-- GAME OVER SCREEN — P6.
+         Figma splits game over into three frames per winner band: Victory
+         screen (278:2772 / 332:5939 / 332:6071), Game options (278:2780 /
+         332:5960 / 332:6092 + admin 332:6290) and View game details
+         (278:2810 / 281:2972 / 281:3022). The app has ONE screen driven by a
+         timed sequence, so the Victory frame stays the #suspense-overlay beat
+         and the other two become two views inside #screen-gameover:
+         #gameover-view-options and #gameover-view-details.
+         The "Leave room" header row (C4) has no Figma equivalent and is kept
+         per R7 — it is the only exit for a player who does not want the lobby. -->
     <div id="screen-gameover" class="screen">
       <div class="gameover-header">
-        <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave Room</button>
+        <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave room</button>
       </div>
-      <div class="gameover-content">
-        <div id="gameover-trophy" class="gameover-trophy"></div>
-        <h1 id="gameover-title"></h1>
-        <p id="gameover-message"></p>
-        <div id="game-history" class="game-history"></div>
-        <div id="role-reveal" class="role-reveal"></div>
-        <div id="gameover-buttons" class="gameover-buttons hidden">
-          <button id="btn-play-again-same" class="btn btn-primary btn-large">Play Again</button>
-          <div class="btn-pxb pxc"><button id="btn-play-again-new" class="btn btn-secondary btn-large pxc">New Settings</button></div>
-          <button id="btn-close-room" class="btn btn-danger btn-large">Close Room</button>
+
+      <!-- VIEW 1 — "Game options" (278:2780). Art on its radial faction glow,
+           "The final verdict" 24px + the 48px w900 winner headline, the 14px
+           narrative line, then the CTA stack (each 358x60, radius 16, shadow).
+           GO-D1c: Figma's single "Return to lobby" CTA is kept as the layout,
+           but the app's capability triad survives — Play again (restart_game),
+           Return to lobby (return_to_lobby) and Close room (close_room) for the
+           admin; Return to lobby (player_return_to_lobby) for players. -->
+      <div id="gameover-view-options" class="gameover-content">
+        <div id="gameover-art" class="gameover-art"></div>
+        <div class="gameover-verdict">
+          <p id="gameover-pre" class="gameover-pre">The final verdict</p>
+          <h1 id="gameover-title"></h1>
         </div>
-        <div id="gameover-buttons-player" class="gameover-buttons hidden">
-          <div class="btn-pxb pxc"><button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large pxc">Return to Lobby</button></div>
+        <p id="gameover-message"></p>
+        <div id="gameover-ctas" class="gameover-ctas hidden">
+          <div id="gameover-buttons" class="gameover-buttons hidden">
+            <button id="btn-play-again-same" class="btn btn-primary btn-large">Play again</button>
+            <button id="btn-play-again-new" class="btn btn-secondary btn-large">Return to lobby</button>
+          </div>
+          <div id="gameover-buttons-player" class="gameover-buttons hidden">
+            <button id="btn-return-to-lobby-player" class="btn btn-primary btn-large">Return to lobby</button>
+          </div>
+          <button id="btn-view-details" class="btn btn-secondary btn-large">View game details</button>
+          <div id="gameover-danger" class="gameover-buttons hidden">
+            <button id="btn-close-room" class="btn btn-danger btn-large">Close room</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 2 — "View game details" (278:2810). Figma shrinks the header to
+           18/36 over a 183px art frame, then lists the roster as 326x70 #232729
+           rows with a role chip. GO-D12: all six app-only disclosures stay —
+           alive/dead, Godfather-vs-Mafia, joint-win trophy, lover partner name,
+           mafia-last ordering and the staggered reveal.
+           GO-D2b: the post-game round history Figma drops comes back as a Game
+           Tabs instance (specs/components/287-3437) wrapping the roster
+           (Players) and the history (Events). -->
+      <div id="gameover-view-details" class="gameover-details hidden">
+        <div class="gameover-details-head">
+          <div id="gameover-art-sm" class="gameover-art gameover-art-sm"></div>
+          <p id="gameover-details-pre" class="gameover-pre">The final verdict</p>
+          <h2 id="gameover-details-title" class="gameover-details-title"></h2>
+        </div>
+        <div class="event-history card-primary">
+          <div class="eh-tabs">
+            <button class="go-tab" data-gotab="events">Events</button>
+            <button class="go-tab active" data-gotab="players">Players</button>
+          </div>
+          <div id="go-panel-events" class="eh-panel hidden">
+            <div id="game-history" class="game-history"></div>
+          </div>
+          <div id="go-panel-players" class="eh-panel">
+            <div id="role-reveal" class="role-reveal"></div>
+          </div>
+        </div>
+        <div class="gameover-ctas">
+          <button id="btn-details-lobby" class="btn btn-primary btn-large">Return to lobby</button>
+          <button id="btn-details-back" class="btn btn-secondary btn-large">Back to game options</button>
         </div>
       </div>
     </div>
@@ -487,16 +542,21 @@
       </div>
     </div>
 
-    <!-- Joker Win Overlay (D6: real overlay — clown centerpiece + amber
-         celebration; targeted by showJokerWinOverlay; z-index 100). D9: at APP
-         ROOT for the same full-viewport reason as #dead-overlay above. -->
+    <!-- Joker Win Overlay (D6: real overlay; targeted by showJokerWinOverlay;
+         z-index 100). D9: at APP ROOT for the same full-viewport reason as
+         #dead-overlay above.
+         GO-D6a (P6): KEPT and restyled. Figma folds joker celebration into the
+         victory screen, which cannot express this beat — in official joker mode
+         the win is announced MID-GAME on the joker's execution and play carries
+         on (app.js jokerWonOverlayShown). It is also the joint-victory carrier.
+         Restyled into the Figma language: the joker raster on its #D5B5E3
+         radial, Grandstander, sentence case (R4), radius-16 card. -->
     <div id="joker-win-overlay" class="joker-win-overlay hidden">
       <div class="joker-poster">
         <div class="joker-trophy" id="joker-trophy-art"></div>
-        <p class="joker-win-pre">THE LAST LAUGH</p>
-        <h2 class="joker-win-title">JOKER WINS</h2>
+        <p class="joker-win-pre">The last laugh</p>
+        <h2 class="joker-win-title">Joker wins!</h2>
         <p id="joker-win-name" class="joker-win-name"></p>
-        <div class="dither-h joker-win-div"></div>
         <p class="joker-win-hint">Tap to dismiss</p>
       </div>
     </div>
