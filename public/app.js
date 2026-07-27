@@ -44,6 +44,10 @@
   let mafiaTeam = [];
   let godfatherName = null;
   let currentRoster = null; // public lineup summary for the "Roles in Play" modal
+  // Pre-game inputs for the SAME modal opened from the lobby (F6). Both come
+  // straight off lobby_update; neither carries any player→role pairing.
+  let lobbySettings = null;
+  let lobbyPlayerCount = 0;
   let dayVoteCount = 0;
   // Player-initiated accusations (day phase). pendingAccusations mirrors the
   // server's un-seconded list; accusationsMade/secondsMade are the per-day usage
@@ -82,12 +86,40 @@
   let spectatorNightLog = [];
   let hideMafiaTag = false;
   let myPlayerColor = null;
+  // The Figma "Choose your color" grid: 3 rows x 6, read in draw order from
+  // docs/figma-raw/specs/game-menu/42-782--lobby-player.md.
   const PLAYER_COLORS = [
-    "#E53935", "#EC407A", "#AB47BC", "#7E57C2", "#5C6BC0",
-    "#42A5F5", "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A",
-    "#9CCC65", "#C0CA33", "#FFEE58", "#FFA726", "#FF7043",
-    "#D84315", "#8D6E63", "#78909C", "#546E7A", "#F06292",
+    "#E53935", "#E876A0", "#8E24AA", "#5E35B1", "#3949AB", "#1E88E5",
+    "#039BE5", "#00ACC1", "#00897B", "#43A047", "#7CB342", "#C0CA33",
+    "#FDD835", "#FFB300", "#FB8C00", "#F4511E", "#6D4C41", "#757575",
   ];
+
+  // Stored player_color values predate this palette (only 2 of the old 20
+  // survive), and the picker matches by exact hex — a stale colour would render
+  // as "nothing selected". Map any off-palette hex to its nearest swatch by
+  // squared RGB distance so returning players keep a sensible selection.
+  const colorRemapCache = new Map();
+  function nearestPlayerColor(hex) {
+    if (!hex) return hex;
+    const h = String(hex).trim().toUpperCase();
+    if (PLAYER_COLORS.includes(h)) return h;
+    if (colorRemapCache.has(h)) return colorRemapCache.get(h);
+    // Anything that is not a plain 6-digit hex is not a colour we stored;
+    // fall back to a palette entry rather than echoing it into a style string.
+    const m = /^#([0-9A-F]{6})$/.exec(h);
+    if (!m) return PLAYER_COLORS[0];
+    const v = parseInt(m[1], 16);
+    const r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
+    let best = PLAYER_COLORS[0], bestD = Infinity;
+    for (const c of PLAYER_COLORS) {
+      const cv = parseInt(c.slice(1), 16);
+      const dr = r - ((cv >> 16) & 255), dg = g - ((cv >> 8) & 255), db = b - (cv & 255);
+      const d = dr * dr + dg * dg + db * db;
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    colorRemapCache.set(h, best);
+    return best;
+  }
   let jokerJointWinner = false;
 
   // ============================================================
@@ -273,7 +305,40 @@
     narration: Object.freeze([...NARRATION_GATE_TYPES]),
   });
 
+  // N-D1 / Figma 74:335 + 130:243: every night frame that has no panel of its
+  // own shows one neutral status line. It must be gated on "no night panel is
+  // up", NOT on role — otherwise a doctor whose sub-phase already closed
+  // (the <role>_close teardown) would sit on a blank screen while citizens saw
+  // the line, which is itself a tell. Wrapping the dispatcher keeps it in sync
+  // after EVERY message, including dispatchServerMessage's early-return gate
+  // paths (suspense queue, game_over hold, nightfall trigger).
   function handleServerMessage(msg) {
+    try {
+      dispatchServerMessage(msg);
+    } finally {
+      updateNightIdle();
+      // G1: keep the game-header code chip in sync with whatever set gameCode
+      // (create / join / rejoin / leave) without hunting every assignment site.
+      const chip = $("game-room-code");
+      if (chip) {
+        chip.textContent = gameCode || "";
+        chip.parentElement.classList.toggle("hidden", !gameCode);
+      }
+    }
+  }
+
+  function updateNightIdle() {
+    const el = $("night-idle");
+    if (!el) return;
+    const anyPanelUp =
+      !$("night-actions").classList.contains("hidden") ||
+      !$("awaiting-ready").classList.contains("hidden") ||
+      !$("revenge-wait").classList.contains("hidden") ||
+      !$("dead-overlay").classList.contains("hidden");
+    el.classList.toggle("hidden", !(currentPhase === "night" && !anyPanelUp));
+  }
+
+  function dispatchServerMessage(msg) {
     // During suspense, queue the death beats
     if (suspenseActive && SUSPENSE_GATE_TYPES.has(msg.type)) {
       suspenseQueue.push(msg);
@@ -328,7 +393,7 @@
         userId = msg.userId;
         username = msg.username;
         hideMafiaTag = !!msg.hide_mafia_tag;
-        myPlayerColor = msg.player_color || null;
+        myPlayerColor = nearestPlayerColor(msg.player_color) || null;
         if (msg.type === "registered") {
           const passcode = $("auth-passcode").value;
           localStorage.setItem("mafia_user", JSON.stringify({ username: msg.username, passcode }));
@@ -425,7 +490,7 @@
         updateRoleCard();
         // Card starts face-down
         resetCardPeel();
-        $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_ART);
+        setCardBack(false);
         $("narrator-messages").innerHTML = "";
         clearDetectiveResult();
         $("event-history-list").innerHTML = "";
@@ -466,6 +531,7 @@
         if (CLOSEABLE_NIGHT_ROLES.has(myRole) && msg.sound === myRole + "_close") {
           $("night-actions").classList.add("hidden");
           hideSlideConfirm(); // defensive: mid-selection force-advance race
+          clearNightGate();
           if (myRole === "mafia") {
             $("mafia-vote-status").classList.add("hidden");
             $("mafia-vote-details").innerHTML = "";
@@ -605,16 +671,28 @@
 
       case "you_died":
         isDead = true;
-        $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+        setCardBack(true);
         // If joker win overlay is already showing, skip the death overlay
         if (!jokerWonOverlayShown) {
           $("dead-overlay").classList.remove("hidden");
           // Pixel art skull, or heartbreak art on the dead player's OWN screen
           // when they died of heartbreak (owner ruling: heartbreak is public).
           $("dead-emoji").innerHTML = pixelArtToSvg(msg.isLoverDeath ? HEARTBREAK_ART : CARD_BACK_DEAD_ART);
+          // N-D11 (Figma 254:865): the heartbreak overlay gets its own headline
+          // pair alongside the art swap. Still cause-GENERIC for every other
+          // death — heartbreak is public by owner ruling
+          // (src/game-engine.ts:1271-1273) and names nobody, so this is the one
+          // variant that may differ. The message line stays msg.message, the
+          // server's neutral pool, untouched.
+          $("dead-pre").textContent = msg.isLoverDeath ? "You died of" : "You are";
+          $("dead-text").textContent = msg.isLoverDeath ? "HEARTBREAK" : "DEAD";
           $("death-message").textContent = msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
+        // Dying mid-day (e.g. a Hunter's revenge shot) must drop the accuse
+        // affordances immediately — the read-only spectator view takes over
+        // without waiting for the next accusations_update.
+        renderAccusePanel();
         break;
 
       case "game_over":
@@ -638,7 +716,7 @@
 
       case "player_prefs":
         hideMafiaTag = !!msg.hide_mafia_tag;
-        myPlayerColor = msg.player_color;
+        myPlayerColor = nearestPlayerColor(msg.player_color);
         $("toggle-hide-mafia-tag").checked = hideMafiaTag;
         updatePlayerStatus();
         break;
@@ -734,7 +812,7 @@
     applyEffectiveTheme();
     updateRoleCard();
     resetCardPeel();
-    $("card-back-art").innerHTML = pixelArtToSvg(isDead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
+    setCardBack(isDead);
     $("dead-dismiss-hint").classList.add("hidden");
     $("round-number").textContent = msg.round;
 
@@ -753,6 +831,7 @@
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
     $("btn-vigilante-pass").classList.add("hidden");
+    clearNightGate();
     // C5b: gate-closed baseline (E10d — rejoin after resolution must leave
     // no stale wait view); the pendingRevenge branch below re-shows it.
     $("revenge-wait").classList.add("hidden");
@@ -922,7 +1001,7 @@
 
     // 12. Dead player state (card back only — overlay only shows on real-time you_died)
     if (isDead) {
-      $("card-back-art").innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
+      setCardBack(true);
     }
   }
 
@@ -966,13 +1045,23 @@
     wsSend({ type: "create_game" });
   });
 
-  $("btn-join-show").addEventListener("click", () => {
-    $("join-section").classList.toggle("hidden");
-    $("join-code").focus();
-  });
+  // F3 (Figma 42:766 -> 287:3259): the Join CTA is disabled/grey until the code
+  // field holds a valid code, then flips to the orange primary fill. "Valid" is
+  // a purely CLIENT-SIDE 4-character length check (GM-11 default) — no probe is
+  // sent to the server, so this costs zero wire traffic. Server-side rejections
+  // ("Game not found" src/server.ts:1142, "Cannot join: game full or already
+  // started" :1205) still land in #menu-error exactly as before.
+  function syncJoinEnabled() {
+    const code = $("join-code").value.trim();
+    $("btn-join").disabled = code.length !== 4;
+  }
+  $("join-code").addEventListener("input", syncJoinEnabled);
+  syncJoinEnabled();
 
   $("btn-join").addEventListener("click", () => {
     const code = $("join-code").value.trim().toUpperCase();
+    // Defensive only — the disabled CTA makes this branch unreachable from the
+    // UI. The string is kept so a programmatic click still reports the reason.
     if (code.length !== 4) return showError("Enter a 4-character room code");
     wsSend({ type: "join_game", code });
   });
@@ -1078,9 +1167,17 @@
   function updateLobby(msg) {
     const { players, settings, adminName } = msg;
 
+    // Feed the pre-game "Roles in Play" derivation (F6). lobby_update is the
+    // only source — nothing role-identifying is stored.
+    lobbySettings = settings;
+    lobbyPlayerCount = players.length;
+
+    // Figma 42:782 lines 80-90: name (+ a host marker) on the left, the
+    // player's colour ellipse right-aligned on the row.
     const renderPlayerItem = (p) => {
-      const colorDot = p.color ? `<span class="player-color-dot" style="background:${p.color}"></span>` : '';
-      return `<li>${colorDot}${escapeHtml(p.username)}${p.isAdmin ? ' <span class="admin-badge">HOST</span>' : ""}</li>`;
+      const colorDot = p.color ? `<span class="player-color-dot" style="background:${nearestPlayerColor(p.color)}"></span>` : '';
+      const host = p.isAdmin ? ' <span class="admin-badge">HOST</span>' : "";
+      return `<li><span class="player-row-name">${escapeHtml(p.username)}${host}</span>${colorDot}</li>`;
     };
 
     $("player-count-admin").textContent = players.length;
@@ -1155,12 +1252,13 @@
     const colorOwners = {};
     for (const p of players) {
       if (p.color && p.id !== userId) {
-        if (!colorOwners[p.color]) colorOwners[p.color] = [];
-        colorOwners[p.color].push(p.username);
+        const c = nearestPlayerColor(p.color);
+        if (!colorOwners[c]) colorOwners[c] = [];
+        colorOwners[c].push(p.username);
       }
     }
 
-    container.innerHTML = '<h4>Your Color</h4>';
+    container.innerHTML = '<h4>Choose your color</h4>'; // Figma 42:782 line 132
     const grid = document.createElement("div");
     grid.className = "color-picker-grid";
 
@@ -1215,7 +1313,7 @@
 
     container.innerHTML = `
       <div class="lobby-settings-row">
-        <span class="lobby-settings-label">Mafia Members</span>
+        <span class="lobby-settings-label">Mafia members</span>
         <span class="lobby-settings-value">${settings.mafiaCount}</span>
       </div>
       <div class="lobby-settings-row">
@@ -1232,18 +1330,52 @@
 
   // Pixel art data loaded from pixel-art.js (window globals)
 
+  // Membership Card display names, spec casing
+  // (specs/components/77-528--membership-card.md TEXT nodes). pixel-art.js owns
+  // ROLE_DESCRIPTIONS/ROLE_COLORS and is untouched, so the titles live here.
+  const ROLE_TITLES = {
+    citizen: "Citizen",
+    mafia: "Mafia",
+    doctor: "Doctor",
+    detective: "Detective",
+    joker: "Joker",
+    hunter: "Hunter",
+    vigilante: "Vigilante",
+    godfather: "Godfather",
+  };
+
+  // Card back = spec "Role=Default" ("Your role is / ? / Peel to reveal") until
+  // the player dies, at which point it becomes spec "Role=Dead"
+  // ("You are / DEAD / Stay quiet and continue to watch the town").
+  function setCardBack(dead) {
+    $("card-back-art").innerHTML = pixelArtToSvg(dead ? CARD_BACK_DEAD_ART : CARD_BACK_ART);
+    const back = document.querySelector("#role-card .card-back");
+    if (!back) return;
+    const eyebrow = back.querySelector(".role-eyebrow");
+    const label = back.querySelector(".card-back-label");
+    if (eyebrow) eyebrow.textContent = dead ? "You are" : "Your role is";
+    if (label) label.textContent = dead ? "DEAD" : "Peel to reveal";
+    $("role-card").classList.toggle("dead", !!dead);
+  }
+
   function updateRoleCard() {
     // Display-only role: the Godfather sees a distinct card but myRole stays
     // "mafia" so the mafia night-action UI keeps gating correctly.
     const displayRole = myIsGodfather ? "godfather" : myRole;
     const card = $("role-card");
-    card.className = `role-card ${ROLE_COLORS[displayRole] || ""}`;
-    $("role-name").textContent = displayRole ? displayRole.toUpperCase() : "";
+    // `dead` is re-applied here because this assignment replaces the whole class
+    // list and setCardBack() may have already set it (rejoin / game-sync order).
+    card.className = `role-card ${ROLE_COLORS[displayRole] || ""}${isDead ? " dead" : ""}`;
+    // Membership Card (specs/components/77-528--membership-card.md): the name is
+    // set in the spec's own casing ("Doctor", not "DOCTOR") — the card face is
+    // Grandstander Black 48px, which no longer needs all-caps to read as display.
+    $("role-name").textContent = displayRole ? ROLE_TITLES[displayRole] || displayRole : "";
     $("role-description").textContent = ROLE_DESCRIPTIONS[displayRole] || "";
-    // Pixel art role image
+    // Chibi raster art region (spec RECTANGLE "image 1" 78x78) — the per-role
+    // PNGs copied out of the Figma fills into /img/roles/.
     const imgEl = $("role-image");
     if (displayRole) {
-      imgEl.innerHTML = getRoleImage(displayRole, myVariant);
+      imgEl.innerHTML = `<img src="/img/roles/${displayRole}.png" alt="" draggable="false">`;
     } else {
       imgEl.innerHTML = "";
     }
@@ -1251,13 +1383,6 @@
       $("lover-badge").classList.remove("hidden");
     } else {
       $("lover-badge").classList.add("hidden");
-    }
-    // Mini role icon in bottom-right of card-front for quick-peek
-    const miniEl = $("role-icon-mini");
-    if (displayRole) {
-      miniEl.innerHTML = getRoleImage(displayRole, myVariant);
-    } else {
-      miniEl.innerHTML = "";
     }
     // Heart balloon for lovers
     if (isLover) {
@@ -1267,7 +1392,7 @@
     }
     updateBulletIndicator();
     fitRoleCardText();
-    // Re-fit once the pixel font (Silkscreen) is loaded — measuring the
+    // Re-fit once the display font (Grandstander) is loaded — measuring the
     // single-line name against a fallback font under-reports its width and
     // leaves long names (GODFATHER/VIGILANTE/DETECTIVE) overflowing.
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitRoleCardText());
@@ -1291,12 +1416,12 @@
       if (attempt < 8) requestAnimationFrame(() => fitRoleCardText(attempt + 1));
       return;
     }
-    // Name: keep it on ONE line — shrink until it fits the card width.
-    for (let s = 28; s > 12 && name.scrollWidth > name.clientWidth; s--) {
+    // Name: keep it on ONE line — shrink from the spec's 48px until it fits.
+    for (let s = 48; s > 20 && name.scrollWidth > name.clientWidth; s--) {
       name.style.fontSize = s + "px";
     }
-    // Description: shrink until the whole front content fits the fixed height.
-    for (let s = 14; s > 8 && front.scrollHeight > front.clientHeight + 1; s--) {
+    // Description: shrink from the spec's 12px until the front content fits.
+    for (let s = 12; s > 8 && front.scrollHeight > front.clientHeight + 1; s--) {
       desc.style.fontSize = s + "px";
     }
   }
@@ -1748,6 +1873,7 @@
     $("night-actions").classList.add("hidden");
     $("btn-decline-revenge").classList.add("hidden");
     $("btn-vigilante-pass").classList.add("hidden");
+    clearNightGate();
     // C5b: the deferred phase_change IS the revenge-resolution signal — the
     // room-wide wait view (and its admin skip control) comes down with it.
     $("revenge-wait").classList.add("hidden");
@@ -1816,19 +1942,23 @@
   // (pre-line + pixel art + text) WITHOUT touching the timing/queue plumbing.
   // setSuspenseStage only changes WHAT is painted; the writers own WHEN.
   // art:  a 10x10 pixel grid (rendered via the existing pipeline) or null/"" to
-  //       clear the centerpiece. preText: amber Silkscreen pre-line, or "" to
+  //       clear the centerpiece. preText: amber Grandstander pre-line, or "" to
   //       clear it. beatClass: a single beat-tint class on the overlay (e.g.
   //       "beat-death") or "" for none. All beat classes are reset first so no
   //       beat inherits the previous beat's tint.
   const SUSPENSE_BEAT_CLASSES = ["beat-night", "beat-dawn", "beat-death", "beat-execution", "beat-heartbreak", "beat-gameover", "beat-win-town", "beat-win-mafia", "beat-win-joker"];
-  function setSuspenseStage(art, preText, beatClass) {
+  // P6: `winArtHtml` is the Victory-screen escape hatch — the game-over beat
+  // stages the band's raster (a fixed, app-authored <img> string, never user
+  // input) instead of a pixel grid. Sizing + the radial glow are scoped to the
+  // beat-win-* class in CSS.
+  function setSuspenseStage(art, preText, beatClass, winArtHtml) {
     const overlay = $("suspense-overlay");
     const artEl = $("suspense-art");
     const preEl = $("suspense-pre");
     overlay.classList.remove(...SUSPENSE_BEAT_CLASSES);
     if (beatClass) overlay.classList.add(beatClass);
     // art grids are static (pixelArtToSvg over registry grids) — no user input
-    artEl.innerHTML = art ? pixelArtToSvg(art) : "";
+    artEl.innerHTML = winArtHtml || (art ? pixelArtToSvg(art) : "");
     // pre-line is fixed copy set by the writers (never a relayed username) —
     // textContent keeps it XSS-inert regardless.
     preEl.textContent = preText || "";
@@ -1848,22 +1978,26 @@
 
     overlay.classList.remove("hidden", "fade-out");
 
-    const msg = voteResult.executed
-      ? `${voteResult.targetName} was executed.`
-      : "The vote was abstained.";
-    const color = voteResult.executed ? "#d32f2f" : "#8e8e93";
-
-    // D5: staged composition — execution beat = skull + blood tint when a player
-    // hangs; abstain is a neutral verdict (no skull). Composition only; the text
-    // node and its timing are untouched.
-    if (voteResult.executed) {
-      setSuspenseStage(CARD_BACK_DEAD_ART, "THE VERDICT", "beat-execution");
-    } else {
-      setSuspenseStage("", "THE VERDICT", "");
+    // Day-9 (ONE SPARE STRING): a non-executed ballot has exactly one voice —
+    // the engine narrator's EXECUTION_SPARED_MESSAGES line, delivered on the
+    // spared phase_change. The old client-side "The vote was abstained." beat
+    // contradicted it (and the old "{name} has been spared." narrator line),
+    // so the verdict overlay now plays for EXECUTIONS ONLY and a spare goes
+    // straight through to the caller.
+    if (!voteResult.executed) {
+      overlay.classList.add("hidden");
+      executionTransitionActive = false;
+      callback();
+      return;
     }
 
+    const msg = `${voteResult.targetName} was executed.`;
+
+    // D5: staged composition — execution beat = skull + blood tint.
+    setSuspenseStage(CARD_BACK_DEAD_ART, "THE VERDICT", "beat-execution");
+
     text.textContent = msg;
-    text.style.color = color;
+    text.style.color = "var(--danger)";
     text.style.animation = "none";
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -1895,7 +2029,7 @@
     // The text node now carries only the (XSS-safe via textContent) sentence.
     setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
     text.textContent = loverName + " died of heartbreak.";
-    text.style.color = "#9c27b0";
+    text.style.color = "var(--role-lover)";
     text.style.animation = "none";
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -1955,7 +2089,7 @@
 
     setTimeout(() => {
       text.textContent = pair[1];
-      text.style.color = "#8e8e93";
+      text.style.color = "var(--text-secondary)";
       text.style.animation = "none";
       void text.offsetWidth;
       text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -2010,10 +2144,10 @@
     // dedicated stage slots (the writer uses .textContent, so the relayed
     // username never reaches innerHTML \u2014 strictly safer than the prior
     // escapeHtml-into-innerHTML path).
-    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? `A life was saved... but ${victimName} didn\u2019t make it.` : "A life was saved... but others didn\u2019t make it.", color: "#2196f3", beatClass: "beat-dawn" };
-    if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "#2196f3", beatClass: "beat-dawn" };
-    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? `${victimName} didn\u2019t survive the night.` : "Several didn\u2019t survive the night.", color: "#d32f2f", beatClass: "beat-death" };
-    return { art: SUN_ART, text: "A peaceful night... somehow.", color: "#8e8e93", beatClass: "beat-dawn" };
+    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? `A life was saved... but ${victimName} didn\u2019t make it.` : "A life was saved... but others didn\u2019t make it.", color: "var(--role-doctor)", beatClass: "beat-dawn" };
+    if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "var(--role-doctor)", beatClass: "beat-dawn" };
+    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? `${victimName} didn\u2019t survive the night.` : "Several didn\u2019t survive the night.", color: "var(--danger)", beatClass: "beat-death" };
+    return { art: SUN_ART, text: "A peaceful night... somehow.", color: "var(--text-secondary)", beatClass: "beat-dawn" };
   }
 
   function showSuspenseTransition(msg, callback) {
@@ -2062,7 +2196,7 @@
         // (textContent — relayed name stays XSS-inert). Names only the partner.
         setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
         text.textContent = msg.loverDeathName + " died of heartbreak.";
-        text.style.color = "#9c27b0";
+        text.style.color = "var(--role-lover)";
         text.style.animation = "none";
         void text.offsetWidth;
         text.style.animation = "suspenseFadeIn 0.8s ease";
@@ -2094,8 +2228,11 @@
 
   function showDetectiveResult(msg) {
     const el = $("detective-result");
-    // D3b: pixel magnifier icon instead of emoji
-    const magSvg = pixelArtToSvg(MAGNIFIER_ART);
+    // 140:1315 / 143:1463 — the reveal is a 326x70 #232729 card carrying the
+    // 34x34 DETECTIVE art (the same asset as the Membership Card) beside the
+    // sentence, shipped as designed. The COPY stays the app's: Figma's
+    // "…reveals jenny NOT a member of the mafia" is ungrammatical.
+    const magSvg = '<img class="detective-result-art" src="/img/roles/detective.png" alt="" draggable="false">';
     const plainText = msg.isMafia
       ? `Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
       : `Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
@@ -2105,7 +2242,7 @@
     const htmlText = msg.isMafia
       ? `Your investigation reveals: ${safeName} IS a member of the Mafia!`
       : `Your investigation reveals: ${safeName} is NOT a member of the Mafia.`;
-    el.innerHTML = magSvg + " " + htmlText;
+    el.innerHTML = magSvg + '<span class="detective-result-text">' + htmlText + '</span>';
     el.classList.remove("hidden");
     narratorTranscript.push(plainText);
     detectiveHistory.push({
@@ -2189,19 +2326,30 @@
       grouped[ev.round].push(ev);
     }
 
+    // Game Tabs Events grid (specs/components/287-3437--game-tabs.md): each round
+    // is ONE row — "Round N" in the left column, that round's lines stacked in
+    // the right column — with a divider between rounds. Strings and the privacy
+    // projection above are unchanged; this is layout only.
     for (const round of Object.keys(grouped).sort((a, b) => a - b)) {
+      const row = document.createElement("div");
+      row.className = "eh-round";
+
       const header = document.createElement("div");
       header.className = "event-history-round";
       header.textContent = `Round ${round}`;
-      container.appendChild(header);
+      row.appendChild(header);
 
+      const cell = document.createElement("div");
+      cell.className = "eh-round-events";
       for (const ev of grouped[round]) {
         const item = document.createElement("div");
         const cls = NIGHT_DEATH_CLASS.has(ev.type) ? "death" : ev.type;
         item.className = `event-item ${cls}`;
         item.textContent = `${ev.playerName} — ${EVENT_LABELS[ev.type] || ev.type}`;
-        container.appendChild(item);
+        cell.appendChild(item);
       }
+      row.appendChild(cell);
+      container.appendChild(row);
     }
 
     updatePlayerStatus();
@@ -2229,18 +2377,20 @@
     container.innerHTML = sorted
       .map((p) => {
         const status = p.isAlive ? "alive" : "dead";
-        const dotStyle = p.isAlive && p.color ? `style="background:${p.color}"` : '';
+        const dotStyle = p.isAlive && p.color ? `style="background:${nearestPlayerColor(p.color)}"` : '';
         const isMafiaTeammate = myRole === "mafia" && mafiaTeam.includes(p.username);
         const showMafiaTag = isMafiaTeammate && !hideMafiaTag;
         // The mafia (incl. the Godfather themselves) know who the Godfather is.
         const isGodfatherMember = godfatherName != null && p.username === godfatherName;
         const investigated = investigationMap.hasOwnProperty(p.username);
         const isMafia = investigated ? investigationMap[p.username] : false;
-        return `<div class="player-status-item">
-          <span class="player-status-dot ${status}" ${dotStyle}></span>
+        // 261:2092 row order: name (+ the detective's 14px thumb) on the LEFT,
+        // the 14x14 colour ellipse on the RIGHT.
+        return `<div class="player-status-item ${status}">
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
           ${showMafiaTag ? (isGodfatherMember ? '<span class="mafia-tag godfather-tag">&#128081; GODFATHER</span>' : '<span class="mafia-tag">MAFIA</span>') : ''}
           ${investigated ? (isMafia ? '<span class="detective-tag mafia">' + pixelArtToSvg(THUMB_DOWN_ART) + '</span>' : '<span class="detective-tag clear">' + pixelArtToSvg(THUMB_UP_ART) + '</span>') : ''}
+          <span class="player-status-dot ${status}" ${dotStyle}></span>
         </div>`;
       })
       .join("");
@@ -2291,6 +2441,60 @@
     return true;
   }
 
+  // ── N-D2: pre-choice gates (Figma 130:573 Hunter, 225:542 Vigilante) ──────
+  // Both roles open on a two-CTA screen — a primary that reveals the target
+  // list and a decline that resolves the action outright — instead of showing
+  // the list and the decline button together. The decline BUTTON is the same
+  // element in both states (N-D6: one shared style), only its label changes to
+  // the Figma per-frame string: gate vs. target-list frame.
+  const NIGHT_GATES = {
+    hunter_revenge: {
+      go: "Take revenge",          // 130:573
+      declineId: "btn-decline-revenge",
+      gateDecline: "Spare the others", // 130:573
+      listDecline: "Don't shoot",      // 225:364
+    },
+    vigilante_shoot: {
+      go: "Shoot",                 // 225:542
+      declineId: "btn-vigilante-pass",
+      gateDecline: "Hold fire",    // 225:542
+      listDecline: "Hold fire",    // 234:1332 — same string on both frames
+    },
+  };
+  let activeNightGate = null;
+
+  /** Drop any gate state: list visible, primary CTA gone. The default for every
+   *  role/spectator surface that renders into #action-targets. */
+  function clearNightGate() {
+    activeNightGate = null;
+    $("night-choice").classList.remove("gate-mode");
+    $("action-list-wrap").classList.remove("hidden");
+    $("btn-night-gate-go").classList.add("hidden");
+  }
+
+  /** Enter the gate: list shuttered, primary + decline side by side. */
+  function openNightGate(actionType) {
+    const gate = NIGHT_GATES[actionType];
+    activeNightGate = actionType;
+    $("btn-night-gate-go").textContent = gate.go;
+    $("btn-night-gate-go").classList.remove("hidden");
+    $("night-choice").classList.add("gate-mode");
+    $("action-list-wrap").classList.add("hidden");
+    $(gate.declineId).textContent = gate.gateDecline;
+  }
+
+  /** The primary CTA was tapped: reveal the target list (Figma wiring
+   *  225:417 → 225:364 hunter, 225:557 → 234:1332 vigilante). */
+  $("btn-night-gate-go").addEventListener("click", () => {
+    if (!activeNightGate || nightActionLocked) return;
+    const gate = NIGHT_GATES[activeNightGate];
+    activeNightGate = null;
+    $("night-choice").classList.remove("gate-mode");
+    $("action-list-wrap").classList.remove("hidden");
+    $("btn-night-gate-go").classList.add("hidden");
+    $(gate.declineId).textContent = gate.listDecline;
+  });
+
   function showNightAction(title, players, actionType, disabledId) {
     // A dead player may only act while their own dead action is active
     // (deadActionActive — joker haunting or hunter revenge from beyond the grave)
@@ -2303,6 +2507,7 @@
     nightActionLocked = false;
 
     hideSlideConfirm();
+    clearNightGate();
 
     // Decline affordance is exclusive to the hunter's revenge prompt
     // (the Confirm button is reserved for the kill; declining is a plain button).
@@ -2336,11 +2541,28 @@
         $("mafia-vote-status").classList.remove("hidden");
       }
     } else {
+      // N-D4 (Figma 130:625 / 140:1186): the detective's own past results are
+      // annotated inline on the night list, sourced CLIENT-SIDE from
+      // detectiveHistory — no new server field, no wire change. Gated on
+      // `myRole === "detective"` exactly like updatePlayerStatus's tag column,
+      // so no other role can ever render an "investigated as" string.
+      // Rows stay SELECTABLE: the engine imposes no re-investigation ban
+      // (submitDetectiveInvestigation, src/game-engine.ts:1062-1075, and
+      // sendDetectivePrompts, src/server.ts:301-309, both send/accept every
+      // living non-detective every night), so disabling them would invent a
+      // rule the server does not enforce.
+      const investigated = {};
+      if (myRole === "detective" && actionType === "detective_investigate") {
+        for (const inv of detectiveHistory) investigated[inv.targetName] = inv.isMafia;
+      }
       list.innerHTML = players
         .map((p) => {
           const isDisabled = disabledId != null && p.id === disabledId;
           const suffix = isDisabled ? " (protected last night)" : "";
-          return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}">${escapeHtml(p.username)}${suffix}</li>`;
+          const note = Object.prototype.hasOwnProperty.call(investigated, p.username)
+            ? `<span class="tl-note${investigated[p.username] ? " tl-note-mafia" : ""}">investigated as ${investigated[p.username] ? "MAFIA" : "NOT MAFIA"}</span>`
+            : "";
+          return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}"><span class="tl-name">${escapeHtml(p.username)}${suffix}</span>${note}</li>`;
         })
         .join("");
 
@@ -2354,7 +2576,11 @@
           list.querySelectorAll("li").forEach((l) => l.classList.remove("selected"));
           li.classList.add("selected");
           selectedTargetId = parseInt(li.dataset.id);
-          selectedName = li.textContent;
+          // Read the NAME cell, not the row: the detective's rows also carry an
+          // inline "investigated as …" note that must never reach the
+          // collapsed confirmation row.
+          const nameCell = li.querySelector(".tl-name");
+          selectedName = nameCell ? nameCell.textContent : li.textContent;
           setupSlideConfirm(slideRole, () => {
             if (nightActionLocked || selectedTargetId === null) return;
             nightActionLocked = true;
@@ -2371,6 +2597,7 @@
             // affordances go with it (no-op for other action types; already hidden)
             $("btn-decline-revenge").classList.add("hidden");
             $("btn-vigilante-pass").classList.add("hidden");
+            clearNightGate();
           }, () => {
             // Cancel: deselect so the player can choose a different target.
             selectedTargetId = null;
@@ -2380,6 +2607,10 @@
         });
       });
     }
+
+    // N-D2: the two gated roles land on the two-CTA screen first. Opened AFTER
+    // the list is built so the shutter has something to reveal.
+    if (NIGHT_GATES[actionType]) openNightGate(actionType);
   }
 
   // C5b: the room-wide wait view while the revenge gate is open. The reveal
@@ -2416,6 +2647,7 @@
     wsSend({ type: "hunter_revenge", targetId: null });
     $("btn-decline-revenge").classList.add("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("action-status").textContent = "You lower your bow.";
   });
 
@@ -2426,8 +2658,13 @@
     wsSend({ type: "vigilante_shoot", targetId: null });
     $("btn-vigilante-pass").classList.add("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("action-targets").innerHTML = "";
-    $("action-status").textContent = "You hold your fire.";
+    // N-D8: ONE hold-fire string on both sides. The server's night_action_done
+    // (src/server.ts:1489) overwrites this line a moment later, so the transient
+    // client copy is unified to the settled server wording instead of flashing
+    // a shorter variant first.
+    $("action-status").textContent = "You hold your fire and keep your bullet.";
   });
 
   function renderSingleMafiaTargets(list, players) {
@@ -2504,7 +2741,7 @@
               if (v.voteType !== "letsnot") {
                 const voterPlayer = knownPlayers.find(kp => kp.username === voterName);
                 if (voterPlayer && voterPlayer.color) {
-                  chip.style.background = voterPlayer.color;
+                  chip.style.background = nearestPlayerColor(voterPlayer.color);
                 }
               }
               chipsDiv.appendChild(chip);
@@ -2562,7 +2799,7 @@
         } else if (cardState === "idle") {
           const nomBtn = document.createElement("button");
           nomBtn.className = "mtc-btn mtc-btn-suggest";
-          // D3b: pixel POINT icon + Silkscreen label — mechanics unchanged
+          // D3b: pixel POINT icon + Grandstander label — mechanics unchanged
           nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
           nomBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -2573,7 +2810,7 @@
 
           const spareBtn = document.createElement("button");
           spareBtn.className = "mtc-btn mtc-btn-object";
-          // D3b: pixel X icon + Silkscreen label
+          // D3b: pixel X icon + Grandstander label
           spareBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span><span class="mtc-label">Spare</span>';
           spareBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -2599,14 +2836,14 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -2621,14 +2858,14 @@
             if (myExistingLock && myExistingLock.targetId !== targetId) {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
-              // D3b: pixel LOCK icon + Silkscreen label
+              // D3b: pixel LOCK icon + Grandstander label
               lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -2640,7 +2877,7 @@
           } else {
             const nomBtn = document.createElement("button");
             nomBtn.className = "mtc-btn mtc-btn-suggest";
-            // D3b: pixel POINT icon + Silkscreen label
+            // D3b: pixel POINT icon + Grandstander label
             nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
             nomBtn.addEventListener("click", (e) => {
               e.stopPropagation();
@@ -2744,6 +2981,7 @@
     panel.classList.remove("hidden");
     $("action-status").textContent = "";
     hideSlideConfirm();
+    clearNightGate(); // spectator surfaces are never gated
 
     const list = $("action-targets");
 
@@ -2788,6 +3026,7 @@
     const panel = $("night-actions");
     panel.classList.remove("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("mafia-vote-status").classList.add("hidden");
     renderSpectatorLog();
 
@@ -2814,6 +3053,7 @@
     const panel = $("night-actions");
     panel.classList.remove("hidden");
     hideSlideConfirm();
+    clearNightGate();
     $("mafia-vote-status").classList.add("hidden");
     $("action-status").textContent = "";
     renderSpectatorLog();
@@ -3007,40 +3247,70 @@
   function iAccusedToday() { return accusationsMade.indexOf(userId) !== -1; }
   function iSecondedToday() { return secondsMade.indexOf(userId) !== -1; }
 
-  // The accuse UI shows only for LIVING players during the day. Voting, night
-  // and game_over hide it (their phase handlers hide day-accuse-controls).
+  // The accuse UI shows during the day only (voting, night and game_over hide
+  // day-accuse-controls in their phase handlers).
+  // LIVING players get the launcher + picker + per-row actions; DEAD players
+  // get the same standing-accusations list READ-ONLY (mockup state 7): the
+  // launcher and every row action come down and a spectator note takes their
+  // place. Accusations are public by construction — accuser/target/seconder
+  // names are broadcast room-wide and narrated to everyone — so nothing
+  // role-derived reaches this surface.
   function renderAccusePanel() {
     const wrap = $("day-accuse-controls");
-    if (currentPhase !== "day" || isDead) {
+    if (currentPhase !== "day") {
       wrap.classList.add("hidden");
       $("accuse-picker").classList.add("hidden");
       return;
     }
     wrap.classList.remove("hidden");
 
-    const btn = $("btn-accuse");
-    if (iAccusedToday()) {
-      btn.disabled = true;
-      btn.textContent = "You've made your accusation";
-    } else {
-      btn.disabled = false;
-      btn.textContent = "Accuse someone";
+    // Spectator: no launcher, no picker, one status line instead.
+    $("accuse-launch").classList.toggle("hidden", isDead);
+    $("accuse-spectator-note").classList.toggle("hidden", !isDead);
+    if (isDead) $("accuse-picker").classList.add("hidden");
+
+    if (!isDead) {
+      const btn = $("btn-accuse");
+      if (iAccusedToday()) {
+        btn.disabled = true;
+        btn.textContent = "You've made your accusation";
+      } else {
+        btn.disabled = false;
+        btn.textContent = "Accuse someone";
+      }
     }
 
     renderAccusationsList();
   }
 
   function accusationLabel(a) {
+    // A sleep proposal is the SAME object as an accusation (targetId === null);
+    // the moon glyph is the mockup's visual marker for it, decoration only.
     return a.targetId === null
-      ? escapeHtml(a.accuserName) + " moves that the town sleeps"
+      ? '<span class="acc-moon">\u{1F319}</span>' + escapeHtml(a.accuserName) + " moves that the town sleeps"
       : escapeHtml(a.accuserName) + " accuses " + escapeHtml(a.targetName);
   }
 
+  // Standing accusations — mockup states 3 / 5a / 6 / 7. Rows are the Figma
+  // 326x70 card with the label + a 12px status line on the left and exactly the
+  // ONE action this viewer may take on the right. The engine drops invalid
+  // messages silently, so eligibility is enforced here, locally:
+  //   accuser  → Withdraw only   (own_accusation / withdraw is accuser-only)
+  //   accused  → nothing, row dimmed  (accused_cannot_second)
+  //   second already spent → nothing  (already_seconded)
+  //   dead     → nothing at all, read-only spectator view
   function renderAccusationsList() {
     const panel = $("accusations-panel");
-    if (!pendingAccusations.length) { panel.innerHTML = ""; return; }
+    const heading = $("accusations-heading");
+    if (!pendingAccusations.length) {
+      panel.innerHTML = "";
+      heading.classList.add("hidden");
+      return;
+    }
+    heading.classList.remove("hidden");
     panel.innerHTML = pendingAccusations.map((a) => {
       const mine = a.accuserId === userId;
+      const accused = a.targetId === userId;
       // Eligible to second: living, not the accuser, not the accused, and
       // haven't already spent this day's second.
       const canSecond = !isDead
@@ -3048,13 +3318,28 @@
         && a.targetId !== userId
         && !iSecondedToday();
       const secondBtn = canSecond
-        ? '<button class="btn btn-small acc-second" data-id="' + a.id + '">Second</button>'
+        ? '<button class="acc-pill acc-second" data-id="' + a.id + '">'
+          + '<img class="acc-pill-thumb" src="/img/ui/thumb-up.png" alt="" draggable="false">Second</button>'
         : "";
-      const withdrawBtn = mine
-        ? '<button class="btn btn-small btn-secondary acc-withdraw" data-id="' + a.id + '">Withdraw</button>'
+      const withdrawBtn = (mine && !isDead)
+        ? '<button class="acc-pill acc-pill-alt acc-withdraw" data-id="' + a.id + '">Withdraw</button>'
         : "";
-      return '<div class="accusation-row" data-id="' + a.id + '">'
+      // Spectators get the label alone (mockup 7); the living get the status line.
+      let status = "";
+      if (!isDead) {
+        if (mine) status = "Yours — waiting for a second";
+        else if (accused) status = "You're accused — you can't second this";
+        else if (canSecond) status = "Needs a second";
+        else status = "Second spent for today";
+      }
+      const rowCls = "accusation-row"
+        + (accused && !isDead ? " accusation-row-accused" : "")
+        + (isDead ? " accusation-row-readonly" : "");
+      return '<div class="' + rowCls + '" data-id="' + a.id + '">'
+        + '<span class="accusation-main">'
         + '<span class="accusation-text">' + accusationLabel(a) + '</span>'
+        + (status ? '<span class="accusation-status">' + status + '</span>' : "")
+        + '</span>'
         + '<span class="accusation-actions">' + secondBtn + withdrawBtn + '</span>'
         + '</div>';
     }).join("");
@@ -3068,11 +3353,21 @@
 
   function populateAccuseTargets() {
     const list = $("accuse-target-list");
+    // Picker rows = the Figma player row (326x70 #232729 card) + the 14x14
+    // colour dot from the Players tab. Self is excluded (the engine rejects a
+    // self-accusation), and the sleep motion is the final row.
     const rows = knownPlayers
       .filter((p) => p.isAlive && p.id !== userId)
-      .map((p) => '<li data-id="' + p.id + '">' + escapeHtml(p.username) + '</li>')
+      .map((p) => {
+        const dot = p.color
+          ? '<span class="accuse-dot" style="background:' + nearestPlayerColor(p.color) + '"></span>'
+          : '<span class="accuse-dot"></span>';
+        return '<li data-id="' + p.id + '">' + dot + escapeHtml(p.username) + '</li>';
+      })
       .join("");
-    list.innerHTML = rows + '<li data-id="sleep" class="accuse-sleep-row">Propose the town sleeps on it</li>';
+    list.innerHTML = rows
+      + '<li data-id="sleep" class="accuse-sleep-row">'
+      + '<span class="accuse-dot accuse-dot-moon">\u{1F319}</span>Propose the town sleeps on it</li>';
     accuseSelectedTarget = null;
     $("btn-accuse-confirm").disabled = true;
     list.querySelectorAll("li").forEach((li) => {
@@ -3111,9 +3406,9 @@
 
   $("btn-end-day").addEventListener("click", () => {
     showConfirmSheet(
-      "End Day",
+      "End day",
       "End the day and transition to night?",
-      "End Day",
+      "End day",
       () => {
         // AUDIO GESTURE CHAIN (spec §10): ensureAudioReady() runs FIRST, here,
         // synchronously inside the Confirm-button click handler's call stack —
@@ -3139,15 +3434,29 @@
 
     const panel = $("voting-panel");
     panel.classList.remove("hidden");
+    // .voted dims the target block (270:1741 Execute / 270:1801 Spare); a fresh
+    // ballot starts undimmed.
+    panel.classList.toggle("voted", !!(isDead || hasVoted));
     $("admin-day-controls").classList.add("hidden");
     // Accusations hide while the ballot is live (rule 9).
     $("day-accuse-controls").classList.add("hidden");
     // Sleep ("town considers sleeping") ballot vs an ordinary execution vote.
+    // 270:1649 copy: "Execute X?" (Figma drops the app's old "Vote:" prefix).
+    // A sleep ballot carries targetName:"" on the wire, so it gets no portrait
+    // and its thumbs take labels — a bare thumb is ambiguous with no target.
     if (msg.sleep) {
       $("voting-title").textContent = "The town considers sleeping. Turn in for the night?";
+      $("vote-target-art").classList.add("hidden");
+      $("vote-target-art").innerHTML = "";
+      setVoteButtonFaces(true);
     } else {
-      $("voting-title").innerHTML = 'Vote: Execute <span id="vote-target-name"></span>?';
+      $("voting-title").innerHTML = 'Execute <span id="vote-target-name"></span>?';
       $("vote-target-name").textContent = msg.targetName;
+      // 270:1649 "image 1" (78x78) — the generic verdict art, not a per-player
+      // portrait (the app has none and the wire carries no image).
+      $("vote-target-art").innerHTML = '<img src="/img/roles/dead.png" alt="" draggable="false">';
+      $("vote-target-art").classList.remove("hidden");
+      setVoteButtonFaces(false);
     }
 
     // Hide vote buttons if dead or already voted (rejoin), show otherwise
@@ -3169,6 +3478,16 @@
     }
   }
 
+  // 270:1649 thumb CTAs. A target-less (sleep) ballot adds the invented
+  // "Sleep" / "Stay up" labels — Figma's Voting frame has no label slot
+  // because it never modelled a no-target ballot.
+  function setVoteButtonFaces(sleep) {
+    const up = '<img class="thumb-art" src="/img/ui/thumb-up.png" alt="Yes" draggable="false">';
+    const down = '<img class="thumb-art" src="/img/ui/thumb-down.png" alt="No" draggable="false">';
+    $("btn-vote-yes").innerHTML = up + (sleep ? '<span class="vote-cta-label">Sleep</span>' : "");
+    $("btn-vote-no").innerHTML = down + (sleep ? '<span class="vote-cta-label">Stay up</span>' : "");
+  }
+
   $("btn-vote-yes").addEventListener("click", () => {
     if (hasVoted || isDead) return;
     ensureAudioReady();
@@ -3176,6 +3495,8 @@
     $("btn-vote-yes").classList.add("selected");
     $("btn-vote-yes").disabled = true;
     $("btn-vote-no").disabled = true;
+    // 270:1741 Execute: the target block dims once your ballot is in.
+    $("voting-panel").classList.add("voted");
     wsSend({ type: "cast_vote", approve: true });
   });
 
@@ -3186,6 +3507,8 @@
     $("btn-vote-no").classList.add("selected");
     $("btn-vote-yes").disabled = true;
     $("btn-vote-no").disabled = true;
+    // 270:1801 Spare: same dimmed treatment.
+    $("voting-panel").classList.add("voted");
     wsSend({ type: "cast_vote", approve: false });
   });
 
@@ -3194,7 +3517,8 @@
   });
 
   function updateVoteProgress(msg) {
-    $("vote-progress").textContent = `${msg.totalVotes} / ${msg.total} votes cast`;
+    // 270:1649 tally copy: "2/4 votes cast" (no spaces around the slash).
+    $("vote-progress").textContent = `${msg.totalVotes}/${msg.total} votes cast`;
   }
 
   function handleVoteResult(msg) {
@@ -3217,10 +3541,11 @@
 
     lastVoteResult = msg;
 
-    const resultText = msg.executed
-      ? `${msg.targetName} has been executed.`
-      : `${msg.targetName} has been spared.`;
-    showNarratorMessage(resultText);
+    // Day-9: only the EXECUTED outcome gets a client-side line. A spare is
+    // narrated once, by the engine (EXECUTION_SPARED_MESSAGES on the spared
+    // phase_change) — the old "{name} has been spared." here was a second,
+    // contradicting string for the same event.
+    if (msg.executed) showNarratorMessage(`${msg.targetName} has been executed.`);
   }
 
   // ============================================================
@@ -3254,15 +3579,18 @@
   });
 
   // Joker win overlay (D6: its own #joker-win-overlay, no longer reuses the dead
-  // overlay). Clown centerpiece + amber celebration staging. Click-to-dismiss
-  // reveals the room/gameover view beneath, same as the dead overlay.
+  // overlay). Click-to-dismiss reveals the room/gameover view beneath, same as
+  // the dead overlay. GO-D6a: kept because official joker mode announces this
+  // win MID-GAME (the game then continues) — no game-over screen exists yet —
+  // and because it is the joint-victory carrier. Restyled to the Victory frame:
+  // the joker raster on its band radial.
   $("joker-win-overlay").addEventListener("click", () => {
     $("joker-win-overlay").classList.add("hidden");
   });
 
   function showJokerWinOverlay(jokerName) {
     $("joker-win-overlay").classList.remove("hidden");
-    $("joker-trophy-art").innerHTML = pixelArtToSvg(CLOWN_ART);
+    $("joker-trophy-art").innerHTML = winArtHtml("joker");
     // Winner name comes from the existing payload field only.
     $("joker-win-name").textContent = jokerName
       ? `${jokerName} had the last laugh`
@@ -3276,8 +3604,10 @@
     $("toggle-sound").checked = soundEnabled;
     updateThemeModeControl(); // D5.5b: reflect the active theme mode in the segmented control
     $("toggle-hide-mafia-tag").checked = hideMafiaTag;
-    // Show room code for admin
-    if (isAdmin && gameCode) {
+    // F9 (Figma 130:370 lines 245-253): the Room code row is unconditional for
+    // everyone in a room, not admin-only. Not a new leak — every player already
+    // reads the code off the lobby nav (index.html #lobby-code-player).
+    if (gameCode) {
       $("settings-room-code").classList.remove("hidden");
       $("settings-room-code-value").textContent = gameCode;
     } else {
@@ -3328,7 +3658,7 @@
       const mode = modes[e.role];
       const badge = mode ? `<span class="roster-mode-badge roster-mode-${mode}">${mode.toUpperCase()}</span>` : "";
       return `
-      <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role})">
+      <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role});--rc-ink:var(--role-${e.role}-ink)">
         <span class="roster-name">${ROSTER_ROLE_NAMES[e.role] || e.role}</span>
         ${badge}
         <span class="roster-count">×${e.count}</span>
@@ -3341,14 +3671,72 @@
     list.innerHTML = html;
   }
 
+  // ── Pre-game "Roles in Play" (Figma F6 — 268:566 people icon -> 268:640) ──
+  //
+  // PREMISE VERIFIED: the pre-game lineup is derivable EXACTLY on the client,
+  // so P3 ships no server change for this. `lobby_update` already carries the
+  // whole `game.settings` object plus the `players` array (src/server.ts:80-92),
+  // and role COUNTS in assignRoles() are a pure function of (player count,
+  // settings) — the shuffle only decides WHICH player gets a role, never how
+  // many of each exist. Nothing identity-bearing is added to the wire.
+  //
+  // Mirrors src/game-engine.ts assignRoles() step for step:
+  //   :831-832  mafia = min(settings.mafiaCount, floor(total/3)), floored at 1
+  //   :837-839  mafia seats consumed only while idx < total
+  //   :842-865  doctor, detective, joker, hunter, vigilante — in THAT order,
+  //             one seat each, and only if enabled with a seat left
+  //   :868-871  every remaining seat is a citizen
+  //   :888      lovers is a per-player FLAG (needs total >= 2), not a seat
+  //   :903-907  godfather is a FLAG on one mafioso (enabled && mafia >= 2)
+  // ...and rosterSummary() for presentation (src/game-engine.ts:660-678):
+  //   ROSTER_ORDER (:651) row order, zero-count roles omitted, doctor/joker
+  //   mode badges only when that role is actually dealt.
+  function deriveLobbyRoster(settings, total) {
+    if (!settings) return null;
+    let mafia = Math.min(Number(settings.mafiaCount), Math.floor(total / 3));
+    if (!(mafia >= 1)) mafia = 1;                                  // engine :832
+    let idx = Math.min(mafia, total);                              // engine :837
+    const counts = { mafia: idx };
+    const take = (role, enabled) => {                              // engine :842-865
+      if (enabled && idx < total) { counts[role] = 1; idx++; }
+    };
+    take("doctor", settings.enableDoctor);
+    take("detective", settings.enableDetective);
+    take("joker", settings.enableJoker);
+    take("hunter", settings.enableHunter);
+    take("vigilante", settings.enableVigilante);
+    counts.citizen = Math.max(0, total - idx);                     // engine :868-871
+
+    const ROSTER_ORDER = ["mafia", "doctor", "detective", "vigilante", "hunter", "joker", "citizen"];
+    const roles = ROSTER_ORDER
+      .filter((r) => (counts[r] || 0) > 0)
+      .map((r) => ({ role: r, count: counts[r] }));
+    const modes = {};
+    if (counts.doctor) modes.doctor = settings.doctorMode;
+    if (counts.joker) modes.joker = settings.jokerMode;
+    return {
+      roles,
+      godfather: !!settings.enableGodfather && mafia >= 2,         // engine :903
+      lovers: !!settings.enableLovers && total >= 2,               // engine :888
+      ...(Object.keys(modes).length ? { modes } : {}),
+    };
+  }
+
   function openRosterModal() {
     renderRoster(currentRoster);
+    $("modal-roster").classList.remove("hidden");
+  }
+  /** Same modal, pre-game: the lineup only — never a player→role pairing. */
+  function openLobbyRosterModal() {
+    renderRoster(deriveLobbyRoster(lobbySettings, lobbyPlayerCount));
     $("modal-roster").classList.remove("hidden");
   }
   function closeRosterModal() {
     $("modal-roster").classList.add("hidden");
   }
   $("btn-roster").addEventListener("click", openRosterModal);
+  $("btn-roster-lobby-admin").addEventListener("click", openLobbyRosterModal);
+  $("btn-roster-lobby-player").addEventListener("click", openLobbyRosterModal);
   $("btn-close-roster").addEventListener("click", closeRosterModal);
   $("modal-roster").addEventListener("click", (e) => {
     if (e.target === $("modal-roster")) closeRosterModal();
@@ -3501,9 +3889,9 @@
 
   $("btn-end-game").addEventListener("click", () => {
     showConfirmSheet(
-      "End Game",
+      "End game",
       "Are you sure you want to end the game?",
-      "End Game",
+      "End game",
       () => {
         wsSend({ type: "end_game" });
         closeSettingsModal();
@@ -3514,9 +3902,9 @@
 
   $("btn-settings-leave").addEventListener("click", () => {
     showConfirmSheet(
-      "Leave Game",
+      "Leave game",
       "Leave the game? You can rejoin later with the same room code.",
-      "Leave Game",
+      "Leave game",
       () => {
         wsSend({ type: "leave_game" });
         localStorage.removeItem("mafia_game_code");
@@ -3566,39 +3954,115 @@
     }
   }
 
+  // ---- P6 game-over constants -------------------------------------------
+  // Victory art: the Figma "image 8" raster of each band, downscaled to 800px
+  // from docs/figma-raw/assets/fills into public/img/ui/
+  // (c902a3b3… campfire → town, 6252da56… revolver → mafia,
+  //  f0e46bd3… jester mask → joker).
+  const WIN_ART_SRC = {
+    town: "/img/ui/win-town.png",
+    mafia: "/img/ui/win-mafia.png",
+    joker: "/img/ui/win-joker.png",
+  };
+  function winArtHtml(band) {
+    return WIN_ART_SRC[band] ? `<img src="${WIN_ART_SRC[band]}" alt="" draggable="false">` : "";
+  }
+  // Which of the three Figma bands a game_over payload belongs to. Force-ended
+  // games carry winner:"town" on the wire but concluded nothing, so they take
+  // the neutral variant (GO-D13) — checked FIRST.
+  function gameOverBand(msg) {
+    if (msg.forceEnded) return "neutral";
+    return WIN_ART_SRC[msg.winner] ? msg.winner : "neutral";
+  }
+  const WIN_TITLES = { town: "Citizens Win!", mafia: "Mafia Wins!", joker: "Joker Wins!" };
+  // GO-D3b: the canonical Figma narrative is what the SCREEN shows; the
+  // narrator's randomised pools (src/narrator.ts TOWN_WIN_MESSAGES /
+  // MAFIA_WIN_MESSAGES / JOKER_WIN_MESSAGES) keep feeding the transcript
+  // untouched — they still ride phase_change.messages, which is where the
+  // transcript is built. Nothing on the wire changes.
+  const FIGMA_WIN_LINES = {
+    town: "The last of the mafia falls. The street lamps come on early, and for the first time in a long time, no one is afraid to walk under them. The town wins.",
+    mafia: "It's over. There aren't enough honest hands left to hold the line. The lamp stays dark on whichever streets they choose. The Mafia wins.",
+    // 332:6071 is name-parameterised, matching Narrator.jokerWin(name)'s shape.
+    joker: "{name} is smiling as the rope goes taut. They wanted this. You gave it to them, and the joke was never yours to get.",
+  };
+  function gameOverNarrative(band, msg) {
+    const line = FIGMA_WIN_LINES[band];
+    if (!line) return msg.message || "";
+    if (band !== "joker") return line;
+    // The joker's name is not a wire field on game_over; it is derivable from
+    // the reveal roster the same payload already carries.
+    const joker = (msg.players || []).find((p) => p.role === "joker");
+    return joker ? line.replace("{name}", joker.username) : (msg.message || line.replace("{name}", "The joker"));
+  }
+
   function showGameOverScreen(msg, admin) {
     showScreen("gameover");
-    // D6: TROPHY_ART centerpiece, recolored per winning faction via a CSS filter
-    // class (reuses the D5 faction-tint approach — no new grids). Force-ended
-    // games have no winner → neutral trophy.
-    const trophyEl = $("gameover-trophy");
-    trophyEl.innerHTML = pixelArtToSvg(TROPHY_ART);
-    const winClass =
-      msg.forceEnded ? "win-neutral" :
-      msg.winner === "town" ? "win-town" :
-      msg.winner === "mafia" ? "win-mafia" :
-      msg.winner === "joker" ? "win-joker" : "win-neutral";
-    trophyEl.className = "gameover-trophy " + winClass;
-    const titles = {
-      town: "Citizens Win!",
-      mafia: "Mafia Wins!",
-      joker: "Joker Wins!",
-    };
-    if (msg.forceEnded) {
-      $("gameover-title").textContent = "Game Over";
-      $("gameover-title").style.color = "var(--text)";
-    } else {
-      $("gameover-title").textContent = titles[msg.winner] || "Game Over";
-      $("gameover-title").style.color =
-        msg.winner === "town" ? "var(--role-citizen)" :
-        msg.winner === "mafia" ? "var(--role-mafia)" :
-        msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
-    }
-    $("gameover-message").textContent = msg.message;
+    const band = gameOverBand(msg);
+    const screenEl = $("screen-gameover");
+    screenEl.classList.remove("win-town", "win-mafia", "win-joker", "win-neutral");
+    screenEl.classList.add("win-" + band);
+
+    // Victory art on its band radial (278-2780 "After" 244x245 / 278-2810
+    // "Skull" 183x183.75). GO-D13: the force-ended variant draws no art and no
+    // verdict line — there is no winner to celebrate.
+    const art = band === "neutral" ? "" : winArtHtml(band);
+    $("gameover-art").innerHTML = art;
+    $("gameover-art-sm").innerHTML = art;
+    $("gameover-pre").classList.toggle("hidden", band === "neutral");
+    $("gameover-details-pre").classList.toggle("hidden", band === "neutral");
+
+    const title = band === "neutral" ? "Game over" : WIN_TITLES[msg.winner];
+    $("gameover-title").textContent = title;
+    $("gameover-details-title").textContent = title;
+    // Headline ink now rides the screen's band class (--win-ink); clear any
+    // inline colour a previous game left behind.
+    $("gameover-title").style.color = "";
+    // Force-ended games keep the server's explanatory line ("The host has left
+    // the game.") — it is information, not narrative.
+    $("gameover-message").textContent = band === "neutral" ? (msg.message || "") : gameOverNarrative(band, msg);
+
+    // CTAs animate in only once the reveal has played (Figma animates the same
+    // group opacity 0% → 100%).
+    $("gameover-ctas").classList.add("hidden");
     $("gameover-buttons").classList.add("hidden");
     $("gameover-buttons-player").classList.add("hidden");
+    $("gameover-danger").classList.add("hidden");
+    roleRevealReplayed = false;
+    setGameOverTab("players");
+    showGameOverOptionsView();
     renderGameHistory();
   }
+
+  // ---- The two game-over views (Figma "Game options" ↔ "View game details") --
+  function showGameOverOptionsView() {
+    $("gameover-view-options").classList.remove("hidden");
+    $("gameover-view-details").classList.add("hidden");
+  }
+  function showGameOverDetailsView() {
+    $("gameover-view-options").classList.add("hidden");
+    $("gameover-view-details").classList.remove("hidden");
+    replayRoleReveal();
+  }
+  // GO-D2b: the details screen's Game Tabs instance. Independent of the in-game
+  // #event-history tabs, which are force-reset on phase changes.
+  function setGameOverTab(tab) {
+    document.querySelectorAll(".go-tab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.gotab === tab);
+    });
+    $("go-panel-events").classList.toggle("hidden", tab !== "events");
+    $("go-panel-players").classList.toggle("hidden", tab !== "players");
+  }
+  document.querySelectorAll(".go-tab").forEach((b) => {
+    b.addEventListener("click", () => setGameOverTab(b.dataset.gotab));
+  });
+  $("btn-view-details").addEventListener("click", showGameOverDetailsView);
+  $("btn-details-back").addEventListener("click", showGameOverOptionsView);
+  $("btn-details-lobby").addEventListener("click", () => {
+    // Same capability split the options view draws (C12): the admin's lobby
+    // return re-opens settings for everyone, a player's returns only them.
+    wsSend({ type: isAdmin ? "return_to_lobby" : "player_return_to_lobby" });
+  });
 
   // Game-over history label map (death causes → readable text).
   const GAME_HISTORY_LABELS = {
@@ -3649,43 +4113,54 @@
       }
     }
 
+    // GO-D2b: rendered as Game Tabs' two-column Events grid: the "Night N" /
+    // "Day N" label in the left column, that block's lines stacked in the
+    // right, a 1px rule between blocks (specs/components/287-3437). The
+    // .game-history-round / .game-history-item classes are unchanged.
+    const appendBlock = (label, evs) => {
+      if (evs.length === 0) return;
+      const row = document.createElement("div");
+      row.className = "go-history-round";
+      const header = document.createElement("div");
+      header.className = "game-history-round";
+      header.textContent = label;
+      row.appendChild(header);
+      const list = document.createElement("div");
+      list.className = "go-history-events";
+      for (const ev of evs) {
+        const item = document.createElement("div");
+        item.className = `game-history-item ${ev.type}`;
+        item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
+        list.appendChild(item);
+      }
+      row.appendChild(list);
+      container.appendChild(row);
+    };
+
     for (const round of Object.keys(grouped).sort((a, b) => a - b)) {
       const { night, day } = grouped[round];
-      if (night.length > 0) {
-        const header = document.createElement("div");
-        header.className = "game-history-round";
-        header.textContent = `Night ${round}`;
-        container.appendChild(header);
-        for (const ev of night) {
-          const item = document.createElement("div");
-          item.className = `game-history-item ${ev.type}`;
-          item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
-          container.appendChild(item);
-        }
-      }
-      if (day.length > 0) {
-        const header = document.createElement("div");
-        header.className = "game-history-round";
-        header.textContent = `Day ${round}`;
-        container.appendChild(header);
-        for (const ev of day) {
-          const item = document.createElement("div");
-          item.className = `game-history-item ${ev.type}`;
-          item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
-          container.appendChild(item);
-        }
-      }
+      appendBlock(`Night ${round}`, night);
+      appendBlock(`Day ${round}`, day);
     }
   }
 
+  // GO-D1c: Figma's Game options frame offers ONE CTA ("Return to lobby", to
+  // Lobby/Host for the admin per 332:6290, Lobby/Player otherwise). The app's
+  // three wired admin capabilities have no Figma equivalent and are kept (R7):
+  // Play again (restart_game) is the primary, Return to lobby (return_to_lobby)
+  // the secondary, Close room (close_room) the destructive tail. Players get
+  // Return to lobby (player_return_to_lobby) and the header's Leave room.
   function showGameOverButtons(admin) {
     if (admin) {
       $("gameover-buttons").classList.remove("hidden");
       $("gameover-buttons-player").classList.add("hidden");
+      $("gameover-danger").classList.remove("hidden");
     } else {
       $("gameover-buttons-player").classList.remove("hidden");
       $("gameover-buttons").classList.add("hidden");
+      $("gameover-danger").classList.add("hidden");
     }
+    $("gameover-ctas").classList.remove("hidden");
   }
 
   function showGameOverSuspense(msg, admin) {
@@ -3693,28 +4168,28 @@
     const text = $("suspense-text");
 
     overlay.classList.remove("hidden", "fade-out");
-    // D5: trophy centerpiece, recolored per winning faction via a beat-win-*
-    // CSS class (filter recolor — no new grids). The trophy holds from the
-    // opening line through the winner reveal.
-    const winBeat =
-      msg.winner === "town" ? "beat-win-town" :
-      msg.winner === "mafia" ? "beat-win-mafia" :
-      msg.winner === "joker" ? "beat-win-joker" : "beat-gameover";
-    setSuspenseStage(TROPHY_ART, "FINAL VERDICT", winBeat);
+    // P6: this beat IS Figma's Victory screen (278:2772 / 332:5939 / 332:6071)
+    // — the band raster on its radial glow under the sentence-case 24px
+    // "The final verdict", holding from the opening line through the winner
+    // reveal. A winnerless end keeps the neutral trophy.
+    const band = gameOverBand(msg);
+    const winBeat = band === "neutral" ? "beat-gameover" : "beat-win-" + band;
+    setSuspenseStage(
+      band === "neutral" ? TROPHY_ART : null,
+      "The final verdict",
+      winBeat,
+      band === "neutral" ? "" : winArtHtml(band),
+    );
     text.textContent = "The game is over...";
     text.style.color = "";
     text.style.animation = "none";
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
 
-    const winColor =
-      msg.winner === "town" ? "var(--role-citizen)" :
-      msg.winner === "mafia" ? "var(--role-mafia)" :
-      msg.winner === "joker" ? "var(--role-joker)" : "var(--text)";
-    const winText =
-      msg.winner === "town" ? "Citizens Win!" :
-      msg.winner === "mafia" ? "Mafia Wins!" :
-      msg.winner === "joker" ? "Joker Wins!" : "Game Over";
+    // The overlay is always black, so the band hex is used directly (its
+    // theme-aware --win-*-ink partner is for the game-over screen).
+    const winColor = band === "neutral" ? "#FFFFFF" : `var(--win-${band})`;
+    const winText = band === "neutral" ? "Game over" : WIN_TITLES[msg.winner];
 
     // Beat 2: winner reveal
     setTimeout(() => {
@@ -3766,25 +4241,55 @@
       return aIsMafia - bIsMafia;
     });
 
+    // 278:2810 row: name on the left, the role chip on the right. GO-D12 keeps
+    // the app's five other disclosures in the right-hand cluster (the sixth,
+    // mafia-last ordering, is the sort above). Chip labels are Title Case via
+    // CSS text-transform, so the raw role name stays in the DOM.
     const hiddenClass = hidden ? " reveal-hidden" : "";
     container.innerHTML = sorted
       .map((p) => {
         const dead = !p.isAlive;
-        // D3b: pixel art icons instead of emoji
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
-        const deadText = dead ? '<span class="role-reveal-dead">DEAD</span>' : "";
+        const deadText = dead ? '<span class="role-reveal-dead">Dead</span>' : "";
         const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
-        // The Godfather reveals as "GODFATHER" (role stays "mafia" under the hood).
+        // The Godfather reveals as "Godfather" (role stays "mafia" under the hood).
         const revealRole = p.isGodfather ? "godfather" : (p.role || "?");
         return `<div class="role-reveal-item${dead ? " dead" : ""}${hiddenClass}" data-role="${revealRole}">
           <span class="role-reveal-name">${escapeHtml(p.username)}</span>
-          <span class="role-reveal-role ${revealRole}">${revealRole.toUpperCase()}</span>
-          ${trophyText}
-          ${loverText}
-          ${deadText}
+          <span class="role-reveal-tags">
+            ${trophyText}
+            ${loverText}
+            ${deadText}
+            <span class="role-reveal-role ${revealRole}">${escapeHtml(revealRole)}</span>
+          </span>
         </div>`;
       })
       .join("");
+  }
+
+  // GO-D12: the staggered reveal is one of the six kept disclosures, but the
+  // Figma flow puts the roster behind a tap, so the auto-stagger (which gates
+  // the CTAs) would play on a view nobody is looking at. Opening the details
+  // view replays it ONCE, and only if the auto-stagger already finished — a
+  // mid-flight reveal is left alone.
+  let roleRevealReplayed = false;
+  function replayRoleReveal() {
+    if (roleRevealReplayed) return;
+    const items = Array.from($("role-reveal").querySelectorAll(".role-reveal-item"));
+    if (items.length === 0) return;
+    if (!items.every((el) => el.classList.contains("reveal-show"))) return;
+    roleRevealReplayed = true;
+    items.forEach((el) => {
+      el.classList.remove("reveal-show");
+      el.classList.add("reveal-hidden");
+    });
+    void $("role-reveal").offsetWidth;
+    items.forEach((el, i) => {
+      setTimeout(() => {
+        el.classList.remove("reveal-hidden");
+        el.classList.add("reveal-show");
+      }, i * 120);
+    });
   }
 
   function revealRolesStaggered(players, admin) {
@@ -3854,9 +4359,9 @@
 
   $("btn-close-room").addEventListener("click", () => {
     showConfirmSheet(
-      "Close Room",
+      "Close room",
       "All players will be removed.",
-      "Close Room",
+      "Close room",
       () => { wsSend({ type: "close_room" }); },
       { danger: true }
     );
@@ -4182,28 +4687,9 @@
   function setupAccentPicker() {
     const root = $("lobby-accent");
     if (!root) return;
-    const toggle = $("accent-picker-toggle");
-    const expanded = $("accent-picker-expanded");
-
-    const setExpanded = (open) => {
-      root.classList.toggle("collapsed", !open);
-      root.classList.toggle("expanded", open);
-      if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      if (expanded) expanded.hidden = !open;
-    };
-
-    // Tapping the collapsed row (or the affordance again) toggles open/closed.
-    if (toggle) {
-      toggle.addEventListener("click", () => {
-        setExpanded(root.classList.contains("collapsed"));
-      });
-    }
-    // Collapse behavior: tapping outside the picker closes it (keeps the panel
-    // tidy and prevents the expanded stage from lingering). Documented choice.
-    document.addEventListener("click", (e) => {
-      if (root.classList.contains("collapsed")) return;
-      if (!root.contains(e.target)) setExpanded(false);
-    });
+    // P3/F7 (Figma 45:466 lines 153-181): the narrator block is drawn ALWAYS
+    // EXPANDED, so the disclosure toggle and its outside-click collapse are
+    // gone. The arrows keep firing the same update_settings call.
 
     const prev = $("accent-arrow-prev");
     const next = $("accent-arrow-next");
@@ -4268,12 +4754,10 @@
     const info = narrationData.accents[currentAccent];
     const label = info ? info.label : currentAccent;
     const desc = info ? info.description : "";
-    const cur = $("accent-picker-current");
     const lbl = $("accent-picker-label");
     const dsc = $("accent-picker-desc");
-    if (cur) cur.textContent = label;      // collapsed row: label only (no bleed)
-    if (lbl) lbl.textContent = label;      // expanded: prominent label
-    if (dsc) dsc.textContent = desc;       // expanded: wrapped description below
+    if (lbl) lbl.textContent = label;      // prominent label between the arrows
+    if (dsc) dsc.textContent = desc;       // wrapped description below
   }
 
   // Kept for the init fetch call site below; now paints the picker + gender toggle.
@@ -4316,20 +4800,21 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.35_202607131225";
+  const APP_VERSION_STAGING = "staging.42_202607252053";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
-  $("btn-vote-yes").innerHTML = pixelArtToSvg(THUMB_UP_ART);
-  $("btn-vote-no").innerHTML = pixelArtToSvg(THUMB_DOWN_ART);
+  // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at
+  // or above the spec's Medium (32px) band, where the chibi raster stays crisp,
+  // so they take the PNG. The 16px detective tag keeps THUMB_*_ART — see the
+  // crispness note on .detective-tag in app.css.
+  setVoteButtonFaces(false);
 
-  // D3b: Mascot single-sourcing — render MASCOT_ART into both logo containers
-  (function() {
-    var mascotSvg = pixelArtToSvg(MASCOT_ART, 16);
-    var authIcon = document.getElementById("logo-icon-auth");
-    var menuIcon = document.getElementById("logo-icon-menu");
-    if (authIcon) authIcon.innerHTML = mascotSvg;
-    if (menuIcon) menuIcon.innerHTML = mascotSvg;
-  })();
+  // P3: the auth/menu hero is now the Figma chibi raster
+  // (specs/game-menu/42-678--auth.md:48-51, image fill
+  // e721e25818db0cf44d23ba66f5720bb5dc2c04a7 -> /img/ui/hero.png), declared
+  // statically in index.html so it is precached with the shell. MASCOT_ART is
+  // no longer injected here; it stays in pixel-art.js (registry test) and its
+  // retirement is logged in docs/figma-raw/analysis/pixel-art-retirement.md.
 
   // D3b: Wire pixel icons into all static emoji/entity sites
   (function() {
@@ -4352,10 +4837,11 @@
     var deadEl = document.getElementById("dead-emoji");
     if (deadEl) deadEl.innerHTML = pixelArtToSvg(CARD_BACK_DEAD_ART);
 
-    // Clown into joker win overlay (D6: default state — showJokerWinOverlay also
-    // (re)sets it on every show). The container id keeps "joker-trophy-art".
+    // Joker raster into the joker win overlay (P6 — default state;
+    // showJokerWinOverlay also (re)sets it on every show). The container id
+    // keeps "joker-trophy-art".
     var trophyEl = document.getElementById("joker-trophy-art");
-    if (trophyEl) trophyEl.innerHTML = pixelArtToSvg(CLOWN_ART);
+    if (trophyEl) trophyEl.innerHTML = winArtHtml("joker");
 
     // Heart icon into lover-badge
     var loverIcon = document.querySelector(".lover-badge-icon");

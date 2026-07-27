@@ -6,78 +6,90 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Mafia">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#000000">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.svg">
   <link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg">
-  <link rel="preload" href="/fonts/silkscreen-700.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/libre-franklin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/grandstander/grandstander-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/grandstander/grandstander-latin-900.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/grandstander.css">
   <link rel="stylesheet" href="/app.css">
   <title>Mafia</title>
 </head>
 <body>
   <div id="app">
 
-    <!-- AUTH SCREEN -->
+    <!-- AUTH SCREEN — Figma 42:678 -->
     <div id="screen-auth" class="screen active">
       <div class="logo">
-        <div class="logo-icon" id="logo-icon-auth"></div>
+        <!-- "Skull" frame: 244x245 radial #218BE1@60% -> #000@60% behind a
+             200x200 chibi raster (spec 42-678:48-51). Glow lives on .logo-icon. -->
+        <div class="logo-icon" id="logo-icon-auth"><img src="/img/ui/hero.png" alt="" width="200" height="200"></div>
         <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="auth-form">
         <div class="input-pxb"><input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off"></div>
         <div class="passcode-row">
-          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4-digit PIN" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
+          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4 Digit Pin" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
         </div>
-        <button id="btn-login" class="btn btn-primary btn-large">Log In</button>
-        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc">Create Account</button></div>
+        <button id="btn-login" class="btn btn-primary btn-large">Log in</button>
+        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc">Create an account</button></div>
       </div>
       <div id="auth-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
     </div>
 
-    <!-- MAIN MENU -->
+    <!-- MAIN MENU — Figma 42:766 (empty code) / 287:3259 (valid code).
+         F2: the room-code field is ALWAYS visible (the old #btn-join-show
+         reveal step is gone). F3: Join is the primary CTA and starts
+         disabled; Host game drops to the secondary #232729 CTA below it. -->
     <div id="screen-menu" class="screen">
       <!-- Pull to Refresh -->
       <div id="pull-refresh-menu" class="pull-refresh">
         <div class="pull-refresh-spinner" id="pull-refresh-spinner-menu"></div>
       </div>
       <div class="logo logo-small">
-        <div class="logo-icon" id="logo-icon-menu"></div>
+        <div class="logo-icon" id="logo-icon-menu"><img src="/img/ui/hero.png" alt="" width="200" height="200"></div>
         <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="header">
         <h2>Welcome, <span id="menu-username"></span></h2>
-        <button id="btn-logout" class="btn btn-small btn-ghost">Log Out</button>
+        <button id="btn-logout" class="btn btn-small btn-ghost">Log out</button>
+      </div>
+      <div id="join-section" class="join-section">
+        <div class="input-pxb"><input type="text" id="join-code" placeholder="Room code" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
       </div>
       <div class="menu-buttons">
-        <button id="btn-host" class="btn btn-primary btn-large">Host Game</button>
-        <div class="btn-pxb pxc"><button id="btn-join-show" class="btn btn-secondary btn-large pxc">Join Game</button></div>
-      </div>
-      <div id="join-section" class="join-section hidden">
-        <div class="input-pxb" style="flex:1"><input type="text" id="join-code" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
-        <button id="btn-join" class="btn btn-primary">Join</button>
+        <button id="btn-join" class="btn btn-primary btn-large" disabled>Join</button>
+        <div class="btn-pxb pxc"><button id="btn-host" class="btn btn-secondary btn-large pxc">Host game</button></div>
       </div>
       <div id="menu-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
     </div>
 
-    <!-- LOBBY (ADMIN VIEW) -->
+    <!-- LOBBY (ADMIN VIEW) — Figma 45:466.
+         Nav: Lobby / Code E92G / people icon (Roles in play, 268:566) / gear.
+         The Leave control has no Figma affordance but is KEPT (R7) — without it
+         a host cannot exit the lobby. -->
     <div id="screen-lobby-admin" class="screen">
-      <div class="header">
+      <div class="header lobby-nav">
         <button id="btn-leave-admin" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
         <div class="header-right">
-          <div class="room-code">Code: <span id="lobby-code"></span></div>
+          <div class="room-code"><span class="room-code-label">Code</span> <span id="lobby-code"></span></div>
+          <button id="btn-roster-lobby-admin" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play">
+            <svg class="icon-people" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7.5" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.9c2.4.6 4 2.5 4 5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
           <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings">&#9881;</button>
         </div>
       </div>
 
-      <div class="settings-panel">
-        <h3>Game Settings</h3>
+      <h2 class="screen-title">Choose how to play</h2>
+
+      <div class="settings-panel card-primary">
 
         <div class="setting-row">
-          <span>Mafia Members</span>
+          <span>Mafia members</span>
           <div class="counter">
             <button id="mafia-minus" class="btn btn-counter">-</button>
             <span id="mafia-count">1</span>
@@ -134,59 +146,67 @@
           <label class="toggle"><input type="checkbox" id="toggle-godfather"><span class="slider"></span></label>
         </div>
 
-        <div id="lobby-accent" class="accent-picker setting-row collapsed">
-          <span class="accent-picker-title">Narrator Voice</span>
-          <button type="button" class="accent-picker-toggle" id="accent-picker-toggle" aria-expanded="false">
-            <span class="accent-picker-current" id="accent-picker-current"></span>
-            <span class="accent-picker-caret" aria-hidden="true"></span>
-          </button>
-          <div class="accent-picker-expanded" id="accent-picker-expanded" hidden>
+        <!-- Narrator block, Figma 45:466 lines 153-181: ALWAYS EXPANDED (F7).
+             Top row = "Narrator's voice" + the Genders pills; below it the
+             arrow / accent / arrow stage. The disclosure toggle and the
+             outside-click collapse are gone with the collapsed state. -->
+        <div id="lobby-accent" class="accent-picker setting-row expanded">
+          <span class="accent-picker-title">Narrator&rsquo;s voice</span>
+          <div id="narrator-gender-control" class="narrator-gender-control" role="group" aria-label="Narrator gender">
+            <button type="button" class="narrator-gender-btn" data-gender="male" aria-pressed="false">Male</button>
+            <button type="button" class="narrator-gender-btn" data-gender="female" aria-pressed="false">Female</button>
+          </div>
+          <div class="accent-picker-expanded" id="accent-picker-expanded">
             <div class="accent-picker-stage">
               <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice">&#9664;</button>
               <span class="accent-picker-label" id="accent-picker-label"></span>
               <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice">&#9654;</button>
             </div>
             <p class="accent-picker-desc" id="accent-picker-desc"></p>
-            <div class="narrator-gender-row">
-              <span class="narrator-gender-title">Voice</span>
-              <div id="narrator-gender-control" class="narrator-gender-control" role="group" aria-label="Narrator gender">
-                <button type="button" class="narrator-gender-btn" data-gender="male" aria-pressed="false">Male</button>
-                <button type="button" class="narrator-gender-btn" data-gender="female" aria-pressed="false">Female</button>
-              </div>
-            </div>
           </div>
         </div>
 
       </div>
 
-      <div class="players-section">
-        <h3>Players (<span id="player-count-admin">0</span>/20)</h3>
+      <!-- GM-12: the Figma host frame also draws a read-only Roles summary card
+           (45:466 lines 182-205) duplicating values the host edits 200px above.
+           Dropped as a mock artefact — the editable card is the single source. -->
+      <div class="players-section card-primary">
+        <div class="lobby-card-head"><span>Players</span><span><span id="player-count-admin">0</span>/20</span></div>
         <ul id="players-list-admin" class="players-list"></ul>
       </div>
 
-      <div id="color-picker-admin" class="color-picker-section"></div>
+      <div id="color-picker-admin" class="color-picker-section card-primary"></div>
 
-      <button id="btn-start" class="btn btn-primary btn-large">Start Game</button>
+      <button id="btn-start" class="btn btn-primary btn-large">Start game</button>
       <div id="lobby-error" class="error-msg"></div>
     </div>
 
-    <!-- LOBBY (PLAYER VIEW) -->
+    <!-- LOBBY (PLAYER VIEW) — Figma 42:782 -->
     <div id="screen-lobby-player" class="screen">
-      <div class="header">
+      <div class="header lobby-nav">
         <button id="btn-leave-player" class="btn btn-small btn-ghost">Leave</button>
         <h2>Lobby</h2>
         <div class="header-right">
-          <div class="room-code">Code: <span id="lobby-code-player"></span></div>
+          <div class="room-code"><span class="room-code-label">Code</span> <span id="lobby-code-player"></span></div>
+          <button id="btn-roster-lobby-player" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play">
+            <svg class="icon-people" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7.5" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.9c2.4.6 4 2.5 4 5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
           <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings">&#9881;</button>
         </div>
       </div>
       <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
-      <div id="player-lobby-settings" class="player-lobby-settings"></div>
-      <div class="players-section">
-        <h3>Players (<span id="player-count-player">0</span>/20)</h3>
+      <div id="player-lobby-settings" class="player-lobby-settings card-primary"></div>
+      <div class="players-section card-primary">
+        <div class="lobby-card-head"><span>Players</span><span><span id="player-count-player">0</span>/20</span></div>
         <ul id="players-list-player" class="players-list"></ul>
       </div>
-      <div id="color-picker-player" class="color-picker-section"></div>
+      <div id="color-picker-player" class="color-picker-section card-primary"></div>
+      <!-- Pre-existing silent-error gap: showError() writes into the ACTIVE
+           screen's .error-msg and this screen had none, so e.g. "Invalid color"
+           (src/server.ts:1976) was swallowed. Fixed here (in scope: the screen
+           is rebuilt). -->
+      <div id="lobby-player-error" class="error-msg"></div>
     </div>
 
     <!-- GAME SCREEN -->
@@ -196,6 +216,11 @@
         <div class="round-indicator">Round <span id="round-number">1</span></div>
         <div class="game-header-right">
           <div id="day-timer" class="day-timer hidden">00:00</div>
+          <!-- G1: the Figma night Nav carries a room-code chip (Code + E92G in
+               orange). The app only had the code inside the settings modal. Not a
+               new disclosure — every member of a room already reads it off the
+               lobby nav (P3/F9). -->
+          <div class="room-code game-room-code"><span class="room-code-label">Code</span> <span id="game-room-code"></span></div>
           <button id="btn-roster" class="btn btn-icon" title="Roles in play">&#9776;</button>
           <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
         </div>
@@ -209,12 +234,17 @@
       <!-- Role Card -->
       <div id="role-card" class="role-card">
         <div class="card-inner">
+          <!-- Membership Card (specs/components/77-528--membership-card.md):
+               eyebrow / name / description in the text column, chibi art beside it. -->
           <div class="card-front">
+            <div class="card-text">
+              <div id="role-eyebrow" class="role-eyebrow">Your role is</div>
+              <div id="role-name" class="role-name"></div>
+              <div id="role-description" class="role-description"></div>
+              <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lovers</div>
+              <div id="bullet-indicator" class="bullet-indicator hidden"><span id="bullet-status"></span></div>
+            </div>
             <div id="role-image" class="role-image"></div>
-            <div id="role-name" class="role-name"></div>
-            <div id="role-description" class="role-description"></div>
-            <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lover</div>
-            <div id="bullet-indicator" class="bullet-indicator hidden"><span id="bullet-status"></span></div>
             <div id="role-icon-mini" class="role-icon-mini"></div>
             <div id="role-mini-balloon" class="role-mini-balloon hidden">
               <svg viewBox="0 0 7 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
@@ -232,21 +262,14 @@
               </svg>
             </div>
           </div>
+          <!-- Spec "Role=Default": "Your role is / ? / Peel to reveal". -->
           <div class="card-back">
+            <div class="role-eyebrow">Your role is</div>
             <div id="card-back-art" class="card-back-art"></div>
-            <div class="card-back-label">MEMBERSHIP CARD</div>
+            <div class="card-back-label">Peel to reveal</div>
           </div>
           <div class="peel-flap"></div>
         </div>
-      </div>
-
-      <!-- Narrator Messages -->
-      <div id="narrator-area" class="narrator-area">
-        <div class="narrator-header">
-          <span class="narrator-label">Narrator</span>
-          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript"></button>
-        </div>
-        <div id="narrator-messages" class="narrator-messages"></div>
       </div>
 
       <!-- Awaiting Narrator Ready (Begin Night gate) -->
@@ -257,7 +280,7 @@
 
       <!-- Hunter Revenge Wait (C5b: room-wide while the revenge gate is open;
            the skip button shows for the admin only). D5 noir restyle: BOW
-           centerpiece + Silkscreen headline; show/hide logic is untouched
+           centerpiece + Grandstander headline; show/hide logic is untouched
            plumbing — only the painted chrome changed. -->
       <div id="revenge-wait" class="awaiting-ready revenge-wait hidden">
         <div id="revenge-wait-art" class="revenge-wait-art"></div>
@@ -267,17 +290,33 @@
         <button id="btn-skip-revenge" class="btn btn-danger btn-small hidden">Skip revenge</button>
       </div>
 
-      <!-- Detective Result (persistent) -->
-      <div id="detective-result" class="detective-result hidden"></div>
+      <!-- Night idle line (Figma 74:335 / 130:243) — the neutral status every
+           role sees at night once no night panel of its own is up. Gated on
+           "no panel active", NOT on role, so a doctor whose sub-phase already
+           closed gets the same screen as a citizen (shoulder-surf parity). -->
+      <div id="night-idle" class="night-idle hidden">The town goes to sleep&#8230;&#127769;</div>
 
       <!-- Night Actions -->
       <div id="night-actions" class="action-panel hidden">
         <h3 id="action-title"></h3>
         <div id="spectator-night-log" class="hidden"></div>
         <div id="joker-spectator-status" class="joker-spectator-status hidden"></div>
-        <ul id="action-targets" class="target-list"></ul>
-        <button id="btn-decline-revenge" class="btn btn-secondary btn-small hidden">Decline revenge</button>
-        <button id="btn-vigilante-pass" class="btn btn-secondary btn-small hidden">Hold fire</button>
+        <!-- N-D2: Hunter (130:573) and Vigilante (225:542) open on a two-CTA
+             GATE — one primary ("Take revenge" / "Shoot") and one decline —
+             and only reveal the target list once the primary is tapped.
+             #action-list-wrap is the gate's shutter: the list is rendered but
+             its wrapper is .hidden, so the gate is a real interaction step
+             while every existing #action-targets query keeps working. -->
+        <div id="night-choice" class="night-choice">
+          <button id="btn-night-gate-go" class="btn-gate btn-gate-primary hidden"></button>
+          <div id="action-list-wrap" class="action-list-wrap">
+            <ul id="action-targets" class="target-list"></ul>
+          </div>
+          <!-- N-D6: ONE shared style, Figma's per-frame string. The label is
+               rewritten by showNightAction / the gate resolve. -->
+          <button id="btn-decline-revenge" class="btn-gate btn-gate-alt hidden">Spare the others</button>
+          <button id="btn-vigilante-pass" class="btn-gate btn-gate-alt hidden">Hold fire</button>
+        </div>
         <div id="action-confirm" class="action-confirm hidden">
           <button id="btn-action-cancel" class="ac-btn ac-cancel pxc">Cancel</button>
           <button id="btn-action-confirm" class="ac-btn ac-confirm pxc">Confirm</button>
@@ -285,32 +324,50 @@
         <div id="action-status" class="action-status"></div>
       </div>
 
-      <!-- Admin Day Controls (nomination, end day) -->
-      <div id="admin-day-controls" class="admin-controls hidden">
-        <h3>Admin Controls <span id="vote-count-label" class="vote-count-label"></span></h3>
-        <div id="admin-status-msg" class="admin-status-msg"></div>
-        <div class="admin-target-section">
-          <p>Nominate a player for execution:</p>
-          <ul id="admin-target-list" class="target-list"></ul>
-        </div>
-        <div class="admin-buttons">
-          <button id="btn-end-day" class="btn btn-primary">End Day</button>
-        </div>
-      </div>
-
-      <!-- Player Accusations (all LIVING players, day phase) -->
+      <!-- Player Accusations (day phase).
+           LIVING players get the full flow (mockup states 1/2/3/5a/6); DEAD
+           players now get the same list READ-ONLY (state 7) — accusations are
+           public by construction (server.ts broadcasts accusations_update to
+           the whole room and narrates every one), so the old client-side
+           suppression hid public information from spectators for no privacy
+           gain. Client-only change, zero wire impact.
+           While a ballot is live the whole block still HIDES (rule 9,
+           handleVoteCalled) — the mockups' dim-in-place variant was not
+           adopted. -->
       <div id="day-accuse-controls" class="day-accuse-controls hidden">
+        <h3 id="accusations-heading" class="accusations-heading hidden">Standing accusations</h3>
         <div id="accusations-panel" class="accusations-panel"></div>
-        <div class="accuse-launch">
-          <button id="btn-accuse" class="btn btn-primary btn-small">Accuse someone</button>
+        <p id="accuse-spectator-note" class="accuse-spectator-note hidden">You&rsquo;re watching the town. You can&rsquo;t accuse or second.</p>
+        <div id="accuse-launch" class="accuse-launch">
+          <button id="btn-accuse" class="btn btn-primary btn-large">Accuse someone</button>
         </div>
         <div id="accuse-picker" class="accuse-picker hidden">
           <p class="accuse-picker-title">Point a finger &mdash; or move that the town sleeps:</p>
           <ul id="accuse-target-list" class="target-list"></ul>
           <div class="accuse-picker-buttons">
-            <button id="btn-accuse-cancel" class="btn btn-secondary btn-small">Cancel</button>
-            <button id="btn-accuse-confirm" class="btn btn-primary btn-small" disabled>Confirm</button>
+            <button id="btn-accuse-cancel" class="btn btn-secondary">Cancel</button>
+            <button id="btn-accuse-confirm" class="btn btn-primary" disabled>Confirm</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Admin Day Controls (nomination, end day) — Figma 270:1471 "Lobby
+           rules": #232729 card, 2px white stroke, radius 16, pad 16; a header
+           row with a 1px bottom rule; player rows as 326x60 BLACK CTAs; and
+           "End day" as the orange 5th row INSIDE the same stack (not a
+           detached button). The two app-only strings Figma has no slot for —
+           "(Vote #N done)" and the failed-vote line — are parked in the header
+           row and directly beneath it (mockup-spec state 6). -->
+      <div id="admin-day-controls" class="admin-controls card-primary hidden">
+        <div class="admin-head">
+          <h3>Admin controls</h3>
+          <span id="vote-count-label" class="vote-count-label"></span>
+        </div>
+        <div id="admin-status-msg" class="admin-status-msg"></div>
+        <div class="admin-target-section">
+          <p class="admin-nominate-label">Nominate a player for execution</p>
+          <ul id="admin-target-list" class="target-list admin-target-list"></ul>
+          <button id="btn-end-day" class="btn btn-primary admin-end-day">End day</button>
         </div>
       </div>
 
@@ -320,19 +377,47 @@
         <div id="mafia-vote-details"></div>
       </div>
 
-      <!-- Day Voting -->
+      <!-- Day Voting — Figma 270:1649: 78x78 target portrait, 24px
+           "Execute X?" headline, the tally, two 173x100 thumb CTAs, then the
+           admin-only "Cancel vote". Post-vote (270:1741 Execute / 270:1801
+           Spare) the target block dims (.voted) and the thumb CTAs come down;
+           the admin's Cancel vote STAYS (Day-8, app wins).
+           A sleep ballot carries no target, so the portrait is dropped and the
+           thumbs take "Sleep" / "Stay up" labels (mockup state 5b). -->
       <div id="voting-panel" class="voting-panel hidden">
-        <h3 id="voting-title">Vote: Execute <span id="vote-target-name"></span>?</h3>
+        <div id="vote-target-art" class="vote-target-art hidden"></div>
+        <h3 id="voting-title">Execute <span id="vote-target-name"></span>?</h3>
+        <div id="vote-progress" class="vote-progress"></div>
         <div id="vote-buttons-wrapper" class="vote-buttons">
           <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes"></button>
           <button id="btn-vote-no" class="btn btn-vote btn-vote-no"></button>
         </div>
-        <div id="vote-progress" class="vote-progress"></div>
-        <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel Vote</button>
+        <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel vote</button>
       </div>
 
+      <!-- Narrator Messages — N-D1a/R7: no Figma night frame draws a narrator
+           block, but it is the game's primary channel and the ONLY route to the
+           transcript, so it is kept and re-seated as a restyled block directly
+           ABOVE Game Tabs, matching the Figma vertical order
+           (Nav → Membership Card → prompt → Players → [Narrator] → Game Tabs).
+           Content, transcript button and message plumbing are untouched. -->
+      <div id="narrator-area" class="narrator-area">
+        <div class="narrator-header">
+          <span class="narrator-label">Narrator</span>
+          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript"></button>
+        </div>
+        <div id="narrator-messages" class="narrator-messages"></div>
+      </div>
+
+      <!-- Detective Result (persistent through the day, cleared at night).
+           140:1315 / 143:1463 seat the reveal card BETWEEN the narrator line
+           and Game Tabs, so it moved down here from the top of the screen. -->
+      <div id="detective-result" class="detective-result hidden"></div>
+
       <!-- Event History (always visible during game) -->
-      <div id="event-history" class="event-history hidden">
+      <!-- Game Tabs (specs/components/287-3437--game-tabs.md) — a hero card, so
+           it carries the applied white 2px stroke via .card-primary. -->
+      <div id="event-history" class="event-history card-primary hidden">
         <div class="eh-tabs">
           <button class="eh-tab active" data-tab="events">Events</button>
           <button class="eh-tab" data-tab="players">Players</button>
@@ -352,24 +437,79 @@
 
     </div>
 
-    <!-- GAME OVER SCREEN -->
+    <!-- GAME OVER SCREEN — P6.
+         Figma splits game over into three frames per winner band: Victory
+         screen (278:2772 / 332:5939 / 332:6071), Game options (278:2780 /
+         332:5960 / 332:6092 + admin 332:6290) and View game details
+         (278:2810 / 281:2972 / 281:3022). The app has ONE screen driven by a
+         timed sequence, so the Victory frame stays the #suspense-overlay beat
+         and the other two become two views inside #screen-gameover:
+         #gameover-view-options and #gameover-view-details.
+         The "Leave room" header row (C4) has no Figma equivalent and is kept
+         per R7 — it is the only exit for a player who does not want the lobby. -->
     <div id="screen-gameover" class="screen">
       <div class="gameover-header">
-        <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave Room</button>
+        <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave room</button>
       </div>
-      <div class="gameover-content">
-        <div id="gameover-trophy" class="gameover-trophy"></div>
-        <h1 id="gameover-title"></h1>
-        <p id="gameover-message"></p>
-        <div id="game-history" class="game-history"></div>
-        <div id="role-reveal" class="role-reveal"></div>
-        <div id="gameover-buttons" class="gameover-buttons hidden">
-          <button id="btn-play-again-same" class="btn btn-primary btn-large">Play Again</button>
-          <div class="btn-pxb pxc"><button id="btn-play-again-new" class="btn btn-secondary btn-large pxc">New Settings</button></div>
-          <button id="btn-close-room" class="btn btn-danger btn-large">Close Room</button>
+
+      <!-- VIEW 1 — "Game options" (278:2780). Art on its radial faction glow,
+           "The final verdict" 24px + the 48px w900 winner headline, the 14px
+           narrative line, then the CTA stack (each 358x60, radius 16, shadow).
+           GO-D1c: Figma's single "Return to lobby" CTA is kept as the layout,
+           but the app's capability triad survives — Play again (restart_game),
+           Return to lobby (return_to_lobby) and Close room (close_room) for the
+           admin; Return to lobby (player_return_to_lobby) for players. -->
+      <div id="gameover-view-options" class="gameover-content">
+        <div id="gameover-art" class="gameover-art"></div>
+        <div class="gameover-verdict">
+          <p id="gameover-pre" class="gameover-pre">The final verdict</p>
+          <h1 id="gameover-title"></h1>
         </div>
-        <div id="gameover-buttons-player" class="gameover-buttons hidden">
-          <div class="btn-pxb pxc"><button id="btn-return-to-lobby-player" class="btn btn-secondary btn-large pxc">Return to Lobby</button></div>
+        <p id="gameover-message"></p>
+        <div id="gameover-ctas" class="gameover-ctas hidden">
+          <div id="gameover-buttons" class="gameover-buttons hidden">
+            <button id="btn-play-again-same" class="btn btn-primary btn-large">Play again</button>
+            <button id="btn-play-again-new" class="btn btn-secondary btn-large">Return to lobby</button>
+          </div>
+          <div id="gameover-buttons-player" class="gameover-buttons hidden">
+            <button id="btn-return-to-lobby-player" class="btn btn-primary btn-large">Return to lobby</button>
+          </div>
+          <button id="btn-view-details" class="btn btn-secondary btn-large">View game details</button>
+          <div id="gameover-danger" class="gameover-buttons hidden">
+            <button id="btn-close-room" class="btn btn-danger btn-large">Close room</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 2 — "View game details" (278:2810). Figma shrinks the header to
+           18/36 over a 183px art frame, then lists the roster as 326x70 #232729
+           rows with a role chip. GO-D12: all six app-only disclosures stay —
+           alive/dead, Godfather-vs-Mafia, joint-win trophy, lover partner name,
+           mafia-last ordering and the staggered reveal.
+           GO-D2b: the post-game round history Figma drops comes back as a Game
+           Tabs instance (specs/components/287-3437) wrapping the roster
+           (Players) and the history (Events). -->
+      <div id="gameover-view-details" class="gameover-details hidden">
+        <div class="gameover-details-head">
+          <div id="gameover-art-sm" class="gameover-art gameover-art-sm"></div>
+          <p id="gameover-details-pre" class="gameover-pre">The final verdict</p>
+          <h2 id="gameover-details-title" class="gameover-details-title"></h2>
+        </div>
+        <div class="event-history card-primary">
+          <div class="eh-tabs">
+            <button class="go-tab" data-gotab="events">Events</button>
+            <button class="go-tab active" data-gotab="players">Players</button>
+          </div>
+          <div id="go-panel-events" class="eh-panel hidden">
+            <div id="game-history" class="game-history"></div>
+          </div>
+          <div id="go-panel-players" class="eh-panel">
+            <div id="role-reveal" class="role-reveal"></div>
+          </div>
+        </div>
+        <div class="gameover-ctas">
+          <button id="btn-details-lobby" class="btn btn-primary btn-large">Return to lobby</button>
+          <button id="btn-details-back" class="btn btn-secondary btn-large">Back to game options</button>
         </div>
       </div>
     </div>
@@ -386,33 +526,44 @@
     <div id="dead-overlay" class="dead-overlay hidden">
       <div class="dead-poster">
         <div id="dead-emoji" class="dead-skull-art"></div>
-        <p class="dead-pre">YOU ARE</p>
-        <p class="dead-text">DEAD</p>
+        <!-- N-D11 (Figma 245:344 vs 254:865): the headline is variant-aware —
+             "You are / DEAD" for every death, "You died of / HEARTBREAK" for a
+             lover cascade. Both now carry ids so you_died can swap them
+             alongside the existing art swap. The MESSAGE stays the server's
+             cause-neutral pool (R5) — Figma's "stabbed in the night" is
+             placeholder copy and would re-open the dawn leak. -->
+        <p id="dead-pre" class="dead-pre">You are</p>
+        <p id="dead-text" class="dead-text">DEAD</p>
         <p id="death-message" class="death-message"></p>
         <div class="dither-h dead-div"></div>
-        <p class="dead-note">stay quiet. you can still watch the town squirm.</p>
-        <button id="btn-watch-town" class="btn-watch pxc">WATCH THE TOWN</button>
+        <p class="dead-note">Stay quiet, you can still watch the town squirm.</p>
+        <button id="btn-watch-town" class="btn-watch pxc">Watch the town</button>
         <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
       </div>
     </div>
 
-    <!-- Joker Win Overlay (D6: real overlay — clown centerpiece + amber
-         celebration; targeted by showJokerWinOverlay; z-index 100). D9: at APP
-         ROOT for the same full-viewport reason as #dead-overlay above. -->
+    <!-- Joker Win Overlay (D6: real overlay; targeted by showJokerWinOverlay;
+         z-index 100). D9: at APP ROOT for the same full-viewport reason as
+         #dead-overlay above.
+         GO-D6a (P6): KEPT and restyled. Figma folds joker celebration into the
+         victory screen, which cannot express this beat — in official joker mode
+         the win is announced MID-GAME on the joker's execution and play carries
+         on (app.js jokerWonOverlayShown). It is also the joint-victory carrier.
+         Restyled into the Figma language: the joker raster on its #D5B5E3
+         radial, Grandstander, sentence case (R4), radius-16 card. -->
     <div id="joker-win-overlay" class="joker-win-overlay hidden">
       <div class="joker-poster">
         <div class="joker-trophy" id="joker-trophy-art"></div>
-        <p class="joker-win-pre">THE LAST LAUGH</p>
-        <h2 class="joker-win-title">JOKER WINS</h2>
+        <p class="joker-win-pre">The last laugh</p>
+        <h2 class="joker-win-title">Joker wins!</h2>
         <p id="joker-win-name" class="joker-win-name"></p>
-        <div class="dither-h joker-win-div"></div>
         <p class="joker-win-hint">Tap to dismiss</p>
       </div>
     </div>
 
     <!-- SUSPENSE OVERLAY -->
     <!-- z-index 300, topmost; death overlays reveal BENEATH it. Staged
-         composition (D5): pre-line (amber Silkscreen) + pixel art centerpiece
+         composition (D5): pre-line (amber Grandstander) + pixel art centerpiece
          + display text. #suspense-text KEEPS its id — the five beat writers
          target it. -->
     <div id="suspense-overlay" class="suspense-overlay hidden">
@@ -431,12 +582,15 @@
           <button id="btn-close-settings" class="btn btn-icon">&times;</button>
         </div>
         <div class="settings-modal-body">
+          <!-- F9: room code is shown to EVERY member of a room, not just the
+               admin (Figma 130:370 draws it unconditionally). Not a new leak —
+               players already read the code off the lobby nav. -->
           <div id="settings-room-code" class="setting-row hidden">
-            <span>Room Code</span>
-            <span id="settings-room-code-value" style="font-weight:700;letter-spacing:2px;font-size:18px"></span>
+            <span>Room code</span>
+            <span id="settings-room-code-value" class="settings-room-code-value"></span>
           </div>
           <div class="setting-row">
-            <span>Sound Effects</span>
+            <span>Sound effects</span>
             <label class="toggle"><input type="checkbox" id="toggle-sound"><span class="slider"></span></label>
           </div>
           <div class="setting-row">
@@ -447,14 +601,14 @@
             </div>
           </div>
           <div class="setting-row">
-            <span>Hide Mafia Tag</span>
+            <span>Hide mafia tag</span>
             <label class="toggle"><input type="checkbox" id="toggle-hide-mafia-tag"><span class="slider"></span></label>
           </div>
           <div id="settings-end-game" class="settings-end-game hidden">
-            <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End Game</button>
+            <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End game</button>
           </div>
           <div id="settings-leave-game" class="hidden" style="margin-top:12px">
-            <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%">Leave Game</button>
+            <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%">Leave game</button>
           </div>
         </div>
       </div>

@@ -1,26 +1,8 @@
 /* ============================================================
-   PIXEL NOIR — D1: @font-face declarations
+   @font-face declarations
+   Grandstander (the whole type system) is declared in /fonts/grandstander.css,
+   linked from index.html before this file.
    ============================================================ */
-@font-face {
-  font-family: 'Silkscreen';
-  src: url('/fonts/silkscreen-400.woff2') format('woff2');
-  font-weight: 400; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'Silkscreen';
-  src: url('/fonts/silkscreen-700.woff2') format('woff2');
-  font-weight: 700; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'Libre Franklin';
-  src: url('/fonts/libre-franklin-var.woff2') format('woff2');
-  font-weight: 100 900; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'Libre Franklin';
-  src: url('/fonts/libre-franklin-var-italic.woff2') format('woff2');
-  font-weight: 100 900; font-style: italic; font-display: swap;
-}
 @font-face {
   font-family: 'IBM Plex Mono';
   src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
@@ -38,83 +20,175 @@
   padding: 0;
 }
 
+/* ============================================================
+   P1 — FIGMA DESIGN TOKENS (dark base)
+   Values marked "spec" come from docs/figma-raw/specs/palette.md and the
+   component specs; values marked "derived" have no Figma ground truth (the
+   Figma system only draws one surface level) and are computed from a spec
+   colour. Token NAMES are unchanged so every downstream rule keeps working.
+   ============================================================ */
 :root {
-  /* Pixel Noir palette — D1 token swap (names unchanged, values updated) */
-  --bg: #0b0b10;
-  --bg-card: #1a1a2e;
-  --bg-elevated: #15152a;
-  --bg-input: #15152a;
-  --text: #ece5d8;
-  --text-secondary: #8a8a96;
-  --border: #34345c;
-  --primary: #e8a33d;
-  --primary-dark: #b87d24;
-  --danger: #b3202a;
-  --danger-bright: #d4313c;
-  --success: #388e3c;
-  /* --warning: gold, clearly separated from hunter orange (#ef6c00) and amber primary (#e8a33d) */
-  --warning: #ffc107;
-  --role-mafia: #d32f2f;
-  --role-citizen: #388e3c;
-  --role-doctor: #2196f3;
-  --role-detective: #9c27b0;
-  --role-joker: #26c6da;
-  --role-hunter: #ef6c00;
-  --role-vigilante: #7f8c8d;
-  --role-lover: #e91e63;
-  --role-godfather: #c9a227;
+  --bg: #000000;                 /* spec: palette.md, frame fill */
+  --bg-card: #232729;            /* spec: palette.md, every card/CTA surface */
+  --bg-elevated: #2E3335;        /* derived: +6% lightness on #232729 (no 3rd Figma surface level) */
+  --bg-input: #2E3335;           /* derived: same step as --bg-elevated */
+  --text: #FFFFFF;               /* spec */
+  --text-secondary: #A0A0A0;     /* spec */
+  --border: #3A4042;             /* derived: +10% lightness on #232729 */
+  --primary: #FF6C02;            /* spec */
+  --primary-dark: #CC5602;       /* derived: -20% lightness on #FF6C02 */
+  --danger: #E53935;             /* spec */
+  --danger-bright: #FF5C58;      /* derived: +12% lightness on #E53935 */
+  --success: #34C759;            /* spec */
+  --warning: #FFB300;            /* spec */
+  /* P2 CTA ink ruling. Measured (WCAG 2.x relative luminance, re-derived):
+     #FFFFFF on #FF6C02 = 2.84:1 — BELOW the 3:1 large-text floor, so white is
+     restricted to display-weight labels only (w900, >=18px), where the stroke
+     mass carries it and the Figma CTA frames use it (specs/night-actions/
+     254-848--death-by-vote.md:37-42). Every body-size button keeps dark ink:
+     #141008 on #FF6C02 = 6.68:1, comfortably AA at 14px. */
+  --cta-ink: #141008;          /* default: small/body-size labels on --primary */
+  --cta-ink-display: #FFFFFF;  /* w900 >=18px only (large-text exception) */
+
+  /* ---- Type (specs/typography.md) ------------------------------------
+     Grandstander is the whole system: w400 dominant (704+149+89 uses at
+     14/16/24), w900 reserved for the 36/48 display headlines. Helvetica Neue
+     is the spec's own secondary family, so it heads the fallback stack. */
+  --font-display: 'Grandstander', 'Helvetica Neue', system-ui, sans-serif;
+  --font-body: 'Grandstander', 'Helvetica Neue', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --fs-xs: 12px;
+  --fs-sm: 14px;
+  --fs-md: 16px;
+  --fs-lg: 18px;
+  --fs-xl: 24px;
+  --fs-2xl: 36px;
+  --fs-3xl: 48px;
+  --fw-body: 400;
+  --fw-heading: 900;
+
+  /* ---- Card chrome (defined in P1, applied to components in P2) ---- */
+  --radius-card: 16px;                            /* spec: radius=16 on every card/CTA */
+  --shadow-card: 0 4px 23.8px rgba(0, 0, 0, 0.2); /* spec: DROP_SHADOW r23.8 offset 0,4 #000000 @ 20% */
+  /* P2: the two smaller Figma radii. 8px = every segmented pill (Tabs 185:1613,
+     Rules 55:138, Genders 55:61, Lovers 257:686). 100px = the Toggle track and
+     knob (69:265). */
+  --radius-pill: 8px;
+  --radius-round: 100px;
+  /* P3: the in-card divider. Figma draws it as LINE / stroke #FFFFFF 1px
+     inside every menu card (spec:42-782 lines 54,78; spec:45-466 line 46;
+     spec:130-370 line 205; spec:268-640 line 208). Two weights: the strong
+     rule under a card head, and the lighter one between sibling rows. Tokenised
+     so the light theme can flip it instead of drawing white on paper. */
+  --rule-strong: rgba(255, 255, 255, 0.55);
+  --rule-soft: rgba(255, 255, 255, 0.35);
+
+  /* ---- Membership Card gradient ends, AS APPLIED on the dark app frames -----
+     The Components page draws the card on white (#FCFCFC -> swatch); every real
+     screen overrides the instance to #000000 -> a brighter swatch with white ink
+     and a white 2px stroke (specs/night-actions/135-961--doctor.md:44-46 and the
+     sibling frames). These are those applied ends — deliberately separate from
+     --role-* (which stays the reveal-chip pair from P1). */
+  --rolecard-citizen: #E3DAB5;    /* night-actions/74-335--main-game-screen.md:45 */
+  --rolecard-mafia: #D18D83;      /* night-actions/130-323--mafia-nominate.md:45 */
+  --rolecard-doctor: #B5DCE3;     /* night-actions/135-961--doctor.md:45 */
+  --rolecard-detective: #F9F9B4;  /* night-actions/140-1186--investigate.md:45 */
+  --rolecard-joker: #D5B5E3;      /* night-actions/257-1595--joker.md:45 */
+  --rolecard-hunter: #C1E3B5;     /* night-actions/130-573--hunter.md:45 */
+  --rolecard-vigilante: #E3CBB5;  /* night-actions/225-542--vigilante.md:45 */
+  --rolecard-dead: #B5C9E3;       /* night-actions/245-716--spectating-doctor.md:45 */
+  /* Godfather has no applied frame (Figma only draws the Components variant, which
+     collapses onto Mafia). Kept DISTINCT per R4 as the gold that --role-godfather
+     already carries, lifted to the same brightness band as its siblings. */
+  --rolecard-godfather: #E3C68B;
+
+  /* ---- Role palette (specs/components/77-528--membership-card.md) -----
+     Each role is a PAIR: --role-X is the card's gradient-end swatch (the
+     accent/fill) and --role-X-ink is the text colour drawn on it. The
+     game-over reveal chips (specs/game-over/278-2810) use exactly this pair
+     as fill + label. Citizen deliberately uses the CARD swatch
+     #D1CFC7/#5C4B0D, not the reveal-frame chip, which mistakenly repeats the
+     Vigilante palette (analysis/matrix-game-over.md §A.3, D4). */
+  --role-citizen: #D1CFC7;      --role-citizen-ink: #5C4B0D;
+  --role-mafia: #DC998F;        --role-mafia-ink: #67281E;
+  --role-doctor: #B3D1D6;       --role-doctor-ink: #1E5C67;
+  --role-detective: #F9F9B4;    --role-detective-ink: #93791D;
+  --role-joker: #C9B9D0;        --role-joker-ink: #511E67;
+  --role-hunter: #A9B8A4;       --role-hunter-ink: #204B12;
+  --role-vigilante: #CDB198;    --role-vigilante-ink: #67401E;
+  /* Godfather: Figma collapses it onto the Mafia swatch, erasing a distinction
+     the app draws deliberately (R4 / matrix-game-over.md §B.5, D8). Kept
+     distinct as gold — echoes the app's existing godfather signal and stays
+     clear of Mafia's dusty rose. Ink derived for AA on the gold. */
+  --role-godfather: #FFC24B;    --role-godfather-ink: #5C3D00;
+  /* Lovers chip (specs/components/257-686--lovers.md) is the one inverted
+     pair: dark fill, light label. */
+  --role-lover: #AD1F1C;        --role-lover-ink: #F5F5F5;
+
+  /* ---- P6 win-band accents (specs/game-over/*) -----------------------
+     Each victory band paints ONE hex: the 48px w900 headline, the radial
+     glow behind the faction art, and the details-screen header all share it.
+     Citizens: the spec splits #E3DAB5 ("Before" halves) vs #E3CBB5 ("After"
+     halves) — GO-D5 rules that a one-digit split with no design intent is a
+     typo, and the "After" value is the one every settled frame uses
+     (278-2780 line 62, 278-2810 line 27), so #E3CBB5 is the single value.
+     --win-X is the band hex itself, --win-X-glow the halo drawn under the art
+     (identical in both themes — it always sits behind the raster) and
+     --win-X-ink the headline, which has to darken on paper the same way the
+     role pairs do. */
+  --win-town: #E3CBB5;      --win-town-ink: #E3CBB5;   /* specs/game-over/278-2780--game-options.md:62 */
+  --win-mafia: #D18D83;     --win-mafia-ink: #D18D83;  /* specs/game-over/332-5939--victory-screen.md */
+  --win-joker: #D5B5E3;     --win-joker-ink: #D5B5E3;  /* specs/game-over/332-6071--victory-screen.md */
+  /* Pre-mixed glow alphas (the same three hexes at 55%) — written out rather
+     than color-mix()'d so the halo survives on pre-16.2 iOS Safari, where an
+     unsupported color-mix() would drop the whole background declaration. */
+  --win-town-glow: rgba(227, 203, 181, 0.55);
+  --win-mafia-glow: rgba(209, 141, 131, 0.55);
+  --win-joker-glow: rgba(213, 181, 227, 0.55);
+  /* Force-ended games (GO-D13) have no winner and therefore no band colour:
+     the header stays plain body ink on the frame and no art is drawn. */
+  --win-neutral-ink: var(--text);
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Font utilities — D1 */
-.disp { font-family: 'Silkscreen', monospace; }
-.mono { font-family: 'IBM Plex Mono', monospace; }
+/* Font utilities */
+.disp { font-family: var(--font-display); }
+.mono { font-family: var(--font-mono); }
 
 /* ============================================================
-   PIXEL NOIR — D1b: Stepped-corner chrome + texture utilities
+   P2 — FIGMA CARD SURFACE SYSTEM
+   Spec: specs/components/287-3437--game-tabs.md (radius=16, pad=16,
+   fill #232729, stroke #FFFFFF 2px as APPLIED in-frame — see
+   specs/night-actions/135-961--doctor.md:96-98 — plus DROP_SHADOW
+   r23.8 offset 0,4 #000000 @ 20%). The Pixel-Noir stepped clip-path and
+   its two-layer ::before/::after border chrome are RETIRED here (R4).
    ============================================================ */
 
-/* Pixel-stepped corner clip-path (12px/4px — standard) */
-.pxc { clip-path: polygon(
-  0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-  calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-  100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-  calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-  12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-); }
+/* .pxc / .pxc-sm survive as radius utilities so the markup that carries
+   them (index.html:34,56,283-284,369,373,395,494) needs no churn: the
+   pixel step becomes the Figma radius, large and small. */
+.pxc { clip-path: none; border-radius: var(--radius-card); }
+.pxc-sm { clip-path: none; border-radius: var(--radius-pill); }
 
-/* Pixel-stepped corner clip-path (6px/2px — small chips) */
-.pxc-sm { clip-path: polygon(
-  0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
-  calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
-  100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
-  calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
-  6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
-); }
-
-/* Stepped-border wrapper: outer = border color bg + .pxc, inner = surface bg + .pxc */
-.pxb { padding: 2px; }
+/* Wrapper that used to paint the stepped border ring. Now a plain
+   radius carrier — the child owns its own border. */
+.pxb { padding: 0; border-radius: var(--radius-card); }
 .pxb > .in { width: 100%; height: 100%; }
 
 /* ====================================================================
-   STEPPED-CORNER PANEL BORDER (two-layer, CSS-only)
+   SHARED CARD SURFACE
    --------------------------------------------------------------------
-   An inset box-shadow traces only the four straight box edges, so on a
-   clip-path() stepped panel the diagonal corner steps came out EMPTY.
-   This replicates the .btn-pxb / .input-pxb wrapper mechanism with no
-   markup change, using pseudo-elements:
-     ::before  = BORDER layer  — fills the panel's full stepped shape
-                 with the border colour (var(--pxb-color)).
-     ::after   = SURFACE layer — same stepped shape, inset by the border
-                 width, filled with the surface colour (var(--pxb-surface)).
-                 Carries the subtle 3D bevel so it is ALSO clipped to the
-                 stepped outline and never reintroduces empty corners.
-   Because both layers use clip-path:inherit, they take the panel's own
-   stepped polygon — the ::after's inset box re-derives the same steps
-   2px smaller, leaving a complete stepped border (corners included).
-   Real content sits above via z-index. Per-panel/per-state colour is
-   driven purely by the --pxb-* custom properties below.
+   Every panel below is a Figma card: radius-16 surface + the card
+   drop-shadow, with an OPTIONAL 2px stroke. The --pxb-* custom
+   properties that per-panel rules already set are kept as the styling
+   seam, re-pointed at real CSS border/background:
+     --pxb-surface : card fill        (default var(--bg-card) = #232729)
+     --pxb-color   : stroke colour    (default transparent = plain CTA card)
+     --pxb-w       : stroke width     (default 2px, per spec)
+   `.card-primary` opts a panel into the white 2px stroke that the Figma
+   frames apply to the two hero cards (Membership Card, Game Tabs).
    ==================================================================== */
 .narrator-area,
 .action-panel,
@@ -129,73 +203,20 @@
 .awaiting-ready,
 .settings-panel,
 .player-lobby-settings,
-.players-list li,
+.players-section,
+.color-picker-section,
 .role-reveal-item,
 .theme-mode-control,
-.accent-picker-toggle,
 .accent-arrow {
   position: relative;
-  z-index: 0;                /* own stacking context so the -1 layers stay contained */
-  background: transparent;   /* colour comes from the ::before/::after layers */
-  border: none;
-  box-shadow: none;          /* kill any leftover inset-shadow border */
-}
-.narrator-area::before,
-.action-panel::before,
-.admin-controls::before,
-.voting-panel::before,
-.vote-status::before,
-.mafia-target-card::before,
-.single-mafia-target::before,
-.target-list li::before,
-.event-history::before,
-.detective-result::before,
-.awaiting-ready::before,
-.settings-panel::before,
-.player-lobby-settings::before,
-.players-list li::before,
-.role-reveal-item::before,
-.theme-mode-control::before,
-.accent-picker-toggle::before,
-.accent-arrow::before {           /* BORDER layer */
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--pxb-color, var(--border));
-  clip-path: inherit;
-  pointer-events: none;
-}
-.narrator-area::after,
-.action-panel::after,
-.admin-controls::after,
-.voting-panel::after,
-.vote-status::after,
-.mafia-target-card::after,
-.single-mafia-target::after,
-.target-list li::after,
-.event-history::after,
-.detective-result::after,
-.awaiting-ready::after,
-.settings-panel::after,
-.player-lobby-settings::after,
-.players-list li::after,
-.role-reveal-item::after,
-.theme-mode-control::after,
-.accent-picker-toggle::after,
-.accent-arrow::after {            /* SURFACE layer + bevel */
-  content: "";
-  position: absolute;
-  inset: var(--pxb-w, 2px);
-  z-index: -1;
   background: var(--pxb-surface, var(--bg-card));
-  clip-path: inherit;
-  box-shadow:
-    inset 2px 2px 0 0 rgba(255,255,255,0.05),
-    inset -2px -2px 0 0 rgba(0,0,0,0.28);
-  pointer-events: none;
+  border: var(--pxb-w, 2px) solid var(--pxb-color, transparent);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
-
+/* The two hero cards carry the applied white 2px stroke
+   (specs/night-actions/135-961--doctor.md:46,98). */
+.card-primary { --pxb-color: #FFFFFF; --pxb-w: 2px; }
 /* ---- Texture utilities (static — zero new animations) ---- */
 /* NOTE: .scanlines / .vignette remain unused as standalone utility classes —
    screen/overlay texture is applied via element-scoped ::after/::before
@@ -237,23 +258,63 @@
 }
 
 /* Light theme — warm-paper neutrals kept; sync amber primary + role fixes */
+/* ============================================================
+   LIGHT THEME — DERIVED (R7: the Figma file has no light frames)
+
+   Derivation rules, applied uniformly:
+   1. Surfaces INVERT, hues do NOT. Dark's black page / #232729 card becomes a
+      white page / warm-neutral card, so the layering direction (page darker
+      than card in dark; page lighter than card in light) is preserved.
+   2. The dark palette's text colour becomes the light palette's background
+      family and vice versa: text #232729 on bg #FFFFFF is the exact inverse of
+      #FFFFFF on #232729, so every body pairing keeps its dark-mode contrast
+      ratio (15.1:1).
+   3. Brand hue is invariant: --primary stays the spec orange #FF6C02 in both
+      themes, so the CTA reads identically. Only colours that FAIL on paper are
+      darkened: --danger #E53935 (4.2:1 on white) -> #C62828 (5.6:1), --warning
+      #FFB300 (1.8:1) -> #9A5C00 (5.4:1), and --success #34C759 (2.2:1, under
+      the 3:1 non-text threshold it needs as a status dot) -> #2E9E48 (3.4:1).
+   4. Role tokens SWAP with their inks. On black the pastel swatch is the legible
+      member of each pair; on paper the dark ink is. Swapping both keeps every
+      consumer correct with no per-site rules: a chip is still
+      background:--role-X / color:--role-X-ink, just inverted.
+   Per-component light polish is P6.5; this block is the palette only.
+   ============================================================ */
 [data-theme="light"] {
-  --bg: #f0ebe1;
-  --bg-card: #faf7f2;
-  --bg-elevated: #e8e3d9;
-  --bg-input: #faf7f2;
-  --text: #1a1a1a;
-  --text-secondary: #6b6b6b;
-  --border: #d1cbc0;
-  /* Amber primary (no pink remnants) */
-  --primary: #b87d24;
-  --primary-dark: #8a5c18;
-  /* Contrast-correct warning on paper bg (darkened for AA) */
-  --warning: #c47d00;
-  /* Fixed role-joker (no doctor collision) */
-  --role-joker: #0097a7;
-  /* Gunmetal vigilante, darkened for AA contrast on the paper background */
-  --role-vigilante: #5f6b6c;
+  --bg: #FFFFFF;
+  --bg-card: #F4F2EE;
+  --bg-elevated: #EAE7E1;   /* derived: one step below the card, mirrors the dark elevated step */
+  --bg-input: #FFFFFF;
+  --text: #232729;
+  --text-secondary: #5F6669; /* derived: 5.2:1 on #F4F2EE */
+  --border: #D8D4CC;         /* derived: warm-neutral hairline on the card */
+  --primary: #FF6C02;
+  --primary-dark: #CC5602;
+  --danger: #C62828;
+  --danger-bright: #E53935;
+  --success: #2E9E48;        /* derived: #34C759 darkened past 3:1 on paper */
+  --warning: #9A5C00;
+
+  /* Role pair swap (rule 4) */
+  --role-citizen: #5C4B0D;      --role-citizen-ink: #D1CFC7;
+  --role-mafia: #67281E;        --role-mafia-ink: #DC998F;
+  --role-doctor: #1E5C67;       --role-doctor-ink: #B3D1D6;
+  --role-detective: #93791D;    --role-detective-ink: #F9F9B4;
+  --role-joker: #511E67;        --role-joker-ink: #C9B9D0;
+  --role-hunter: #204B12;       --role-hunter-ink: #A9B8A4;
+  --role-vigilante: #67401E;    --role-vigilante-ink: #CDB198;
+  --role-godfather: #5C3D00;    --role-godfather-ink: #FFC24B;
+  /* Lovers is already dark-fill/light-label, so it does NOT swap. */
+  /* P6 win bands: the pastel headline vanishes on paper (#E3CBB5 on #FFFFFF =
+     1.3:1), so only the INK darkens — to each band's role-ink partner, same
+     hue family and already AA on white. --win-X (the radial glow under the
+     art) keeps the spec pastel in both themes. */
+  --win-town-ink: #5C4B0D;
+  --win-mafia-ink: #67281E;
+  --win-joker-ink: #511E67;
+  /* Card dividers invert with the ink — a white rule is invisible on paper. */
+  --rule-strong: rgba(35, 39, 41, 0.30);
+  --rule-soft: rgba(35, 39, 41, 0.18);
 }
 [data-theme="light"] .modal { background: rgba(0,0,0,0.4); }
 /* Light theme: suppress the radial vignette on auth/game/gameover screens.
@@ -270,12 +331,25 @@
   opacity: 0;
 }
 
-/* Keep membership card dark regardless of theme */
+/* Keep membership card dark regardless of theme. Because the surface stays
+   dark, the DARK-theme role pair must be re-declared here too — otherwise the
+   light theme's swapped (dark-ink) role colours would paint dark text on this
+   dark card. P2 kept the card dark (the applied Figma treatment is a
+   #000000 -> swatch gradient), so the override stays: the chips that live on the
+   card (Lovers, bullet indicator) must keep the dark-theme pair. */
 .role-card {
   --bg-card: #151515;
   --border: #2c2c2e;
   --text: #f5f5f5;
   --text-secondary: #8e8e93;
+  --role-citizen: #D1CFC7;      --role-citizen-ink: #5C4B0D;
+  --role-mafia: #DC998F;        --role-mafia-ink: #67281E;
+  --role-doctor: #B3D1D6;       --role-doctor-ink: #1E5C67;
+  --role-detective: #F9F9B4;    --role-detective-ink: #93791D;
+  --role-joker: #C9B9D0;        --role-joker-ink: #511E67;
+  --role-hunter: #A9B8A4;       --role-hunter-ink: #204B12;
+  --role-vigilante: #CDB198;    --role-vigilante-ink: #67401E;
+  --role-godfather: #FFC24B;    --role-godfather-ink: #5C3D00;
 }
 
 /* ============================================================
@@ -293,20 +367,22 @@
 
 /* NIGHT — deep navy, the whole room goes midnight together (mockup screen 02).
    Gated to the DARK base. */
+/* P1: retuned onto the Figma system — the page stays spec black and the card
+   stays the spec surface; night is now a cool SHIFT of those two values only
+   (no navy takeover, no --primary override: the orange is invariant). */
 [data-theme="dark"] body[data-phase="night"],
 :root:not([data-theme]) body[data-phase="night"] {
-  --bg: #0d1126;
-  --bg-card: #161d3d;
-  --bg-elevated: #121736;
-  --bg-input: #121736;
-  --border: #2b3568;
+  --bg: #000000;
+  --bg-card: #1C2226;
+  --bg-elevated: #262D31;
+  --bg-input: #262D31;
+  --border: #33403F;
 }
 /* Forced-Light at night: NO navy takeover — paper holds. A subtle dusk accent
    only (cooler border, dimmed primary) so night still reads without flipping
    the base. The aggressive navy override is intentionally NOT applied here. */
 [data-theme="light"] body[data-phase="night"] {
-  --border: #b9b4c4;
-  --primary: #a06d1f;
+  --border: #C6C2BA;
 }
 /* D0 iter: moonlight radial wash removed — header floats on flat night-navy,
    no bright top panel fusing it to the role card. */
@@ -317,27 +393,25 @@
 
 /* DAY (dark base): ink warmed slightly + amber accent emphasis. Light base
    already IS day (warm paper) — lean in with no bg remap, just amber emphasis. */
+/* P1: warm SHIFT of the same two surfaces (mirror of the night block); the
+   orange primary is invariant so the amber override is gone. */
 [data-theme="dark"] body[data-phase="day"],
 :root:not([data-theme]) body[data-phase="day"] {
-  --bg: #14110d;
-  --bg-card: #20191f;
-  --bg-elevated: #1b1620;
-  --bg-input: #1b1620;
-  --border: #3a3550;
-  --primary: #f0ab43;
+  --bg: #000000;
+  --bg-card: #2A2725;
+  --bg-elevated: #35312E;
+  --bg-input: #35312E;
+  --border: #433D38;
 }
 /* Light base is already "day" (warm paper) — no day remap needed; the former
    [data-theme="light"] body[data-phase="day"] block only re-set --primary to the
    same value the base light theme already has, so it was a no-op and is dropped. */
 
-/* VOTING — bg stays phase-neutral dark; blood tint is SCOPED to the voting
-   panel only (verdict beats own red later — don't flood the screen). */
-body[data-phase="voting"] .voting-panel {
-  --pxb-color: var(--danger-bright);
-}
-body[data-phase="voting"] .voting-panel h3 {
-  color: var(--danger-bright);
-}
+/* VOTING — P5/R4: the Figma ballot (270:1649) is a bare vertical stack on the
+   black frame with a WHITE 24px headline; the only surfaces are the two thumb
+   CTAs and the Cancel-vote row. The Pixel-Noir blood tint on the panel border
+   and headline retires with the rest of that language — data-phase="voting" is
+   still set (handleVoteCalled) and still drives the ambience elsewhere. */
 
 /* GAME_OVER — neutral: no remap (handled by clearing data-phase off the game
    screen; the gameover screen never carries a phase). */
@@ -346,8 +420,9 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Libre Franklin', 'Helvetica Neue', sans-serif;
-  font-size: 16px;
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
@@ -439,74 +514,85 @@ html, body {
   z-index: 9998;
 }
 
-/* BUTTONS */
+/* ============================================================
+   BUTTONS / CTA SYSTEM
+   Spec: the "CTA" frame shared by every Figma screen —
+   358x60 (action) / 326x70 (row), layout=HORIZONTAL gap=10, pad=16,
+   radius=16, DROP_SHADOW r23.8 0,4 #000 20%; label Grandstander 14px
+   w400. Primary fill #FF6C02, secondary fill #232729, disabled #A0A0A0
+   @60%. (specs/night-actions/135-961--doctor.md:68-93,
+   specs/game-over/278-2701--game-options.md CTA rows.)
+   ============================================================ */
 .btn {
   border: none;
-  border-radius: 0;
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-  );
-  font-size: 16px;
-  font-weight: 600;
-  padding: 14px 24px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  padding: 16px 24px;
   cursor: pointer;
   transition: opacity 0.15s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  font-family: 'Silkscreen', monospace;
-  letter-spacing: 1px;
+  font-family: var(--font-display);
+  letter-spacing: 0;
   white-space: nowrap;
 }
 .btn:active { transform: scale(0.97); opacity: 0.8; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
-/* Primary: amber fill, ink Silkscreen label, pressed-edge shadow */
+/* Disabled CTA is a real Figma state, not a dimmed primary: fill flips to
+   #A0A0A0 with the label still legible (spec:42-766 line 32, the Join CTA
+   before a valid code; it flips to #FF6C02 in spec:287-3259 line 32). */
+.btn-primary:disabled {
+  background: #A0A0A0;
+  color: #FFFFFF;
+  opacity: 1;
+}
+/* Primary: spec orange fill. Ink is the token pair decided at the top of this
+   file — dark #141008 by default (6.68:1), white only on the display-weight
+   .btn-large label below. The Pixel-Noir pressed-edge inset is retired. */
 .btn-primary {
   background: var(--primary);
-  color: #141008;
-  box-shadow: inset 0 -5px 0 rgba(70,40,0,.35);
+  color: var(--cta-ink);
 }
 .btn-primary:active { background: var(--primary-dark); }
-/* Secondary: uses pxb wrapper in HTML for stepped border; standalone keeps subtle border bg */
+/* Secondary: the plain #232729 CTA card. */
 .btn-secondary {
-  background: var(--bg-elevated);
+  background: var(--bg-card);
   color: var(--text);
 }
-/* Ghost: minimal; no clip-path so inline ghost can sit freely */
+/* Ghost: minimal inline affordance, no card chrome. */
 .btn-ghost {
   background: transparent;
   color: var(--text-secondary);
   padding: 8px 12px;
-  font-size: 14px;
-  clip-path: none;
-  border-radius: 6px;
+  font-size: var(--fs-sm);
+  border-radius: var(--radius-pill);
+  box-shadow: none;
 }
 .btn-danger { background: var(--danger); color: #fff; }
-.btn-large { padding: 18px 32px; font-size: 18px; width: 100%; }
+/* Display-weight CTA: Grandstander Black at 18px is the large-text case where
+   the spec's white-on-orange is used. */
+.btn-large {
+  padding: 18px 32px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-heading);
+  width: 100%;
+}
+.btn-primary.btn-large { color: var(--cta-ink-display); }
 .btn-small {
   padding: 8px 16px;
   font-size: 13px;
-  clip-path: polygon(
-    0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0,
-    calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px,
-    100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px),
-    calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%,
-    6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px)
-  );
+  border-radius: var(--radius-pill);
 }
 /* D2.5: settings-modal close X reverted to STOCK pre-D1 plain dismiss affordance
-   (user amendment). Neutralize the inherited .btn chrome (Silkscreen, padding,
+   (user amendment). Neutralize the inherited .btn chrome (Grandstander, padding,
    letter-spacing, pressed-edge) so it reads as a bare glyph button. Do NOT re-step.
    D3.5: settings gear buttons (#btn-settings-lobby-admin, #btn-settings-lobby-player,
    #btn-settings) also reverted to stock &#9881; per §3.3 extension 2026-06-12. */
 /* D3b: btn-icon now hosts pixel art SVGs — drop font-size, size SVG via child rule */
-.btn-icon { background: none; border: none; color: var(--text); padding: 4px 8px; cursor: pointer; clip-path: none; display: inline-flex; align-items: center; justify-content: center; }
+.btn-icon { background: none; border: none; box-shadow: none; color: var(--text); padding: 4px 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .btn-icon svg { width: 24px; height: 24px; image-rendering: pixelated; vertical-align: middle; }
-#btn-close-settings.btn-icon,
-#btn-close-transcript.btn-icon,
 #btn-settings-lobby-admin.btn-icon,
 #btn-settings-lobby-player.btn-icon,
 #btn-settings.btn-icon {
@@ -517,144 +603,200 @@ html, body {
   box-shadow: none;
   border-radius: 0;
 }
+/* P3: sheet close control — the Figma 32px radius=100 circle wrapping a 20px
+   X (spec:130-370 lines 199-203, spec:268-640 lines 202-206). */
+#btn-close-settings.btn-icon,
+#btn-close-roster.btn-icon,
+#btn-close-transcript.btn-icon {
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: normal;
+  box-shadow: none;
+  width: 32px; height: 32px;
+  padding: 0;
+  border: 2px solid var(--text);
+  border-radius: var(--radius-round);
+}
 /* D2.5: +/- stepper reverted to STOCK pre-D1 round button (user amendment).
    Restore border-radius:50% and drop the stepped clip-path. Do NOT re-step. */
+/* P3: the Figma stepper is a circular OUTLINE icon — 32px, 3px stroke, no fill
+   (spec:45-466 lines 51-61 "Minus circle" / "Plus circle"). */
 .btn-counter {
-  width: 40px; height: 40px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  width: 32px; height: 32px;
+  background: transparent;
+  border: 2.5px solid var(--text);
   border-radius: 50%;
   color: var(--text);
-  font-size: 20px;
+  font-size: 18px;
+  line-height: 1;
   font-family: inherit;
   font-weight: 400;
   letter-spacing: normal;
   box-shadow: none;
+  padding: 0;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  clip-path: none;
 }
-/* Stepped border wrapper for secondary/ghost buttons (outer = border bg, inner = surface bg) */
+.btn-counter:active { background: rgba(255, 255, 255, 0.12); }
+/* Legacy wrapper around secondary/ghost buttons. The stepped ring is retired —
+   the button now owns its own radius/shadow, so the wrapper is a pass-through. */
 .btn-pxb {
-  background: var(--border);
-  padding: 2px;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  background: transparent;
+  padding: 0;
+  border-radius: var(--radius-card);
   display: block;
 }
 .btn-pxb .btn { display: block; width: 100%; }
 
-/* VOTE BUTTONS */
+/* VOTE BUTTONS — the Thumbs component (specs/components/225-918--thumbs.md)
+   at its Medium (32px) band and above, so the chibi raster is used here. */
+/* 270:1649: two 173x100 CTAs holding a 32x32 Thumbs instance. On a sleep
+   ballot each also carries a 14px label ("Sleep" / "Stay up"). */
 .btn-vote {
-  width: 80px; height: 80px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  font-size: 40px; display: flex; align-items: center; justify-content: center;
+  flex: 1 1 0; min-width: 0; height: 100px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
 }
-.btn-vote svg { width: 40px; height: 40px; image-rendering: pixelated; }
+.btn-vote img.thumb-art { width: 32px; height: 32px; display: block; }
+.btn-vote .vote-cta-label { font-size: var(--fs-sm); line-height: 1; color: #FFFFFF; }
 .btn-vote-yes { background: var(--success); }
 .btn-vote-no { background: var(--danger); }
 .btn-vote.selected { outline: 4px solid #fff; outline-offset: 2px; }
 
-/* INPUTS — stepped corners via clip-path; border shown through pxb wrapper in HTML */
+/* INPUTS — radius-16 fields to match the CTA family (the stepped clip-path and
+   its wrapper ring retire with the rest of the Pixel-Noir chrome). */
 input[type="text"], input[type="tel"] {
   width: 100%;
   padding: 17px 18px;
-  border: none;
-  border-radius: 0;
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-  );
+  border: 2px solid var(--border);
+  border-radius: var(--radius-card);
   background: var(--bg-input);
   color: var(--text);
   font-size: 16px;
   outline: none;
   transition: none;
 }
-/* Input focus: outline on wrapper (can't use border-color inside clip-path) */
-input:focus { background: var(--bg-elevated); }
+input:focus { background: var(--bg-elevated); border-color: var(--primary); }
 input::placeholder { color: var(--text-secondary); }
-/* Input wrapper for stepped border */
+/* Legacy input wrapper — pass-through now that the field owns its own border. */
 .input-pxb {
-  background: var(--border);
-  padding: 2px;
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px),
-    calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
-    12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px)
-  );
+  background: transparent;
+  padding: 0;
+  border-radius: var(--radius-card);
 }
 .input-pxb input { display: block; }
 
-/* AUTH */
-.logo { text-align: center; padding: 60px 0 40px; }
+/* AUTH — Figma 42:678.
+   "Skull": a 244x245 frame filled with a radial #218BE1@60% -> #000000@60%
+   gradient, holding the 200x200 chibi raster (spec:42-678 lines 48-51). The
+   glow is the container background; the hero is a real <img> in the markup. */
+.logo { text-align: center; padding: 40px 0 24px; }
 .logo-icon {
-  width: 80px; height: 80px; margin: 0 auto 16px;
+  width: 200px; height: 200px; margin: 0 auto 8px;
   display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 50%, rgba(33,139,225,0.60) 0%, rgba(0,0,0,0.60) 70%, transparent 72%);
 }
+.logo-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .logo-icon svg { width: 80px; height: 80px; image-rendering: pixelated; }
-.logo h1 { font-size: 32px; letter-spacing: 8px; font-weight: 700; font-family: 'Silkscreen', monospace; }
+.logo h1 { font-size: 48px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
 /* Wordmark blood period (mockup .wordmark .dot) — subtle blood-red accent after
-   MAFIA, inherits the Silkscreen size; just recolored. */
+   MAFIA, inherits the Grandstander size; just recolored. */
 .wordmark-dot { color: var(--danger-bright); }
-.logo-small { padding: 24px 0 8px; }
-.logo-small .logo-icon { width: 48px; height: 48px; margin-bottom: 8px; }
+.logo-small { padding: 16px 0 4px; }
+.logo-small .logo-icon { width: 120px; height: 120px; margin-bottom: 4px; }
 .logo-small .logo-icon svg { width: 48px; height: 48px; }
-.logo-small h1 { font-size: 22px; letter-spacing: 6px; font-family: 'Silkscreen', monospace; }
+.logo-small h1 { font-size: 32px; letter-spacing: 0; font-weight: var(--fw-heading); font-family: var(--font-display); }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .passcode-row { display: flex; gap: 8px; }
-.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: 'IBM Plex Mono', monospace; }
+.passcode-row input { letter-spacing: 8px; text-align: center; font-size: 24px; font-family: var(--font-mono); }
 /* Keep the entered 4-digit value tracked at 8px, but the placeholder text is normal — at 8px tracking '4-digit PIN' overflows the 320px column and clips */
 .passcode-row input::placeholder { letter-spacing: normal; font-size: 16px; }
 .error-msg { color: var(--danger); font-size: 14px; text-align: center; min-height: 20px; }
-.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; font-family: 'IBM Plex Mono', monospace; }
+.copyright { margin-top: auto; padding-top: 20px; text-align: center; font-size: 10px; color: var(--text-secondary); opacity: 0.5; font-family: var(--font-mono); }
 
 /* HEADER */
 .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .header h2 { font-size: 20px; flex: 1; }
 
-/* MENU */
-.menu-buttons { display: flex; flex-direction: column; gap: 12px; margin-top: 40px; }
-.join-section { display: flex; gap: 8px; margin-top: 8px; }
+/* LOBBY NAV — Figma 42:782 / 45:466 line 14: "Lobby" 16px, then the right
+   cluster (Code E92G, the people icon that opens Roles in play, the gear).
+   Leave has no Figma affordance but is KEPT (R7) at the head of the row. */
+.lobby-nav h2 { font-size: var(--fs-md); font-weight: var(--fw-body); flex: 1; }
+.lobby-nav .header-right { display: flex; align-items: center; gap: 12px; }
+.btn-icon-glyph { padding: 0; }
+.btn-icon-glyph .icon-people {
+  width: 24px; height: 24px;
+  image-rendering: auto;   /* vector glyph — must NOT inherit the pixel-art rule */
+  color: var(--text);
+}
+
+/* Screen title — Figma "Choose how to play" / "Waiting for host to start...",
+   Grandstander 24px w400 (spec:45-466 line 37, spec:42-782 line 37). */
+.screen-title {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  font-family: var(--font-display);
+  margin-top: 24px;
+}
+
+/* MENU — Figma 42:766 / 287:3259.
+   Frame 2 is a 24px-gap vertical stack: greeting row, the always-visible code
+   field, then the CTA pair (Join primary, Host game secondary), then the error
+   line. The old reveal button is gone (F2). */
+.menu-buttons { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+.join-section { display: flex; gap: 8px; margin-top: 24px; }
+.join-section .input-pxb { flex: 1; }
 .join-section input { flex: 1; text-align: center; font-size: 24px; letter-spacing: 6px; text-transform: uppercase; }
+.join-section input::placeholder { letter-spacing: normal; font-size: 16px; text-transform: none; }
 .hidden { display: none !important; }
 
-/* ROOM CODE */
-.room-code { font-size: 14px; color: var(--text-secondary); }
-.room-code span { font-weight: 700; color: var(--primary); font-size: 18px; letter-spacing: 3px; font-family: 'IBM Plex Mono', monospace; }
+/* ROOM CODE — nav pair: "Code" @50% 14px + the value in Grandstander 18px
+   #FF6C02 (spec:42-782 lines 20-28). No mono face: the Figma nav is Grandstander. */
+.room-code { font-size: 14px; color: var(--text); display: inline-flex; align-items: baseline; gap: 4px; }
+.room-code-label { opacity: 0.5; }
+.room-code span:not(.room-code-label) {
+  font-weight: var(--fw-body);
+  color: var(--primary);
+  font-size: 18px;
+  letter-spacing: 0;
+  font-family: var(--font-display);
+}
 
-/* SETTINGS */
+/* SETTINGS — the Figma "Lobby rules" card (spec:45-466 lines 41-181):
+   radius-16 #232729 with the white 2px stroke (.card-primary), pad 8/16,
+   rows divided by a 1px white rule. */
 .settings-panel {
-  /* two-layer stepped border via shared .pxframe rule above */
   --pxb-surface: var(--bg-card);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  padding: 16px;
+  border-radius: var(--radius-card);
+  padding: 8px 16px;
 }
 .settings-panel h3 { font-size: 16px; margin-bottom: 12px; color: var(--text-secondary); }
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+  min-height: 47px;                                /* spec: 326x47 row */
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--fs-sm);
 }
 .setting-row:last-of-type { border-bottom: none; }
-/* D2.5: custom narrator-voice picker (replaces the native <select> whose long
-   "label — description" option strings bled out of the panel). Noir-styled —
-   arrows are unambiguous affordances. Collapsed: label-only row. Expanded:
-   ◀ ▶ arrows (44px tap targets) flank the prominent label, description wraps below. */
+/* A role's rules sub-row belongs to the row above it — no divider between them. */
+.setting-row:has(+ .setting-sub-row:not(.hidden)) { border-bottom: none; }
+/* Narrator-voice picker. P3/F7: ALWAYS EXPANDED, matching the Figma Narrator
+   frame (spec:45-466 lines 153-181) — top row is "Narrator's voice" + the
+   Genders pills, and the ◀ label ▶ stage sits on its own line below. The
+   collapsed state and its disclosure toggle are gone. */
 .accent-picker {
-  /* It's a .setting-row too. Title + collapsed-toggle stay a row (the row's own
-     space-between handles that); the expanded block wraps to its own full-width
-     line below via flex-wrap. */
+  /* It's a .setting-row too: title + gender pills form the header row (the
+     row's own space-between handles that); the stage wraps onto its own
+     full-width line below via flex-wrap. */
   flex-wrap: wrap;
   gap: 8px 0;
+  padding: 12px 0;
 }
 .accent-picker-title {
   font-size: inherit;
@@ -664,72 +806,36 @@ input::placeholder { color: var(--text-secondary); }
   flex-basis: 100%;       /* force onto its own line below the header row */
   width: 100%;
 }
-.accent-picker-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;            /* allow the label to shrink/ellipsis, never overflow */
-  max-width: 60%;
-  --pxb-surface: var(--bg-input);
-  --pxb-w: 1px;
-  color: var(--text);
-  border-radius: 0;
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
-  padding: 8px 12px;
-  font-size: 14px;
-  font-family: inherit;
-  cursor: pointer;
-  outline: none;
-}
-.accent-picker-current {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Caret affordance: pixel-style down/up chevron via borders. */
-.accent-picker-caret {
-  flex-shrink: 0;
-  width: 0; height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid var(--text-secondary);
-}
-.accent-picker.expanded .accent-picker-caret {
-  border-top: none;
-  border-bottom: 6px solid var(--primary);
-}
-.accent-picker-toggle:focus-visible { --pxb-color: var(--primary); }
-.accent-picker-expanded[hidden] { display: none; }
 .accent-picker-stage {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
+/* Circular outline arrows (spec:45-466 lines 172-181 "Arrow left/right-circle",
+   32px, 3px stroke). Hit area stays 44px via padding on the row. */
 .accent-arrow {
   flex-shrink: 0;
-  min-width: 44px;
-  min-height: 44px;
+  width: 32px; height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  --pxb-surface: var(--bg-elevated);
-  --pxb-w: 1px;
-  color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
-  font-family: 'Silkscreen', monospace;
-  font-size: 14px;
+  --pxb-surface: transparent;
+  --pxb-color: var(--text);
+  --pxb-w: 2.5px;
+  color: var(--text);
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 11px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-.accent-arrow:active { --pxb-surface: var(--border); }
-/* Arrow glyphs (◀ ▶) live in the button's HTML text content, not on ::before:
-   ::before/::after are claimed by the pixel-bevel border+surface layers (both
-   z-index:-1, content:""), so a glyph placed there renders behind the opaque
-   surface and reads as an empty square. The text node sits above the surface. */
+.accent-arrow:active { --pxb-surface: rgba(255, 255, 255, 0.12); }
+/* Arrow glyphs (◀ ▶) live in the button's HTML text content, not on a
+   pseudo-element — kept that way after the pixel-bevel layers retired. */
 .accent-arrow {
   position: relative;
   line-height: 1;
@@ -737,11 +843,11 @@ input::placeholder { color: var(--text-secondary); }
 .accent-picker-label {
   flex: 1;
   text-align: center;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 15px;
   color: var(--text);
   min-width: 0;
-  /* break-word (not anywhere) so a long Silkscreen accent label like
+  /* break-word (not anywhere) so a long Grandstander accent label like
      "TRANSYLVANIAN" wraps as a whole word instead of fracturing mid-word
      at 320px. */
   overflow-wrap: break-word;
@@ -756,55 +862,45 @@ input::placeholder { color: var(--text-secondary); }
 }
 /* At very narrow widths the ~153px gap between the two 44px arrows is just shy
    of the longest label's intrinsic width ("TRANSYLVANIAN" ≈ 137px @15px), so it
-   wraps and break-word is forced to split the word. Shrink the Silkscreen label
+   wraps and break-word is forced to split the word. Shrink the Grandstander label
    a step so the whole word fits on one line and stays intact. */
 @media (max-width: 360px) {
   .accent-picker-label { font-size: 13px; }
 }
-/* NARRATOR GENDER TOGGLE (Male / Female) — sits under the accent picker in the
-   expanded Narrator Voice panel. Two-state segmented control styled to match the
-   theme-mode-control. Greyed/inert when the accent is "random" (.disabled). */
-.narrator-gender-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 10px;
-}
-.narrator-gender-title {
-  font-family: 'Silkscreen', monospace;
-  font-size: 10px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
+/* NARRATOR GENDER TOGGLE (Male / Female) — the Genders instance
+   (spec:45-466 lines 159-170), now inline with the "Narrator's voice" label on
+   the header row. Greyed/inert when the accent is "random" (.disabled). */
+/* ---- GENDERS — specs/components/55-61--genders.md
+   Two pills, gap=16 pad=8 radius=8, Grandstander 14px w400. Active Male
+   #039BE5 / Female #E876A0 with #FFFFFF label; inactive transparent + body ink. */
 .narrator-gender-control {
   display: inline-flex;
   flex-shrink: 0;
-  border: 1px solid var(--border);
+  gap: 16px;
+  border: none;
   border-radius: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .narrator-gender-btn {
-  min-height: 32px;
-  padding: 7px 14px;
+  min-height: 30px;
+  padding: 8px;
   border: none;
-  border-right: 1px solid var(--border);
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-secondary);
-  font-family: 'Silkscreen', monospace;
-  font-size: 9px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.narrator-gender-btn:last-child { border-right: none; }
 .narrator-gender-btn:hover { color: var(--text); }
-.narrator-gender-btn.active {
-  background: var(--primary);
-  color: #141008;
-}
+.narrator-gender-btn.active { color: #FFFFFF; }
+.narrator-gender-btn[data-gender="male"].active { background: #039BE5; }
+.narrator-gender-btn[data-gender="female"].active { background: #E876A0; }
 .narrator-gender-control.disabled {
   opacity: 0.4;
 }
@@ -814,54 +910,61 @@ input::placeholder { color: var(--text-secondary); }
 }
 .counter { display: flex; align-items: center; gap: 12px; }
 .counter span { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
-/* RULE MODE TABS (Official vs House) */
+/* ---- RULES cards — specs/components/55-138--rules.md (visual only; the copy
+   stays the app's per R5/GM-8). Two 155x30 pills, gap=16, pad=8, radius=8:
+   active #FF6C02 + #FFFFFF label, inactive transparent + body ink. Hint line
+   below at 10px, 50% opacity. Role Toggle's expanded On state
+   (specs/components/55-215--role-toggle.md) is the .setting-sub-row that
+   reveals this block. */
 .setting-sub-row {
   padding: 4px 0 8px 16px;
 }
 .rule-tabs {
   display: flex;
-  gap: 2px;
-  border-radius: 0;
-  border: 1px solid var(--border);
-  width: fit-content;
+  gap: 16px;
+  border: none;
+  width: 100%;
 }
 .rule-tab {
+  flex: 1;
   border: none;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 16px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  padding: 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: all 0.15s;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 .rule-tab.active {
   background: var(--primary);
-  color: #141008;
-  font-family: 'Silkscreen', monospace;
+  color: #FFFFFF;
 }
 .rule-tab:not(.active):active {
-  background: var(--bg-card);
+  background: var(--bg-elevated);
 }
 .rule-hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  font-style: italic;
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.5;
+  margin-top: 10px;
+  font-style: normal;
 }
 
-/* TOGGLE SWITCH */
+/* ---- TOGGLE — specs/components/69-265--toggle.md
+   Track 51x31 radius=100: On #34C759, Off #787880 @16%. Knob 27x27 radius=100
+   #FFFFFF with the spec's three stacked shadows. */
 .toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; }
 .toggle input { opacity: 0; width: 0; height: 0; }
-/* D2.5: reverted to STOCK pre-D1 styling (user amendment) — pill track + round
-   knob. Colors stay tokenized so both themes still work. Do NOT re-step. */
 .slider {
   position: absolute; inset: 0;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 31px;
+  background: rgba(120, 120, 128, 0.16);   /* spec: #787880 @ 16% */
+  border: none;
+  border-radius: var(--radius-round);
   transition: all 0.3s;
   cursor: pointer;
 }
@@ -869,24 +972,28 @@ input::placeholder { color: var(--text-secondary); }
   content: "";
   position: absolute;
   width: 27px; height: 27px;
-  left: 2px; bottom: 1px;
-  background: #fff;
-  border-radius: 50%;
+  left: 2px; top: 2px;
+  background: #FFFFFF;
+  border-radius: var(--radius-round);
+  box-shadow:
+    0 3px 1px rgba(0, 0, 0, 0.06),
+    0 3px 8px rgba(0, 0, 0, 0.15),
+    0 0 0 rgba(0, 0, 0, 0.04);
   transition: transform 0.3s;
 }
-.toggle input:checked + .slider { background: var(--success); border-color: var(--success); }
+.toggle input:checked + .slider { background: #34C759; }
 .toggle input:checked + .slider::before { transform: translateX(20px); }
 
 /* Two-way theme preference — a noir segmented control (Dark/Light). The active
-   option is amber-filled with ink Silkscreen so it reads unambiguously as the
+   option is amber-filled with ink Grandstander so it reads unambiguously as the
    selection. Display-only pref — switching never touches game state. */
 .theme-mode-control {
   display: inline-flex;
   flex-shrink: 0;
   --pxb-surface: var(--bg-elevated);
-  padding: 2px;              /* inset the segmented buttons so the 2px stepped frame shows around them */
+  padding: 2px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
 }
 .theme-mode-btn {
   min-height: 32px;
@@ -895,7 +1002,7 @@ input::placeholder { color: var(--text-secondary); }
   border-right: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 9px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -906,36 +1013,54 @@ input::placeholder { color: var(--text-secondary); }
 .theme-mode-btn:hover { color: var(--text); }
 .theme-mode-btn.active {
   background: var(--primary);
-  color: #141008;
+  color: var(--cta-ink);
 }
 
-/* PLAYERS LIST */
-.players-section { flex: 1; }
-.players-section h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
-.players-list { list-style: none; }
-.players-list li {
-  --pxb-w: 1px;
-  padding: 12px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
-  margin-bottom: 6px;
+/* PLAYERS LIST — the Figma "Players" card (spec:42-782 lines 65-125):
+   one radius-16 card, a "Players … 6/20" head row, a 1px white rule, then
+   plain 14px rows (name left, 14px colour ellipse right). The rows are NOT
+   individual cards any more. */
+.lobby-card { border-radius: var(--radius-card); padding: 16px; }
+.players-section,
+.color-picker-section,
+.player-lobby-settings {
+  padding: 16px;
+  margin-top: 16px;
+}
+/* Card head row + its divider — shared by the Players and Roles cards. */
+.lobby-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 500;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-strong);
+  margin-bottom: 10px;
 }
+/* No flex:1 — the Players card sizes to its rows now (spec:42-782 line 65),
+   it is not the screen's growing column. */
+.players-section h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
+.players-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.players-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--fs-sm);
+}
+.players-list li .player-row-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .players-list li .admin-badge {
   font-size: 11px;
   background: var(--primary);
-  color: #141008;
+  color: var(--cta-ink);
   padding: 2px 8px;
-  border-radius: 0;
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  border-radius: var(--radius-pill);
   font-weight: 600;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 .players-list li .dead-badge { color: var(--text-secondary); text-decoration: line-through; }
-.waiting-text { text-align: center; color: var(--text-secondary); padding: 20px 0; }
+/* spec:42-782 line 37 — Grandstander 24px, left-aligned with the cards. */
+.waiting-text { color: var(--text); font-size: var(--fs-xl); padding: 24px 0 0; }
 
 /* GAME SCREEN */
 /* D5.5b: a 3-cell grid (1fr auto 1fr) so "Round N" sits VISUALLY CENTERED in the
@@ -954,6 +1079,9 @@ input::placeholder { color: var(--text-secondary); }
 }
 .game-header .phase-indicator { justify-self: start; }
 .game-header .round-indicator { justify-self: center; text-align: center; white-space: nowrap; }
+/* G1: the night Nav's code chip, reusing the lobby chip's type (Code @50% +
+   the code in --primary). */
+.game-room-code { font-size: var(--fs-sm); }
 .game-header-right {
   justify-self: end;
   display: flex;
@@ -965,73 +1093,151 @@ input::placeholder { color: var(--text-secondary); }
   font-size: 14px;
   font-weight: 700;
   padding: 6px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  border-radius: var(--radius-pill);
   text-transform: uppercase;
   letter-spacing: 2px;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 /* D0 iter: night pill is now a SOLID amber fill (matches the "BEGIN NIGHT"
    primary button) — opaque amber background, ink/dark text + icon for legibility.
    The stepped clip-path already shapes the chip; no outline needed. */
 .phase-indicator.night {
   background: var(--primary);
-  color: #141008;
+  color: var(--cta-ink);
   box-shadow: none;
 }
 /* D0 iter2: moon SVG cells are amber (#e8a33d) — invisible on the amber pill.
    Force every rect in the night-pill SVG to ink (#141008) so the crescent
    reads as a dark silhouette, matching the NIGHT text. */
-.phase-indicator.night svg rect { fill: #141008 !important; }
-.phase-indicator.day { background: var(--primary); color: #141008; }
+.phase-indicator.night svg rect { fill: var(--cta-ink) !important; }
+.phase-indicator.day { background: var(--primary); color: var(--cta-ink); }
 .phase-indicator.voting { background: var(--danger); color: #fff; }
 .phase-indicator.game_over { background: var(--text-secondary); color: var(--bg); }
 /* D3b: phase pill now has inline svg + text — align them */
 .phase-indicator { display: inline-flex; align-items: center; gap: 6px; }
 .phase-indicator svg { width: 16px; height: 16px; image-rendering: pixelated; flex-shrink: 0; }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
-.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
+.day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: var(--font-mono); }
 
-/* ROLE CARD */
+/* ============================================================
+   MEMBERSHIP CARD  —  specs/components/77-528--membership-card.md
+   (10 variants) rendered in its APPLIED dark form, which every real
+   screen overrides the instance to: 357x222 radius=16, fill
+   GRADIENT_LINEAR #000000 -> <role swatch>, stroke #FFFFFF 2px,
+   DROP_SHADOW r23.8 0,4 #000 20%, all ink #FFFFFF
+   (specs/night-actions/135-961--doctor.md:44-61).
+   Layout per spec: "Your role is" 16px w400 eyebrow, role name 48px w900,
+   description 12px w400 (266px text column) beside a 78x78 art region.
+   Godfather = the Mafia layout with the distinct gold accent (R4).
+   ============================================================ */
 .role-card {
   background: transparent;
   border: none;
-  border-radius: 20px;
-  text-align: center;
+  border-radius: var(--radius-card);
+  text-align: left;
   position: relative;
-  /* Fixed membership-card size: every role's card is identical regardless of
-     name/description length. The front fills this box and its text auto-shrinks
-     to fit (fitRoleCardText in app.js). */
-  height: 320px;
-  /* no perspective — flat stacking */
+  /* Spec card is 357x222. Hold that ratio so the card scales with the column
+     instead of being pinned to a fixed pixel height. */
+  aspect-ratio: 357 / 222;
+  min-height: 190px;
 }
 .card-inner {
   position: relative;
   width: 100%;
   height: 100%;
-  /* flat stacking — no 3D transforms */
 }
 .card-front, .card-back {
-  border-radius: 0;
-  padding: 24px;
-  background: var(--bg-card);
-  border: 2px solid var(--border);
-  /* no backface-visibility */
+  border-radius: var(--radius-card);
+  padding: 16px;
+  border: 2px solid #FFFFFF;          /* spec: applied white 2px stroke */
+  box-shadow: var(--shadow-card);
 }
 .card-front {
   /* sits below .card-back in the stack; visible when card-back clips away */
   position: relative;
-  /* Fill the fixed card box and center the stacked content; clip any overflow
-     (the JS auto-fit shrinks text so nothing actually clips). */
   height: 100%;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
   overflow: hidden;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  color: #FFFFFF;
+  /* Default (roleless) gradient; each .role-card.<role> re-points --card-grad.
+     The REST dump records the two stops but not the gradient ANGLE, so 160deg is
+     chosen, not cited: it pools the light stop behind the art on the right and
+     keeps the text column over the dark stop, which the white spec ink needs. */
+  background: linear-gradient(160deg, #000000 0%, var(--card-grad, #AEB4BC) 100%);
 }
+/* The 266px text column of the spec card. */
+.card-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* "Your role is" / "You are" — spec TEXT 16px w400 */
+.role-eyebrow {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-body);
+  font-family: var(--font-display);
+  line-height: 1.1;
+}
+/* Spec art region: RECTANGLE "image 1" 78x78, the chibi raster fill. */
+.role-image {
+  width: 78px;
+  height: 78px;
+  flex: 0 0 78px;
+  align-self: center;
+}
+.role-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+/* Spec role name: Grandstander-Black 48px w900. No tracking — the Silkscreen
+   3px letter-spacing retires with the pixel face. */
+.role-name {
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-heading);
+  font-family: var(--font-display);
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+  color: #FFFFFF;
+}
+/* Spec description: 12px w400, same white ink. */
+.role-description {
+  color: #FFFFFF;
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+  width: 100%;
+  box-sizing: border-box;
+  /* N-D7: the Vigilante description carries an explicit second line (the
+     friendly-fire rule Figma's one-liner drops). Every other description is a
+     single line, so this is inert for them. */
+  white-space: pre-line;
+}
+/* The 10 variants — gradient end per role (tokens cite their frame above). */
+.role-card.citizen   .card-front { --card-grad: var(--rolecard-citizen); }
+.role-card.mafia     .card-front { --card-grad: var(--rolecard-mafia); }
+.role-card.doctor    .card-front { --card-grad: var(--rolecard-doctor); }
+.role-card.detective .card-front { --card-grad: var(--rolecard-detective); }
+.role-card.joker     .card-front { --card-grad: var(--rolecard-joker); }
+.role-card.hunter    .card-front { --card-grad: var(--rolecard-hunter); }
+.role-card.vigilante .card-front { --card-grad: var(--rolecard-vigilante); }
+.role-card.godfather .card-front { --card-grad: var(--rolecard-godfather); }
+/* Role=Dead (spec 77-528:145-162). The app keeps the player's OWN role on the
+   card front (peeling after death still shows who you were), so the dead
+   treatment lands on the card BACK — which is the face a dead player is
+   looking at, and which app.js already swaps to CARD_BACK_DEAD_ART. */
+.role-card.dead .card-back { --card-grad: var(--rolecard-dead); }
+
+/* ---- Card back = spec "Role=Default": "Your role is / ? / Peel to reveal" --- */
 .card-back {
   position: absolute;
   inset: 0;
@@ -1039,59 +1245,28 @@ input::placeholder { color: var(--text-secondary); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: transparent;   /* fill + border are drawn by the two stepped layers below */
-  border: none;              /* override the shared .card-front,.card-back 2px box border */
+  gap: 6px;
+  color: #FFFFFF;
+  /* Spec Role=Default gradient end #AEB4BC; the Dead variant re-points it. */
+  background: linear-gradient(160deg, #000000 0%, var(--card-grad, #AEB4BC) 100%);
   z-index: 2;                /* sits above .card-front; also its own stacking context */
-  /* REVEAL MASK. clip-path is JS-driven during the peel (the fold polygon). The
-     RESTING value is a full rectangle on purpose: the noir stepped SHAPE is carried
-     by the ::before/::after layers (each with its own FIXED stepped clip-path), and
-     this mask intersects them. So at rest the card reads stepped; during the fold the
-     mask ∩ stepped-layer keeps the un-peeled corners stepped while the crease cuts
-     cleanly; and on release the peel clears the inline clip-path back to this rect,
-     restoring the stepped resting shape with no JS change and no rectangle leak. */
+  /* REVEAL MASK. clip-path is JS-driven during the peel (the fold polygon); the
+     resting value is a full rectangle so the radius/stroke below survive, and on
+     release the peel clears the inline clip-path back to this rect. */
   clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
   transition: clip-path 0.3s ease;
 }
 .card-back.dragging {
   transition: none; /* disable snap-back animation during active drag */
 }
-/* BORDER layer — fills the full stepped outline with the card-edge colour. */
-.card-back::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: #3a3a5c;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  pointer-events: none;
-}
-/* SURFACE layer — same stepped outline inset 2px: the printed midnight card face,
-   with a faint scanline grain, an edge bevel, and the inner vignette darkening.
-   Both layers are clipped by the parent reveal mask, so they fold with the peel. */
-.card-back::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  z-index: -1;
-  background:
-    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,0.12) 3px 4px),
-    #1a1a2e;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  box-shadow:
-    inset 2px 2px 0 0 rgba(255,255,255,0.05),
-    inset -2px -2px 0 0 rgba(0,0,0,0.28),
-    inset 0 0 30px rgba(0,0,0,0.5);
-  pointer-events: none;
-}
-.card-back-art { width: 64px; height: 64px; image-rendering: pixelated; margin-bottom: 12px; }
+.card-back-art { width: 64px; height: 64px; image-rendering: pixelated; }
 .card-back-art svg { width: 64px; height: 64px; display: block; }
 .card-back-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: #5a5a8a;
-  font-family: 'Silkscreen', monospace;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  color: #FFFFFF;
+  font-family: var(--font-display);
 }
 .peel-flap {
   position: absolute;
@@ -1102,116 +1277,73 @@ input::placeholder { color: var(--text-secondary); }
   z-index: 3;
   pointer-events: none;
   /* Resting dog-ear: the corner lifted just enough to show the pale card-stock
-     underside (reads as "peel here"). Light steel gradient = the back of the
-     lifted paper; hard 50% stop keeps a crisp fold crease. */
-  background: linear-gradient(225deg, #3a3a52 0%, #2d2d44 50%, transparent 50%);
-  /* Squared + stepped to sit inside the card's bottom-right notch (matches .pxc). */
-  border-radius: 0;
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 0 100%);
-  border-left: 2px solid #23233a;
-  border-top: 2px solid #23233a;
+     underside (reads as "peel here"). */
+  background: linear-gradient(225deg, #6b7076 0%, #3a3f43 50%, transparent 50%);
+  border-radius: 0 0 var(--radius-card) 0;
   opacity: 0.95;
   transition: opacity 0.3s;
   filter: drop-shadow(-1px -1px 1.5px rgba(0,0,0,0.45));
 }
 .peel-flap.dragging {
-  /* D7: spans the whole card; JS clips it to the live fold triangle.
-     Card-stock underside gradient (lighter than the card-back face) reads as
-     the back of the lifted paper; drop-shadow lifts it off the card. */
+  /* D7: spans the whole card; JS clips it to the live fold triangle. */
   inset: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, #3a3a52 0%, #2a2a40 45%, #1d1d30 100%);
+  background: linear-gradient(135deg, #6b7076 0%, #4a4f53 45%, #2a2e30 100%);
   border: none;
   border-radius: 0;
   opacity: 1;
-  /* No opacity transition while dragging — the flap opacity is driven inline by
-     JS in lock-step with the card-back's instant crossfade; the resting 0.3s
-     transition would otherwise lag the back on fast drags. */
   transition: none;
   filter: drop-shadow(-3px -3px 4px rgba(0,0,0,0.45));
   /* clip-path (the fold triangle) is set inline by the drag handler */
 }
-.role-card.mafia .card-front { border-color: var(--role-mafia); }
-.role-card.citizen .card-front { border-color: var(--role-citizen); }
-.role-card.doctor .card-front { border-color: var(--role-doctor); }
-.role-card.detective .card-front { border-color: var(--role-detective); }
-.role-card.joker .card-front { border-color: var(--role-joker); }
-.role-card.hunter .card-front { border-color: var(--role-hunter); }
-.role-card.vigilante .card-front { border-color: var(--role-vigilante); }
-.role-card.godfather .card-front { border-color: var(--role-godfather); }
-.role-image { width: 64px; height: 64px; margin: 0 auto 12px; image-rendering: pixelated; }
-.role-image svg { width: 64px; height: 64px; display: block; }
-.role-name { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; font-family: 'Silkscreen', monospace; white-space: nowrap; width: 100%; box-sizing: border-box; }
-.role-card.mafia .role-name { color: var(--role-mafia); }
-.role-card.citizen .role-name { color: var(--role-citizen); }
-.role-card.doctor .role-name { color: var(--role-doctor); }
-.role-card.detective .role-name { color: var(--role-detective); }
-.role-card.joker .role-name { color: var(--role-joker); }
-.role-card.hunter .role-name { color: var(--role-hunter); }
-.role-card.vigilante .role-name { color: var(--role-vigilante); }
-.role-card.godfather .role-name { color: var(--role-godfather); }
-.role-description { color: var(--text-secondary); font-size: 14px; margin-top: 8px; width: 100%; box-sizing: border-box; }
 /* Vigilante one-shot indicator on the role card */
 .bullet-indicator {
-  display: inline-block;
-  margin-top: 12px;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
   background: var(--role-vigilante);
-  color: #fff;
-  padding: 4px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  font-family: 'Silkscreen', monospace;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
+  color: var(--role-vigilante-ink);
+  padding: 4px 8px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  font-family: var(--font-display);
+  border-radius: var(--radius-pill);
 }
 .bullet-indicator.spent {
   background: transparent;
-  color: var(--text-secondary);
+  color: #FFFFFF;
   text-decoration: line-through;
   opacity: 0.75;
 }
+/* ---- LOVERS chip — specs/components/257-686--lovers.md
+   83x32, layout=HORIZONTAL gap=8 pad=8 radius=8, fill #AD1F1C,
+   label Grandstander 14px w400 #F5F5F5, 16px heart with a #F5F5F5 stroke.
+   (--role-lover / --role-lover-ink are exactly that pair, set in P1.) */
 .lover-badge {
-  display: inline-block;
-  margin-top: 12px;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
   background: var(--role-lover);
-  color: #fff;
-  padding: 4px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
-  font-size: 14px;
-  font-weight: 600;
-  font-family: 'Silkscreen', monospace;
+  color: var(--role-lover-ink);
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  font-family: var(--font-display);
+  line-height: 1;
 }
-/* D3b: pixel heart icon in lover-badge */
-.lover-badge-icon { display: inline-flex; vertical-align: middle; margin-right: 2px; }
-.lover-badge-icon svg { width: 14px; height: 14px; image-rendering: pixelated; vertical-align: middle; }
-.role-icon-mini {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
-  opacity: 0.85;
-}
-.role-icon-mini svg { width: 32px; height: 32px; display: block; }
-.role-mini-balloon {
-  position: absolute;
-  bottom: 36px;
-  right: 21px;
-  width: 14px;
-  height: 20px;
-  image-rendering: pixelated;
-  pointer-events: none;
-  animation: balloon-float 3s ease-in-out infinite;
-}
-.role-mini-balloon svg { width: 14px; height: 20px; display: block; }
-@keyframes balloon-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-}
+.lover-badge-icon { display: inline-flex; align-items: center; }
+.lover-badge-icon svg { width: 16px; height: 16px; image-rendering: pixelated; display: block; }
+/* The bottom-right quick-peek mini icon and its lover balloon predate the card
+   having a permanent art region. The spec card carries a 78x78 chibi on the
+   front at all times (and the Lovers chip states the pairing in words), so both
+   would now be a duplicate stacked on top of the real art. Hidden, not deleted:
+   the elements + their JS writers stay put so nothing else has to change. */
+.role-icon-mini, .role-mini-balloon { display: none; }
 
 /* PULL TO REFRESH */
 .pull-refresh {
@@ -1242,8 +1374,7 @@ input::placeholder { color: var(--text-secondary); }
 
 /* NARRATOR */
 .narrator-area {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
   min-height: 60px;
 }
@@ -1253,11 +1384,15 @@ input::placeholder { color: var(--text-secondary); }
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.narrator-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px; font-family: 'Silkscreen', monospace; }
+/* R7/N-D1a: the narrator survives the re-skin as a Figma card sitting directly
+   above Game Tabs. Sentence case + the 14px label scale, no pixel-era tracking. */
+.narrator-label { font-size: var(--fs-sm); color: var(--text-secondary); text-transform: none; letter-spacing: 0; font-family: var(--font-body); }
 /* D3b: transcript button now hosts pixel scroll SVG */
 .btn-transcript { padding: 2px 6px; }
 .btn-transcript svg { width: 20px; height: 20px; image-rendering: pixelated; }
-.narrator-messages { font-size: 15px; line-height: 1.6; }
+/* Narrator prompt type (270:1067 / 270:1294): Grandstander-Italic 18px, white,
+   lh 19.8px. The card + label around it are the R7 keeps. */
+.narrator-messages { font-size: var(--fs-lg); line-height: 1.1; font-style: italic; }
 .narrator-messages .narrator-line {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
@@ -1269,8 +1404,7 @@ input::placeholder { color: var(--text-secondary); }
 /* AWAITING NARRATOR READY */
 .awaiting-ready {
   --pxb-color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 20px;
   text-align: center;
   animation: fadeIn 0.5s ease;
@@ -1286,7 +1420,7 @@ input::placeholder { color: var(--text-secondary); }
 }
 
 /* D5: hunter revenge-wait panel — noir restyle sweep. BOW centerpiece +
-   Silkscreen headline; the reveal/wait copy stays in the readable body face.
+   Grandstander headline; the reveal/wait copy stays in the readable body face.
    The hunter accent (--role-hunter) frames the panel. Restyle only — the
    show/hide logic and the reveal name are untouchable C5b plumbing. */
 .revenge-wait {
@@ -1306,46 +1440,102 @@ input::placeholder { color: var(--text-secondary); }
   filter: drop-shadow(0 0 10px rgba(239,108,0,.35));
 }
 .revenge-wait-headline {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 12px;
-  letter-spacing: 4px;
+  letter-spacing: 0;
   color: var(--role-hunter);
   text-transform: uppercase;
   margin-bottom: 10px;
-  padding-left: 4px;
 }
 
-/* DETECTIVE RESULT */
+/* DETECTIVE RESULT — 140:1315 / 143:1463: a 326x70 #232729 CTA card holding
+   the 34x34 detective art beside the 14px reveal sentence (lh 15.4px). No
+   colour differentiation between MAFIA and CLEAR — Figma draws one card for
+   both, and the app never differentiated either. */
 .detective-result {
-  --pxb-color: var(--role-detective);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  padding: 14px 16px;
-  font-size: 15px;
-  line-height: 1.5;
+  --pxb-color: transparent;
+  border-radius: var(--radius-card);
+  min-height: 70px;
+  padding: 16px;
+  font-size: var(--fs-sm);
+  line-height: 1.1;
   animation: fadeIn 0.5s ease;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-/* D3b: pixel magnifier icon in detective result */
-.detective-result svg {
-  width: 18px; height: 18px; image-rendering: pixelated; flex-shrink: 0;
-  /* 1px ink outline so the glassy magnifier's silver rim reads on light paper too. */
-  filter:
-    drop-shadow(1px 0 0 rgba(0,0,0,0.55))
-    drop-shadow(-1px 0 0 rgba(0,0,0,0.55))
-    drop-shadow(0 1px 0 rgba(0,0,0,0.55))
-    drop-shadow(0 -1px 0 rgba(0,0,0,0.55));
-}
+.detective-result-art { width: 34px; height: 34px; display: block; flex-shrink: 0; }
+.detective-result-text { line-height: 1.25; }
 
 /* ACTION PANEL */
 .action-panel {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
 }
-.action-panel h3 { font-size: 16px; margin-bottom: 12px; }
+/* Figma night prompt: Grandstander 24px w400, lh 24px, white
+   (130-323--mafia-nominate.md "Choose a victim"; same on every role frame). */
+.action-panel h3 {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+/* ── P4 night idle line (74:335 / 130:243) ───────────────────────────────── */
+.night-idle {
+  font-size: var(--fs-lg);
+  font-style: italic;
+  color: var(--text);
+  opacity: 0.85;
+  padding: 4px 2px;
+}
+
+/* ── P4 two-CTA gate + target-list shutter (130:573 / 225:542) ───────────── */
+.night-choice { display: flex; flex-direction: column; gap: 10px; }
+/* Gate frame "Frame 3": 358x60 HORIZONTAL, gap 12, two 173x60 CTAs. */
+.night-choice.gate-mode { flex-direction: row; gap: 12px; }
+.night-choice.gate-mode > .btn-gate { flex: 1 1 0; min-width: 0; }
+.action-list-wrap { min-width: 0; }
+.btn-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 60px;
+  padding: 16px;
+  border: none;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: opacity 0.15s ease;
+}
+.btn-gate:active { transform: scale(0.98); opacity: 0.85; }
+/* Primary CTA: #FF6C02 (both gate frames). Body-size label -> dark ink per the
+   P1 contrast ruling. */
+.btn-gate-primary { background: var(--primary); color: var(--cta-ink); }
+/* Decline: #232729 on the gate frames, #A0A0A0 as the trailing list row on
+   225:364 / 234:1332. ONE style, per N-D6; the label is the per-frame string. */
+.btn-gate-alt { background: var(--bg-card); color: var(--text); }
+.night-choice:not(.gate-mode) > .btn-gate-alt {
+  background: var(--text-secondary);
+  color: var(--cta-ink);
+}
+
+/* Target-row name / detective annotation (N-D4, 130:625). The note is
+   detective-only by construction — app.js gates it on myRole. */
+.tl-name { flex: 1 1 auto; min-width: 0; }
+.tl-note {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  text-align: right;
+}
+.tl-note-mafia { color: var(--danger-bright); }
 .mafia-action-buttons { display: flex; gap: 8px; margin-top: 10px; }
 
 /* Mafia target cards */
@@ -1353,10 +1543,16 @@ input::placeholder { color: var(--text-secondary); }
   /* surface tint lives on --pxb-surface so the stepped border (::before) is
      unaffected by per-state background changes */
   --pxb-surface: var(--bg-elevated);
+  /* The mafia protocol card stacks a header, an objection line and a button
+     row, so it opts OUT of the shared single-row `.target-list li` flex box
+     (Figma left the whole nominate/lock/object protocol undesigned — N-5.3/5.4;
+     the row surface is restyled, the structure is the app's). Row spacing now
+     comes from the list's `gap`. */
+  display: block;
+  min-height: 0;
   padding: 12px 14px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  margin-bottom: 8px;
+  border-radius: var(--radius-card);
+  margin-bottom: 0;
 }
 .mafia-target-card.idle { --pxb-color: var(--border); }
 .mafia-target-card.suggested { --pxb-color: rgba(232,163,61,0.45); }
@@ -1400,7 +1596,7 @@ input::placeholder { color: var(--text-secondary); }
   padding: 2px 8px;
   border-radius: 0;
   clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
 }
 .mtc-blocked-label {
   font-size: 11px;
@@ -1463,10 +1659,10 @@ input::placeholder { color: var(--text-secondary); }
   gap: 4px;
   flex: 1;
 }
-/* D3b: pixel icon + Silkscreen label inside mtc buttons */
+/* D3b: pixel icon + Grandstander label inside mtc buttons */
 .mtc-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .mtc-icon svg { width: 16px; height: 16px; image-rendering: pixelated; }
-.mtc-label { font-family: 'Silkscreen', monospace; font-size: 11px; font-weight: 400; letter-spacing: 0.5px; }
+.mtc-label { font-family: var(--font-display); font-size: 11px; font-weight: 400; letter-spacing: 0.5px; }
 .mtc-btn:active { transform: scale(0.97); opacity: 0.8; }
 .mtc-btn-suggest { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 .mtc-btn-lock { background: var(--primary); color: #fff; }
@@ -1526,8 +1722,7 @@ input::placeholder { color: var(--text-secondary); }
 .single-mafia-target {
   --pxb-surface: var(--bg-elevated);
   padding: 14px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   margin-bottom: 8px;
   cursor: pointer;
   font-weight: 500;
@@ -1548,43 +1743,120 @@ input::placeholder { color: var(--text-secondary); }
   from { opacity: 0; transform: translateX(-8px); }
   to { opacity: 1; transform: translateX(0); }
 }
-.target-list { list-style: none; }
+/* Figma player row ("CTA" 326x70): fill #232729, radius 16, pad 16, gap 10,
+   name at Grandstander 14px w400 white, card drop-shadow
+   (130-323--mafia-nominate.md Players frame; identical on every role frame). */
+.target-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
 .target-list li {
-  --pxb-surface: var(--bg-elevated);
-  padding: 14px 16px;
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  margin-bottom: 6px;
+  --pxb-surface: var(--bg-card);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 70px;
+  padding: 16px;
+  border-radius: var(--radius-card);
   cursor: pointer;
-  font-weight: 500;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
 }
 .target-list li:not(:has(.mafia-icons)):active { --pxb-surface: var(--primary); }
+/* Selected row (135:489 "natasha - kill?", 130:529 jenny): fill #FF6C02 with the
+   applied white 2px stroke. */
 .target-list li.selected {
   --pxb-surface: var(--primary);
-  --pxb-color: var(--primary);
+  --pxb-color: #FFFFFF;
+  color: var(--cta-ink);
 }
-.target-list li.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; font-style: italic; }
+.target-list li.selected .tl-note { color: var(--cta-ink); opacity: 0.75; }
+/* Disabled row (135:961 kevin): fill #A0A0A0 at 60% opacity. */
+.target-list li.disabled {
+  --pxb-surface: var(--text-secondary);
+  color: var(--cta-ink);
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+  font-style: italic;
+}
 
-/* ── Player accusations (day phase) ─────────────────────────────────────── */
-.day-accuse-controls { margin-top: 14px; }
-.accuse-launch { margin: 8px 0; }
-.accuse-picker { margin-top: 10px; }
-.accuse-picker-title { margin: 0 0 8px; opacity: 0.85; font-size: 0.95em; }
-.accuse-picker-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
-.accuse-sleep-row { font-style: italic; --pxb-surface: var(--bg-elevated); opacity: 0.9; }
-.accusations-panel { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+/* ════════════════════════════════════════════════════════════════════════
+   P5 — PLAYER ACCUSATIONS (day phase)
+   ------------------------------------------------------------------------
+   No Figma frame exists for this flow (the file predates it), so every
+   primitive here is lifted from a drawn frame, per
+   docs/figma-raw/analysis/day-accusation-mockups.html:
+     row        = Mafia/Nominate player row, 326x70 #232729 radius-16 (130:323)
+     dot        = 14x14 Players-tab ellipse (261:2092)
+     pill       = Tabs pill geometry, radius 8 / pad 8 (185:1612)
+     thumb      = Thumbs small 14px (225:918)
+     launcher   = the 358x60 #FF6C02 "End day" CTA row (270:1471)
+     picker CTAs= the End Day drawer's two 173x60 buttons (271:1932)
+   ════════════════════════════════════════════════════════════════════════ */
+.day-accuse-controls { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+/* 24px section headline — the "Choose a victim" pattern (130:323). */
+.accusations-heading {
+  font-size: var(--fs-xl);
+  line-height: 1.1;
+  font-weight: var(--fw-body);
+  color: var(--text);
+  margin: 0;
+}
+.accuse-launch { margin: 0; }
+.accuse-launch .btn { width: 100%; }
+.accuse-picker { margin-top: 0; display: flex; flex-direction: column; gap: 10px; }
+.accuse-picker-title { margin: 0; font-size: var(--fs-xl); line-height: 1.1; color: var(--text); }
+/* Two equal CTAs side by side: Cancel #000000, Confirm #FF6C02 (271:1932). */
+.accuse-picker-buttons { display: flex; gap: 12px; margin-top: 0; }
+.accuse-picker-buttons .btn { flex: 1 1 0; min-width: 0; min-height: 60px; }
+/* The drawer's Cancel is BLACK on 271:1932, not the #232729 secondary. */
+.accuse-picker-buttons .btn-secondary { background: #000000; box-shadow: var(--shadow-card); }
+.accuse-sleep-row { --pxb-surface: var(--bg-card); }
+/* 14x14 colour dot; the sleep row swaps it for the moon glyph. */
+.accuse-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  flex: 0 0 14px; background: var(--text-secondary);
+}
+.accuse-dot-moon { background: none; font-size: 13px; line-height: 14px; text-align: center; }
+
+.accusations-panel { display: flex; flex-direction: column; gap: 10px; margin-bottom: 0; }
 .accusation-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  background: var(--bg-elevated);
-  border-left: 3px solid var(--danger);
+  min-height: 70px;
+  padding: 16px;
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
-.accusation-text { flex: 1; font-size: 0.95em; }
-.accusation-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.acc-second { --pxb-surface: var(--danger); }
+.accusation-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.accusation-text { font-size: var(--fs-sm); line-height: 1.25; }
+.acc-moon { margin-right: 8px; }
+.accusation-status { font-size: var(--fs-xs); line-height: 1.35; opacity: 0.5; }
+/* You are the accused: no action, whole row at 60% (mockup state 3, row 2). */
+.accusation-row-accused { opacity: 0.6; }
+/* Spectator (dead) rows: read-only at 30% — the Players-tab dead treatment. */
+.accusation-row-readonly { opacity: 0.3; }
+.accuse-spectator-note { font-size: var(--fs-xs); line-height: 1.35; opacity: 0.5; margin: 0; }
+
+.accusation-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.acc-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; cursor: pointer;
+  border-radius: var(--radius-pill);
+  padding: 8px 12px;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  background: var(--primary);
+  color: var(--cta-ink);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.acc-pill:active { transform: scale(0.97); opacity: 0.85; }
+/* Withdraw = the black-on-card CTA pattern (270:1471 admin rows). */
+.acc-pill-alt { background: #000000; color: var(--text); }
+.acc-pill-thumb { width: 14px; height: 14px; display: block; }
 /* ACTION CONFIRM — two-button Confirm/Cancel group (replaced the slide-to-
    confirm). The Confirm button is tinted by the active role via --slide-tint
    (derived from the --role-* token palette so a token change can't leave it
@@ -1596,7 +1868,7 @@ input::placeholder { color: var(--text-secondary); }
   padding: 16px 12px;
   border: none;
   cursor: pointer;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 15px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -1615,49 +1887,98 @@ input::placeholder { color: var(--text-secondary); }
 /* Confirm — solid role-tinted fill, ink label, pressed bottom edge */
 .action-confirm .ac-confirm {
   background: var(--slide-tint, var(--primary));
-  color: #fff;
+  color: var(--slide-ink, var(--cta-ink));
   text-shadow: 0 2px 0 rgba(0,0,0,0.45);
   box-shadow: inset 0 -5px 0 rgba(0,0,0,0.28);
 }
-.action-confirm.role-mafia .ac-confirm { --slide-tint: var(--role-mafia); }
-.action-confirm.role-doctor .ac-confirm { --slide-tint: var(--role-doctor); }
-.action-confirm.role-detective .ac-confirm { --slide-tint: var(--role-detective); }
-.action-confirm.role-vigilante .ac-confirm { --slide-tint: var(--role-vigilante); }
-.action-confirm.role-joker_haunt .ac-confirm { --slide-tint: var(--role-joker); }
-.action-confirm.role-hunter_revenge .ac-confirm { --slide-tint: var(--role-hunter); }
+.action-confirm.role-mafia .ac-confirm { --slide-tint: var(--role-mafia); --slide-ink: var(--role-mafia-ink); }
+.action-confirm.role-doctor .ac-confirm { --slide-tint: var(--role-doctor); --slide-ink: var(--role-doctor-ink); }
+.action-confirm.role-detective .ac-confirm { --slide-tint: var(--role-detective); --slide-ink: var(--role-detective-ink); }
+.action-confirm.role-vigilante .ac-confirm { --slide-tint: var(--role-vigilante); --slide-ink: var(--role-vigilante-ink); }
+.action-confirm.role-joker_haunt .ac-confirm { --slide-tint: var(--role-joker); --slide-ink: var(--role-joker-ink); }
+.action-confirm.role-hunter_revenge .ac-confirm { --slide-tint: var(--role-hunter); --slide-ink: var(--role-hunter-ink); }
 .action-status { font-size: 14px; color: var(--text-secondary); margin-top: 8px; text-align: center; }
 
 /* VOTE STATUS */
 .vote-status {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
 }
 .vote-status h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
 
-/* VOTING PANEL */
+/* ════════════════════════════════════════════════════════════════════════
+   P5 — VOTING PANEL (270:1649 Voting / 270:1741 Execute / 270:1801 Spare)
+   Vertical stack, gap 16: 78x78 target art → 24px "Execute X?" → 14px tally
+   → two 173x100 thumb CTAs → the 358x60 #232729 "Cancel vote".
+   Post-vote the target block dims (art 30%, headline + tally 60%) and the
+   thumbs come down; the admin's Cancel vote stays up (Day-8).
+   ════════════════════════════════════════════════════════════════════════ */
 .voting-panel {
-  --pxb-color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  padding: 24px;
-  text-align: center;
+  /* Not a card in Figma — a bare stack on the frame; the CTAs carry the surfaces. */
+  --pxb-surface: transparent;
+  --pxb-color: transparent;
+  box-shadow: none;
+  border-radius: var(--radius-card);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
 }
-.voting-panel h3 { font-size: 18px; margin-bottom: 20px; }
-.vote-buttons { display: flex; justify-content: center; gap: 40px; margin-bottom: 16px; }
-.vote-progress { font-size: 14px; color: var(--text-secondary); }
+.vote-target-art { display: flex; }
+.vote-target-art img { width: 78px; height: 78px; display: block; image-rendering: auto; }
+.voting-panel h3 {
+  font-size: var(--fs-xl);
+  line-height: 1.1;
+  font-weight: var(--fw-body);
+  margin: 0;
+}
+.vote-progress { font-size: var(--fs-sm); color: var(--text); }
+.vote-buttons { display: flex; justify-content: stretch; gap: 12px; margin-bottom: 0; }
+.voting-panel .btn-cancel-vote, .voting-panel #btn-cancel-vote {
+  width: 100%; min-height: 60px;
+  background: var(--bg-card); color: var(--text);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-size: var(--fs-sm);
+}
+.voting-panel.voted .vote-target-art { opacity: 0.3; }
+.voting-panel.voted h3,
+.voting-panel.voted .vote-progress { opacity: 0.6; }
 
-/* ADMIN CONTROLS */
+/* ════════════════════════════════════════════════════════════════════════
+   P5 — ADMIN DAY CONTROLS (270:1471 "Lobby rules" frame)
+   #232729 card + 2px white stroke (.card-primary) + radius 16 + pad 16;
+   header row with a 1px bottom rule; 326x60 BLACK player rows; "End day"
+   as the orange 5th row inside the same stack.
+   ════════════════════════════════════════════════════════════════════════ */
 .admin-controls {
-  --pxb-color: var(--primary);
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
+  border-radius: var(--radius-card);
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.admin-controls h3 { font-size: 16px; margin-bottom: 12px; color: var(--primary); }
-.admin-target-section p { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
-.admin-buttons { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.admin-buttons .btn { flex: 1; min-width: 0; }
+.admin-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.admin-controls h3 {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  color: var(--text);
+  margin: 0;
+}
+.vote-count-label { font-size: var(--fs-sm); opacity: 0.5; }
+.admin-status-msg:empty { display: none; }
+.admin-status-msg { font-size: var(--fs-sm); opacity: 0.5; padding: 8px 0; }
+.admin-target-section { display: flex; flex-direction: column; gap: 10px; }
+.admin-nominate-label { font-size: var(--fs-sm); color: var(--text); margin: 0; padding: 8px 0; }
+/* Admin rows are BLACK CTAs (the player-picker rows elsewhere are #232729). */
+.admin-target-list li { --pxb-surface: #000000; min-height: 60px; }
+.admin-target-list li.selected { --pxb-surface: var(--primary); }
+.admin-end-day { width: 100%; min-height: 60px; }
 
 /* DEAD OVERLAY */
 /* ============================================================
@@ -1720,27 +2041,33 @@ input::placeholder { color: var(--text-secondary); }
 .dead-skull-art { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 30px; }
 .dead-skull-art svg { width: 132px; height: 132px; image-rendering: pixelated; filter: drop-shadow(0 0 28px rgba(179,32,42,0.45)); }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+/* Death overlay type per 245:344 / 254:848 / 254:865:
+   "You are" / "You died of" 24px w400 white, "DEAD" / "HEARTBREAK" 48px w900
+   #E53935, message 14px w400 white, sub-line 14px @60%, CTA 358x60 #FF6C02. */
 .dead-pre {
-  font-family: 'Silkscreen', monospace;
-  font-size: 13px;
-  letter-spacing: 9px;
-  color: var(--primary);
-  text-transform: uppercase;
-  padding-left: 9px;
-  margin-bottom: 12px;
-}
-.dead-text { font-size: 48px; font-weight: 700; color: var(--danger-bright); text-transform: uppercase; letter-spacing: 9px; padding-left: 9px; font-family: 'Silkscreen', monospace; }
-.death-message { color: var(--text-secondary); font-size: 14.5px; font-style: italic; margin-top: 20px; padding: 0 16px; text-align: center; max-width: 350px; }
-.dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
-.dead-note { color: #62626e; font-size: 13px; font-style: italic; margin-bottom: 26px; }
-.btn-watch {
-  background: #0c0c12;
-  border: 2px solid var(--border);
+  font-family: var(--font-body);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
   color: var(--text);
-  font-family: 'Silkscreen', monospace;
-  font-size: 11px;
-  letter-spacing: 3px;
-  padding: 15px 30px;
+  text-transform: none;
+  margin-bottom: 10px;
+}
+.dead-text { font-size: var(--fs-3xl); font-weight: var(--fw-heading); color: var(--danger); letter-spacing: 0; line-height: 1.05; font-family: var(--font-display); }
+.death-message { color: var(--text); font-size: var(--fs-sm); margin-top: 24px; padding: 0 16px; text-align: center; max-width: 350px; }
+.dead-div { width: 130px; margin: 28px 0; opacity: 0.55; }
+.dead-note { color: var(--text); opacity: 0.6; font-size: var(--fs-sm); margin-bottom: 26px; }
+.btn-watch {
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  color: var(--cta-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+  min-height: 60px;
+  padding: 16px 30px;
   cursor: pointer;
 }
 .btn-watch:active { box-shadow: inset 0 -3px 0 rgba(0,0,0,0.35); }
@@ -1748,15 +2075,18 @@ input::placeholder { color: var(--text-secondary); }
 
 /* ============================================================
    D6 — JOKER WIN OVERLAY (#joker-win-overlay; its own element now,
-   no longer reuses the dead overlay). Clown centerpiece + amber
-   celebration. z-index 100, click-to-dismiss.
+   no longer reuses the dead overlay). z-index 100, click-to-dismiss.
+   GO-D6a (P6): kept, restyled to the Victory-screen language — the joker
+   raster on its #D5B5E3 radial, "The final verdict"-weight type, sentence
+   case. It stays a separate surface because official joker mode announces
+   this win MID-GAME, before any game-over screen exists.
    ============================================================ */
 .joker-win-overlay {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(232,163,61,0.18) 0%, transparent 64%),
-    rgba(8,8,13,0.96);
+    radial-gradient(ellipse 110% 75% at 50% 36%, rgba(213, 181, 227, 0.18) 0%, transparent 64%),
+    rgba(0,0,0,0.96);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1791,38 +2121,42 @@ input::placeholder { color: var(--text-secondary); }
   padding: 0 32px;
   max-width: 430px;
 }
-/* D6: pixel CLOWN_ART centerpiece (set by showJokerWinOverlay). Amber celebration
-   glow via static drop-shadow; reuses the scale pulse (ceiling). */
-.joker-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; margin-bottom: 28px; }
-.joker-trophy svg { width: 120px; height: 120px; image-rendering: pixelated; filter: drop-shadow(0 0 26px rgba(232,163,61,0.45)); }
-.joker-win-pre {
-  font-family: 'Silkscreen', monospace;
-  font-size: 12px;
-  letter-spacing: 7px;
-  color: var(--primary);
-  text-transform: uppercase;
-  padding-left: 7px;
+/* Joker raster centerpiece on the band radial, matching the Victory frame's
+   244x245 "After" glow at overlay scale (set by showJokerWinOverlay). */
+.joker-trophy {
+  display: flex; align-items: center; justify-content: center;
+  width: 244px; height: 245px; max-width: 100%;
   margin-bottom: 12px;
+  background: radial-gradient(circle at 50% 50%, var(--win-joker-glow) 0%, transparent 70%);
+  animation: pulse 2s ease-in-out infinite;
+}
+.joker-trophy img { width: 200px; height: 200px; max-width: 82%; object-fit: contain; display: block; }
+.joker-win-pre {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  color: #FFFFFF;   /* the overlay paints its own near-black ground in both themes */
+  margin-bottom: 10px;
 }
 .joker-win-title {
-  font-family: 'Silkscreen', monospace;
-  font-size: 38px;
-  font-weight: 700;
-  color: var(--role-joker);
-  text-transform: uppercase;
-  letter-spacing: 6px;
-  padding-left: 6px;
+  font-family: var(--font-display);
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-heading);
+  color: var(--win-joker);
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 1.05;
 }
 .joker-win-name {
-  color: var(--text-secondary);
-  font-size: 15px;
-  font-style: italic;
-  margin-top: 18px;
+  color: #FFFFFF;
+  font-size: var(--fs-sm);
+  margin-top: 24px;
 }
-.joker-win-div { width: 130px; margin: 26px 0; opacity: 0.55; }
 .joker-win-hint {
-  color: var(--text-secondary);
+  color: rgba(255,255,255,0.7);
   font-size: 13px;
+  margin-top: 24px;
   opacity: 0.7;
   animation: pulse 2s ease-in-out infinite;
 }
@@ -1835,38 +2169,37 @@ input::placeholder { color: var(--text-secondary); }
 }
 .role-reveal-trophy svg { width: 16px; height: 16px; image-rendering: pixelated; }
 
-/* ROLES IN PLAY MODAL — text rows (no icons): role name + count, role-tinted */
-.roster-list { display: flex; flex-direction: column; gap: 8px; }
+/* ROLES IN PLAY MODAL — Figma 268:640 lines 207-241. Each row is a pastel
+   role CHIP (fill = the role swatch, ink = its paired --role-*-ink, radius 8,
+   pad 8) with the count in Grandstander 18px white, rows separated by a 1px
+   white rule. Reachable pre-game from the lobby nav (F6) and in-game from the
+   header button — same modal, same renderer. */
+.roster-list { display: flex; flex-direction: column; }
 .roster-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 2px solid color-mix(in srgb, var(--rc, var(--border)) 55%, var(--border));
-  background: color-mix(in srgb, var(--rc, transparent) 9%, var(--bg-elevated));
+  gap: 10px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule-strong);
 }
+.roster-row:last-child { border-bottom: none; }
 .roster-name {
-  font-family: 'Silkscreen', monospace;
-  font-size: 13px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--rc, var(--text));
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--rc, var(--bg-elevated));
+  color: var(--rc-ink, var(--text));
 }
 .roster-count {
   margin-left: auto;
-  font-family: 'Silkscreen', monospace;
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
   color: var(--text);
-  background: var(--bg);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  padding: 4px 10px;
-  min-width: 44px;
-  text-align: center;
 }
 .roster-mode-badge {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 1px;
   color: var(--text-secondary);
@@ -1878,7 +2211,7 @@ input::placeholder { color: var(--text-secondary); }
 .roster-mods {
   margin-top: 4px;
   text-align: center;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 1px;
   color: var(--text-secondary);
@@ -1886,23 +2219,39 @@ input::placeholder { color: var(--text-secondary); }
 .roster-hint {
   margin: 12px 0 0;
   text-align: center;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
 }
 .roster-empty { text-align: center; color: var(--text-secondary); font-size: 13px; }
 
-/* SETTINGS MODAL */
-.settings-modal-body { display: flex; flex-direction: column; gap: 12px; }
-.settings-end-game { margin-top: 8px; }
+/* SETTINGS MODAL — Figma 130:370. Title 24px + circular X, then 47px rows
+   divided by a 1px white rule; the Room code row shows the value in
+   Grandstander 24px (spec:130-370 lines 243-251). */
+.settings-modal-body { display: flex; flex-direction: column; }
+.settings-modal-body .setting-row:last-of-type { border-bottom: 1px solid var(--rule-soft); }
+.settings-room-code-value {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  letter-spacing: 0;
+}
+.settings-end-game { margin-top: 16px; }
 
-/* GAME OVER */
+/* ============================================================
+   P6 — GAME OVER
+   Victory screen        278:2772 / 332:5939 / 332:6071  (= #suspense-overlay)
+   Game options          278:2780 / 332:5960 / 332:6092 / 332:6290 (admin)
+   View game details     278:2810 / 281:2972 / 281:3022
+   The three Figma frames per band collapse onto ONE app screen with two
+   views; the Victory frame is the suspense beat that already precedes it.
+   ============================================================ */
 .gameover-header {
   display: flex;
   justify-content: flex-end;
   padding: 12px 16px 0;
 }
-.gameover-content {
+.gameover-content,
+.gameover-details {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1913,19 +2262,117 @@ input::placeholder { color: var(--text-secondary); }
   text-align: center;
   gap: 20px;
 }
-.gameover-content h1 { font-size: 36px; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; font-family: 'Silkscreen', monospace; }
-.gameover-content p { color: var(--text-secondary); font-size: 16px; padding: 0 16px; }
+/* Verdict block: 358x82 VERTICAL gap=10 — "The final verdict" 24px w400 white
+   over the 48px w900 band headline (278-2772 lines 15-26). Sentence case (R4);
+   the Pixel-Noir uppercase headline retires. */
+.gameover-verdict { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.gameover-pre {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  line-height: 24px;
+  color: var(--text);
+  letter-spacing: 0;
+}
+.gameover-pre.hidden { display: none; }
+.gameover-content h1 {
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-heading);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-display);
+  line-height: 1.05;
+  color: var(--win-ink, var(--text));
+}
+/* Narrative body: 14px w400 WHITE (278-2780 line 39) — not the muted grey the
+   Pixel-Noir screen used. */
+.gameover-content > p {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: 1.1;
+  padding: 0 16px;
+}
+.gameover-content > p:empty { display: none; }
 
-/* D6: TROPHY_ART centerpiece, faction-tinted (same filter language as the D5
-   suspense beat-win-* trophy — base art is amber/gold, hue-rotate per faction;
-   no new grids). Reuses the existing scale pulse (ceiling), static glow only. */
-.gameover-trophy { display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; }
-.gameover-trophy:empty { display: none; }
-.gameover-trophy svg { width: 92px; height: 92px; image-rendering: pixelated; }
-.gameover-trophy.win-neutral svg { filter: drop-shadow(0 0 20px rgba(232,163,61,0.40)); }
-.gameover-trophy.win-town svg { filter: hue-rotate(85deg) saturate(1.1) drop-shadow(0 0 20px rgba(56,142,60,0.40)); }
-.gameover-trophy.win-mafia svg { filter: hue-rotate(-35deg) saturate(1.4) drop-shadow(0 0 20px rgba(211,47,47,0.40)); }
-.gameover-trophy.win-joker svg { filter: hue-rotate(150deg) saturate(1.3) drop-shadow(0 0 20px rgba(38,198,218,0.40)); }
+/* Faction art on its radial glow: FRAME "After" 244x245 filled
+   GRADIENT_RADIAL <band> @60% -> #000000 @60%, holding a 200x200 raster
+   (278-2780 lines 60-63). The two stops read as a soft halo behind the art;
+   rendered as the band hex fading out by 70% of the radius so it works on the
+   light frame too. Art files are the Figma fills downscaled to 800px
+   (docs/figma-raw/assets/fills -> public/img/ui/win-*.png). */
+.gameover-art {
+  width: 244px;
+  height: 245px;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, var(--win-glow, transparent) 0%, transparent 70%);
+}
+.gameover-art:empty { display: none; }
+.gameover-art img {
+  width: 200px;
+  height: 200px;
+  max-width: 82%;
+  object-fit: contain;
+  display: block;
+}
+/* Details header art: FRAME "Skull" 183x183.75 holding a 150x150 raster
+   (278-2810 lines 21-24). */
+.gameover-art-sm { width: 183px; height: 184px; }
+.gameover-art-sm img { width: 150px; height: 150px; }
+/* One band class on the screen drives BOTH views' headline ink and glow.
+   win-neutral (GO-D13, force-ended) deliberately sets neither, so the headline
+   falls back to body ink and no glow is painted. */
+#screen-gameover.win-town { --win-ink: var(--win-town-ink); --win-glow: var(--win-town-glow); }
+#screen-gameover.win-mafia { --win-ink: var(--win-mafia-ink); --win-glow: var(--win-mafia-glow); }
+#screen-gameover.win-joker { --win-ink: var(--win-joker-ink); --win-glow: var(--win-joker-glow); }
+#screen-gameover.win-neutral { --win-ink: var(--win-neutral-ink); }
+
+/* CTA stack: FRAME "CTAs" 358x132 VERTICAL gap=12 (278-2780 lines 41-54).
+   It fades in exactly where Figma animates opacity 0%->100%, which the app
+   already gates behind the staggered reveal completing. */
+.gameover-ctas {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  animation: fadeIn 0.5s ease;
+}
+.gameover-ctas.hidden { display: none; }
+
+/* ---- View game details (278:2810) ---- */
+.gameover-details.hidden { display: none; }
+.gameover-details-head { display: flex; flex-direction: column; align-items: center; gap: 7.5px; width: 100%; }
+/* The detail header steps down to 18/36 (278-2810 lines 13-19). */
+.gameover-details-head .gameover-pre { font-size: var(--fs-lg); line-height: 18px; }
+.gameover-details-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-heading);
+  letter-spacing: 0;
+  line-height: 1.05;
+  color: var(--win-ink, var(--text));
+}
+.gameover-details .event-history { width: 100%; }
+/* The details tabs reuse the Game Tabs pills (.eh-tab); .go-tab is the
+   game-over instance so its click handler stays independent of the in-game
+   one (which force-resets its tab on phase changes). */
+.go-tab {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-display);
+}
+.go-tab.active { background: var(--primary); color: #FFFFFF; }
 
 /* MODAL */
 .modal {
@@ -1938,22 +2385,21 @@ input::placeholder { color: var(--text-secondary); }
   z-index: 200;
 }
 .modal-content {
-  background: var(--bg-elevated);
-  border-radius: 0;
-  /* Stepped corners top-only for bottom-sheet feel */
-  clip-path: polygon(
-    0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0,
-    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px,
-    100% 100%, 0 100%
-  );
+  /* spec:130-370 / 268:640 — the sheet is the #232729 card surface with the
+     shared card drop-shadow. */
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  /* Bottom sheet: radius on the top corners only. */
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   width: 100%;
   max-width: 430px;
   max-height: 60vh;
-  padding: 20px;
+  padding: 16px;
   overflow-y: auto;
 }
-.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.modal-header h3 { font-size: 18px; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+/* Sheet title: Grandstander 24px w400 (spec:130-370 line 197). */
+.modal-header h3 { font-size: var(--fs-xl); font-weight: var(--fw-body); }
 .empty-text { text-align: center; color: var(--text-secondary); padding: 20px; }
 
 /* D8: IN-WORLD CONFIRM SHEET — noir bottom-sheet replacing native confirm().
@@ -1976,32 +2422,39 @@ input::placeholder { color: var(--text-secondary); }
 @media (prefers-reduced-motion: reduce) {
   .confirm-sheet .modal-content { animation: none; }
 }
+/* 271:1932 "Drawer": #232729 radius-16, pad 16, gap 24 — title 24px white
+   (sentence case, no tracking), body 14px white, then two 173x60 CTAs
+   (confirm #FF6C02 / cancel #000000). The uppercase orange Pixel-Noir title
+   retires with the rest of that language (R4). */
 .confirm-sheet-title {
-  font-family: 'Silkscreen', monospace;
-  font-size: 17px;
-  letter-spacing: 1px;
-  color: var(--primary);
-  text-transform: uppercase;
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  color: var(--text);
+  text-transform: none;
   margin-bottom: 10px;
 }
 .confirm-sheet-body {
-  font-size: 15px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text);
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 .confirm-sheet-actions {
   display: flex;
-  gap: 10px;
+  gap: 12px;
 }
+.confirm-sheet-actions .btn { min-height: 60px; }
+.confirm-sheet-actions .btn-secondary { background: #000000; box-shadow: var(--shadow-card); }
 /* Both halves flex evenly; min-width:0 lets the bare .btn (white-space:nowrap)
    shrink below its content width so the wider labels ("FORCE DAWN") don't
    overflow at 320px. Tighter horizontal padding + a hair smaller label keep the
-   widest Silkscreen label inside the 280px inner column at 320px. */
+   widest Grandstander label inside the 280px inner column at 320px. */
 .confirm-sheet-actions .btn-pxb,
 .confirm-sheet-actions > .btn { flex: 1 1 0; min-width: 0; }
 .confirm-sheet-actions .btn { width: 100%; padding-left: 12px; padding-right: 12px; font-size: 15px; }
-/* At very narrow widths the widest Silkscreen labels ("FORCE DAWN",
+/* At very narrow widths the widest Grandstander labels ("FORCE DAWN",
    "LEAVE GAME", "CLOSE ROOM") still clip inside the button content box;
    shrink the label + horizontal padding + letter-spacing so the worst case
    fits inside the ~133px half-column at 320px. */
@@ -2014,11 +2467,25 @@ input::placeholder { color: var(--text-secondary); }
   }
 }
 
-/* GAME HISTORY (Game Over) */
-.game-history { width: 100%; margin-bottom: 16px; text-align: left; }
-.game-history-round { font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-top: 12px; margin-bottom: 4px; }
-.game-history-round:first-child { margin-top: 0; }
-.game-history-item { font-size: 14px; padding: 4px 0; color: var(--text); }
+/* GAME HISTORY (Game Over) — GO-D2b: the post-game round history is the
+   Events panel of the details screen's Game Tabs instance, so it takes the
+   component's two-column grid (Round label | that round's lines, 1px rule
+   between rounds — specs/components/287-3437--game-tabs.md), matching the
+   in-game Events tab exactly. The class names are unchanged; the grid row
+   .go-history-round is the new wrapper. */
+.game-history { width: 100%; text-align: left; font-size: var(--fs-sm); line-height: 1.4; }
+.go-history-round {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.go-history-round:first-child { padding-top: 0; }
+.go-history-round:last-child { border-bottom: none; padding-bottom: 0; }
+.go-history-events { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.game-history-round { font-weight: var(--fw-body); font-size: var(--fs-sm); color: var(--text); text-transform: none; letter-spacing: 0; white-space: nowrap; }
+.game-history-item { font-size: var(--fs-sm); padding: 0; color: var(--text); }
 .game-history-item.kill, .game-history-item.joker_haunt { color: var(--role-mafia); }
 .game-history-item.execution { color: var(--warning); }
 .game-history-item.save { color: var(--role-doctor); }
@@ -2027,21 +2494,26 @@ input::placeholder { color: var(--text-secondary); }
 .game-history-item.abstain { color: var(--text-secondary); font-style: italic; }
 .gameover-buttons { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
-/* ROLE REVEAL (Game Over) */
+/* ROLE REVEAL (Game Over) — 278:2810 "Players": a 326x70 row per player,
+   fill #232729, radius 16, pad 16, card shadow, name (14px white) left and the
+   role chip right. GO-D12 keeps the six app-only disclosures the Figma frame
+   drops: DEAD tag, GODFATHER (not MAFIA), joint-win trophy, lover PARTNER NAME
+   next to the heart, mafia-last ordering and the staggered reveal. */
 .role-reveal {
   width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .role-reveal-item {
-  --pxb-w: 1px;
+  --pxb-w: 0px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-radius: 0;
-  clip-path: polygon(0 6px, 2px 6px, 2px 2px, 6px 2px, 6px 0, calc(100% - 6px) 0, calc(100% - 6px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 6px, 100% 6px, 100% calc(100% - 6px), calc(100% - 2px) calc(100% - 6px), calc(100% - 2px) calc(100% - 2px), calc(100% - 6px) calc(100% - 2px), calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 6px), 0 calc(100% - 6px));
-  margin-bottom: 6px;
+  gap: 10px;
+  min-height: 70px;
+  padding: 16px;
+  border-radius: var(--radius-card);
 }
 .role-reveal-item.dead { opacity: 0.5; }
 .role-reveal-item.reveal-hidden { opacity: 0; transform: translateY(10px); }
@@ -2053,66 +2525,107 @@ input::placeholder { color: var(--text-secondary); }
 }
 @keyframes revealSlideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes revealSlideInDead { from { opacity: 0; transform: translateY(10px); } to { opacity: 0.5; transform: translateY(0); } }
-.role-reveal-name { font-weight: 600; flex: 1; }
+.role-reveal-name { font-weight: var(--fw-body); font-size: var(--fs-sm); flex: 1; text-align: left; }
+/* Chip: FRAME "Tag" pad=8 radius=8, label 14px w400 in the role ink. Citizen
+   uses the CARD swatch pair (#D1CFC7/#5C4B0D) — the detail frames' Citizen
+   chip wears the Vigilante palette, the known spec defect (GO-D4). */
 .role-reveal-role {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  padding: 2px 10px;
-  border-radius: 0;
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
-  font-family: 'Silkscreen', monospace;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  text-transform: capitalize;
+  letter-spacing: 0;
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  white-space: nowrap;
 }
-.role-reveal-role.mafia { background: var(--role-mafia); color: #fff; }
-.role-reveal-role.citizen { background: var(--role-citizen); color: #fff; }
-.role-reveal-role.doctor { background: var(--role-doctor); color: #fff; }
-.role-reveal-role.detective { background: var(--role-detective); color: #fff; }
-.role-reveal-role.joker { background: var(--role-joker); color: #fff; }
-.role-reveal-role.hunter { background: var(--role-hunter); color: #fff; }
-.role-reveal-role.vigilante { background: var(--role-vigilante); color: #fff; }
-.role-reveal-role.godfather { background: var(--role-godfather); color: #fff; }
-/* D3b: role-reveal-lover now has pixel heart art */
-.role-reveal-lover { display: inline-flex; align-items: center; gap: 3px; color: var(--role-lover); margin-left: 8px; font-size: 12px; }
-.role-reveal-lover svg { width: 12px; height: 12px; image-rendering: pixelated; }
-.role-reveal-dead { font-size: 11px; color: var(--text-secondary); margin-left: 8px; }
+.role-reveal-role.mafia { background: var(--role-mafia); color: var(--role-mafia-ink); }
+.role-reveal-role.citizen { background: var(--role-citizen); color: var(--role-citizen-ink); }
+.role-reveal-role.doctor { background: var(--role-doctor); color: var(--role-doctor-ink); }
+.role-reveal-role.detective { background: var(--role-detective); color: var(--role-detective-ink); }
+.role-reveal-role.joker { background: var(--role-joker); color: var(--role-joker-ink); }
+.role-reveal-role.hunter { background: var(--role-hunter); color: var(--role-hunter-ink); }
+.role-reveal-role.vigilante { background: var(--role-vigilante); color: var(--role-vigilante-ink); }
+.role-reveal-role.godfather { background: var(--role-godfather); color: var(--role-godfather-ink); }
+/* Lover marking: Figma draws a bare 16px Heart in the row (278-2810 lines
+   34-37). GO-D12 keeps the PARTNER NAME alongside it — the app has always
+   disclosed it and it is the only place the pairing is ever stated. */
+.role-reveal-lover { display: inline-flex; align-items: center; gap: 4px; color: var(--role-lover-ink); background: var(--role-lover); padding: 4px 8px; border-radius: var(--radius-pill); font-size: var(--fs-xs); white-space: nowrap; }
+.role-reveal-lover svg { width: 16px; height: 16px; image-rendering: pixelated; }
+.role-reveal-dead { font-size: var(--fs-xs); color: var(--text-secondary); }
+/* The row's right-hand cluster wraps on narrow screens instead of overflowing
+   the 326px card. */
+.role-reveal-tags { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 
-/* EVENT HISTORY */
+/* ============================================================
+   GAME TABS — specs/components/287-3437--game-tabs.md
+   Card: 358x254 layout=VERTICAL gap=10 pad=16 radius=16, fill #232729 with
+   the applied #FFFFFF 2px stroke + card shadow
+   (specs/night-actions/135-961--doctor.md:96-98).
+   Header is the Tabs component (specs/components/185-1613--tabs.md): two
+   155x30 pills, gap=16 pad=8 radius=8, active #FF6C02 + #FFFFFF label,
+   inactive transparent + body ink.
+   Events body is a TWO-COLUMN grid — "Round N" in the left column, that
+   round's event lines stacked (gap=8) in the right column — with a 1px
+   divider LINE between rounds. Player rows are name + a 14px colour dot,
+   dead rows at 30% opacity.
+   ============================================================ */
 .event-history {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  padding: 12px 16px;
+  border-radius: var(--radius-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.eh-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.eh-tabs { display: flex; gap: 16px; }
 .eh-tab {
   flex: 1;
-  padding: 6px 0;
+  padding: 8px;
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  text-transform: none;
+  letter-spacing: 0;
   cursor: pointer;
   transition: all 0.15s;
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
 }
 .eh-tab.active {
-  background: var(--bg-elevated);
-  color: var(--text);
-  clip-path: polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px));
+  background: var(--primary);
+  color: #FFFFFF;
 }
 .eh-panel { /* default visible */ }
-.player-status-list { font-size: 13px; line-height: 1.8; }
-.player-status-item { display: flex; align-items: center; gap: 8px; }
+
+/* ---- Events tab: Round N | events, divider between rounds ---- */
+.event-history-list { font-size: var(--fs-sm); line-height: 1.4; }
+.eh-round {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #FFFFFF;
+}
+.eh-round:first-child { padding-top: 0; }
+.eh-round:last-child { border-bottom: none; padding-bottom: 0; }
+.event-history-round { white-space: nowrap; }
+.eh-round-events { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* ---- Players tab ---- */
+.player-status-list { font-size: var(--fs-sm); line-height: 1.4; display: flex; flex-direction: column; gap: 10px; }
+.player-status-item { display: flex; align-items: center; gap: 10px; }
+.player-status-item.dead { opacity: 0.3; }   /* spec: dead rows at 30% */
+/* 261:2092: the ellipse is the row's RIGHT-hand element (name + optional
+   detective thumb sit on the left). */
 .player-status-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  margin-left: auto;
 }
 .player-status-dot.alive { background: var(--success); }
 .player-status-dot.dead { background: var(--danger); }
-.player-status-name.dead { text-decoration: line-through; color: var(--text-secondary); }
+.player-status-name.dead { text-decoration: line-through; }
 
 .mafia-tag {
   font-size: 10px; font-weight: 700; color: var(--role-mafia);
@@ -2122,20 +2635,18 @@ input::placeholder { color: var(--text-secondary); }
 .mafia-tag.godfather-tag {
   color: var(--role-godfather); border-color: var(--role-godfather);
 }
-/* D3b: detective-tag now hosts pixel thumbs art */
+/* Thumbs at the SMALL band. specs/components/225-918--thumbs.md ships a 14px
+   raster variant, but the Figma emoji PNG downscaled to 14-16px loses the
+   finger separations and reads as an amber blob — up and down stop being
+   distinguishable. So this 16px site keeps the pixel-art THUMB_*_ART grids and
+   only the >=32px site (the vote buttons) takes the raster. */
 .detective-tag { margin-left: auto; display: inline-flex; align-items: center; }
 .detective-tag svg { width: 16px; height: 16px; image-rendering: pixelated; }
-.event-history-list { font-size: 13px; line-height: 1.6; }
-.event-history-round {
-  font-size: 11px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 6px;
-  margin-bottom: 2px;
-}
-.event-history-round:first-child { margin-top: 0; }
-.event-item { padding: 2px 0; }
+/* Spec: the round label is plain Grandstander 14px w400 in the same ink as the
+   event lines (287-3437 "Round 01".."Round 04") — no uppercase, no tracking.
+   The per-type colours below are the app's own semantic layer (no Figma
+   equivalent) and are left for the P4/P5 Events-tab pass. */
+.event-item { padding: 0; }
 .event-item.kill, .event-item.joker_haunt { color: var(--danger); }
 .event-item.lover_death { color: var(--role-lover); }
 .event-item.save { color: var(--success); }
@@ -2178,7 +2689,7 @@ input::placeholder { color: var(--text-secondary); }
   background: radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.65) 100%);
   z-index: 2;
 }
-/* D5: staged composition — pre-line (amber Silkscreen) + pixel art centerpiece
+/* D5: staged composition — pre-line (amber Grandstander) + pixel art centerpiece
    + display text, all stacked above the scanline/vignette pseudo-elements
    (z-index 3). Per-beat background washes ride the beat-* classes below. */
 .suspense-stage {
@@ -2192,15 +2703,14 @@ input::placeholder { color: var(--text-secondary); }
   padding: 0 32px;
   max-width: 430px;
 }
-/* Amber Silkscreen pre-line — the "verdict label" voice. Empty by default so it
+/* Amber Grandstander pre-line — the "verdict label" voice. Empty by default so it
    reserves no space until a beat sets it. */
 .suspense-pre {
-  font-family: 'Silkscreen', monospace;
+  font-family: var(--font-display);
   font-size: 12px;
-  letter-spacing: 6px;
+  letter-spacing: 0;
   color: var(--primary);
   text-transform: uppercase;
-  padding-left: 6px; /* visual-center the tracked caps */
 }
 .suspense-pre:empty { display: none; }
 /* Pixel art centerpiece — static, pixelated, sized between the mockup's 96-120px.
@@ -2217,6 +2727,31 @@ input::placeholder { color: var(--text-secondary); }
   height: 100%;
   image-rendering: pixelated;
   display: block;
+}
+/* P6 — the Victory screen (278:2772 / 332:5939 / 332:6071) IS this beat. It
+   swaps the pixel trophy for the band raster on the frame's radial glow, and
+   takes the spec's sentence-case 24px "The final verdict" pre-line instead of
+   the uppercase 12px cue the other beats use. The overlay is always black, so
+   the band hex (not its theme-aware ink) is the right colour here. */
+.suspense-overlay.beat-win-town { --win-glow: var(--win-town-glow); }
+.suspense-overlay.beat-win-mafia { --win-glow: var(--win-mafia-glow); }
+.suspense-overlay.beat-win-joker { --win-glow: var(--win-joker-glow); }
+.suspense-overlay.beat-win-town .suspense-art,
+.suspense-overlay.beat-win-mafia .suspense-art,
+.suspense-overlay.beat-win-joker .suspense-art {
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle at 50% 50%, var(--win-glow, transparent) 0%, transparent 70%);
+}
+.suspense-art img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.suspense-overlay.beat-win-town .suspense-pre,
+.suspense-overlay.beat-win-mafia .suspense-pre,
+.suspense-overlay.beat-win-joker .suspense-pre,
+.suspense-overlay.beat-gameover .suspense-pre {
+  text-transform: none;
+  font-size: var(--fs-xl);
+  line-height: 24px;
+  color: #FFFFFF;
 }
 .suspense-text {
   font-size: 26px;
@@ -2324,30 +2859,29 @@ input::placeholder { color: var(--text-secondary); }
 .header-right { display: flex; align-items: center; gap: 4px; }
 
 /* COLOR PICKER */
-.color-picker-section { padding: 8px 0; }
-.color-picker-section h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
+/* COLORS card — Figma spec:42-782 lines 126-191: radius-16 card, a
+   "Choose your color" 14px head, then 3 rows x 6 swatches. */
+.color-picker-section h4 { font-size: var(--fs-sm); font-weight: var(--fw-body); color: var(--text); margin-bottom: 16px; }
+/* 3 rows x 6 = the 18 Figma swatches (spec:42-782 lines 135-191). */
 .color-picker-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
-  max-width: 300px;
-  margin: 0 auto;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px 10px;
+  margin: 0;
 }
 .color-picker-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+/* 34px ellipse, white 2px stroke; unselected swatches sit at 60% opacity. */
 .color-circle {
-  width: 44px; height: 44px; border-radius: 50%;
-  border: 3px solid transparent;
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid #FFFFFF;
+  opacity: 0.6;
   cursor: pointer;
-  transition: all 0.15s ease;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -2px 0 rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3);
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .color-circle:hover { transform: scale(1.1); }
-.color-circle:active {
-  transform: scale(0.95);
-  box-shadow: inset 0 2px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-}
-.color-circle.selected { border-color: var(--text); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -2px 0 rgba(0,0,0,0.2), 0 0 0 2px var(--text); }
-.color-circle.taken { opacity: 0.7; }
+.color-circle:active { transform: scale(0.95); }
+.color-circle.selected { opacity: 1; border-color: #FFFFFF; }
+.color-circle.taken { opacity: 0.3; }
 .color-circle-label {
   font-size: 10px; color: var(--text-secondary);
   text-align: center; max-width: 48px;
@@ -2360,21 +2894,23 @@ input::placeholder { color: var(--text-secondary); }
   display: inline-block;
 }
 
-/* READ-ONLY SETTINGS DISPLAY (player lobby) */
+/* READ-ONLY ROLES CARD (player lobby) — Figma "Roles" card, spec:42-782
+   lines 41-64: "Mafia members / 2", a 1px white rule, "Special Roles / …".
+   GM-12: this card is deliberately NOT duplicated on the host screen, where
+   the same values are live-editable in the rules card above. */
 .player-lobby-settings {
-  border-radius: 0;
-  clip-path: polygon(0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px));
-  padding: 12px 16px;
-  font-size: 14px;
+  border-radius: var(--radius-card);
+  font-size: var(--fs-sm);
 }
 .player-lobby-settings:empty { display: none; }
 .lobby-settings-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 4px 0;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
 }
-.lobby-settings-row + .lobby-settings-row { border-top: 1px solid var(--border); }
-.lobby-settings-label { color: var(--text-secondary); }
-.lobby-settings-value { font-weight: 600; }
+.lobby-settings-row + .lobby-settings-row { border-top: 1px solid var(--rule-strong); padding-top: 10px; margin-top: 5px; }
+.lobby-settings-label { color: var(--text); white-space: nowrap; }
+.lobby-settings-value { text-align: right; }
 
 /* Responsive fixes */
 @media (max-height: 700px) {

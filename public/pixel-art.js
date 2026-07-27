@@ -601,7 +601,11 @@
     detective: "You are the Detective. Each night, investigate one player to discover if they are Mafia.",
     joker: "You are the Joker. Win by getting yourself executed during the day vote.",
     hunter: "You are the Hunter. If you die, you may take one player down with you.",
-    vigilante: "You are the Vigilante. You have ONE bullet for the entire game. Each night you may shoot one player — or hold your fire and keep the bullet. Friendly fire is allowed.",
+    // N-D7: Figma's Vigilante card one-liner (225:542) drops "friendly fire is
+    // allowed" — a rules-relevant fact. Adopted as the headline sentence with
+    // the friendly-fire rule KEPT as an explicit second line (.role-description
+    // renders with white-space: pre-line).
+    vigilante: "You have one bullet you can use the entire game.\nEach night: shoot one player, or hold your fire. Friendly fire is allowed.",
     godfather: "You are the Godfather. You run the Mafia and appear INNOCENT to the Detective. Win with the Mafia.",
   };
 

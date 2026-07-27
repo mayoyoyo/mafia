@@ -122,10 +122,14 @@ describe("sw.js precache list (L11)", () => {
     }
   });
 
+  // P3: the original L11 bug was precaching /icons/*.png files that did not
+  // exist (the icons are .svg). Narrowed from "no .png at all" to "no .png
+  // under /icons/" — the shell legitimately gained /img/ui/hero.png, whose
+  // existence the "every precached entry maps to a real file" test above covers.
   test("no nonexistent .png icon entries are precached", async () => {
     const sb = loadSw(() => Promise.resolve(new Response("ok")));
     await driveInstall(sb);
-    expect(sb.addAllCalls[0].filter((u) => u.endsWith(".png"))).toEqual([]);
+    expect(sb.addAllCalls[0].filter((u: string) => u.startsWith("/icons/") && u.endsWith(".png"))).toEqual([]);
   });
 
   test("CACHE_NAME is mafia-v{N} with N > 2 so existing clients reinstall", async () => {

@@ -585,7 +585,7 @@ async function runScenario(scenarioName: string, headed: boolean): Promise<boole
     // i+1 players before the next seat joins (deterministic seat→role mapping).
     for (let i = 1; i < n; i++) {
       const page = pages[i];
-      await page.locator("#btn-join-show").click();
+      // P3/F2: the code field is always visible now — no reveal step to click.
       await page.locator("#join-code").fill(code);
       await page.locator("#btn-join").click();
       await page.locator("#screen-lobby-player.active").waitFor({ state: "visible", timeout: 15000 });

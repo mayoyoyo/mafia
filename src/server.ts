@@ -16,12 +16,17 @@ import { subPhaseCue } from "./types";
 import path from "path";
 import fs from "fs";
 
-// Player color palette (20 medium-brightness colors)
+
+// The 18 Figma player swatches (specs/game-menu/42-782--lobby-player.md
+// lines 136-191), the SAME list the picker renders client-side
+// (public/app.js PLAYER_COLORS). This is only used to seed a brand-new /
+// colourless account with a random swatch; stored off-palette values from the
+// old 20-colour list still render and select via the client's nearest-swatch
+// remap (P1), so no migration is needed here.
 const PLAYER_COLORS = [
-  "#E53935", "#EC407A", "#AB47BC", "#7E57C2", "#5C6BC0",
-  "#42A5F5", "#29B6F6", "#26C6DA", "#26A69A", "#66BB6A",
-  "#9CCC65", "#C0CA33", "#FFEE58", "#FFA726", "#FF7043",
-  "#D84315", "#8D6E63", "#78909C", "#546E7A", "#F06292",
+  "#E53935", "#E876A0", "#8E24AA", "#5E35B1", "#3949AB", "#1E88E5",
+  "#039BE5", "#00ACC1", "#00897B", "#43A047", "#7CB342", "#C0CA33",
+  "#FDD835", "#FFB300", "#FB8C00", "#F4511E", "#6D4C41", "#757575",
 ];
 
 // Initialize database
@@ -1775,9 +1780,16 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             });
             startNightSequence(game);
           } else {
-            // Spared — stay in day
+            // Spared — stay in day.
+            // Day-9 (ONE SPARE STRING): the engine's EXECUTION_SPARED_MESSAGES
+            // line was recorded to narrator history above but never put on the
+            // wire, so the live client had to invent its own "spared" copy —
+            // which contradicted both the engine line and the overlay's "The
+            // vote was abstained.". Broadcasting voteResult.messages here makes
+            // the engine narration the single source; the client's competing
+            // strings are gone.
             game.dayStartedAt = Date.now();
-            broadcastPhaseChange(game, { from, messages: [], events: true });
+            broadcastPhaseChange(game, { from, messages: voteResult.messages, events: true });
           }
         }
       }

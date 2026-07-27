@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day accusation flow — Figma-language mockups (proposal)</title>
+<style>
+/* ────────────────────────────────────────────────────────────────────────
+   FONT
+   Grandstander is self-hosted in the repo at public/fonts/grandstander/.
+   This file lives at docs/figma-raw/analysis/, so the relative hop is ../../../
+   NOTE: Chrome blocks cross-origin font loads over file://, so opening this
+   file directly may fall back to the sans-serif stack. To see real
+   Grandstander, serve the repo root:  python3 -m http.server 8000
+   then open  http://localhost:8000/docs/figma-raw/analysis/day-accusation-mockups.html
+   ──────────────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Grandstander';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('../../../public/fonts/grandstander/grandstander-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Grandstander';
+  font-style: normal; font-weight: 700; font-display: swap;
+  src: url('../../../public/fonts/grandstander/grandstander-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Grandstander';
+  font-style: normal; font-weight: 900; font-display: swap;
+  src: url('../../../public/fonts/grandstander/grandstander-latin-900.woff2') format('woff2');
+}
+
+:root {
+  /* Figma ground truth: specs/palette.md + per-frame specs */
+  --bg: #000000;          /* frame fill (270:1471) */
+  --card: #232729;        /* card / CTA row fill (177 uses) */
+  --primary: #FF6C02;     /* primary CTA (139 uses) */
+  --danger: #E53935;      /* thumbs-down CTA (270:1649) */
+  --yes: #66BB6A;         /* thumbs-up CTA (270:1649) */
+  --text: #FFFFFF;
+  --radius: 16px;         /* every card/CTA in the day + night frames */
+  --shadow: 0 4px 23.8px rgba(0,0,0,0.20); /* DROP_SHADOW r23.8 offset 0,4 #000 @20% */
+  --stroke: 2px solid #FFFFFF;
+}
+
+* { box-sizing: border-box; }
+html { background: #0b0b0c; }
+body {
+  margin: 0; padding: 32px 24px 64px;
+  font-family: 'Grandstander', 'Trebuchet MS', 'Segoe UI', sans-serif;
+  color: #e9e9ea;
+}
+
+/* ── page chrome (NOT part of the design — documentation only) ───────────── */
+.page-head { max-width: 900px; margin: 0 auto 40px; }
+.page-head h1 { font-weight: 900; font-size: 28px; margin: 0 0 8px; color: #fff; }
+.page-head p { font-size: 14px; line-height: 1.55; color: #b9bbbe; margin: 0 0 10px; }
+.page-head code { background: #1c1d1f; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.legend { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; margin-top: 16px;
+  border-top: 1px solid #26282b; padding-top: 14px; }
+.legend b { color: #fff; font-weight: 700; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+  vertical-align: -1px; margin-right: 5px; }
+
+.board { display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start;
+  justify-content: flex-start; }
+.frame-wrap { width: 390px; }
+.frame-label { font-size: 14px; font-weight: 700; color: #fff; margin: 0 0 4px; }
+.frame-sub { font-size: 12px; color: #8b8d91; margin: 0 0 10px; line-height: 1.45; }
+.frame-note { font-size: 12px; color: #8b8d91; margin: 12px 0 0; line-height: 1.5; }
+.frame-note b { color: #c9cbcf; font-weight: 700; }
+.frame-note code { background: #1c1d1f; padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+
+/* ── the 390-wide phone frame ────────────────────────────────────────────── */
+.frame {
+  width: 390px; min-height: 844px; background: var(--bg); border-radius: var(--radius);
+  padding: 16px; color: var(--text); overflow: hidden;
+  display: flex; flex-direction: column; gap: 32px; /* Container gap=32 */
+  outline: 1px solid #26282b;
+}
+/* Figma's own Container (358x1116) overflows the 844 viewport on 270:1471 —
+   taller-than-844 content is native to the design, the screen scrolls. */
+
+/* nav (270:1471:14-43) */
+.nav { height: 24px; display: flex; align-items: center; justify-content: space-between; }
+.nav-l { display: flex; align-items: center; gap: 12px; font-size: 16px; }
+.nav-rule { width: 1px; height: 16px; background: #fff; display: inline-block; }
+.nav-r { display: flex; align-items: center; gap: 12px; }
+.code-lbl { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; opacity: .5; }
+.code-val { font-size: 18px; color: var(--primary); }
+.nav-ico { width: 24px; height: 24px; display: grid; place-items: center; font-size: 16px; color: #fff; }
+
+/* membership card, un-peeled Role=Default (77:527) — context only */
+.mcard {
+  height: 222px; border-radius: var(--radius); border: var(--stroke);
+  background: linear-gradient(180deg, #000000 0%, #B5C9E3 100%);
+  box-shadow: var(--shadow); position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+}
+.mcard .r1 { font-size: 16px; }
+.mcard .r2 { font-size: 48px; font-weight: 900; line-height: 1; }
+.mcard .r3 { font-size: 24px; }
+.mcard .peel { position: absolute; right: 0; bottom: 0; width: 28px; height: 28px;
+  background: #B5C9E3; border: var(--stroke); border-radius: 0 0 var(--radius) 0; }
+
+/* narrator line (bare italic TEXT, 18px) */
+.narr { font-size: 18px; line-height: 1.15; font-style: italic; }
+
+/* section headline, 24px regular — the "Choose a victim" pattern (130:323) */
+.headline { font-size: 24px; line-height: 24px; }
+
+/* CTA row primitives */
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.cta {
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px;
+  display: flex; align-items: center; gap: 10px; font-size: 14px; line-height: 1;
+}
+.cta-70 { min-height: 70px; }          /* night player row (130:323) */
+.cta-60 { min-height: 60px; }          /* day admin row / full-width CTA (270:1471) */
+.cta-card { background: var(--card); }
+.cta-black { background: #000000; }
+.cta-primary { background: var(--primary); }
+.cta-center { justify-content: center; }
+.cta-between { justify-content: space-between; }
+.cta-sel { outline: 2px solid var(--primary); outline-offset: -2px; }
+.cta-dis { opacity: .3; }
+
+/* player dot — 14x14 ELLIPSE from the Players tab (261:2092) */
+.dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 14px; }
+
+/* small pill action (Tabs pill geometry: pad 8, radius 8 — 185:1612) */
+.pill { border-radius: 8px; padding: 8px 12px; font-size: 14px; line-height: 1;
+  display: inline-flex; align-items: center; gap: 6px; }
+.pill-primary { background: var(--primary); color: #fff; }
+.pill-black { background: #000; color: #fff; }
+.thumb { width: 14px; height: 14px; display: block; }
+.thumb-32 { width: 32px; height: 32px; display: block; }
+
+.muted { opacity: .5; }
+.note-12 { font-size: 12px; line-height: 1.35; }
+.row-sub { display: flex; flex-direction: column; gap: 6px; }
+
+/* vote CTAs (270:1649) */
+.vote-row { display: flex; gap: 12px; }
+.vote-cta { flex: 1; height: 100px; border-radius: var(--radius); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.vote-yes { background: var(--yes); }
+.vote-no { background: var(--danger); }
+.portrait { width: 78px; height: 78px; display: block; }
+
+/* game tabs (287:3436) — context only, trimmed to 2 rounds */
+.tabs-card { background: var(--card); border: var(--stroke); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.tabs { display: flex; gap: 16px; }
+.tab { flex: 1; border-radius: 8px; padding: 8px; text-align: center; font-size: 14px; }
+.tab-on { background: var(--primary); }
+.eh-row { display: flex; gap: 10px; font-size: 14px; }
+.eh-div { height: 1px; background: #fff; }
+
+/* admin card (270:1471 "Lobby rules" frame) */
+.admin-card { background: var(--card); border: var(--stroke); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.admin-head { display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid #fff; font-size: 14px; }
+.admin-line { padding: 8px 0; font-size: 14px; }
+
+/* proposal-grade copy marker */
+[data-invented] { text-decoration: underline dotted rgba(255,108,2,.85); text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Day accusation flow — missing states, drawn in the Figma language</h1>
+  <p><b>Status: PROPOSAL, not spec.</b> The Figma file predates the player-initiated accusation
+  flow shipped at <code>staging@0098577</code>, so these ~8 states have no Figma ground truth
+  (plan <code>.claude/plans/figma-ui-migration.md</code> R6, matrix
+  <code>matrix-day-actions.md</code> §5.1–5.3). Every visual primitive below is lifted from an
+  existing Figma frame and cited in the per-frame notes; every string is either real app copy
+  (cited) or marked <span data-invented="proposal">invented</span>.</p>
+  <p>Companion spec with per-state purpose, copy strings and engine triggers:
+  <code>day-accusation-mockups-spec.md</code>.</p>
+  <div class="legend">
+    <span><span class="swatch" style="background:#000"></span><b>#000000</b> frame / secondary CTA</span>
+    <span><span class="swatch" style="background:#232729"></span><b>#232729</b> card, radius 16</span>
+    <span><span class="swatch" style="background:#FF6C02"></span><b>#FF6C02</b> primary</span>
+    <span><span class="swatch" style="background:#66BB6A"></span><b>#66BB6A</b> yes</span>
+    <span><span class="swatch" style="background:#E53935"></span><b>#E53935</b> no</span>
+    <span style="text-decoration:underline dotted rgba(255,108,2,.85);text-underline-offset:3px">
+      dotted underline = invented copy (<code>data-invented</code>)</span>
+  </div>
+</div>
+
+<div class="board">
+
+<!-- ══════════════ 1 — DAY IDLE ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">1 — Day idle (living player, accusation unspent)</h2>
+  <p class="frame-sub">Entry: <code>phase_change → "day"</code> + <code>accusations_update</code> with an empty list.</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Day &#9728;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">Grey light comes up over the rooftops. A new day, and the first question is who&#8217;s still here to see it.</div>
+
+    <div class="stack">
+      <div class="cta cta-60 cta-primary cta-center">Accuse someone</div>
+    </div>
+
+    <div class="tabs-card">
+      <div class="tabs"><div class="tab tab-on">Events</div><div class="tab">Players</div></div>
+      <div class="eh-row"><span>Round 3</span><span>jenny &#8212; Died in the night</span></div>
+      <div class="eh-div"></div>
+      <div class="eh-row"><span>Round 4</span><span>mo &#8212; Died in the night</span></div>
+    </div>
+  </div>
+  <p class="frame-note"><b>Variant — accusation already spent</b> (engine
+  <code>already_accused</code>, game-engine.ts:1733; client mirror app.js:3022-3024):</p>
+  <div class="frame" style="min-height:0;gap:0;padding:16px">
+    <div class="cta cta-60 cta-primary cta-center cta-dis">You&#8217;ve made your accusation</div>
+  </div>
+  <p class="frame-note">Copy is real: <code>Accuse someone</code> / <code>You've made your
+  accusation</code> (app.js:3027, 3024). CTA geometry = the 358&times;60 radius-16 <code>#FF6C02</code>
+  "End day" row on 270:1471. No pending-list heading is drawn when the list is empty — the app
+  renders nothing (app.js:3041).</p>
+</section>
+
+<!-- ══════════════ 2 — ACCUSE PICKER ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">2 — Accuse picker (target chosen)</h2>
+  <p class="frame-sub">Entry: tap "Accuse someone" (client-only, app.js:3088-3091). No wire traffic yet.</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Day &#9728;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">Grey light comes up over the rooftops. A new day, and the first question is who&#8217;s still here to see it.</div>
+
+    <div class="stack">
+      <div class="headline">Point a finger &#8212; or move that the town sleeps:</div>
+      <div class="stack">
+        <div class="cta cta-70 cta-card"><span class="dot" style="background:#8A38F5"></span>dale</div>
+        <div class="cta cta-70 cta-card"><span class="dot" style="background:#218BE1"></span>jenny</div>
+        <div class="cta cta-70 cta-card cta-sel"><span class="dot" style="background:#FFEE58"></span>natasha</div>
+        <div class="cta cta-70 cta-card"><span class="dot" style="background:#34C759"></span>mo</div>
+        <div class="cta cta-70 cta-card"><span style="width:14px;text-align:center">&#127769;</span>Propose the town sleeps on it</div>
+      </div>
+      <div class="vote-row" style="gap:12px">
+        <div class="cta cta-60 cta-black cta-center" style="flex:1">Cancel</div>
+        <div class="cta cta-60 cta-primary cta-center" style="flex:1">Confirm</div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-note">All copy real: title (index.html:308), sleep row (app.js:3075),
+  <code>Cancel</code>/<code>Confirm</code> (index.html:311-312). Rows = living players
+  <b>excluding yourself</b> (app.js:3072; engine rejects self-accusation,
+  game-engine.ts:1737 <code>"self"</code>). Row geometry = Mafia/Nominate 326&times;70
+  <code>#232729</code> radius-16 (130:323); selection = 2px <code>#FF6C02</code> inset stroke.
+  <b>Unselected state:</b> no row outlined and Confirm at 30% opacity — Confirm starts
+  <code>disabled</code> (app.js:3077). Confirm sends
+  <code>{type:"accuse", targetId}</code> (<code>null</code> for the sleep row, app.js:3097-3098).</p>
+</section>
+
+<!-- ══════════════ 3 — PENDING ACCUSATIONS ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">3 — Pending accusations, all three viewer treatments</h2>
+  <p class="frame-sub">Viewer = <b>kevin</b>: accuser on row 1, accused on row 2, eligible seconder on row 3.
+  Entry: <code>accusations_update</code> (server.ts:101-115).</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Day &#9728;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">jenny points a finger across the room. mo stands accused. Who will second it?</div>
+
+    <div class="stack">
+      <div class="headline" data-invented="proposal">Standing accusations</div>
+
+      <!-- row 1: you are the accuser -->
+      <div class="cta cta-70 cta-card cta-between">
+        <div class="row-sub">
+          <span>kevin accuses natasha</span>
+          <span class="note-12 muted" data-invented="proposal">Yours &#8212; waiting for a second</span>
+        </div>
+        <span class="pill pill-black">Withdraw</span>
+      </div>
+
+      <!-- row 2: you are the accused -->
+      <div class="cta cta-70 cta-card cta-between" style="opacity:.6">
+        <div class="row-sub">
+          <span>dale accuses kevin</span>
+          <span class="note-12 muted" data-invented="proposal">You&#8217;re accused &#8212; you can&#8217;t second this</span>
+        </div>
+      </div>
+
+      <!-- row 3: eligible seconder -->
+      <div class="cta cta-70 cta-card cta-between">
+        <div class="row-sub">
+          <span>jenny accuses mo</span>
+          <span class="note-12 muted" data-invented="proposal">Needs a second</span>
+        </div>
+        <span class="pill pill-primary">
+          <img class="thumb" src="../assets/fills/b7bdd4e332f1134cea6b347137499723925005ef.png" alt="">Second</span>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="cta cta-60 cta-primary cta-center cta-dis">You&#8217;ve made your accusation</div>
+    </div>
+  </div>
+  <p class="frame-note"><b>Real copy:</b> row text <code>{accuser} accuses {target}</code> (app.js:3036),
+  buttons <code>Second</code> / <code>Withdraw</code> (app.js:3051, 3054).
+  <b>Engine rules drawn here:</b> stacking is legal (game-engine.ts:1759); the accuser cannot second
+  their own row (<code>own_accusation</code>, :1777); the accused cannot second theirs
+  (<code>accused_cannot_second</code>, :1778); one second per player per day
+  (<code>already_seconded</code>, :1779). Withdrawing does <b>not</b> refund the accusation
+  (:1793-1805) — hence the disabled launcher stays disabled.
+  <b>Fourth treatment (not drawn):</b> after a spared/failed ballot a player who already seconded
+  sees every row action-free with <span data-invented="proposal">Second spent for today</span>.
+  Thumbs-up asset = Figma <code>Thumbs</code> small 14&times;14 (225:918).</p>
+</section>
+
+<!-- ══════════════ 4 — SECONDED → BALLOT ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">4 — Seconded &rarr; execution ballot (Figma Voting frame)</h2>
+  <p class="frame-sub">Entry: <code>second_accusation</code> &rarr; <code>accusations_update</code> (seconded line)
+  then <code>vote_called</code> (server.ts:1570-1586).</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Voting &#128499;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">kevin seconds it. The town will vote.</div>
+
+    <div class="stack" style="gap:16px">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <img class="portrait" src="../assets/fills/b16599d8c2a12ed416260aa2f635829bab2f9798.png" alt="">
+        <div class="headline">Execute natasha?</div>
+      </div>
+      <div style="font-size:14px">2/4 votes cast</div>
+      <div class="vote-row">
+        <div class="vote-cta vote-yes">
+          <img class="thumb-32" src="../assets/fills/b7bdd4e332f1134cea6b347137499723925005ef.png" alt=""></div>
+        <div class="vote-cta vote-no">
+          <img class="thumb-32" src="../assets/fills/6d85ad43073beaab687995d7c049a1701e91bebb.png" alt=""></div>
+      </div>
+      <div class="cta cta-60 cta-card cta-center">Cancel vote</div>
+    </div>
+  </div>
+  <p class="frame-note">This state is <b>already drawn</b> (270:1649) — reproduced so the handoff
+  reads end-to-end. The only new thing is the entry path: the accusation panel disappears
+  (app.js:3144, "rule 9") and the narrator line above the ballot is
+  <code>ACCUSATION_SECONDED_MESSAGES</code> (narrator.ts:143-148), <b>not</b> Figma's invented
+  <code>A vote has been called.</code> <code>Cancel vote</code> renders for the admin only
+  (app.js:3165-3169). Adopting Figma's <code>Execute natasha?</code> drops the app's
+  <code>Vote:</code> prefix (index.html:325) — a copy change to confirm.</p>
+</section>
+
+<!-- ══════════════ 5a — SLEEP PROPOSAL PENDING ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">5a — Sleep proposal pending</h2>
+  <p class="frame-sub">Entry: <code>{type:"accuse", targetId:null}</code> &rarr; <code>accusations_update</code>
+  with <code>targetId === null</code> (game-engine.ts:1729, 1746-1747).</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Day &#9728;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">&#8220;No rope today,&#8221; says dale. They move that the town sleep on it. The motion needs a second.</div>
+
+    <div class="stack">
+      <div class="headline" data-invented="proposal">Standing accusations</div>
+      <div class="cta cta-70 cta-card cta-between">
+        <div class="row-sub">
+          <span><span style="margin-right:8px">&#127769;</span>dale moves that the town sleeps</span>
+          <span class="note-12 muted" data-invented="proposal">Needs a second</span>
+        </div>
+        <span class="pill pill-primary">
+          <img class="thumb" src="../assets/fills/b7bdd4e332f1134cea6b347137499723925005ef.png" alt="">Second</span>
+      </div>
+      <div class="cta cta-70 cta-card cta-between">
+        <div class="row-sub">
+          <span>jenny accuses mo</span>
+          <span class="note-12 muted" data-invented="proposal">Needs a second</span>
+        </div>
+        <span class="pill pill-primary">
+          <img class="thumb" src="../assets/fills/b7bdd4e332f1134cea6b347137499723925005ef.png" alt="">Second</span>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="cta cta-60 cta-primary cta-center">Accuse someone</div>
+    </div>
+  </div>
+  <p class="frame-note">Row copy real: <code>{accuser} moves that the town sleeps</code> (app.js:3035).
+  A sleep proposal is <b>the same object</b> as an accusation (<code>targetId: null</code>) and spends
+  the same one-per-day budget (game-engine.ts:1749) — so it stacks with execution accusations and
+  is seconded/withdrawn by the identical buttons. The moon glyph is a proposed visual marker only
+  (Figma uses emoji in nav labels, e.g. <code>Night &#127769;</code>, 130:323).</p>
+</section>
+
+<!-- ══════════════ 5b — SLEEP BALLOT ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">5b — Sleep ballot (seconded sleep proposal)</h2>
+  <p class="frame-sub">Entry: <code>vote_called {sleep:true, targetName:"", targetId:0}</code>
+  (server.ts:124-125). Resolves via <code>resolveSleepVote</code> (game-engine.ts:1843-1871).</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Voting &#128499;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">kevin seconds the motion. The town votes on whether to sleep.</div>
+
+    <div class="stack" style="gap:16px">
+      <div class="headline">The town considers sleeping. Turn in for the night?</div>
+      <div style="font-size:14px">1/4 votes cast</div>
+      <div class="vote-row">
+        <div class="vote-cta vote-yes">
+          <img class="thumb-32" src="../assets/fills/b7bdd4e332f1134cea6b347137499723925005ef.png" alt="">
+          <span style="font-size:14px" data-invented="proposal">Sleep</span></div>
+        <div class="vote-cta vote-no">
+          <img class="thumb-32" src="../assets/fills/6d85ad43073beaab687995d7c049a1701e91bebb.png" alt="">
+          <span style="font-size:14px" data-invented="proposal">Stay up</span></div>
+      </div>
+      <div class="cta cta-60 cta-card cta-center">Cancel vote</div>
+    </div>
+  </div>
+  <p class="frame-note">Headline copy real (app.js:3147). <b>No portrait and no target name</b> — the
+  wire carries <code>targetName:""</code>, so Figma's 78&times;78 <code>image 1</code> slot has
+  nothing to fill. Thumb labels are invented because a bare thumbs-up is ambiguous on a
+  no-target ballot ("yes to what?"). Pass = strictly &gt;50% of votes cast
+  (game-engine.ts:1853) &rarr; night with no execution; fail &rarr; day with pending accusations
+  <b>still standing</b> (:1863-1868).</p>
+</section>
+
+<!-- ══════════════ 6 — ADMIN ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">6 — Admin, day, after a failed ballot</h2>
+  <p class="frame-sub">A living admin sees <b>both</b> panels — accusations (as a player) and
+  admin controls (app.js:2963-2978 + 3012-3031).</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Day &#9728;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">The vote falls short. natasha walks free into another night, and watches their back the whole way.</div>
+
+    <div class="stack">
+      <div class="headline" data-invented="proposal">Standing accusations</div>
+      <div class="cta cta-70 cta-card cta-between">
+        <div class="row-sub">
+          <span>jenny accuses mo</span>
+          <span class="note-12 muted" data-invented="proposal">Second spent for today</span>
+        </div>
+      </div>
+      <div class="cta cta-60 cta-primary cta-center">Accuse someone</div>
+    </div>
+
+    <div class="admin-card">
+      <div class="admin-head"><span>Admin controls</span><span class="muted">(Vote #1 done)</span></div>
+      <div class="admin-line muted">Vote failed. Nominate another player or end the day.</div>
+      <div class="admin-line">Nominate a player for execution</div>
+      <div class="stack">
+        <div class="cta cta-60 cta-black">dale</div>
+        <div class="cta cta-60 cta-black">jenny</div>
+        <div class="cta cta-60 cta-black">kevin</div>
+        <div class="cta cta-60 cta-black">natasha</div>
+        <div class="cta cta-60 cta-primary">End day</div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-note">Admin card = Figma's <code>Lobby rules</code> frame verbatim
+  (270:1471: <code>#232729</code>, 2px white stroke, radius 16, pad 16; rows 326&times;60
+  <code>#000000</code>; <code>End day</code> as the orange <b>5th row inside</b> the list).
+  <code>(Vote #1 done)</code> and the failed-vote line are real app strings (app.js:2971-2972) that
+  Figma has no slot for — parked in the header row and directly beneath it.
+  A <b>dead admin keeps admin rights</b> (CLAUDE.md) but loses the accusation panel
+  (app.js:3014) — so the top block disappears and the admin card stands alone.</p>
+</section>
+
+<!-- ══════════════ 7 — SPECTATOR ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">7 — Dead / spectator view of live accusations</h2>
+  <p class="frame-sub"><b>Behaviour addition</b> — today the app hides the whole panel for dead
+  players (app.js:3014). Proposed: read-only.</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Day &#9728;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard" style="background:linear-gradient(180deg,#000 0%,#546E7A 100%);opacity:.6">
+      <div class="r1">Your role was</div><div class="r2" style="font-size:36px">Citizen</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">jenny points a finger across the room. mo stands accused. Who will second it?</div>
+
+    <div class="stack">
+      <div class="headline" data-invented="proposal">Standing accusations</div>
+      <div class="cta cta-70 cta-card" style="opacity:.3">
+        <div class="row-sub"><span>kevin accuses natasha</span></div>
+      </div>
+      <div class="cta cta-70 cta-card" style="opacity:.3">
+        <div class="row-sub"><span>jenny accuses mo</span></div>
+      </div>
+      <div class="note-12 muted" data-invented="proposal">You&#8217;re watching the town. You can&#8217;t accuse or second.</div>
+    </div>
+
+    <div class="tabs-card">
+      <div class="tabs"><div class="tab tab-on">Events</div><div class="tab">Players</div></div>
+      <div class="eh-row"><span>Round 4</span><span>mo &#8212; Died in the night</span></div>
+    </div>
+  </div>
+  <p class="frame-note"><b>No privacy cost:</b> accusations are public by construction — the
+  accuser/target/seconder names are broadcast to the whole room via
+  <code>broadcastToGame</code> (server.ts:112-114) and narrated to everyone
+  (narrator.ts:129-148). Dead clients <b>already receive</b> <code>accusations_update</code>;
+  only the client suppresses the render. So this is a client-side change with zero wire impact.
+  30% opacity = Figma's dead-row treatment on the Players tab (261:2092).
+  <b>Needs Hanson's sign-off</b> — it is a live-behaviour delta, not a re-skin (R3).</p>
+</section>
+
+<!-- ══════════════ 8 — LOCKED ══════════════ -->
+<section class="frame-wrap">
+  <h2 class="frame-label">8 — Accusations locked while a ballot is live</h2>
+  <p class="frame-sub">Engine: <code>accuse</code> / <code>second_accusation</code> /
+  <code>withdraw_accusation</code> all require <code>phase === "day"</code>
+  (game-engine.ts:1730, 1771, 1799) — during a ballot the phase is <code>"voting"</code>.</p>
+  <div class="frame">
+    <div class="nav">
+      <div class="nav-l"><span>Voting &#128499;&#65039;</span><i class="nav-rule"></i><span>Round 4</span></div>
+      <div class="nav-r"><span class="code-lbl">Code</span><span class="code-val">E92G</span>
+        <span class="nav-ico">&#9776;</span><span class="nav-ico">&#9881;</span></div>
+    </div>
+    <div class="mcard">
+      <div class="r1">Your role is</div><div class="r2">?</div><div class="r3">Peel to reveal</div>
+      <div class="peel"></div>
+    </div>
+    <div class="narr">kevin seconds it. The town will vote.</div>
+
+    <div class="stack" style="gap:16px">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <img class="portrait" src="../assets/fills/b16599d8c2a12ed416260aa2f635829bab2f9798.png" alt="">
+        <div class="headline">Execute natasha?</div>
+      </div>
+      <div style="font-size:14px">3/4 votes cast</div>
+    </div>
+
+    <div class="stack">
+      <div class="cta cta-70 cta-card cta-between" style="opacity:.3">
+        <div class="row-sub">
+          <span>jenny accuses mo</span>
+          <span class="note-12" data-invented="proposal">On hold until the vote ends</span>
+        </div>
+      </div>
+      <div class="cta cta-60 cta-primary cta-center cta-dis">Accuse someone</div>
+    </div>
+  </div>
+  <p class="frame-note"><b>Divergence to decide:</b> today the app <b>hides</b> the whole
+  accusation block while the ballot is live (app.js:3144). This frame proposes keeping it visible
+  at 30% with a disabled launcher, so the standing accusations that survive a failed vote don't
+  vanish and reappear. Also shown: the app's post-vote state hides the thumb CTAs once you've
+  voted (app.js:3154-3156), matching Figma's Execute/Spare dimming (270:1741 / 270:1801).
+  <b>Other edge cases, no frame needed:</b> (a) <b>&#8804;2 alive waiver</b> — an accusation opens the
+  ballot immediately with no second (game-engine.ts:1754-1757), so state 3 is skipped entirely;
+  (b) <b>silent rejects</b> — the server drops every engine error without replying
+  (server.ts:1559, 1575, 1593), so no error toast can be designed today without a server change;
+  (c) accusations are also refused while a Hunter revenge gate is open (server.ts:997-1001).</p>
+</section>
+
+</div>
+</body>
+</html>
