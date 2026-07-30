@@ -72,6 +72,40 @@ export function en(key: string, params?: MsgParams, seed?: number): string {
   return I18n.t(key, params ?? null, seed ?? 0);
 }
 
+/**
+ * A narrator message channel: the rendered English strings PLUS their wire
+ * references, kept parallel BY INDEX.
+ *
+ * `messages` is unchanged from before this branch — same type, same contents, so
+ * every existing reader and assertion is untouched. `refs` is the additive half:
+ * `refs[i]` describes `messages[i]`, and the server ships it as `messageRefs`
+ * beside the existing `messages` array. Anything that pushes into `messages`
+ * MUST go through pushLine so the two never fall out of step.
+ */
+export interface LineSink {
+  messages: string[];
+  refs: MsgRef[];
+}
+
+/** Append a message to a sink, keeping `messages` and `refs` index-aligned. */
+export function pushLine(sink: LineSink, m: MsgRef): void {
+  sink.messages.push(m.text);
+  sink.refs.push(m);
+}
+
+/** Append every line of `from` to `into`, preserving order and alignment. */
+export function pushLines(into: LineSink, from: LineSink): void {
+  for (let i = 0; i < from.messages.length; i++) {
+    into.messages.push(from.messages[i]!);
+    into.refs.push(from.refs[i]!);
+  }
+}
+
+/** A fresh empty sink. */
+export function newSink(): LineSink {
+  return { messages: [], refs: [] };
+}
+
 /** True when `key` exists in en.json (completeness tests read this). */
 export function hasKey(key: string): boolean {
   return I18n.has(key);
