@@ -1,6 +1,7 @@
 import type { Game, GameSettings, Player, Role, PlayerInfo, RosterSummary, RosterEntry, GameEvent, MafiaVoteType, MafiaVoteEntry, NightSubPhase, Death, DeathCause, DeathEventType, KillSource, ConcludeRoundOptions, Accusation } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
-import { Narrator } from "./narrator";
+import { NarratorMsg } from "./narrator";
+import { msg, newSink, pushLine, type LineSink, type MsgRef } from "./i18n";
 // B0d (audit D2): INTERIM per-site phase-transition logging — B4 (D1)
 // consolidates the `game.phase = ...` sites into one transition helper and
 // sweeps these logTransition calls into it.
@@ -90,6 +91,55 @@ export function createGame(adminId: number, adminUsername: string, initialSettin
 
   games.set(code, game);
   return game;
+}
+
+// ── i18n ref channels: the parallel halves of the two message arrays ────────
+//
+// `game.narratorHistory` and `game.pendingMessages` are UNCHANGED (same type,
+// same contents). The MsgRefs that let a translated client re-render those very
+// lines ride in these two side channels, kept parallel BY INDEX.
+//
+// Keyed by Game IDENTITY rather than stored as Game FIELDS — the
+// queuedHunterTrigger precedent below, for the same structural reason: every
+// Game field must be classified in exactly one reset scope (the compile-time
+// guards + tests/reset-seam.test.ts's independently mirrored tables), and these
+// two are not independent state — they are derived halves that must clear with
+// the arrays they mirror and never with anything else. A WeakMap entry also dies
+// with its Game (removeGame → GC).
+//
+// ALIGNMENT CONTRACT (the whole hazard in this seam):
+//   - narratorRefs(game) is appended to ONLY by server.ts's recordNarrator,
+//     which pushes exactly one ref (possibly `null`) per narratorHistory line;
+//   - pendingRefs is written ONLY via setPendingLines, which sets
+//     game.pendingMessages and the refs from one LineSink in the same step;
+//   - both are cleared by resetGameState — the single site that clears
+//     narratorHistory / pendingMessages (GAME_RESETS' only caller).
+const narratorRefsByGame = new WeakMap<Game, Array<MsgRef | null>>();
+const pendingRefsByGame = new WeakMap<Game, MsgRef[]>();
+
+/**
+ * The live ref array parallel to game.narratorHistory (`null` for any line
+ * recorded without a ref). Auto-created on first use, so a game that never
+ * records a narrator line costs nothing.
+ */
+export function narratorRefs(game: Game): Array<MsgRef | null> {
+  let refs = narratorRefsByGame.get(game);
+  if (!refs) {
+    refs = [];
+    narratorRefsByGame.set(game, refs);
+  }
+  return refs;
+}
+
+/** The refs parallel to game.pendingMessages (empty when none were recorded). */
+export function pendingRefs(game: Game): MsgRef[] {
+  return pendingRefsByGame.get(game) ?? [];
+}
+
+/** Set game.pendingMessages and its parallel refs from ONE sink, together. */
+function setPendingLines(game: Game, sink: LineSink): void {
+  game.pendingMessages = sink.messages;
+  pendingRefsByGame.set(game, sink.refs);
 }
 
 // ── P1 reset seam: ONE field table, two reset scopes ────────────────────────
@@ -247,8 +297,11 @@ export function clearAccusations(game: Game): void {
  * per-night reset. Returns the narrator's night-falls line for the caller to
  * place in its message flow. Used by startGame, endDay, and both resolveVote
  * auto-night paths.
+ *
+ * Returns the line as a MsgRef (`.text` is the same English string as before);
+ * callers that need only the string read `.text`.
  */
-export function beginNight(game: Game, reason: string, opts: ResetNightOptions = {}): string {
+export function beginNight(game: Game, reason: string, opts: ResetNightOptions = {}): MsgRef {
   logTransition(game, game.phase, "night", reason);
   game.phase = "night";
   game.round++;
@@ -257,7 +310,7 @@ export function beginNight(game: Game, reason: string, opts: ResetNightOptions =
   // the single night-entry funnel (startGame, endDay, execution auto-night).
   clearAccusations(game);
   game.nightSubPhase = "mafia";
-  return Narrator.nightFalls();
+  return NarratorMsg.nightFalls();
 }
 
 /**
@@ -283,6 +336,12 @@ export function resetGameState(game: Game, reason: string): void {
     });
   }
   queuedHunterTrigger.delete(game);
+  // The two i18n ref channels clear with the arrays they mirror: GAME_RESETS
+  // empties narratorHistory + pendingMessages just below, and this is that
+  // table's only caller (an un-reset parallel array would ship a translated
+  // client the PREVIOUS game's lines).
+  narratorRefsByGame.delete(game);
+  pendingRefsByGame.delete(game);
   resetNightActions(game);
   for (const key of GAME_RESET_FIELDS) {
     GAME_RESETS[key](game);
@@ -920,13 +979,15 @@ export function startGame(game: Game): string[] | null {
   const nightMessage = beginNight(game, "start_game");
   game.awaitingNarratorReady = true; // Begin Night gate: narrator confirms before night actions run
 
-  const messages: string[] = [];
+  // Still returns string[] (callers and tests depend on it) — the parallel refs
+  // ride on the pending-refs channel, read back via pendingRefs(game).
+  const sink = newSink();
   if (actualMafiaCount < game.settings.mafiaCount) {
-    messages.push(`Mafia count reduced from ${game.settings.mafiaCount} to ${actualMafiaCount} for balance (max 1/3 of players).`);
+    pushLine(sink, msg("narr.mafiaCountReduced", { from: game.settings.mafiaCount, to: actualMafiaCount }));
   }
-  messages.push(nightMessage);
-  game.pendingMessages = messages;
-  return messages;
+  pushLine(sink, nightMessage);
+  setPendingLines(game, sink);
+  return sink.messages;
 }
 
 export function submitMafiaVote(
@@ -1249,13 +1310,19 @@ export function notifyDeathTriggers(game: Game, death: Death): void {
  * target is missing or already dead. Pushes one eventHistory entry (with
  * the additive wire cause/source) and fires notifyDeathTriggers per Death.
  */
-export function applyDeath(game: Game, playerId: number, source: KillSource, message: string): Death[] {
+export function applyDeath(game: Game, playerId: number, source: KillSource, message: MsgRef | string): Death[] {
+  // A bare string carries no key: wrap it as a key-less ref so Death.messageRef
+  // is always present (a translated client falls back to `text` on an unknown
+  // key). Every production call site passes a real NarratorMsg ref.
+  const line: MsgRef = typeof message === "string" ? { text: message, key: "", seed: 0 } : message;
   const player = game.players.get(playerId);
   if (!player || !player.isAlive) return [];
 
   player.isAlive = false;
   const deaths: Death[] = [{
-    player, source, cause: "direct", message,
+    // `message` stays the rendered English line; `messageRef` is its additive
+    // translatable twin (messageRef.text === message, by construction).
+    player, source, cause: "direct", message: line.text, messageRef: line,
     eventType: deriveDeathEventType(source, "direct"),
   }];
 
@@ -1266,12 +1333,13 @@ export function applyDeath(game: Game, playerId: number, source: KillSource, mes
     const lover = game.players.get(player.loverId);
     if (lover && lover.isAlive) {
       lover.isAlive = false;
+      // Public heartbreak (owner ruling): names only the heartbroken partner.
+      // Feeds you_died / player_died on the day (execution) and revenge paths;
+      // the night path re-narrates it as a separate dawn heartbreak line.
+      const loverLine = NarratorMsg.loverDeath(lover.username);
       deaths.push({
         player: lover, source, cause: "lover_cascade",
-        // Public heartbreak (owner ruling): names only the heartbroken partner.
-        // Feeds you_died / player_died on the day (execution) and revenge paths;
-        // the night path re-narrates it as a separate dawn heartbreak line.
-        message: Narrator.loverDeath(lover.username),
+        message: loverLine.text, messageRef: loverLine,
         eventType: deriveDeathEventType(source, "lover_cascade"),
       });
     }
@@ -1376,6 +1444,8 @@ export function advanceNightSubPhase(game: Game): SubPhaseAdvanceResult {
 
 export interface NightResult {
   messages: string[];
+  /** The i18n references parallel to `messages` BY INDEX (additive). */
+  refs: MsgRef[];
   killed: Death[];
   saved: boolean;
   savedName: string | null;
@@ -1387,14 +1457,14 @@ export interface KillIntent {
   targetId: number;
   source: KillSource;
   /** Narration for a landed kill — called only when the kill actually lands. */
-  deathMessage: (victim: Player) => string;
+  deathMessage: (victim: Player) => MsgRef;
 }
 
 // DESIGN: Night actions resolve simultaneously. If mafia kills the doctor or detective,
 // their submitted action still takes effect (doctor save, detective investigation).
 // The detective receives their result even if killed the same night.
 export function resolveNight(game: Game): NightResult {
-  const result: NightResult = { messages: [], killed: [], saved: false, savedName: null, savedTargetId: null };
+  const result: NightResult = { messages: [], refs: [], killed: [], saved: false, savedName: null, savedTargetId: null };
 
   // Build tonight's kill intents in resolution order. Order is observable
   // behavior: the mafia kill resolves before the joker haunt (golden #2).
@@ -1402,7 +1472,7 @@ export function resolveNight(game: Game): NightResult {
   if (game.mafiaTarget !== null) {
     intents.push({
       targetId: game.mafiaTarget, source: "mafia",
-      deathMessage: (v) => Narrator.diedInNight(v.username),
+      deathMessage: (v) => NarratorMsg.diedInNight(v.username),
     });
   }
   // Vigilante shot resolves AFTER the mafia kill, BEFORE the joker haunt. A
@@ -1412,7 +1482,7 @@ export function resolveNight(game: Game): NightResult {
   if (game.vigilanteTarget !== null) {
     intents.push({
       targetId: game.vigilanteTarget, source: "vigilante",
-      deathMessage: (v) => Narrator.diedInNight(v.username),
+      deathMessage: (v) => NarratorMsg.diedInNight(v.username),
     });
   }
   if (game.jokerHauntTarget !== null) {
@@ -1420,7 +1490,7 @@ export function resolveNight(game: Game): NightResult {
     // resolveVote's official branch.
     intents.push({
       targetId: game.jokerHauntTarget, source: "joker_haunt",
-      deathMessage: (v) => Narrator.diedInNight(v.username),
+      deathMessage: (v) => NarratorMsg.diedInNight(v.username),
     });
   }
   if (intents.length === 0) return result;
@@ -1456,9 +1526,9 @@ export function resolveNight(game: Game): NightResult {
         result.savedTargetId = intent.targetId;
         if (game.settings.doctorMode === "official") {
           // Official: anonymous narration, no public save event.
-          result.messages.push(Narrator.doctorSaveOfficial());
+          pushLine(result, NarratorMsg.doctorSaveOfficial());
         } else {
-          result.messages.push(Narrator.doctorSave(target.username));
+          pushLine(result, NarratorMsg.doctorSave(target.username));
           game.eventHistory.splice(eventsMark, 0, { round: game.round, type: "save", playerName: target.username });
         }
       }
@@ -1491,18 +1561,18 @@ export function resolveNight(game: Game): NightResult {
   // the kill ORDER can't out the target. Hunter revenge is NOT folded in — it
   // is gated/post-dawn (concludeRound defers the dawn) and keeps its own line.
   if (nightDeadNames.length > 0) {
-    result.messages.push(Narrator.nightDeaths(nightDeadNames));
+    pushLine(result, NarratorMsg.nightDeaths(nightDeadNames));
   }
   // Then each lover cascade as its OWN public "died of heartbreak" line,
   // sequenced AFTER the combined line — the heartbroken partner is named, the
   // original (already-announced) lover is not. Owner ruling reverses the prior
   // concealment; the bond is revealed, the direct kills' causes stay ambiguous.
   for (const name of heartbreakNames) {
-    result.messages.push(Narrator.loverDeath(name));
+    pushLine(result, NarratorMsg.loverDeath(name));
   }
 
   if (result.killed.length === 0 && !result.saved) {
-    result.messages.push(Narrator.noKill());
+    pushLine(result, NarratorMsg.noKill());
   }
 
   return result;
@@ -1516,8 +1586,10 @@ export function resolveNight(game: Game): NightResult {
 //   - Callers run their own resets BEFORE calling (vote/night state is
 //     already clean when the epilogue runs — HUNTER-DESIGN §4 relies on
 //     exactly this ordering while the gate is open).
-//   - `messages` receives any narrator line the epilogue emits (the win
-//     line, or beginNight's night-falls line) — nothing else is touched.
+//   - `lines` (a LineSink: the caller's own result object, which carries both
+//     `messages` and the parallel `refs`) receives any narrator line the
+//     epilogue emits (the win line, or beginNight's night-falls line) —
+//     nothing else is touched.
 //   - checkWinCondition has NO other call site in src/ (pinned by
 //     tests/conclude-round.test.ts); the M8 joker-parity rule therefore
 //     has exactly one place to live.
@@ -1543,7 +1615,10 @@ export function resolveNight(game: Game): NightResult {
  * a gate set inside the hook is wiped before this line sees it (regression
  * pinned in tests/hunter-engine.test.ts).
  */
-export function concludeRound(game: Game, messages: string[], opts: ConcludeRoundOptions): void {
+export function concludeRound(game: Game, sink: LineSink | string[], opts: ConcludeRoundOptions): void {
+  // A bare string[] (engine unit tests) is adapted in place: the SAME array
+  // keeps receiving the epilogue's rendered lines; its refs are discarded.
+  const lines: LineSink = Array.isArray(sink) ? { messages: sink, refs: [] } : sink;
   // C2a: consume the queued Hunter death. Suppression (HUNTER-DESIGN §1,
   // edges E11/E12) evaluates on the settled post-resolution board: a game
   // already over, or no living player left to shoot, discards the queue and
@@ -1584,14 +1659,14 @@ export function concludeRound(game: Game, messages: string[], opts: ConcludeRoun
     game.winner = winner;
     logTransition(game, game.phase, "game_over", fromNight ? "night_resolved" : "vote_resolved");
     game.phase = "game_over";
-    if (winner === "town") messages.push(Narrator.townWin());
-    else if (winner === "mafia") messages.push(Narrator.mafiaWin());
+    if (winner === "town") pushLine(lines, NarratorMsg.townWin());
+    else if (winner === "mafia") pushLine(lines, NarratorMsg.mafiaWin());
   } else if (opts.autoNight) {
     // Auto-transition to night after an execution. beginNight re-runs the
     // per-night reset, so { preserveHauntVoters } MUST match the caller's
     // own resetNightActions flags (official-joker carve-out — a mismatch
     // would wipe the haunt voters; the haunt-parity test covers it).
-    messages.push(beginNight(game, "execution", { preserveHauntVoters: opts.preserveHauntVoters }));
+    pushLine(lines, beginNight(game, "execution", { preserveHauntVoters: opts.preserveHauntVoters }));
   } else {
     logTransition(game, game.phase, "day", fromNight ? "night_resolved" : "spared");
     game.phase = "day";
@@ -1606,6 +1681,8 @@ export interface HunterRevengeResult {
   deaths: Death[];
   /** Narrator lines in order: revenge/decline line(s), then any epilogue line concludeRound appends. */
   messages: string[];
+  /** The i18n references parallel to `messages` BY INDEX (additive). */
+  refs: MsgRef[];
 }
 
 /**
@@ -1627,15 +1704,15 @@ export interface HunterRevengeResult {
  * game.pendingRevenge after the call rather than assuming null.
  */
 export function submitHunterRevenge(game: Game, hunterId: number, targetId: number | null): HunterRevengeResult {
-  const rejected: HunterRevengeResult = { ok: false, deaths: [], messages: [] };
+  const rejected: HunterRevengeResult = { ok: false, deaths: [], messages: [], refs: [] };
   const gate = game.pendingRevenge;
   if (!gate) return rejected;
   if (hunterId !== gate.hunterId) return rejected;
 
-  const messages: string[] = [];
+  const lines = newSink();
   const deaths: Death[] = [];
   if (targetId === null) {
-    messages.push(Narrator.hunterDecline());
+    pushLine(lines, NarratorMsg.hunterDecline());
   } else {
     const target = game.players.get(targetId);
     if (!target || !target.isAlive) return rejected;
@@ -1643,8 +1720,8 @@ export function submitHunterRevenge(game: Game, hunterId: number, targetId: numb
     // triggering resolution completed when the gate opened), so the funnel
     // runs normally — eventHistory entries and the target's lover cascade
     // come free (HUNTER-DESIGN §8.1).
-    for (const d of applyDeath(game, targetId, "hunter_revenge", Narrator.hunterRevengeKill(target.username))) {
-      messages.push(d.message);
+    for (const d of applyDeath(game, targetId, "hunter_revenge", NarratorMsg.hunterRevengeKill(target.username))) {
+      pushLine(lines, d.messageRef);
       deaths.push(d);
     }
   }
@@ -1656,8 +1733,8 @@ export function submitHunterRevenge(game: Game, hunterId: number, targetId: numb
     code: game.code, event: targetId === null ? "declined" : "resolved",
     hunterId: gate.hunterId, phase: game.phase, round: game.round,
   });
-  concludeRound(game, messages, gate.resume);
-  return { ok: true, deaths, messages };
+  concludeRound(game, lines, gate.resume);
+  return { ok: true, deaths, messages: lines.messages, refs: lines.refs };
 }
 
 export function transitionToDay(game: Game): NightResult {
@@ -1672,7 +1749,8 @@ export function transitionToDay(game: Game): NightResult {
   resetNightActions(game);
 
   // Win check + transition to day/game_over (the dawn epilogue shape).
-  concludeRound(game, nightResult.messages, { autoNight: false });
+  // nightResult IS the LineSink (its `messages` + their parallel `refs`).
+  concludeRound(game, nightResult, { autoNight: false });
 
   // STALE-BY-DESIGN when the revenge gate deferred this dawn:
   // submitHunterRevenge never appends, so post-revenge this lacks the
@@ -1680,7 +1758,7 @@ export function transitionToDay(game: Game): NightResult {
   // production logic (ARCHITECTURE-AUDIT §3.2 item 1: messages flow via
   // return values; dumpGame's copy is only the exhaustive debug snapshot)
   // and is pointed for the §3.2 dead-code backlog, not for fixing here.
-  game.pendingMessages = nightResult.messages;
+  setPendingLines(game, nightResult);
   return nightResult;
 }
 
@@ -1827,6 +1905,8 @@ export interface VoteResult {
   votesFor: number;
   votesAgainst: number;
   messages: string[];
+  /** The i18n references parallel to `messages` BY INDEX (additive). */
+  refs: MsgRef[];
   killed: Death[];
   jokerWin: boolean;
   /** True when this ballot was a "town considers sleeping" no-lynch vote. */
@@ -1853,15 +1933,15 @@ function resolveSleepVote(game: Game): VoteResult {
   const passed = votesFor > total / 2; // strictly >50%, mirrors execution
   const result: VoteResult = {
     executed: false, targetName: "", votesFor, votesAgainst,
-    messages: [], killed: [], jokerWin: false, sleep: true, sleepPassed: passed,
+    messages: [], refs: [], killed: [], jokerWin: false, sleep: true, sleepPassed: passed,
   };
   if (passed) {
-    result.messages.push(Narrator.sleepPassed());
+    pushLine(result, NarratorMsg.sleepPassed());
     // No execution — end the day, night falls (beginNight clears the ballot,
     // sleepVote and all accusation state).
-    result.messages.push(beginNight(game, "sleep_vote"));
+    pushLine(result, beginNight(game, "sleep_vote"));
   } else {
-    result.messages.push(Narrator.sleepFailed());
+    pushLine(result, NarratorMsg.sleepFailed());
     // Back to day; pending accusations (DAY-scoped) survive resetNightActions.
     resetNightActions(game);
     logTransition(game, game.phase, "day", "sleep_failed");
@@ -1895,6 +1975,7 @@ export function resolveVote(game: Game): VoteResult | null {
     votesFor,
     votesAgainst,
     messages: [],
+    refs: [],
     killed: [],
     jokerWin: false,
   };
@@ -1902,7 +1983,7 @@ export function resolveVote(game: Game): VoteResult | null {
   if (executed) {
     if (target.role === "joker") {
       result.jokerWin = true;
-      result.messages.push(Narrator.jokerWin(target.username));
+      pushLine(result, NarratorMsg.jokerWin(target.username));
 
       if (game.settings.jokerMode === "official") {
         // Official: game continues, joker is joint winner
@@ -1916,8 +1997,8 @@ export function resolveVote(game: Game): VoteResult | null {
 
         // jokerWin narration was already pushed to messages above; only the
         // cascade adds a public line here.
-        for (const d of applyDeath(game, target.id, "execution", Narrator.jokerWin(target.username))) {
-          if (d.cause === "lover_cascade") result.messages.push(d.message);
+        for (const d of applyDeath(game, target.id, "execution", NarratorMsg.jokerWin(target.username))) {
+          if (d.cause === "lover_cascade") pushLine(result, d.messageRef);
           result.killed.push(d);
         }
 
@@ -1929,7 +2010,7 @@ export function resolveVote(game: Game): VoteResult | null {
 
         // Win check + game_over/haunt-night transition (the official-joker
         // epilogue shape — same single epilogue, carve-out forwarded).
-        concludeRound(game, result.messages, { autoNight: true, preserveHauntVoters: true });
+        concludeRound(game, result, { autoNight: true, preserveHauntVoters: true });
         return result;
       } else {
         // House: instant game over, joker wins
@@ -1939,8 +2020,8 @@ export function resolveVote(game: Game): VoteResult | null {
 
         // jokerWin narration was already pushed to messages above; only the
         // cascade adds a public line here (mirrors the official branch).
-        for (const d of applyDeath(game, target.id, "execution", Narrator.jokerWin(target.username))) {
-          if (d.cause === "lover_cascade") result.messages.push(d.message);
+        for (const d of applyDeath(game, target.id, "execution", NarratorMsg.jokerWin(target.username))) {
+          if (d.cause === "lover_cascade") pushLine(result, d.messageRef);
           result.killed.push(d);
         }
 
@@ -1963,12 +2044,12 @@ export function resolveVote(game: Game): VoteResult | null {
       }
     }
 
-    for (const d of applyDeath(game, target.id, "execution", Narrator.execution(target.username))) {
-      result.messages.push(d.message);
+    for (const d of applyDeath(game, target.id, "execution", NarratorMsg.execution(target.username))) {
+      pushLine(result, d.messageRef);
       result.killed.push(d);
     }
   } else {
-    result.messages.push(Narrator.executionSpared(target.username));
+    pushLine(result, NarratorMsg.executionSpared(target.username));
     game.eventHistory.push({ round: game.round, type: "spared", playerName: target.username });
   }
 
@@ -1979,7 +2060,7 @@ export function resolveVote(game: Game): VoteResult | null {
 
   // Win check + game_over/auto-night/spared-day transition (the normal vote
   // epilogue shape: executed → auto-night, spared → stay in day).
-  concludeRound(game, result.messages, { autoNight: result.executed });
+  concludeRound(game, result, { autoNight: result.executed });
 
   return result;
 }
@@ -2004,17 +2085,19 @@ export function forceDawn(game: Game): string[] {
   logTransition(game, game.phase, "day", "force_dawn");
   game.phase = "day";
 
-  const messages = ["The host has forced dawn. No one was killed tonight."];
-  game.pendingMessages = messages;
-  return messages;
+  const sink = newSink();
+  pushLine(sink, msg("narr.forceDawn"));
+  setPendingLines(game, sink);
+  return sink.messages;
 }
 
 export function endDay(game: Game): string[] {
   if (game.phase !== "day") return [];
 
-  const messages = [beginNight(game, "end_day")];
-  game.pendingMessages = messages;
-  return messages;
+  const sink = newSink();
+  pushLine(sink, beginNight(game, "end_day"));
+  setPendingLines(game, sink);
+  return sink.messages;
 }
 
 export function checkWinCondition(game: Game): "town" | "mafia" | "joker" | null {

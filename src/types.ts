@@ -1,3 +1,11 @@
+// The additive i18n wire reference: { text, key, params?, seed }. Every
+// server-originated game line can carry one BESIDE its unchanged rendered
+// English `text`, so a translated client re-renders the same line in its own
+// language. Re-exported here because the wire types below are its main
+// consumers (type-only import — nothing is emitted at runtime).
+import type { MsgRef } from "./i18n";
+export type { MsgRef };
+
 export type Role = "citizen" | "mafia" | "doctor" | "detective" | "joker" | "hunter" | "vigilante";
 
 export interface Player {
@@ -64,6 +72,12 @@ export interface Death {
   source: KillSource;
   cause: DeathCause;
   message: string;
+  /**
+   * The i18n reference for `message` (additive): messageRef.text === message,
+   * always. Carried so the you_died / player_died broadcasts can ship the
+   * translatable reference beside the unchanged English line.
+   */
+  messageRef: MsgRef;
   /** Derived from (source, cause) in exactly one place (deriveDeathEventType). */
   eventType: DeathEventType;
 }
@@ -146,6 +160,12 @@ export interface PendingRevenge {
    * Unset for the vote-path gate (no deferred dawn). Plain data — rejoin-safe.
    */
   deferredNightMessages?: string[];
+  /**
+   * The i18n references parallel to deferredNightMessages BY INDEX (additive).
+   * Set and read together with it, so the deferred phase_change can ship
+   * `messageRefs` aligned with its `messages`.
+   */
+  deferredNightRefs?: MsgRef[];
 }
 
 export type MafiaVoteType = "lock" | "maybe" | "letsnot";
@@ -270,8 +290,14 @@ export type ClientMessage =
   | { type: "narrator_ready" }
   | { type: "player_return_to_lobby" };
 
+// ── i18n on the wire (ADDITIVE ONLY) ───────────────────────────────────────
+// Every `messageRef` / `messageRefs` / `narratorHistoryRefs` field below is
+// OPTIONAL and rides BESIDE the existing rendered-English field it describes —
+// same field name + "Ref(s)". No existing field changed type or contents, so a
+// client that ignores the refs behaves exactly as before. Where a ref array is
+// parallel to a string array, it is parallel BY INDEX.
 export type ServerMessage =
-  | { type: "error"; message: string }
+  | { type: "error"; message: string; messageRef?: MsgRef }
   | { type: "registered"; userId: number; username: string; hide_mafia_tag: boolean; player_color: string | null }
   | { type: "logged_in"; userId: number; username: string; hide_mafia_tag: boolean; player_color: string | null }
   | { type: "game_created"; code: string }
@@ -279,7 +305,8 @@ export type ServerMessage =
   | { type: "player_list"; players: PlayerInfo[] }
   | { type: "settings_updated"; settings: GameSettings }
   | { type: "game_started"; role: Role; isLover: boolean; variant: number; mafiaTeam?: string[]; isGodfather?: boolean; godfatherName?: string; roster?: RosterSummary }
-  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
+  // messageRefs is parallel to messages BY INDEX (messageRefs[i] describes messages[i]).
+  | { type: "phase_change"; phase: GamePhase; round: number; messages: string[]; messageRefs?: MsgRef[]; events?: GameEvent[]; loverDeathName?: string; saved?: boolean }
   | { type: "mafia_vote_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number }
   | { type: "mafia_confirm_ready"; targetName: string; targetId: number }
   | { type: "mafia_targets"; players: PlayerInfo[] }
@@ -299,14 +326,14 @@ export type ServerMessage =
   // Live accusation-state broadcast: the full pending list + per-day usage
   // (accuser/seconder identities are PUBLIC), plus an optional narrator line to
   // display (accusation made / seconded / withdrawn / sleep proposed).
-  | { type: "accusations_update"; accusations: Accusation[]; accusationsMade: number[]; secondsMade: number[]; message?: string }
-  | { type: "player_died"; playerId: number; playerName: string; message: string }
-  | { type: "you_died"; message: string; isLoverDeath?: boolean }
-  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
+  | { type: "accusations_update"; accusations: Accusation[]; accusationsMade: number[]; secondsMade: number[]; message?: string; messageRef?: MsgRef }
+  | { type: "player_died"; playerId: number; playerName: string; message: string; messageRef?: MsgRef }
+  | { type: "you_died"; message: string; messageRef?: MsgRef; isLoverDeath?: boolean }
+  | { type: "game_over"; winner: "town" | "mafia" | "joker"; message: string; messageRef?: MsgRef; forceEnded?: boolean; players?: PlayerInfo[]; jokerJointWinner?: boolean }
   | { type: "lobby_update"; players: PlayerInfo[]; settings: GameSettings; adminName: string }
   | { type: "sound_cue"; sound: SoundCue }
   | { type: "awaiting_ready" }
-  | { type: "night_action_done"; message: string }
+  | { type: "night_action_done"; message: string; messageRef?: MsgRef }
   | { type: "spectator_mafia_update"; voterTargets: Record<string, Array<{ target: string; targetId: number; voteType: MafiaVoteType }>>; lockedTarget: string | null; objectedTargets: Record<number, string[]>; aliveMafiaCount: number; targets: PlayerInfo[] }
   // targetName is null on a save-only night under official doctor mode: no one
   // died and the saved identity must stay secret. `kills` is the source of truth
@@ -315,13 +342,13 @@ export type ServerMessage =
   // dead spectators but never rendered — dropped so the raw frame can't out the
   // killer's role. Dead spectators still learn WHO each role targeted via the
   // per-sub-phase spectator_night_phase/spectator_night_complete stream.
-  | { type: "spectator_kill_confirmed"; targetName: string | null; doctorMessage: string | null; kills?: Array<{ name: string }> }
+  | { type: "spectator_kill_confirmed"; targetName: string | null; doctorMessage: string | null; doctorMessageRef?: MsgRef | null; kills?: Array<{ name: string }> }
   | { type: "spectator_night_phase"; subPhase: "doctor" | "detective" | "vigilante" | "resolving"; isRoleAlive: boolean }
   | { type: "spectator_night_complete"; phase: string; targetName: string | null; alive: boolean }
   | { type: "spectator_joker_deliberating" }
   | { type: "spectator_joker_resolved"; targetName: string }
   | { type: "player_prefs"; hide_mafia_tag: boolean; player_color: string | null }
-  | { type: "room_closed"; message: string }
+  | { type: "room_closed"; message: string; messageRef?: MsgRef }
   | { type: "game_sync";
       // Identity
       code: string;
@@ -347,6 +374,10 @@ export type ServerMessage =
       dayVoteCount: number;
       // Narrator
       narratorHistory: string[];
+      // The i18n references parallel to narratorHistory BY INDEX (additive):
+      // narratorHistoryRefs[i] describes narratorHistory[i], `null` for any
+      // legacy line recorded without a ref.
+      narratorHistoryRefs?: Array<MsgRef | null>;
       // Detective (only present when the rejoining player is the detective)
       detectiveHistory?: Array<{ round: number; targetName: string; isMafia: boolean }>;
       // Events

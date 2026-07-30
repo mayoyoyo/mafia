@@ -8,8 +8,11 @@ import {
   submitJokerHaunt, getJokerHauntTargets, assertInvariants, assertPhaseEdge,
   toTargetInfo, projectGameOver, projectEventsForClients, submitHunterRevenge, submitVigilanteShoot,
   accuse, secondAccusation, withdrawAccusation,
+  narratorRefs, pendingRefs,
 } from "./game-engine";
-import { Narrator } from "./narrator";
+import { NarratorMsg } from "./narrator";
+// Aliased: `msg` is taken by the ClientMessage parameter name throughout.
+import { msg as i18nMsg, type LineSink, type MsgRef } from "./i18n";
 import { slog } from "./debug";
 import type { ClientMessage, ServerMessage, WSClient, GameSettings, Game, PendingRevenge } from "./types";
 import { subPhaseCue } from "./types";
@@ -96,27 +99,64 @@ function broadcastLobbyUpdate(game: Game): void {
   });
 }
 
-function recordNarrator(game: Game, messages: string[]): void {
-  for (const m of messages) game.narratorHistory.push(m);
+/**
+ * Append lines to the narrator history, keeping game.narratorHistory and its
+ * parallel ref channel (narratorRefs) index-aligned: `refs[i]` describes
+ * `messages[i]`, and a missing entry records `null` (a line with no i18n
+ * reference). recordLines below is the ref-aware form every narrator site uses.
+ */
+function recordNarrator(game: Game, messages: string[], refs?: ReadonlyArray<MsgRef | null | undefined>): void {
+  const store = narratorRefs(game);
+  for (let i = 0; i < messages.length; i++) {
+    game.narratorHistory.push(messages[i]!);
+    store.push(refs?.[i] ?? null);
+  }
+}
+
+/** Record a whole LineSink (rendered lines + their refs) in one aligned step. */
+function recordLines(game: Game, lines: LineSink): void {
+  recordNarrator(game, lines.messages, lines.refs);
+}
+
+/** Record ONE narrator line from its i18n reference. */
+function recordLine(game: Game, line: MsgRef): void {
+  recordNarrator(game, [line.text], [line]);
+}
+
+/** An `error` frame: rendered English + the additive i18n reference. */
+function errorMsg(key: string): ServerMessage {
+  const line = i18nMsg(key);
+  return { type: "error", message: line.text, messageRef: line };
+}
+
+/** Send an `error` frame built from an en.json key. */
+function sendError(ws: any, key: string): void {
+  send(ws, errorMsg(key));
+}
+
+/** A `night_action_done` frame: rendered English + the additive i18n reference. */
+function nightActionDone(key: string): ServerMessage {
+  const line = i18nMsg(key);
+  return { type: "night_action_done", message: line.text, messageRef: line };
 }
 
 // ── Player-initiated accusations: broadcast helpers ─────────────────────────
 
 /** The live accusation-state frame (public accuser/seconder identities). */
-function accusationsPayload(game: Game, message?: string): ServerMessage {
+function accusationsPayload(game: Game, line?: MsgRef): ServerMessage {
   return {
     type: "accusations_update",
     accusations: game.accusations.map((a) => ({ ...a })),
     accusationsMade: [...game.accusationsMade],
     secondsMade: [...game.secondsMade],
-    ...(message ? { message } : {}),
+    ...(line ? { message: line.text, messageRef: line } : {}),
   };
 }
 
-/** Record `message` to the narrator history and push the updated accusation frame. */
-function broadcastAccusations(game: Game, message?: string): void {
-  if (message) recordNarrator(game, [message]);
-  broadcastToGame(game.code, accusationsPayload(game, message));
+/** Record `line` to the narrator history and push the updated accusation frame. */
+function broadcastAccusations(game: Game, line?: MsgRef): void {
+  if (line) recordLine(game, line);
+  broadcastToGame(game.code, accusationsPayload(game, line));
 }
 
 /**
@@ -211,6 +251,11 @@ interface PhaseChangeOptions {
   // Footgun: a post-transition capture (`from: game.phase` AFTER the engine call) self-passes on legal self-edges (night→night, day→day); capture BEFORE.
   from: Game["phase"];
   messages: string[];
+  /**
+   * The i18n references parallel to `messages` BY INDEX — shipped as the
+   * additive `messageRefs` field. Omitted only where no ref exists for the line.
+   */
+  refs?: MsgRef[];
   /** Include `events: game.eventHistory` in the payload. */
   events?: boolean;
   /** Include `saved` (night resolution only — always present there, even when false). */
@@ -247,6 +292,7 @@ function broadcastPhaseChange(game: Game, opts: PhaseChangeOptions): void {
     phase: game.phase,
     round: game.round,
     messages: opts.messages,
+    ...(opts.refs ? { messageRefs: opts.refs } : {}),
     // New options need a matching spread line below + a golden pinning their presence — a forgotten spread silently drops the field (tsc can't catch optional omissions).
     // Wire cause-neutrality (finding 1): while the game is in progress the
     // per-death cause/source is projected away and the four night-death labels
@@ -461,7 +507,7 @@ function startNightSequence(game: Game): void {
 function openRevengeGate(game: Game, gate: PendingRevenge): void {
   const hunter = game.players.get(gate.hunterId);
   const hunterName = hunter?.username ?? "The Hunter";
-  recordNarrator(game, [Narrator.hunterReveal(hunterName)]);
+  recordLine(game, NarratorMsg.hunterReveal(hunterName));
   broadcastToGame(game.code, { type: "hunter_revenge_pending", hunterName });
   if (gate.wakeHunter) broadcastToGame(game.code, { type: "sound_cue", sound: "hunter_open" });
   sendRevengeTargets(game, gate);
@@ -502,10 +548,11 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
   // clears the gate, so the ONE cause-neutral combined death line still leads
   // the deferred phase_change. Empty for the vote-path gate (no deferred dawn).
   const deferredNight = game.pendingRevenge?.deferredNightMessages ?? [];
+  const deferredNightRefs = game.pendingRevenge?.deferredNightRefs ?? [];
   const result = submitHunterRevenge(game, hunterId, targetId);
   if (!result.ok) return false;
 
-  recordNarrator(game, result.messages);
+  recordLines(game, result);
 
   // Revenge death broadcasts — keyed on Death.cause, never position (B3). A
   // lover cascade off a revenge kill is PUBLIC heartbreak (owner ruling):
@@ -516,12 +563,13 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
   for (const d of result.deaths) {
     const isLoverDeath = d.cause === "lover_cascade";
     if (isLoverDeath) revengeLoverDeathName = d.player.username;
-    sendToUser(d.player.id, { type: "you_died", message: d.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
+    sendToUser(d.player.id, { type: "you_died", message: d.message, messageRef: d.messageRef, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
       type: "player_died",
       playerId: d.player.id,
       playerName: d.player.username,
       message: d.message,
+      messageRef: d.messageRef,
     });
   }
 
@@ -548,6 +596,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     broadcastPhaseChange(game, {
       from,
       messages: [...deferredNight, ...result.messages],
+      refs: [...deferredNightRefs, ...result.refs],
       events: true,
       loverDeathName: revengeLoverDeathName,
       // The dawn's deferred day cue (the night-path game_over shape, golden
@@ -559,6 +608,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     broadcastToGame(game.code, {
       type: "game_over",
       ...projectGameOver(game, result.messages[result.messages.length - 1]),
+      ...refField(result.refs[result.refs.length - 1]),
     });
   } else if (game.phase === "night") {
     // Vote-path resume: auto-transition to the next night (C3b).
@@ -567,6 +617,7 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     broadcastPhaseChange(game, {
       from,
       messages: [...deferredNight, ...result.messages],
+      refs: [...deferredNightRefs, ...result.refs],
       events: true,
       loverDeathName: revengeLoverDeathName,
     });
@@ -577,12 +628,23 @@ function resolveRevenge(game: Game, hunterId: number, targetId: number | null): 
     broadcastPhaseChange(game, {
       from,
       messages: [...deferredNight, ...result.messages],
+      refs: [...deferredNightRefs, ...result.refs],
       events: true,
       loverDeathName: revengeLoverDeathName,
       dayCue: true,
     });
   }
   return true;
+}
+
+/**
+ * The live game_over broadcasts send the narrator's LAST line as `message`
+ * (a pinned divergence from buildGameSync's canonical win line) — this ships
+ * that same line's i18n reference beside it, and omits the key when the line
+ * has none.
+ */
+function refField(line: MsgRef | undefined): { messageRef?: MsgRef } {
+  return line ? { messageRef: line } : {};
 }
 
 function buildSpectatorLog(game: Game): Array<{ phase: string; targetName: string | null; alive: boolean }> {
@@ -916,6 +978,10 @@ function buildGameSync(game: Game, client: WSClient, rejoined: import("./types")
     dayStartedAt: game.dayStartedAt,
     dayVoteCount: game.dayVoteCount,
     narratorHistory: game.narratorHistory,
+    // Parallel BY INDEX and always the SAME length as narratorHistory — any
+    // line recorded without a ref (or pushed straight onto the history) rides
+    // as `null`, so index i always describes narratorHistory[i].
+    narratorHistoryRefs: ((refs) => game.narratorHistory.map((_, i) => refs[i] ?? null))(narratorRefs(game)),
     // Wire cause-neutrality (finding 1): in-progress syncs get the projected
     // (cause-stripped, night-deaths-neutralized) history; a game_over sync
     // carries the FULL detail for the end-of-game reveal. Dead spectators keep
@@ -1070,20 +1136,20 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
   switch (msg.type) {
     case "register": {
       if (!msg.username || msg.username.trim().length === 0) {
-        send(ws, { type: "error", message: "Username is required" });
+        sendError(ws, "err.usernameRequired");
         return;
       }
       if (msg.username.trim().length > 32) {
-        send(ws, { type: "error", message: "Username must be 32 characters or fewer" });
+        sendError(ws, "err.usernameTooLong");
         return;
       }
       if (!msg.passcode || !/^\d{4}$/.test(msg.passcode)) {
-        send(ws, { type: "error", message: "Passcode must be exactly 4 digits" });
+        sendError(ws, "err.passcodeDigits");
         return;
       }
       const userId = createUser(msg.username.trim(), msg.passcode);
       if (userId === null) {
-        send(ws, { type: "error", message: "Username already taken" });
+        sendError(ws, "err.usernameTaken");
         return;
       }
       // Assign random color on registration
@@ -1097,7 +1163,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
     case "login": {
       const user = loginUser(msg.username, msg.passcode);
       if (!user) {
-        send(ws, { type: "error", message: "Invalid username or passcode" });
+        sendError(ws, "err.invalidCredentials");
         return;
       }
       // Assign random color for legacy users without one
@@ -1113,11 +1179,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
     case "create_game": {
       if (!client.userId) {
-        send(ws, { type: "error", message: "Not logged in" });
+        sendError(ws, "err.notLoggedIn");
         return;
       }
       if (client.gameCode) {
-        send(ws, { type: "error", message: "Already in a game" });
+        sendError(ws, "err.alreadyInGame");
         return;
       }
       let initialSettings: Partial<GameSettings> | undefined;
@@ -1134,17 +1200,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
     case "join_game": {
       if (!client.userId) {
-        send(ws, { type: "error", message: "Not logged in" });
+        sendError(ws, "err.notLoggedIn");
         return;
       }
       if (client.gameCode) {
-        send(ws, { type: "error", message: "Already in a game" });
+        sendError(ws, "err.alreadyInGame");
         return;
       }
       const code = msg.code.toUpperCase();
       const game = getGame(code);
       if (!game) {
-        send(ws, { type: "error", message: "Game not found" });
+        sendError(ws, "err.gameNotFound");
         return;
       }
 
@@ -1207,7 +1273,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const username = getUsernameFromClients(client.userId);
       const player = addPlayer(game, client.userId, username);
       if (!player) {
-        send(ws, { type: "error", message: "Cannot join: game full or already started" });
+        sendError(ws, "err.cannotJoin");
         return;
       }
       client.gameCode = code;
@@ -1229,7 +1295,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         removePlayer(game, client.userId);
         // If admin leaves during game_over, destroy the room (nobody can restart)
         if (client.userId === game.adminId) {
-          broadcastToGame(game.code, { type: "room_closed", message: "The host has left. Room closed." });
+          const closedLine = i18nMsg("sys.hostLeftRoomClosed");
+          broadcastToGame(game.code, { type: "room_closed", message: closedLine.text, messageRef: closedLine });
           const leftCode = game.code;
           removeGame(leftCode);
           for (const [, c] of clients) {
@@ -1247,7 +1314,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           // Admin leaves lobby = end game for everyone.
           // NOT projectGameOver: no game ever concluded here (game.winner is
           // null in lobby) — winner "town" is forced, jokerJointWinner omitted.
-          broadcastToGame(game.code, { type: "game_over", winner: "town", message: "The host has left the lobby.", forceEnded: true, players: getPlayerInfo(game, true) });
+          const leftLobbyLine = i18nMsg("sys.hostLeftLobby");
+          broadcastToGame(game.code, { type: "game_over", winner: "town", message: leftLobbyLine.text, messageRef: leftLobbyLine, forceEnded: true, players: getPlayerInfo(game, true) });
           removeGame(game.code);
           for (const [, c] of clients) {
             if (c.gameCode === client.gameCode) {
@@ -1263,11 +1331,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         if (client.userId === game.adminId) {
           // Admin leaves active game = force end (room persists at game_over)
           const from = game.phase;
+          const leftLine = i18nMsg("sys.hostLeftGame");
           forceEndGame(game); // clears the revenge gate by hand (§6 L2)
           broadcastPhaseChange(game, {
             from,
             clearTimer: true,
-            messages: ["The host has left the game."],
+            messages: [leftLine.text],
+            refs: [leftLine],
             events: true,
           });
           // NOT projectGameOver: this payload omits jokerJointWinner even
@@ -1276,7 +1346,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           broadcastToGame(game.code, {
             type: "game_over",
             winner: "town",
-            message: "The host has left the game.",
+            message: leftLine.text,
+            messageRef: leftLine,
             forceEnded: true,
             players: getPlayerInfo(game, true),
           });
@@ -1312,7 +1383,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) {
-        send(ws, { type: "error", message: "Only the admin can start the game" });
+        sendError(ws, "err.adminOnlyStart");
         return;
       }
       // C1 (B8 finding): crafted-WS edge — start_game outside the lobby is a
@@ -1322,11 +1393,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const from = game.phase;
       const messages = startGame(game);
       if (!messages) {
-        send(ws, { type: "error", message: "Need at least 3 players to start" });
+        sendError(ws, "err.needThreePlayers");
         return;
       }
+      // The refs parallel to `messages` (startGame stored both together).
+      const startRefs = pendingRefs(game);
       saveLastSettings(game.adminId, JSON.stringify(game.settings));
-      recordNarrator(game, messages);
+      recordNarrator(game, messages, startRefs);
 
       // Build mafia team names
       const mafiaNames = Array.from(game.players.values())
@@ -1352,7 +1425,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
 
       // Send night phase
-      broadcastPhaseChange(game, { from, messages });
+      broadcastPhaseChange(game, { from, messages, refs: startRefs });
 
       // Gate night narration behind "Begin Night" button
       send(ws, { type: "awaiting_ready" });
@@ -1396,7 +1469,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const aliveMafia = getAliveByRole(game, "mafia");
       for (const m of aliveMafia) {
-        sendToUser(m.id, { type: "night_action_done", message: "The Mafia has chosen their victim." });
+        sendToUser(m.id, nightActionDone("act.mafiaChosen"));
       }
 
       // Notify dead players that mafia sub-phase completed (exclude haunting joker)
@@ -1420,7 +1493,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const saved = submitDoctorSave(game, client.userId, msg.targetId);
       if (saved) {
-        sendToUser(client.userId, { type: "night_action_done", message: "You have chosen to protect someone tonight." });
+        sendToUser(client.userId, nightActionDone("act.doctorChosen"));
 
         // Notify dead players that the doctor sub-phase completed (exclude the
         // haunting joker). Owner ruling: dead spectators are OMNISCIENT — they see
@@ -1439,7 +1512,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         // Advance to next sub-phase (detective/resolving)
         handleSubPhaseAdvance(game);
       } else {
-        send(ws, { type: "error", message: "You cannot protect the same player two nights in a row." });
+        sendError(ws, "err.doctorRepeatTarget");
       }
       break;
     }
@@ -1452,10 +1525,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const result = submitDetectiveInvestigation(game, client.userId, msg.targetId);
       if (result) {
-        sendToUser(client.userId, {
-          type: "night_action_done",
-          message: "You have chosen to investigate someone tonight. Results will be revealed at dawn.",
-        });
+        sendToUser(client.userId, nightActionDone("act.detectiveChosen"));
 
         // Notify dead players that detective sub-phase completed (exclude haunting joker)
         const investigatedPlayer = game.players.get(msg.targetId);
@@ -1483,12 +1553,9 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const ok = submitVigilanteShoot(game, client.userId, targetId);
       if (ok) {
-        sendToUser(client.userId, {
-          type: "night_action_done",
-          message: targetId === null
-            ? "You hold your fire and keep your bullet."
-            : "You have taken your shot. Your bullet is spent.",
-        });
+        sendToUser(client.userId, nightActionDone(
+          targetId === null ? "act.vigilanteHoldFire" : "act.vigilanteShot",
+        ));
         // Notify dead players that the vigilante sub-phase completed (exclude haunting joker).
         const tgt = targetId !== null ? game.players.get(targetId) : null;
         sendToDeadPlayers(game, {
@@ -1511,7 +1578,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
 
       const haunted = submitJokerHaunt(game, client.userId, msg.targetId);
       if (haunted) {
-        sendToUser(client.userId, { type: "night_action_done", message: "You have chosen your victim. Revenge is sweet." });
+        sendToUser(client.userId, nightActionDone("act.jokerHaunted"));
         // Notify other dead players that joker has chosen (exclude joker themselves)
         const target = game.players.get(msg.targetId);
         if (target) {
@@ -1564,8 +1631,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!r.ok) return; // silent reject (established guard style)
       const acc = r.accusation!;
       const line = acc.targetId === null
-        ? Narrator.sleepProposed(acc.accuserName)
-        : Narrator.accusationMade(acc.accuserName, acc.targetName!);
+        ? NarratorMsg.sleepProposed(acc.accuserName)
+        : NarratorMsg.accusationMade(acc.accuserName, acc.targetName!);
       broadcastAccusations(game, line);
       // ≤2-alive waiver: the ballot opened immediately (no second possible).
       if (r.voteStarted) broadcastVoteStarted(game);
@@ -1581,8 +1648,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const seconder = game.players.get(client.userId)!;
       const acc = r.accusation!;
       const line = acc.targetId === null
-        ? Narrator.sleepSeconded(seconder.username)
-        : Narrator.accusationSeconded(seconder.username);
+        ? NarratorMsg.sleepSeconded(seconder.username)
+        : NarratorMsg.accusationSeconded(seconder.username);
       // Push the updated (now-consumed) accusation list + the "seconded" line,
       // then open the ballot exactly as an admin call_vote would.
       broadcastAccusations(game, line);
@@ -1598,8 +1665,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!r.ok) return;
       const acc = r.accusation!;
       const line = acc.targetId === null
-        ? Narrator.sleepWithdrawn(acc.accuserName)
-        : Narrator.accusationWithdrawn(acc.accuserName, acc.targetName!);
+        ? NarratorMsg.sleepWithdrawn(acc.accuserName)
+        : NarratorMsg.accusationWithdrawn(acc.accuserName, acc.targetName!);
       broadcastAccusations(game, line);
       break;
     }
@@ -1627,10 +1694,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
       if (game.phase !== "day") return;
       // Admin abstains - just stay in day phase, no vote happens
-      recordNarrator(game, ["The admin has chosen to abstain from calling a vote today."]);
+      const abstainLine = NarratorMsg.abstain();
+      recordLine(game, abstainLine);
       broadcastPhaseChange(game, {
         from: game.phase, // no engine transition on abstain: the day→day self-edge
-        messages: ["The admin has chosen to abstain from calling a vote today."],
+        messages: [abstainLine.text],
+        refs: [abstainLine],
       });
       break;
     }
@@ -1643,10 +1712,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const from = game.phase;
       if (cancelVote(game, client.userId)) {
         game.dayStartedAt = Date.now();
-        recordNarrator(game, ["The vote has been cancelled by the admin."]);
+        const cancelledLine = NarratorMsg.voteCancelled();
+        recordLine(game, cancelledLine);
         broadcastPhaseChange(game, {
           from,
-          messages: ["The vote has been cancelled by the admin."],
+          messages: [cancelledLine.text],
+          refs: [cancelledLine],
           events: true,
         });
       }
@@ -1677,7 +1748,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
           // Majority YES ends the day (night); otherwise the day continues with
           // pending accusations still standing.
           if (voteResult.sleep) {
-            recordNarrator(game, voteResult.messages);
+            recordLines(game, voteResult);
             broadcastToGame(game.code, {
               type: "vote_result", targetName: "", executed: false,
               sleep: true, sleepPassed: !!voteResult.sleepPassed,
@@ -1685,17 +1756,17 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             if (voteResult.sleepPassed) {
               game.dayStartedAt = null;
               game.dayVoteCount = 0;
-              broadcastPhaseChange(game, { from, messages: voteResult.messages });
+              broadcastPhaseChange(game, { from, messages: voteResult.messages, refs: voteResult.refs });
               startNightSequence(game);
             } else {
               game.dayStartedAt = Date.now();
-              broadcastPhaseChange(game, { from, messages: voteResult.messages, events: true });
+              broadcastPhaseChange(game, { from, messages: voteResult.messages, refs: voteResult.refs, events: true });
               broadcastToGame(game.code, accusationsPayload(game));
             }
             break;
           }
 
-          recordNarrator(game, voteResult.messages);
+          recordLines(game, voteResult);
 
           // M12: never broadcast exact tallies — in small games they de-anonymize voters
           broadcastToGame(game.code, {
@@ -1724,12 +1795,13 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             // threaded onto the epilogue phase_change for the public beat.
             const isLoverDeath = k.cause === "lover_cascade";
             if (isLoverDeath) voteLoverDeathName = k.player.username;
-            sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
+            sendToUser(k.player.id, { type: "you_died", message: k.message, messageRef: k.messageRef, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
             broadcastToGame(game.code, {
               type: "player_died",
               playerId: k.player.id,
               playerName: k.player.username,
               message: k.message,
+              messageRef: k.messageRef,
             });
           }
 
@@ -1759,6 +1831,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             broadcastPhaseChange(game, {
               from,
               messages: voteResult.messages,
+              refs: voteResult.refs,
               events: true,
               loverDeathName: voteLoverDeathName,
             });
@@ -1767,6 +1840,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             broadcastToGame(game.code, {
               type: "game_over",
               ...projectGameOver(game, voteResult.messages[voteResult.messages.length - 1]),
+              ...refField(voteResult.refs[voteResult.refs.length - 1]),
             });
           } else if (game.phase === "night") {
             // Auto-transition to night after execution
@@ -1775,6 +1849,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             broadcastPhaseChange(game, {
               from,
               messages: voteResult.messages,
+              refs: voteResult.refs,
               events: true,
               loverDeathName: voteLoverDeathName,
             });
@@ -1789,7 +1864,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
             // the engine narration the single source; the client's competing
             // strings are gone.
             game.dayStartedAt = Date.now();
-            broadcastPhaseChange(game, { from, messages: voteResult.messages, events: true });
+            broadcastPhaseChange(game, { from, messages: voteResult.messages, refs: voteResult.refs, events: true });
           }
         }
       }
@@ -1808,11 +1883,12 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const from = game.phase;
       const messages = forceDawn(game);
       if (messages.length === 0) return;
+      const dawnRefs = pendingRefs(game);
       // C3a (§6 L2): force_dawn is a sanctioned gate-CLEARING forced
       // transition — forceDawn's reset just wiped pendingRevenge, so the
       // dawn proceeds with NO revenge.
       game.dayStartedAt = Date.now();
-      recordNarrator(game, messages);
+      recordNarrator(game, messages, dawnRefs);
 
       // Send detective result if investigation was submitted before force dawn
       if (game.detectiveResult) {
@@ -1827,7 +1903,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         game.detectiveResult = null;
       }
 
-      broadcastPhaseChange(game, { from, messages, events: true, dayCue: true });
+      broadcastPhaseChange(game, { from, messages, refs: dawnRefs, events: true, dayCue: true });
       break;
     }
 
@@ -1839,10 +1915,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const from = game.phase;
       const messages = endDay(game);
       if (messages.length === 0) return;
+      const endDayRefs = pendingRefs(game);
       game.dayStartedAt = null;
       game.dayVoteCount = 0;
-      recordNarrator(game, messages);
-      broadcastPhaseChange(game, { from, messages });
+      recordNarrator(game, messages, endDayRefs);
+      broadcastPhaseChange(game, { from, messages, refs: endDayRefs });
       startNightSequence(game);
       break;
     }
@@ -1854,12 +1931,14 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (game.phase === "game_over") return;
 
       const from = game.phase;
+      const endedLine = i18nMsg("sys.hostEndedGame");
       forceEndGame(game); // clears the revenge gate by hand (§6 L2)
-      recordNarrator(game, ["Host has ended the game."]);
+      recordLine(game, endedLine);
       broadcastPhaseChange(game, {
         from,
         clearTimer: true,
-        messages: ["Host has ended the game."],
+        messages: [endedLine.text],
+        refs: [endedLine],
         events: true,
       });
       // winner comes from the projection: forceEndGame just set it to "town"
@@ -1867,7 +1946,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       // the live win broadcasts omit it.
       broadcastToGame(game.code, {
         type: "game_over",
-        ...projectGameOver(game, "Host has ended the game."),
+        ...projectGameOver(game, endedLine.text),
+        messageRef: endedLine,
         forceEnded: true,
       });
       // Room persists — do NOT removeGame or clear gameCode refs
@@ -1878,11 +1958,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) {
-        send(ws, { type: "error", message: "Only the admin can return to lobby" });
+        sendError(ws, "err.adminOnlyLobby");
         return;
       }
       if (!returnToLobby(game)) {
-        send(ws, { type: "error", message: "Cannot return to lobby" });
+        sendError(ws, "err.cannotReturnLobby");
         return;
       }
       // After the success check: an errant return_to_lobby during an active
@@ -1898,7 +1978,8 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!game || client.userId !== game.adminId) return;
 
       clearNightTimer(game.code);
-      broadcastToGame(game.code, { type: "room_closed", message: "The host has closed the room." });
+      const roomClosedLine = i18nMsg("sys.hostClosedRoom");
+      broadcastToGame(game.code, { type: "room_closed", message: roomClosedLine.text, messageRef: roomClosedLine });
       const closedCode = game.code;
       removeGame(closedCode);
       // Clear all clients' gameCode refs
@@ -1914,7 +1995,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       if (!client.gameCode || !client.userId) return;
       const game = getGame(client.gameCode);
       if (!game || client.userId !== game.adminId) {
-        send(ws, { type: "error", message: "Only the admin can restart the game" });
+        sendError(ws, "err.adminOnlyRestart");
         return;
       }
       // Timer clear stays AT THE SITE (not the helper's clearTimer option):
@@ -1925,10 +2006,11 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       const from = game.phase;
       const messages = restartGame(game);
       if (!messages) {
-        send(ws, { type: "error", message: "Cannot restart game" });
+        sendError(ws, "err.cannotRestart");
         return;
       }
-      recordNarrator(game, messages);
+      const restartRefs = pendingRefs(game);
+      recordNarrator(game, messages, restartRefs);
 
       // Build mafia team names
       const mafiaNames2 = Array.from(game.players.values())
@@ -1952,7 +2034,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
       }
 
       // Send night phase
-      broadcastPhaseChange(game, { from, messages });
+      broadcastPhaseChange(game, { from, messages, refs: restartRefs });
 
       // Gate night narration behind "Begin Night" button
       send(ws, { type: "awaiting_ready" });
@@ -1985,7 +2067,7 @@ function handleMessage(ws: any, client: WSClient, msg: ClientMessage): void {
         updateUserPref(client.userId, "hide_mafia_tag", !!msg.value);
       } else if (key === "player_color") {
         if (!PLAYER_COLORS.includes(msg.value)) {
-          send(ws, { type: "error", message: "Invalid color" });
+          sendError(ws, "err.invalidColor");
           return;
         }
         updateUserPref(client.userId, "player_color", msg.value);
@@ -2062,7 +2144,7 @@ function resolveNightAndTransition(game: Game): void {
   const hauntingJokerId = getHauntingJokerId(game);
   const from = game.phase;
   const nightResult = transitionToDay(game);
-  recordNarrator(game, nightResult.messages);
+  recordLines(game, nightResult);
 
   // Track dayStartedAt
   if (game.phase === "day") {
@@ -2124,14 +2206,14 @@ function resolveNightAndTransition(game: Game): void {
     const targetName = nightResult.killed.length > 0
       ? nightResult.killed[0].player.username
       : nightResult.savedName!;
-    let doctorMessage: string | null = null;
+    let doctorLine: MsgRef | null = null;
     if (game.settings.enableDoctor) {
       if (nightResult.saved && nightResult.savedName) {
         // Named in BOTH modes for dead spectators. Secrecy for the living is the
-        // dawn narration's job (Narrator.doctorSaveOfficial stays anonymous).
-        doctorMessage = `Doctor saved ${nightResult.savedName}`;
+        // dawn narration's job (NarratorMsg.doctorSaveOfficial stays anonymous).
+        doctorLine = i18nMsg("spec.doctorSaved", { name: nightResult.savedName });
       } else {
-        doctorMessage = `Doctor was not able to save ${targetName}`;
+        doctorLine = i18nMsg("spec.doctorFailed", { name: targetName });
       }
     }
     // Finding 4: `source` dropped — a dead spectator's raw frame must not out
@@ -2142,7 +2224,8 @@ function resolveNightAndTransition(game: Game): void {
     sendToDeadPlayers(game, {
       type: "spectator_kill_confirmed",
       targetName,
-      doctorMessage,
+      doctorMessage: doctorLine ? doctorLine.text : null,
+      doctorMessageRef: doctorLine,
       kills,
     }, hauntingJokerId);
   }
@@ -2158,12 +2241,13 @@ function resolveNightAndTransition(game: Game): void {
   for (const k of nightResult.killed) {
     const isLoverDeath = k.cause === "lover_cascade";
     if (isLoverDeath) nightLoverDeathName = k.player.username;
-    sendToUser(k.player.id, { type: "you_died", message: k.message, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
+    sendToUser(k.player.id, { type: "you_died", message: k.message, messageRef: k.messageRef, ...(isLoverDeath ? { isLoverDeath: true } : {}) });
     broadcastToGame(game.code, {
       type: "player_died",
       playerId: k.player.id,
       playerName: k.player.username,
       message: k.message,
+      messageRef: k.messageRef,
     });
   }
 
@@ -2181,6 +2265,7 @@ function resolveNightAndTransition(game: Game): void {
     // still deliver the ONE cause-neutral combined death line to living clients
     // when the gate clears — the deferred dawn would otherwise drop it.
     game.pendingRevenge.deferredNightMessages = nightResult.messages;
+    game.pendingRevenge.deferredNightRefs = nightResult.refs;
     openRevengeGate(game, game.pendingRevenge);
     return;
   }
@@ -2189,6 +2274,7 @@ function resolveNightAndTransition(game: Game): void {
   broadcastPhaseChange(game, {
     from,
     messages: nightResult.messages,
+    refs: nightResult.refs,
     events: true,
     saved: nightResult.saved,
     loverDeathName: nightLoverDeathName,
@@ -2201,6 +2287,7 @@ function resolveNightAndTransition(game: Game): void {
     broadcastToGame(game.code, {
       type: "game_over",
       ...projectGameOver(game, nightResult.messages[nightResult.messages.length - 1]),
+      ...refField(nightResult.refs[nightResult.refs.length - 1]),
     });
   }
 }
@@ -2278,7 +2365,7 @@ const server = Bun.serve({
         const msg = JSON.parse(String(message)) as ClientMessage;
         handleMessage(ws, client, msg);
       } catch (e) {
-        send(ws, { type: "error", message: "Invalid message format" });
+        sendError(ws, "err.invalidFormat");
       }
     },
 
@@ -2312,10 +2399,12 @@ setInterval(() => {
       // (where winner may be "joker"/"mafia" and jokerJointWinner true) yet
       // always reports winner "town" with no jokerJointWinner/forceEnded —
       // pinned wire behavior, kept hand-assembled rather than arbitrated.
+      const timeLimitLine = i18nMsg("sys.timeLimit");
       broadcastToGame(code, {
         type: "game_over",
         winner: "town",
-        message: "Game ended: exceeded 2-hour time limit.",
+        message: timeLimitLine.text,
+        messageRef: timeLimitLine,
         players: getPlayerInfo(game, true),
       });
       removeGame(code);
