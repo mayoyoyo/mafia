@@ -1,330 +1,172 @@
-// Mad-libs random elements
-const LOCATIONS = [
-  "in the alley behind the tailor's", "at the foot of the harbor stairs",
-  "in a doorway off the empty square", "under the dead streetlamp on Mercer Lane",
-  "by the fountain, face to the cobblestones", "on the landing of the old tenement",
-  "in the back room of the shuttered bar", "beneath the railway bridge",
-  "in the fog at the end of the pier", "by the loading dock, out of the light",
-  "in the stairwell of the boarding house", "at the corner where the gaslight had gone out",
-];
+// The narrator's voice.
+//
+// The TEMPLATES no longer live here: they were extracted verbatim into
+// public/i18n/en.json (keys `narr.*`) so the server and every client render from
+// ONE source. This module is now the catalogue of narrator LINES — which key each
+// game moment uses, and which params it carries.
+//
+// Two parallel APIs, both rendering the identical English string:
+//   Narrator.x(...)     → string   — the historical API; used wherever only the
+//                                    rendered text is needed (logs, tests).
+//   NarratorMsg.x(...)  → MsgRef   — { text, key, params, seed }; the ADDITIVE
+//                                    wire reference. `text` is the same English
+//                                    string as before, so old clients and every
+//                                    existing assertion are unaffected; `key`,
+//                                    `params` and `seed` let a translated client
+//                                    re-render the line in its own language.
+//
+// One `seed` per message drives EVERY random choice inside it, including the
+// composite sub-pools (a doctor-save line's save method and location, an
+// execution's style — see the sub-pool convention in public/i18n.js). Pool sizes
+// may differ per language because the wire carries a seed, never an index.
 
-const SAVE_METHODS = [
-  "a steady hand and a needle and thread", "pressure held until the bleeding stopped",
-  "a doctor who answered the door at this hour", "the right words and the wrong amount of luck",
-  "a man who knew where the bullet had to come out", "cold water and a colder nerve",
-  "the kind of medicine that asks no questions", "a heartbeat coaxed back from the edge",
-  "stubbornness, mostly, and a clean bandage", "the only hand in town that doesn't shake",
-];
+import { msg, type MsgRef, type MsgParams } from "./i18n";
 
-const EXECUTION_STYLES = [
-  "taken to the gallows at first light", "led from the square and not seen again",
-  "marched out past the silent crowd", "given to the rope as the town watched",
-  "walked to the edge of town and left there", "put down by the verdict of the room",
-  "handed over to the dark beyond the lamplight", "carried out, the matter closed",
-];
-
-const DOCTOR_SAVE_MESSAGES = [
-  "{name} was found barely breathing {location}, kept alive by {saveMethod}. The Doctor got there first.",
-  "{name} should be dead. Instead they're sitting up, pale and shaking, pulled back by {saveMethod}.",
-  "They came for {name} in the dark. The Doctor was already there, working by lamplight with {saveMethod}.",
-  "{name} survived the night by inches, owed entirely to {saveMethod}. Death will have to wait.",
-  "{name} was on the edge of it {location}. {saveMethod} was enough — just enough — to bring them back.",
-];
-
-// Official mode: narrator hints someone survived but doesn't name who
-const DOCTOR_SAVE_OFFICIAL_MESSAGES = [
-  "Someone was meant to die last night. A hand intervened in the dark, and they didn't. No name was left.",
-  "There was a target. There was blood on the cobblestones. And then there was a survivor. That's all anyone knows.",
-  "The killers' work was undone before dawn. One they marked still draws breath. Who, and by whose hand, stays a secret.",
-  "A life held on by a thread last night, and someone tied it off. The Doctor keeps quiet hours.",
-  "The night was not clean, but it took no one. Someone lives who shouldn't. Ask no questions.",
-];
-
-const NO_KILL_MESSAGES = [
-  "Dawn comes, and no one is missing. The knives stayed in their sheaths tonight. No one says why.",
-  "Morning, and every door opens to a living face. Whatever was planned, it didn't happen. Not this time.",
-  "The town wakes whole. No blood, no body, no answer. The quiet feels like it's waiting for something.",
-  "A night passed and took nothing with it. The fog lifts on a street with all its people still on it.",
-];
-
-const EXECUTION_MESSAGES = [
-  "The town has spoken. {name} is {executionStyle}. Whether it was justice, no one will ever be sure.",
-  "The vote is counted. {name}'s fate is sealed. They are {executionStyle}.",
-  "The room decides, and the decision is final. {name} has been {executionStyle}.",
-  "The verdict comes down hard. {name} must go, and so {name} is {executionStyle}.",
-  "{name} stands before the town one last time. The hands are raised, the matter settled. {name} is {executionStyle}.",
-];
-
-const EXECUTION_SPARED_MESSAGES = [
-  "The vote falls short. {name} walks free into another night, and watches their back the whole way.",
-  "Not enough hands went up. {name} is spared, though no one in the room has stopped watching them.",
-  "The town hesitates, and the moment passes. {name} lives. The suspicion does not go away.",
-  "The verdict won't hold. {name} survives the vote. The town will remember whose name came up.",
-];
-
-// Public heartbreak death (a lover's cascade following their partner's death).
-// Owner ruling: heartbreak IS revealed. Names ONLY the heartbroken partner and
-// says plainly they "died of heartbreak" — it must NEVER name the original
-// lover in the same line (that name is already public from the announcement
-// this line follows). Time-agnostic so it reads on the night (dawn), day
-// (execution) and hunter-revenge paths alike.
-const LOVER_DEATH_MESSAGES = [
-  "{name} died of heartbreak.",
-  "{name} could not go on, and died of heartbreak.",
-  "A heart only breaks the once: {name} died of heartbreak.",
-  "{name} followed soon after, dead of heartbreak.",
-];
-
-const JOKER_WIN_MESSAGES = [
-  "{name} is already smiling as the rope goes taut. They wanted this. You gave it to them, and the joke was never yours to get.",
-  "The crowd quiets. {name} doesn't struggle, doesn't plead — just looks back at the room like it walked into a trap of its own making. The Joker came here to lose, and won.",
-  "{name} laughs, soft and final. The whole town fell for it, killers and innocents alike. They handed the Joker the one thing it ever asked for.",
-];
-
-const TOWN_WIN_MESSAGES = [
-  "The last of the Mafia falls. The street lamps come on early, and for the first time in a long time, no one is afraid to walk under them. The town wins.",
-  "Every killer has been named and dealt with. The fog burns off by noon and stays gone. The town is quiet again — quiet the right way. The town wins.",
-  "The shadow over the town lifts with the last of them gone. People sleep with the doors unlocked tonight, and nothing comes. The town wins.",
-];
-
-const MAFIA_WIN_MESSAGES = [
-  "The town goes quiet, and stays that way. The men who run it now don't raise their voices; they don't need to. The Mafia wins.",
-  "It's over. There aren't enough honest hands left to hold the line. The lamps stay dark on whichever streets they choose. The Mafia wins.",
-  "The survivors look around and understand: they're outnumbered, and they always were. Nobody argues with the new order. The Mafia wins.",
-];
-
-const HUNTER_REVEAL_MESSAGES = [
-  "{name} was the Hunter. With the last of their strength, they reach for the gun — and the whole room stops breathing...",
-  "{name} was the Hunter. They were never going to go quietly. The weapon comes up, slow and certain...",
-  "So that's what {name} was — the Hunter. The barrel rises one last time, and all at once nobody wants to be standing too close...",
-  "The truth comes out at the end: {name} was the Hunter. A steady aim on an unsteady hand, one round left. The town goes very quiet...",
-  "{name} was the Hunter. They aren't leaving the table alone. The hammer draws back, and the room holds still...",
-];
-
-const HUNTER_REVENGE_KILL_MESSAGES = [
-  "A single shot, and {name} goes down beside the Hunter. The dying take who they please.",
-  "One round leaves the chamber. {name} drops where they stood. The Hunter's aim held to the end.",
-  "{name} is the Hunter's last word. The shot was clean. There is nothing to argue with now.",
-  "The Hunter fires once. {name} doesn't get the chance to speak. The matter is closed for both of them.",
-  "{name} falls to the Hunter's parting shot. Two bodies now where there was one. The street goes silent again.",
-];
-
-const HUNTER_DECLINE_MESSAGES = [
-  "The Hunter lowers the gun. Whatever they had left, they keep it. No one else dies tonight.",
-  "The Hunter looks the room over, slow, and then sets the weapon down. Mercy, or just tiredness — they don't say.",
-  "No shot comes. The Hunter shoulders the gun and walks out into the fog, leaving the rest of them to wonder.",
-  "The barrel drops. The Hunter goes without firing, and the town is left alone with its suspicions.",
-];
-
-const NIGHT_FALLS_MESSAGES = [
-  "The sun goes down and the fog comes up to meet it. Night now. Lock your doors, and don't answer them.",
-  "Darkness settles over the town. Most of it sleeps. Some of it doesn't, and has reasons not to.",
-  "Night falls like a curtain drawn slow. Somewhere out past the last lamp, plans are already being made.",
-  "The last light goes out of the sky. Another night begins, and the wrong people are awake for it.",
-];
-
-// ── Player-initiated accusations (text-only narrator log; no recorded audio) ──
-// Noir register, matching the rest of the narrator. Names are PUBLIC (open
-// accusations), so these lines name the accuser, the accused, and the seconder.
-const ACCUSATION_MADE_MESSAGES = [
-  "{accuser} points a finger across the room. {target} stands accused. Who will second it?",
-  "{accuser} names {target} for it, plain and loud. The charge needs a second before the town will hear it.",
-  "“{target},” says {accuser}, and lets the name hang there. Someone has to second the accusation.",
-  "{accuser} accuses {target}. The room waits to see who else will stand up.",
-];
-
-const SLEEP_PROPOSED_MESSAGES = [
-  "{accuser} says the town has heard enough for one day and moves that everyone sleep on it. It needs a second.",
-  "{accuser} proposes the town sleeps tonight and lets no one hang. Who will second it?",
-  "“No rope today,” says {accuser}. They move that the town sleep on it. The motion needs a second.",
-  "{accuser} would rather the town sleep than get it wrong. Someone must second the motion.",
-];
-
-const ACCUSATION_SECONDED_MESSAGES = [
-  "{seconder} seconds it. The town will vote.",
-  "{seconder} stands up alongside the charge. That settles it — the town votes now.",
-  "“Seconded,” says {seconder}. The matter goes to the room.",
-  "{seconder} backs the accusation. Hands will be counted.",
-];
-
-const SLEEP_SECONDED_MESSAGES = [
-  "{seconder} seconds the motion. The town votes on whether to sleep.",
-  "{seconder} agrees — better to sleep than to be wrong. The town decides.",
-  "“Seconded,” says {seconder}. The room votes on turning in for the night.",
-];
-
-const ACCUSATION_WITHDRAWN_MESSAGES = [
-  "{accuser} thinks better of it and takes the accusation against {target} back.",
-  "{accuser} lets it drop. The charge against {target} is withdrawn — for now.",
-  "{accuser} waves it off. Nothing said against {target}, they decide. Not yet.",
-];
-
-const SLEEP_WITHDRAWN_MESSAGES = [
-  "{accuser} withdraws the motion to sleep. The day goes on.",
-  "{accuser} takes it back — no vote on sleeping after all. The day is still young enough for a rope.",
-];
-
-const SLEEP_PASSED_MESSAGES = [
-  "The town votes to sleep on it. No one hangs today; the lamps go out on a full room.",
-  "The room decides against the rope. Everyone goes home whole, and the night comes anyway.",
-  "The vote holds: the town will sleep, and let tomorrow sort the guilty from the rest.",
-];
-
-const SLEEP_FAILED_MESSAGES = [
-  "The motion to sleep fails. The town isn't done yet, and the day grinds on.",
-  "Not enough hands to call it a day. The room stays awake, and the arguments start again.",
-  "The town won't turn in. The day continues, and someone's name will come up again soon enough.",
-];
-
-const DAY_BREAKS_MESSAGES = [
-  "Grey light comes up over the rooftops. A new day, and the first question is who's still here to see it.",
-  "Morning. The fog thins, the lamps go out one by one, and the town counts its people.",
-  "The sun comes up cold on another day. Time to find out what the night took, and who.",
-];
-
-function pick(arr: string[]): string {
-  return arr[Math.floor(Math.random() * arr.length)];
+/**
+ * Sort victim names for the combined dawn announcement. ALPHABETICAL on purpose:
+ * the kill ORDER (targeted-first vs lover cascade) must not be inferable from the
+ * line, so the resolution order is never presented.
+ */
+function sortNames(names: string[]): string[] {
+  return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-// Single-pass substitution: every placeholder in the template is replaced in
-// one scan, so substituted values (e.g. a player named "{tool}") are never
-// re-expanded. Unknown placeholders are left as-is. The callback form also
-// keeps `$` replacement patterns in values (e.g. a player named "$&") literal
-// — do not switch to string-replacement semantics, which would interpret them.
-function fill(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
-    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match
-  );
+/** Build a MsgRef for `key`. `seed` is only passed by determinism tests. */
+function line(key: string, params?: MsgParams, seed?: number): MsgRef {
+  return msg(key, params, seed);
 }
 
-// Join victim names for the combined dawn announcement. SORTED alphabetically
-// on purpose: the kill ORDER (targeted-first vs lover cascade) must not be
-// inferable from the line, so we never present them in resolution order.
-//   1 → "A"   2 → "A and B"   3+ → "A, B, and C"
-function joinNames(names: string[]): string {
-  const s = [...names].sort((a, b) => a.localeCompare(b));
-  if (s.length === 1) return s[0];
-  if (s.length === 2) return `${s[0]} and ${s[1]}`;
-  return `${s.slice(0, -1).join(", ")}, and ${s[s.length - 1]}`;
-}
+export const NarratorMsg = {
+  /**
+   * The ONE cause-neutral dawn announcement for the entire simultaneous night
+   * batch (mafia + vigilante + joker haunt + their lover cascades). Names only
+   * WHO died, never HOW. Never called with 0 names (resolveNight guards it).
+   *
+   * The victim list rides as a sorted ARRAY, not a pre-joined string, so each
+   * language applies its own list grammar ("A and B" / "A와 B"). The array order
+   * is the sorted order — a renderer must never re-sort or reverse it.
+   */
+  nightDeaths(names: string[], seed?: number): MsgRef {
+    const who = sortNames(names);
+    if (who.length === 1) return line("narr.nightDeath.single", { name: who[0] }, seed);
+    if (who.length === 2) return line("narr.nightDeath.two", { names: who }, seed);
+    return line("narr.nightDeath.many", { names: who, count: who.length }, seed);
+  },
+  /** Neutral per-victim line for the victim's own you_died overlay / player_died. */
+  diedInNight(name: string, seed?: number): MsgRef {
+    return line("narr.diedInNight", { name }, seed);
+  },
+  doctorSave(name: string, seed?: number): MsgRef {
+    return line("narr.doctorSave", { name }, seed);
+  },
+  /** Official mode: hints someone survived without naming who. */
+  doctorSaveOfficial(seed?: number): MsgRef {
+    return line("narr.doctorSaveOfficial", undefined, seed);
+  },
+  noKill(seed?: number): MsgRef {
+    return line("narr.noKill", undefined, seed);
+  },
+  execution(name: string, seed?: number): MsgRef {
+    return line("narr.execution", { name }, seed);
+  },
+  executionSpared(name: string, seed?: number): MsgRef {
+    return line("narr.executionSpared", { name }, seed);
+  },
+  /**
+   * Public "died of heartbreak" line. Names ONLY the heartbroken partner, never
+   * the original lover — that name is already public from the announcement this
+   * line follows, and repeating it here would pair them.
+   */
+  loverDeath(name: string, seed?: number): MsgRef {
+    return line("narr.loverDeath", { name }, seed);
+  },
+  jokerWin(name: string, seed?: number): MsgRef {
+    return line("narr.jokerWin", { name }, seed);
+  },
+  hunterReveal(name: string, seed?: number): MsgRef {
+    return line("narr.hunterReveal", { name }, seed);
+  },
+  hunterRevengeKill(name: string, seed?: number): MsgRef {
+    return line("narr.hunterRevengeKill", { name }, seed);
+  },
+  hunterDecline(seed?: number): MsgRef {
+    return line("narr.hunterDecline", undefined, seed);
+  },
+  townWin(seed?: number): MsgRef {
+    return line("narr.townWin", undefined, seed);
+  },
+  mafiaWin(seed?: number): MsgRef {
+    return line("narr.mafiaWin", undefined, seed);
+  },
+  nightFalls(seed?: number): MsgRef {
+    return line("narr.nightFalls", undefined, seed);
+  },
+  dayBreaks(seed?: number): MsgRef {
+    return line("narr.dayBreaks", undefined, seed);
+  },
+  // ── Player-initiated accusations (text-only; no recorded audio) ──
+  // Accusations are PUBLIC, so these lines name the accuser, accused and seconder.
+  accusationMade(accuser: string, target: string, seed?: number): MsgRef {
+    return line("narr.accusationMade", { accuser, target }, seed);
+  },
+  sleepProposed(accuser: string, seed?: number): MsgRef {
+    return line("narr.sleepProposed", { accuser }, seed);
+  },
+  accusationSeconded(seconder: string, seed?: number): MsgRef {
+    return line("narr.accusationSeconded", { seconder }, seed);
+  },
+  sleepSeconded(seconder: string, seed?: number): MsgRef {
+    return line("narr.sleepSeconded", { seconder }, seed);
+  },
+  accusationWithdrawn(accuser: string, target: string, seed?: number): MsgRef {
+    return line("narr.accusationWithdrawn", { accuser, target }, seed);
+  },
+  sleepWithdrawn(accuser: string, seed?: number): MsgRef {
+    return line("narr.sleepWithdrawn", { accuser }, seed);
+  },
+  sleepPassed(seed?: number): MsgRef {
+    return line("narr.sleepPassed", undefined, seed);
+  },
+  sleepFailed(seed?: number): MsgRef {
+    return line("narr.sleepFailed", undefined, seed);
+  },
+  /** Admin declined to call a vote today. */
+  abstain(seed?: number): MsgRef {
+    return line("narr.abstain", undefined, seed);
+  },
+  /** Admin cancelled the live ballot. */
+  voteCancelled(seed?: number): MsgRef {
+    return line("narr.voteCancelled", undefined, seed);
+  },
+};
 
-const NUMBER_WORDS = [
-  "zero", "one", "two", "three", "four", "five",
-  "six", "seven", "eight", "nine", "ten",
-];
-function numberWord(n: number): string {
-  return NUMBER_WORDS[n] ?? String(n);
-}
-
-// Single-death dawn lines — concise neutral-noir. They name only WHO died,
-// never HOW (no shot/gun/bullet/knife/wire/heartbreak/joker/card/mafia).
-const NIGHT_DEATH_SINGLE = [
-  "{name} did not see the morning.",
-  "{name} did not live to see the dawn.",
-  "{name} was gone before first light.",
-  "The night took {name}.",
-];
-
-// Per-victim neutral line for the dead player's own you_died overlay and the
-// (no-longer-publicly-narrated) player_died field. Reveals nothing.
-const DIED_IN_NIGHT_MESSAGES = [
-  "{name} did not see the morning.",
-  "{name} did not live to see the dawn.",
-  "{name} did not survive the night.",
-  "The night took {name}.",
-];
-
+/**
+ * The rendered-English narrator. Every method is the `.text` of its NarratorMsg
+ * twin, so the two can never disagree.
+ */
 export const Narrator = {
-  // The ONE cause-neutral dawn announcement for the entire simultaneous night
-  // batch (mafia + vigilante + joker haunt + their lover cascades). Names only
-  // WHO died, never HOW; joinNames() sorts so the kill order can't out the
-  // target. Never called with 0 names (resolveNight guards length > 0).
-  nightDeaths(names: string[]): string {
-    const who = joinNames(names);
-    if (names.length === 1) return fill(pick(NIGHT_DEATH_SINGLE), { name: who });
-    if (names.length === 2) return `Two were gone by dawn — ${who}.`;
-    return `Dawn counted ${numberWord(names.length)} empty beds: ${who}.`;
-  },
-  // Neutral per-victim line for the dead player's own you_died overlay and the
-  // player_died wire field (no longer re-narrated publicly).
-  diedInNight(name: string): string {
-    return fill(pick(DIED_IN_NIGHT_MESSAGES), { name });
-  },
-  doctorSave(name: string): string {
-    return fill(pick(DOCTOR_SAVE_MESSAGES), {
-      name,
-      saveMethod: pick(SAVE_METHODS),
-      location: pick(LOCATIONS),
-    });
-  },
-  doctorSaveOfficial(): string {
-    return pick(DOCTOR_SAVE_OFFICIAL_MESSAGES);
-  },
-  noKill(): string {
-    return pick(NO_KILL_MESSAGES);
-  },
-  execution(name: string): string {
-    return fill(pick(EXECUTION_MESSAGES), {
-      name,
-      executionStyle: pick(EXECUTION_STYLES),
-    });
-  },
-  executionSpared(name: string): string {
-    return fill(pick(EXECUTION_SPARED_MESSAGES), { name });
-  },
-  // Public "died of heartbreak" line — names ONLY the heartbroken partner,
-  // never the original lover (see LOVER_DEATH_MESSAGES). Feeds you_died /
-  // player_died on the day/revenge paths, and a separate dawn line at night.
-  loverDeath(name: string): string {
-    return fill(pick(LOVER_DEATH_MESSAGES), { name });
-  },
-  jokerWin(name: string): string {
-    return fill(pick(JOKER_WIN_MESSAGES), { name });
-  },
-  hunterReveal(name: string): string {
-    return fill(pick(HUNTER_REVEAL_MESSAGES), { name });
-  },
-  hunterRevengeKill(name: string): string {
-    return fill(pick(HUNTER_REVENGE_KILL_MESSAGES), { name });
-  },
-  hunterDecline(): string {
-    return pick(HUNTER_DECLINE_MESSAGES);
-  },
-  townWin(): string {
-    return pick(TOWN_WIN_MESSAGES);
-  },
-  mafiaWin(): string {
-    return pick(MAFIA_WIN_MESSAGES);
-  },
-  nightFalls(): string {
-    return pick(NIGHT_FALLS_MESSAGES);
-  },
-  dayBreaks(): string {
-    return pick(DAY_BREAKS_MESSAGES);
-  },
-  // ── Player-initiated accusations (text-only) ──
-  accusationMade(accuser: string, target: string): string {
-    return fill(pick(ACCUSATION_MADE_MESSAGES), { accuser, target });
-  },
-  sleepProposed(accuser: string): string {
-    return fill(pick(SLEEP_PROPOSED_MESSAGES), { accuser });
-  },
-  accusationSeconded(seconder: string): string {
-    return fill(pick(ACCUSATION_SECONDED_MESSAGES), { seconder });
-  },
-  sleepSeconded(seconder: string): string {
-    return fill(pick(SLEEP_SECONDED_MESSAGES), { seconder });
-  },
-  accusationWithdrawn(accuser: string, target: string): string {
-    return fill(pick(ACCUSATION_WITHDRAWN_MESSAGES), { accuser, target });
-  },
-  sleepWithdrawn(accuser: string): string {
-    return fill(pick(SLEEP_WITHDRAWN_MESSAGES), { accuser });
-  },
-  sleepPassed(): string {
-    return pick(SLEEP_PASSED_MESSAGES);
-  },
-  sleepFailed(): string {
-    return pick(SLEEP_FAILED_MESSAGES);
-  },
+  nightDeaths: (names: string[]): string => NarratorMsg.nightDeaths(names).text,
+  diedInNight: (name: string): string => NarratorMsg.diedInNight(name).text,
+  doctorSave: (name: string): string => NarratorMsg.doctorSave(name).text,
+  doctorSaveOfficial: (): string => NarratorMsg.doctorSaveOfficial().text,
+  noKill: (): string => NarratorMsg.noKill().text,
+  execution: (name: string): string => NarratorMsg.execution(name).text,
+  executionSpared: (name: string): string => NarratorMsg.executionSpared(name).text,
+  loverDeath: (name: string): string => NarratorMsg.loverDeath(name).text,
+  jokerWin: (name: string): string => NarratorMsg.jokerWin(name).text,
+  hunterReveal: (name: string): string => NarratorMsg.hunterReveal(name).text,
+  hunterRevengeKill: (name: string): string => NarratorMsg.hunterRevengeKill(name).text,
+  hunterDecline: (): string => NarratorMsg.hunterDecline().text,
+  townWin: (): string => NarratorMsg.townWin().text,
+  mafiaWin: (): string => NarratorMsg.mafiaWin().text,
+  nightFalls: (): string => NarratorMsg.nightFalls().text,
+  dayBreaks: (): string => NarratorMsg.dayBreaks().text,
+  accusationMade: (accuser: string, target: string): string => NarratorMsg.accusationMade(accuser, target).text,
+  sleepProposed: (accuser: string): string => NarratorMsg.sleepProposed(accuser).text,
+  accusationSeconded: (seconder: string): string => NarratorMsg.accusationSeconded(seconder).text,
+  sleepSeconded: (seconder: string): string => NarratorMsg.sleepSeconded(seconder).text,
+  accusationWithdrawn: (accuser: string, target: string): string => NarratorMsg.accusationWithdrawn(accuser, target).text,
+  sleepWithdrawn: (accuser: string): string => NarratorMsg.sleepWithdrawn(accuser).text,
+  sleepPassed: (): string => NarratorMsg.sleepPassed().text,
+  sleepFailed: (): string => NarratorMsg.sleepFailed().text,
 };

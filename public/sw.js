@@ -1,10 +1,14 @@
-const CACHE_NAME = "mafia-v8";
+const CACHE_NAME = "mafia-v9";
 const ASSETS = [
   "/",
   "/index.html",
   "/app.css",
   "/app.js",
   "/pixel-art.js",
+  // i18n shell: both load synchronously before app.js, so they are part of the
+  // shell exactly like pixel-art.js (bundles.js is generated from public/i18n/*.json).
+  "/i18n.js",
+  "/i18n/bundles.js",
   "/manifest.json",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg",

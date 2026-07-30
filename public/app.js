@@ -2,6 +2,82 @@
   "use strict";
 
   // ============================================================
+  // i18n — per-device language (docs/superpowers/specs/2026-07-30-i18n-korean-design.md)
+  // ------------------------------------------------------------
+  // English is the default and never depends on anything async: index.html ships
+  // the English text inline and the generated bundle loads as a classic script
+  // before this file. t() therefore always answers synchronously, and switching
+  // language repaints the chrome plus every dynamic surface via rerenderForLang().
+  //
+  // Audio is DELIBERATELY not localized (approved non-goal) — narration mp3s stay
+  // English regardless of the UI language.
+  // ============================================================
+  const LANG_KEY = "mafia_lang";
+  // Display order of the picker. A new language = one more JSON file + one entry.
+  const LANGUAGES = [
+    { code: "en", label: "English" },
+    { code: "ko", label: "한국어" },
+  ];
+
+  (function initI18n() {
+    const data = (typeof I18N_BUNDLES !== "undefined" && I18N_BUNDLES) || (window && window.I18N_BUNDLES) || {};
+    for (const code in data) {
+      if (Object.prototype.hasOwnProperty.call(data, code)) I18n.setBundle(code, data[code]);
+    }
+    let saved = null;
+    try { saved = localStorage.getItem(LANG_KEY); } catch { /* private mode */ }
+    if (saved && I18n.hasBundle(saved)) I18n.setLang(saved);
+  })();
+
+  /** Render a UI string. `seed` selects a pool variant where a key has several. */
+  function t(key, params, seed) {
+    return I18n.t(key, params, seed);
+  }
+
+  /** Render a server message reference ({ text, key, params, seed }) or string. */
+  function tMsg(m) {
+    return I18n.renderMessage(m);
+  }
+
+  function currentLang() {
+    return I18n.lang();
+  }
+
+  /**
+   * Repaint every `data-i18n*` node from the active language.
+   *
+   * Idempotent and safe to run at any time: in English it writes back the same
+   * text index.html already contains. Marked-up containers are NEVER given a
+   * data-i18n attribute (it would wipe child nodes) — the static run of text
+   * inside them is wrapped in its own span instead.
+   */
+  function applyStaticI18n(root) {
+    const scope = root || document;
+    scope.querySelectorAll("[data-i18n]").forEach((el) => {
+      el.textContent = t(el.getAttribute("data-i18n"));
+    });
+    const ATTRS = ["title", "aria-label", "placeholder", "alt"];
+    for (const attr of ATTRS) {
+      scope.querySelectorAll("[data-i18n-" + attr + "]").forEach((el) => {
+        el.setAttribute(attr, t(el.getAttribute("data-i18n-" + attr)));
+      });
+    }
+  }
+
+  /**
+   * Switch language: persist, repaint static chrome, then re-render every
+   * dynamic surface that already has content on screen (narrator line,
+   * transcript, event log, role card, roster, accusations, vote panel…).
+   * Registered as an I18n.onChange subscriber further down, so anything that
+   * calls I18n.setLang directly also gets the repaint.
+   */
+  function setLanguage(code) {
+    if (!I18n.hasBundle(code) || code === currentLang()) return;
+    try { localStorage.setItem(LANG_KEY, code); } catch { /* private mode */ }
+    I18n.setLang(code); // fires rerenderForLang via onChange
+  }
+
+  // ============================================================
   // STATE
   // ============================================================
   let ws = null;
@@ -4797,12 +4873,64 @@
   }
 
   // ============================================================
+  // LANGUAGE PICKER (settings modal + auth screen)
+  // ============================================================
+  // Both pickers are `.lang-control` groups of `[data-lang]` buttons. Purely
+  // client-local: switching NEVER sends a wire frame and never touches game
+  // state — two players in the same room may read the game in different
+  // languages. Returns early when no picker is in the DOM.
+  function renderLanguageControls() {
+    const active = currentLang();
+    document.querySelectorAll(".lang-control").forEach((ctrl) => {
+      ctrl.querySelectorAll("[data-lang]").forEach((b) => {
+        const on = b.getAttribute("data-lang") === active;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    });
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest ? e.target.closest(".lang-control [data-lang]") : null;
+    if (!btn) return;
+    setLanguage(btn.getAttribute("data-lang"));
+  });
+
+  // ============================================================
+  // LANGUAGE SWITCH RE-RENDER
+  // ============================================================
+  // Every surface whose text is produced by JS rather than by index.html has to
+  // be repainted when the language changes, because none of them re-run on their
+  // own. The narrator transcript is the important one: it stores message
+  // REFERENCES ({ text, key, params, seed }), so switching language re-renders
+  // the whole history in the new language instead of leaving old lines behind.
+  function rerenderForLang() {
+    applyStaticI18n();
+    renderPhaseIndicator(currentPhase);
+    renderNarratorArea();
+    if (!$("modal-transcript").classList.contains("hidden")) renderTranscript();
+    if (myRole || isDead) updateRoleCard();
+    updatePlayerStatus();
+    if (lastGameEvents && lastGameEvents.length > 0) renderEventHistory(lastGameEvents);
+    if (currentPhase === "day") renderAccusePanel();
+    if (!$("modal-roster").classList.contains("hidden")) renderRoster(currentRoster);
+    renderLanguageControls();
+    // Read-only lobby settings + accent picker labels are language-dependent too.
+    if (lobbySettings) updatePlayerLobbySettings(lobbySettings);
+    renderAccentPicker();
+  }
+  I18n.onChange(rerenderForLang);
+
+  // ============================================================
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
   const APP_VERSION_STAGING = "staging.42_202607252053";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
+  // Paint the static chrome for the stored language (a no-op repaint in English).
+  applyStaticI18n();
+  renderLanguageControls();
   // Thumbs (specs/components/225-918--thumbs.md). The 40px vote buttons are at
   // or above the spec's Medium (32px) band, where the chibi raster stays crisp,
   // so they take the PNG. The 16px detective tag keeps THUMB_*_ART — see the

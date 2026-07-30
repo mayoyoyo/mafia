@@ -123,7 +123,10 @@ export function loadClientApp(opts: LoadClientAppOptions = {}): ClientHarness {
   // Evaluate classic scripts with bare identifiers resolving against window,
   // matching browser script semantics (pixel-art.js attaches window globals
   // that app.js reads as bare identifiers).
-  for (const file of ["pixel-art.js", "app.js"]) {
+  // Same order index.html uses: the generated language bundles and the i18n
+  // runtime must exist before app.js evaluates (English is resolved
+  // synchronously — this harness's fetch() stub never resolves).
+  for (const file of ["i18n/bundles.js", "i18n.js", "pixel-art.js", "app.js"]) {
     const code = readFileSync(join(publicDir, file), "utf8");
     new Function("window", "with (window) {\n" + code + "\n}")(window);
   }

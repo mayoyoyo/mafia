@@ -652,6 +652,12 @@
 
   </div>
 
+  <!-- i18n: the generated language bundle and the shared runtime load as classic
+       scripts BEFORE app.js so English is available synchronously — the static
+       English above is the default render, and t()/data-i18n only repaint it when
+       another language is active. -->
+  <script src="/i18n/bundles.js"></script>
+  <script src="/i18n.js"></script>
   <script src="/pixel-art.js"></script>
   <script src="/app.js"></script>
 </body>

@@ -1,0 +1,209 @@
+// GENERATED FILE — do not edit. Source: public/i18n/*.json
+// Regenerate with: bun run scripts/build-i18n.ts
+// Loaded as a classic script before app.js so English is available synchronously.
+(function () {
+  "use strict";
+  var BUNDLES = {
+    "en": {
+      "list.sep": ", ",
+      "list.two": "{a} and {b}",
+      "list.end": "{a}, and {b}",
+      "num.words": [
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten"
+      ],
+      "narr.doctorSave.location": [
+        "in the alley behind the tailor's",
+        "at the foot of the harbor stairs",
+        "in a doorway off the empty square",
+        "under the dead streetlamp on Mercer Lane",
+        "by the fountain, face to the cobblestones",
+        "on the landing of the old tenement",
+        "in the back room of the shuttered bar",
+        "beneath the railway bridge",
+        "in the fog at the end of the pier",
+        "by the loading dock, out of the light",
+        "in the stairwell of the boarding house",
+        "at the corner where the gaslight had gone out"
+      ],
+      "narr.doctorSave.saveMethod": [
+        "a steady hand and a needle and thread",
+        "pressure held until the bleeding stopped",
+        "a doctor who answered the door at this hour",
+        "the right words and the wrong amount of luck",
+        "a man who knew where the bullet had to come out",
+        "cold water and a colder nerve",
+        "the kind of medicine that asks no questions",
+        "a heartbeat coaxed back from the edge",
+        "stubbornness, mostly, and a clean bandage",
+        "the only hand in town that doesn't shake"
+      ],
+      "narr.execution.executionStyle": [
+        "taken to the gallows at first light",
+        "led from the square and not seen again",
+        "marched out past the silent crowd",
+        "given to the rope as the town watched",
+        "walked to the edge of town and left there",
+        "put down by the verdict of the room",
+        "handed over to the dark beyond the lamplight",
+        "carried out, the matter closed"
+      ],
+      "narr.doctorSave": [
+        "{name} was found barely breathing {location}, kept alive by {saveMethod}. The Doctor got there first.",
+        "{name} should be dead. Instead they're sitting up, pale and shaking, pulled back by {saveMethod}.",
+        "They came for {name} in the dark. The Doctor was already there, working by lamplight with {saveMethod}.",
+        "{name} survived the night by inches, owed entirely to {saveMethod}. Death will have to wait.",
+        "{name} was on the edge of it {location}. {saveMethod} was enough — just enough — to bring them back."
+      ],
+      "narr.doctorSaveOfficial": [
+        "Someone was meant to die last night. A hand intervened in the dark, and they didn't. No name was left.",
+        "There was a target. There was blood on the cobblestones. And then there was a survivor. That's all anyone knows.",
+        "The killers' work was undone before dawn. One they marked still draws breath. Who, and by whose hand, stays a secret.",
+        "A life held on by a thread last night, and someone tied it off. The Doctor keeps quiet hours.",
+        "The night was not clean, but it took no one. Someone lives who shouldn't. Ask no questions."
+      ],
+      "narr.noKill": [
+        "Dawn comes, and no one is missing. The knives stayed in their sheaths tonight. No one says why.",
+        "Morning, and every door opens to a living face. Whatever was planned, it didn't happen. Not this time.",
+        "The town wakes whole. No blood, no body, no answer. The quiet feels like it's waiting for something.",
+        "A night passed and took nothing with it. The fog lifts on a street with all its people still on it."
+      ],
+      "narr.execution": [
+        "The town has spoken. {name} is {executionStyle}. Whether it was justice, no one will ever be sure.",
+        "The vote is counted. {name}'s fate is sealed. They are {executionStyle}.",
+        "The room decides, and the decision is final. {name} has been {executionStyle}.",
+        "The verdict comes down hard. {name} must go, and so {name} is {executionStyle}.",
+        "{name} stands before the town one last time. The hands are raised, the matter settled. {name} is {executionStyle}."
+      ],
+      "narr.executionSpared": [
+        "The vote falls short. {name} walks free into another night, and watches their back the whole way.",
+        "Not enough hands went up. {name} is spared, though no one in the room has stopped watching them.",
+        "The town hesitates, and the moment passes. {name} lives. The suspicion does not go away.",
+        "The verdict won't hold. {name} survives the vote. The town will remember whose name came up."
+      ],
+      "narr.loverDeath": [
+        "{name} died of heartbreak.",
+        "{name} could not go on, and died of heartbreak.",
+        "A heart only breaks the once: {name} died of heartbreak.",
+        "{name} followed soon after, dead of heartbreak."
+      ],
+      "narr.jokerWin": [
+        "{name} is already smiling as the rope goes taut. They wanted this. You gave it to them, and the joke was never yours to get.",
+        "The crowd quiets. {name} doesn't struggle, doesn't plead — just looks back at the room like it walked into a trap of its own making. The Joker came here to lose, and won.",
+        "{name} laughs, soft and final. The whole town fell for it, killers and innocents alike. They handed the Joker the one thing it ever asked for."
+      ],
+      "narr.townWin": [
+        "The last of the Mafia falls. The street lamps come on early, and for the first time in a long time, no one is afraid to walk under them. The town wins.",
+        "Every killer has been named and dealt with. The fog burns off by noon and stays gone. The town is quiet again — quiet the right way. The town wins.",
+        "The shadow over the town lifts with the last of them gone. People sleep with the doors unlocked tonight, and nothing comes. The town wins."
+      ],
+      "narr.mafiaWin": [
+        "The town goes quiet, and stays that way. The men who run it now don't raise their voices; they don't need to. The Mafia wins.",
+        "It's over. There aren't enough honest hands left to hold the line. The lamps stay dark on whichever streets they choose. The Mafia wins.",
+        "The survivors look around and understand: they're outnumbered, and they always were. Nobody argues with the new order. The Mafia wins."
+      ],
+      "narr.hunterReveal": [
+        "{name} was the Hunter. With the last of their strength, they reach for the gun — and the whole room stops breathing...",
+        "{name} was the Hunter. They were never going to go quietly. The weapon comes up, slow and certain...",
+        "So that's what {name} was — the Hunter. The barrel rises one last time, and all at once nobody wants to be standing too close...",
+        "The truth comes out at the end: {name} was the Hunter. A steady aim on an unsteady hand, one round left. The town goes very quiet...",
+        "{name} was the Hunter. They aren't leaving the table alone. The hammer draws back, and the room holds still..."
+      ],
+      "narr.hunterRevengeKill": [
+        "A single shot, and {name} goes down beside the Hunter. The dying take who they please.",
+        "One round leaves the chamber. {name} drops where they stood. The Hunter's aim held to the end.",
+        "{name} is the Hunter's last word. The shot was clean. There is nothing to argue with now.",
+        "The Hunter fires once. {name} doesn't get the chance to speak. The matter is closed for both of them.",
+        "{name} falls to the Hunter's parting shot. Two bodies now where there was one. The street goes silent again."
+      ],
+      "narr.hunterDecline": [
+        "The Hunter lowers the gun. Whatever they had left, they keep it. No one else dies tonight.",
+        "The Hunter looks the room over, slow, and then sets the weapon down. Mercy, or just tiredness — they don't say.",
+        "No shot comes. The Hunter shoulders the gun and walks out into the fog, leaving the rest of them to wonder.",
+        "The barrel drops. The Hunter goes without firing, and the town is left alone with its suspicions."
+      ],
+      "narr.nightFalls": [
+        "The sun goes down and the fog comes up to meet it. Night now. Lock your doors, and don't answer them.",
+        "Darkness settles over the town. Most of it sleeps. Some of it doesn't, and has reasons not to.",
+        "Night falls like a curtain drawn slow. Somewhere out past the last lamp, plans are already being made.",
+        "The last light goes out of the sky. Another night begins, and the wrong people are awake for it."
+      ],
+      "narr.dayBreaks": [
+        "Grey light comes up over the rooftops. A new day, and the first question is who's still here to see it.",
+        "Morning. The fog thins, the lamps go out one by one, and the town counts its people.",
+        "The sun comes up cold on another day. Time to find out what the night took, and who."
+      ],
+      "narr.nightDeath.single": [
+        "{name} did not see the morning.",
+        "{name} did not live to see the dawn.",
+        "{name} was gone before first light.",
+        "The night took {name}."
+      ],
+      "narr.nightDeath.two": "Two were gone by dawn — {names:list}.",
+      "narr.nightDeath.many": "Dawn counted {count:word} empty beds: {names:list}.",
+      "narr.diedInNight": [
+        "{name} did not see the morning.",
+        "{name} did not live to see the dawn.",
+        "{name} did not survive the night.",
+        "The night took {name}."
+      ],
+      "narr.accusationMade": [
+        "{accuser} points a finger across the room. {target} stands accused. Who will second it?",
+        "{accuser} names {target} for it, plain and loud. The charge needs a second before the town will hear it.",
+        "“{target},” says {accuser}, and lets the name hang there. Someone has to second the accusation.",
+        "{accuser} accuses {target}. The room waits to see who else will stand up."
+      ],
+      "narr.sleepProposed": [
+        "{accuser} says the town has heard enough for one day and moves that everyone sleep on it. It needs a second.",
+        "{accuser} proposes the town sleeps tonight and lets no one hang. Who will second it?",
+        "“No rope today,” says {accuser}. They move that the town sleep on it. The motion needs a second.",
+        "{accuser} would rather the town sleep than get it wrong. Someone must second the motion."
+      ],
+      "narr.accusationSeconded": [
+        "{seconder} seconds it. The town will vote.",
+        "{seconder} stands up alongside the charge. That settles it — the town votes now.",
+        "“Seconded,” says {seconder}. The matter goes to the room.",
+        "{seconder} backs the accusation. Hands will be counted."
+      ],
+      "narr.sleepSeconded": [
+        "{seconder} seconds the motion. The town votes on whether to sleep.",
+        "{seconder} agrees — better to sleep than to be wrong. The town decides.",
+        "“Seconded,” says {seconder}. The room votes on turning in for the night."
+      ],
+      "narr.accusationWithdrawn": [
+        "{accuser} thinks better of it and takes the accusation against {target} back.",
+        "{accuser} lets it drop. The charge against {target} is withdrawn — for now.",
+        "{accuser} waves it off. Nothing said against {target}, they decide. Not yet."
+      ],
+      "narr.sleepWithdrawn": [
+        "{accuser} withdraws the motion to sleep. The day goes on.",
+        "{accuser} takes it back — no vote on sleeping after all. The day is still young enough for a rope."
+      ],
+      "narr.sleepPassed": [
+        "The town votes to sleep on it. No one hangs today; the lamps go out on a full room.",
+        "The room decides against the rope. Everyone goes home whole, and the night comes anyway.",
+        "The vote holds: the town will sleep, and let tomorrow sort the guilty from the rest."
+      ],
+      "narr.sleepFailed": [
+        "The motion to sleep fails. The town isn't done yet, and the day grinds on.",
+        "Not enough hands to call it a day. The room stays awake, and the arguments start again.",
+        "The town won't turn in. The day continues, and someone's name will come up again soon enough."
+      ],
+      "narr.abstain": "The admin has chosen to abstain from calling a vote today.",
+      "narr.voteCancelled": "The vote has been cancelled by the admin."
+    }
+  };
+  var g = typeof globalThis !== "undefined" ? globalThis : this;
+  if (g) g.I18N_BUNDLES = BUNDLES;
+  if (typeof window !== "undefined" && window) window.I18N_BUNDLES = BUNDLES;
+  if (typeof module !== "undefined" && module && module.exports) module.exports = BUNDLES;
+})();
