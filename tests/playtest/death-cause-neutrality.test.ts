@@ -209,6 +209,11 @@ function assertLivingDeathRefsNeutral(
   // Load Korean so the fence covers the shipped translation, not just English.
   I18n.setBundle("ko", KO_BUNDLE);
   const previous = I18n.lang();
+  // A fence that silently inspects nothing is worthless: count what we actually
+  // checked and assert it was non-zero, so this can never rot into a no-op if
+  // the wire stops shipping refs.
+  let refsChecked = 0;
+  let victimRefsChecked = 0;
 
   try {
     for (const i of livingIdxs) {
@@ -217,6 +222,7 @@ function assertLivingDeathRefsNeutral(
       for (const m of surfaces) {
         for (const ref of refsIn(m)) {
           if (!ref.key) continue;
+          refsChecked++;
 
           // A key NAME is itself readable in the raw frame.
           expect(ref.key, `key on ${m.type}`).not.toMatch(CAUSE_TERMS);
@@ -225,6 +231,7 @@ function assertLivingDeathRefsNeutral(
             JSON.stringify(ref.params ?? {}).includes(v) || (ref.text ?? "").includes(v),
           );
           if (namesVictim) {
+            victimRefsChecked++;
             // The line that names tonight's victims must come from the neutral
             // pool — never a cause-specific key.
             expect(NEUTRAL_DEATH_KEYS.has(ref.key), `victim-naming key ${ref.key}`).toBe(true);
@@ -256,6 +263,11 @@ function assertLivingDeathRefsNeutral(
   } finally {
     I18n.setLang(previous);
   }
+
+  // Proof the fence did real work: living clients must have received refs, and
+  // at least one of them must have named tonight's victim.
+  expect(refsChecked, "no message refs were inspected — is the wire still shipping them?").toBeGreaterThan(0);
+  expect(victimRefsChecked, "no victim-naming ref was inspected").toBeGreaterThan(0);
 }
 
 /**

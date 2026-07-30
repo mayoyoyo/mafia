@@ -5013,7 +5013,7 @@
   // INIT
   // ============================================================
   const APP_VERSION = "v1.5_202607130233";
-  const APP_VERSION_STAGING = "staging.42_202607252053";
+  const APP_VERSION_STAGING = "staging.43_202607300340";
   const displayVersion = window.location.hostname.includes("staging") ? APP_VERSION_STAGING : APP_VERSION;
   document.querySelectorAll(".app-version").forEach((el) => { el.textContent = displayVersion; });
   // Paint the static chrome for the stored language (a no-op repaint in English).
