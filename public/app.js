@@ -457,7 +457,7 @@
 
     switch (msg.type) {
       case "error":
-        showError(msg.message);
+        showError(msg.messageRef ? tMsg(msg.messageRef) : msg.message);
         // Clear stored game code if game not found (auto-rejoin failed)
         if (msg.message === "Game not found") {
           localStorage.removeItem("mafia_game_code");
@@ -580,7 +580,7 @@
         updatePlayerStatus();
         // Show "Check your role card!" (all players); admin will also get awaiting_ready
         $("awaiting-ready").classList.remove("hidden");
-        $("awaiting-ready-msg").textContent = "Check your role card!";
+        $("awaiting-ready-msg").textContent = t("ui.game.checkRoleCard");
         $("btn-begin-night").classList.add("hidden");
         break;
 
@@ -617,26 +617,26 @@
         break;
 
       case "mafia_targets":
-        showNightAction("Choose a victim", msg.players, "mafia_vote");
+        showNightAction(t("ui.night.chooseVictim"), msg.players, "mafia_vote");
         break;
 
       case "doctor_targets":
-        showNightAction("Choose someone to protect", msg.players, "doctor_save", msg.lastDoctorTarget);
+        showNightAction(t("ui.night.chooseProtect"), msg.players, "doctor_save", msg.lastDoctorTarget);
         break;
 
       case "detective_targets":
-        showNightAction("Choose someone to investigate", msg.players, "detective_investigate");
+        showNightAction(t("ui.night.chooseInvestigate"), msg.players, "detective_investigate");
         break;
 
       case "vigilante_targets":
         vigilanteBulletUsed = msg.bulletUsed;
         updateBulletIndicator();
-        showNightAction("Choose someone to shoot — or hold your fire", msg.players, "vigilante_shoot");
+        showNightAction(t("ui.night.chooseShoot"), msg.players, "vigilante_shoot");
         break;
 
       case "joker_haunt_targets":
         deadActionActive = true;
-        showNightAction("Choose someone to haunt", msg.players, "joker_haunt");
+        showNightAction(t("ui.night.chooseHaunt"), msg.players, "joker_haunt");
         break;
 
       case "hunter_revenge_pending":
@@ -659,7 +659,7 @@
         // The room-wide wait view (hunter_revenge_pending arrived just
         // before this) gives way to the hunter's own prompt (C5b).
         $("revenge-wait").classList.add("hidden");
-        showNightAction("Take your revenge", msg.players, "hunter_revenge");
+        showNightAction(t("ui.night.takeRevenge"), msg.players, "hunter_revenge");
         break;
 
       case "joker_win_overlay":
@@ -676,7 +676,7 @@
         break;
 
       case "night_action_done":
-        $("action-status").textContent = msg.message;
+        $("action-status").textContent = msg.messageRef ? tMsg(msg.messageRef) : msg.message;
         // If mafia and consensus was reached, collapse target list.
         // Rejoined mafia have empty myMafiaVotes; fall back to the confirm
         // target restored by mafia_confirm_ready after game_sync.
@@ -686,7 +686,7 @@
             nightActionLocked = true;
             hideSlideConfirm();
             const lockTarget = lockVote && mafiaTargetPlayers.find(p => p.id === lockVote.targetId);
-            const targetName = lockTarget ? lockTarget.username : (mafiaConfirmTarget || "target");
+            const targetName = lockTarget ? lockTarget.username : (mafiaConfirmTarget || t("ui.night.fallbackTarget"));
             $("action-targets").innerHTML = `<li class="selected">${escapeHtml(targetName)} \u2714</li>`;
           }
         }
@@ -760,9 +760,9 @@
           // (src/game-engine.ts:1271-1273) and names nobody, so this is the one
           // variant that may differ. The message line stays msg.message, the
           // server's neutral pool, untouched.
-          $("dead-pre").textContent = msg.isLoverDeath ? "You died of" : "You are";
-          $("dead-text").textContent = msg.isLoverDeath ? "HEARTBREAK" : "DEAD";
-          $("death-message").textContent = msg.message;
+          $("dead-pre").textContent = t(msg.isLoverDeath ? "ui.dead.youDiedOf" : "ui.dead.youAre");
+          $("dead-text").textContent = t(msg.isLoverDeath ? "ui.dead.heartbreak" : "ui.dead.dead");
+          $("death-message").textContent = msg.messageRef ? tMsg(msg.messageRef) : msg.message;
           $("dead-dismiss-hint").classList.remove("hidden");
         }
         // Dying mid-day (e.g. a Hunter's revenge shot) must drop the accuse
@@ -847,7 +847,13 @@
     pendingAccusations = msg.accusations || [];
     accusationsMade = msg.accusationsMade || [];
     secondsMade = msg.secondsMade || [];
-    narratorTranscript = msg.narratorHistory;
+    // Rejoin restores the transcript. `narratorHistoryRefs` is the additive
+    // parallel array; where an entry has a ref, keep the REF (so a language
+    // switch can re-render it) and otherwise keep the rendered string.
+    narratorTranscript = (msg.narratorHistory || []).map((text, i) => {
+      const ref = msg.narratorHistoryRefs && msg.narratorHistoryRefs[i];
+      return ref || text;
+    });
     detectiveHistory = msg.detectiveHistory || [];
     hasVoted = false;
     nightActionLocked = false;
@@ -893,15 +899,7 @@
     $("round-number").textContent = msg.round;
 
     // Phase indicator (D3b: pixel moon/sun art)
-    const indicator = $("phase-indicator");
-    indicator.className = `phase-indicator ${msg.phase}`;
-    if (msg.phase === "night") {
-      indicator.innerHTML = pixelArtToSvg(MOON_ART) + " " + msg.phase.toUpperCase();
-    } else if (msg.phase === "day" || msg.phase === "voting") {
-      indicator.innerHTML = pixelArtToSvg(SUN_ART) + " " + msg.phase.toUpperCase();
-    } else {
-      indicator.textContent = msg.phase.toUpperCase();
-    }
+    renderPhaseIndicator(msg.phase);
 
     // 9. Hide all action panels
     $("night-actions").classList.add("hidden");
@@ -922,18 +920,12 @@
     // 9b. Show awaiting-ready if game is waiting for narrator
     if (msg.awaitingNarratorReady) {
       $("awaiting-ready").classList.remove("hidden");
-      $("awaiting-ready-msg").textContent = "Check your role card!";
+      $("awaiting-ready-msg").textContent = t("ui.game.checkRoleCard");
       // awaiting_ready message will arrive separately for admin to show button
     }
 
     // 10. Show most recent narrator message
-    $("narrator-messages").innerHTML = "";
-    if (narratorTranscript.length > 0) {
-      const div = document.createElement("div");
-      div.className = "narrator-line";
-      div.textContent = narratorTranscript[narratorTranscript.length - 1];
-      $("narrator-messages").appendChild(div);
-    }
+    renderNarratorArea();
 
     // 11. Phase-specific setup
     if (msg.phase === "day") {
@@ -981,10 +973,10 @@
             // Already chose — show confirmed state
             const panel = $("night-actions");
             panel.classList.remove("hidden");
-            $("action-title").textContent = "Haunt Target";
+            $("action-title").textContent = t("ui.night.hauntTarget");
             $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
             hideSlideConfirm();
-            $("action-status").textContent = "You have chosen your victim. Revenge is sweet.";
+            $("action-status").textContent = t("act.jokerHaunted");
             nightActionLocked = true;
           }
           // If not locked, targets are sent separately via joker_haunt_targets
@@ -1007,11 +999,11 @@
           // Show locked-in action
           const panel = $("night-actions");
           panel.classList.remove("hidden");
-          const roleLabel = myRole === "mafia" ? "Target" : myRole === "doctor" ? "Protecting" : myRole === "vigilante" ? "Shooting" : "Investigating";
-          $("action-title").textContent = roleLabel;
+          const roleLabelKey = myRole === "mafia" ? "ui.night.roleTarget" : myRole === "doctor" ? "ui.night.roleProtecting" : myRole === "vigilante" ? "ui.night.roleShooting" : "ui.night.roleInvestigating";
+          $("action-title").textContent = t(roleLabelKey);
           $("action-targets").innerHTML = `<li class="selected">${escapeHtml(na.targetName)} \u2714</li>`;
           hideSlideConfirm();
-          $("action-status").textContent = "Action confirmed.";
+          $("action-status").textContent = t("ui.night.actionConfirmed");
           nightActionLocked = true;
           if (myRole === "mafia") {
             $("mafia-vote-status").classList.remove("hidden");
@@ -1031,11 +1023,11 @@
             : myRole === "joker" ? "joker_haunt"
             : myRole === "vigilante" ? "vigilante_shoot"
             : "detective_investigate";
-          const title = myRole === "mafia" ? "Choose a victim"
-            : myRole === "doctor" ? "Choose someone to protect"
-            : myRole === "joker" ? "Choose someone to haunt"
-            : myRole === "vigilante" ? "Choose someone to shoot — or hold your fire"
-            : "Choose someone to investigate";
+          const title = t(myRole === "mafia" ? "ui.night.chooseVictim"
+            : myRole === "doctor" ? "ui.night.chooseProtect"
+            : myRole === "joker" ? "ui.night.chooseHaunt"
+            : myRole === "vigilante" ? "ui.night.chooseShoot"
+            : "ui.night.chooseInvestigate");
           showNightAction(title, na.targets, actionType, myRole === "doctor" ? na.lastDoctorTarget : undefined);
 
           // Restore mafia vote status
@@ -1087,15 +1079,15 @@
   $("btn-register").addEventListener("click", () => {
     const u = $("auth-username").value.trim();
     const p = $("auth-passcode").value.trim();
-    if (!u) return showAuthError("Enter a username");
-    if (!/^\d{4}$/.test(p)) return showAuthError("PIN must be exactly 4 digits");
+    if (!u) return showAuthError(t("ui.auth.enterUsername"));
+    if (!/^\d{4}$/.test(p)) return showAuthError(t("ui.auth.pinFourDigits"));
     wsSend({ type: "register", username: u, passcode: p });
   });
 
   $("btn-login").addEventListener("click", () => {
     const u = $("auth-username").value.trim();
     const p = $("auth-passcode").value.trim();
-    if (!u || !p) return showAuthError("Enter username and PIN");
+    if (!u || !p) return showAuthError(t("ui.auth.enterBoth"));
     wsSend({ type: "login", username: u, passcode: p });
     localStorage.setItem("mafia_user", JSON.stringify({ username: u, passcode: p }));
   });
@@ -1138,7 +1130,7 @@
     const code = $("join-code").value.trim().toUpperCase();
     // Defensive only — the disabled CTA makes this branch unreachable from the
     // UI. The string is kept so a programmatic click still reports the reason.
-    if (code.length !== 4) return showError("Enter a 4-character room code");
+    if (code.length !== 4) return showError(t("ui.menu.badCode"));
     wsSend({ type: "join_game", code });
   });
 
@@ -1216,19 +1208,20 @@
         const mode = tab.dataset.mode;
         wsSend({ type: "update_settings", settings: { [settingKey]: mode } });
         const hintEl = container.nextElementSibling;
-        if (hintEl && hints[mode]) hintEl.textContent = hints[mode];
+        if (hintEl && hints[mode]) hintEl.textContent = t(hints[mode]);
       });
     });
   }
 
+  // Hint copy is keyed, so the tab handler re-renders it in the active language.
   setupRuleTabs("doctor-mode-tabs", "doctorMode", {
-    house: "Narrator reveals who was saved",
-    official: "Save is secret from the living \u2014 not even the victim (the dead see all)",
+    house: "ui.hint.doctorHouse",
+    official: "ui.hint.doctorOfficial",
   });
 
   setupRuleTabs("joker-mode-tabs", "jokerMode", {
-    house: "Game ends when Joker is executed",
-    official: "Game continues \u2014 Joker can haunt a voter",
+    house: "ui.hint.jokerHouse",
+    official: "ui.hint.jokerOfficial",
   });
 
   // Narrator-voice picker (custom expandable control; replaces the native
@@ -1304,16 +1297,16 @@
         t.classList.toggle("active", t.dataset.mode === settings.doctorMode);
       });
       $("doctor-mode-hint").textContent = settings.doctorMode === "official"
-        ? "Save is secret from the living \u2014 no living player is told who was saved, not even the victim (the dead see everything)"
-        : "Narrator announces who was saved";
+        ? t("ui.hint.doctorOfficialLong")
+        : t("ui.hint.doctorHouseLong");
     }
     if (settings.jokerMode) {
       $("joker-mode-tabs").querySelectorAll(".rule-tab").forEach((t) => {
         t.classList.toggle("active", t.dataset.mode === settings.jokerMode);
       });
       $("joker-mode-hint").textContent = settings.jokerMode === "official"
-        ? "Game continues \u2014 Joker can haunt a voter"
-        : "Game ends when Joker is executed";
+        ? t("ui.hint.jokerOfficial")
+        : t("ui.hint.jokerHouse");
     }
   }
 
@@ -1334,7 +1327,7 @@
       }
     }
 
-    container.innerHTML = '<h4>Choose your color</h4>'; // Figma 42:782 line 132
+    container.innerHTML = '<h4>' + escapeHtml(t("ui.lobby.chooseColor")) + '</h4>'; // Figma 42:782 line 132
     const grid = document.createElement("div");
     grid.className = "color-picker-grid";
 
@@ -1361,7 +1354,7 @@
       if (owners) {
         const label = document.createElement("div");
         label.className = "color-circle-label";
-        label.textContent = owners.length === 1 ? owners[0] : owners.length + " players";
+        label.textContent = owners.length === 1 ? owners[0] : t("ui.lobby.colorTakenBy", { count: owners.length });
         label.title = owners.join(", ");
         cell.appendChild(label);
       }
@@ -1379,22 +1372,23 @@
     if (!container) return;
 
     const roles = [];
-    if (settings.enableDoctor) roles.push(`Doctor (${settings.doctorMode === "official" ? "Official" : "House"})`);
-    if (settings.enableDetective) roles.push("Detective");
-    if (settings.enableJoker) roles.push(`Joker (${settings.jokerMode === "official" ? "Official" : "House"})`);
-    if (settings.enableHunter) roles.push("Hunter");
-    if (settings.enableVigilante) roles.push("Vigilante");
-    if (settings.enableLovers) roles.push("Lovers");
-    if (settings.enableGodfather) roles.push("Godfather");
+    const modeLabel = (mode) => t(mode === "official" ? "ui.mode.official" : "ui.mode.house");
+    if (settings.enableDoctor) roles.push(t("ui.mode.labelled", { role: t("ui.role.doctor"), mode: modeLabel(settings.doctorMode) }));
+    if (settings.enableDetective) roles.push(t("ui.role.detective"));
+    if (settings.enableJoker) roles.push(t("ui.mode.labelled", { role: t("ui.role.joker"), mode: modeLabel(settings.jokerMode) }));
+    if (settings.enableHunter) roles.push(t("ui.role.hunter"));
+    if (settings.enableVigilante) roles.push(t("ui.role.vigilante"));
+    if (settings.enableLovers) roles.push(t("ui.role.lovers"));
+    if (settings.enableGodfather) roles.push(t("ui.role.godfather"));
 
     container.innerHTML = `
       <div class="lobby-settings-row">
-        <span class="lobby-settings-label">Mafia members</span>
+        <span class="lobby-settings-label">${escapeHtml(t("ui.lobby.mafiaMembers"))}</span>
         <span class="lobby-settings-value">${settings.mafiaCount}</span>
       </div>
       <div class="lobby-settings-row">
-        <span class="lobby-settings-label">Special Roles</span>
-        <span class="lobby-settings-value">${roles.length > 0 ? roles.join(", ") : "None"}</span>
+        <span class="lobby-settings-label">${escapeHtml(t("ui.lobby.specialRoles"))}</span>
+        <span class="lobby-settings-value">${escapeHtml(roles.length > 0 ? roles.join(", ") : t("ui.common.none"))}</span>
       </div>
     `;
   }
@@ -1409,15 +1403,16 @@
   // Membership Card display names, spec casing
   // (specs/components/77-528--membership-card.md TEXT nodes). pixel-art.js owns
   // ROLE_DESCRIPTIONS/ROLE_COLORS and is untouched, so the titles live here.
-  const ROLE_TITLES = {
-    citizen: "Citizen",
-    mafia: "Mafia",
-    doctor: "Doctor",
-    detective: "Detective",
-    joker: "Joker",
-    hunter: "Hunter",
-    vigilante: "Vigilante",
-    godfather: "Godfather",
+  // Keys, not labels: resolved at render time so a language switch repaints them.
+  const ROLE_TITLE_KEYS = {
+    citizen: "ui.role.citizen",
+    mafia: "ui.role.mafia",
+    doctor: "ui.role.doctor",
+    detective: "ui.role.detective",
+    joker: "ui.role.joker",
+    hunter: "ui.role.hunter",
+    vigilante: "ui.role.vigilante",
+    godfather: "ui.role.godfather",
   };
 
   // Card back = spec "Role=Default" ("Your role is / ? / Peel to reveal") until
@@ -1429,8 +1424,8 @@
     if (!back) return;
     const eyebrow = back.querySelector(".role-eyebrow");
     const label = back.querySelector(".card-back-label");
-    if (eyebrow) eyebrow.textContent = dead ? "You are" : "Your role is";
-    if (label) label.textContent = dead ? "DEAD" : "Peel to reveal";
+    if (eyebrow) eyebrow.textContent = t(dead ? "ui.dead.youAre" : "ui.card.yourRoleIs");
+    if (label) label.textContent = t(dead ? "ui.dead.dead" : "ui.card.peelToReveal");
     $("role-card").classList.toggle("dead", !!dead);
   }
 
@@ -1445,7 +1440,7 @@
     // Membership Card (specs/components/77-528--membership-card.md): the name is
     // set in the spec's own casing ("Doctor", not "DOCTOR") — the card face is
     // Grandstander Black 48px, which no longer needs all-caps to read as display.
-    $("role-name").textContent = displayRole ? ROLE_TITLES[displayRole] || displayRole : "";
+    $("role-name").textContent = displayRole ? (ROLE_TITLE_KEYS[displayRole] ? t(ROLE_TITLE_KEYS[displayRole]) : displayRole) : "";
     $("role-description").textContent = ROLE_DESCRIPTIONS[displayRole] || "";
     // Chibi raster art region (spec RECTANGLE "image 1" 78x78) — the per-role
     // PNGs copied out of the Figma fills into /img/roles/.
@@ -1512,7 +1507,7 @@
     if (myRole === "vigilante") {
       el.classList.remove("hidden");
       el.classList.toggle("spent", vigilanteBulletUsed);
-      if (status) status.textContent = vigilanteBulletUsed ? "bullet used" : "1 bullet";
+      if (status) status.textContent = t(vigilanteBulletUsed ? "ui.card.bulletUsed" : "ui.card.oneBullet");
     } else {
       el.classList.add("hidden");
       el.classList.remove("spent");
@@ -1697,7 +1692,7 @@
   let cancelCallback = null;
 
   // role → the Confirm button's verb (Cancel is always "Cancel").
-  const ACTION_VERBS = { mafia: "Kill", doctor: "Save", detective: "Investigate", joker_haunt: "Haunt", hunter_revenge: "Avenge", vigilante: "Shoot" };
+  const ACTION_VERB_KEYS = { mafia: "ui.verb.kill", doctor: "ui.verb.save", detective: "ui.verb.investigate", joker_haunt: "ui.verb.haunt", hunter_revenge: "ui.verb.avenge", vigilante: "ui.verb.shoot" };
 
   // Arm the two-button group for `role`. onConfirm fires on Confirm; optional
   // onCancel fires on Cancel (deselect a target, or withdraw a mafia lock).
@@ -1705,7 +1700,7 @@
     const container = $("action-confirm");
     container.className = "action-confirm role-" + role;
     container.classList.remove("hidden");
-    $("btn-action-confirm").textContent = ACTION_VERBS[role] || "Confirm";
+    $("btn-action-confirm").textContent = ACTION_VERB_KEYS[role] ? t(ACTION_VERB_KEYS[role]) : t("ui.common.confirm");
     confirmCallback = onConfirm || null;
     cancelCallback = onCancel || null;
   }
@@ -1916,32 +1911,25 @@
     // Re-sync the pinned base + chrome (data-phase drives the CSS ambience remap).
     applyEffectiveTheme();
 
-    const indicator = $("phase-indicator");
-    indicator.className = `phase-indicator ${msg.phase}`;
     // D3b: phase pill gets pixel moon/sun art alongside text
-    var phaseLabel = msg.phase === "game_over" ? "GAME OVER" : msg.phase.toUpperCase();
-    if (msg.phase === "night") {
-      indicator.innerHTML = pixelArtToSvg(MOON_ART) + " " + phaseLabel;
-    } else if (msg.phase === "day" || msg.phase === "voting") {
-      indicator.innerHTML = pixelArtToSvg(SUN_ART) + " " + phaseLabel;
-    } else {
-      indicator.textContent = phaseLabel;
-    }
+    renderPhaseIndicator(msg.phase);
 
     // Clear visible narrator for new phase (transcript preserves history)
     $("narrator-messages").innerHTML = "";
 
     // Show most recent narrator message from transcript if no new messages
     if (narratorTranscript.length > 0 && (!msg.messages || msg.messages.length === 0)) {
-      const div = document.createElement("div");
-      div.className = "narrator-line";
-      div.textContent = narratorTranscript[narratorTranscript.length - 1];
-      $("narrator-messages").appendChild(div);
+      renderNarratorArea();
     }
 
+    // phase_change carries `messages` (rendered English) and, additively,
+    // `messageRefs` parallel BY INDEX. Prefer the ref so the line can be
+    // re-rendered in another language; fall back to the string for an older
+    // server or a frame that carries no ref.
     if (msg.messages && msg.messages.length > 0) {
-      for (const m of msg.messages) {
-        showNarratorMessage(m);
+      for (let i = 0; i < msg.messages.length; i++) {
+        const ref = msg.messageRefs && msg.messageRefs[i];
+        showNarratorMessage(ref || msg.messages[i]);
       }
     }
 
@@ -2067,10 +2055,10 @@
       return;
     }
 
-    const msg = `${voteResult.targetName} was executed.`;
+    const msg = t("ui.vote.wasExecuted", { name: voteResult.targetName });
 
     // D5: staged composition — execution beat = skull + blood tint.
-    setSuspenseStage(CARD_BACK_DEAD_ART, "THE VERDICT", "beat-execution");
+    setSuspenseStage(CARD_BACK_DEAD_ART, t("ui.overlay.verdict"), "beat-execution");
 
     text.textContent = msg;
     text.style.color = "var(--danger)";
@@ -2103,8 +2091,8 @@
     overlay.classList.remove("hidden", "fade-out");
     // D5: heartbreak art migrated from the text node into the dedicated art slot.
     // The text node now carries only the (XSS-safe via textContent) sentence.
-    setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
-    text.textContent = loverName + " died of heartbreak.";
+    setSuspenseStage(HEARTBREAK_ART, t("ui.overlay.heartbreakPre"), "beat-heartbreak");
+    text.textContent = t("ui.overlay.diedOfHeartbreak", { name: loverName });
     text.style.color = "var(--role-lover)";
     text.style.animation = "none";
     void text.offsetWidth;
@@ -2127,28 +2115,22 @@
   // ============================================================
   // NIGHT TRANSITION (day/voting → night)
   // ============================================================
-  const NIGHT_MESSAGES = [
-    ["The village grows quiet...", "Lock your doors."],
-    ["Darkness falls over the town...", "No one is safe tonight."],
-    ["The last candle flickers out...", "Sleep tight."],
-    ["Shadows creep through the streets...", "The wolves are hungry."],
-    ["The moon rises, cold and silent...", "Someone won't see morning."],
-    ["Night blankets the town...", "Close your eyes... if you dare."],
-    ["The stars watch from above...", "But they won't protect you."],
-    ["One by one, the lights go out...", "The game begins in the dark."],
-    ["A chill wind sweeps the village...", "Trust no one tonight."],
-    ["The town drifts into uneasy sleep...", "Not everyone will wake up."],
-    ["Crickets fall silent...", "Something stirs in the dark."],
-    ["The clock strikes midnight...", "Evil walks among you."],
-  ];
+  // The nightfall overlay plays TWO sequential lines. Both pools live in the
+  // language bundle and are the same length, so index i pairs lead[i]/tail[i].
   let nightMsgIndex = 0;
+  function nightPair(i) {
+    const lead = I18n.pool("ui.overlay.nightLead");
+    const tail = I18n.pool("ui.overlay.nightTail");
+    const n = Math.min(lead.length, tail.length) || 1;
+    return [lead[i % n] || "", tail[i % n] || ""];
+  }
 
   function showNightTransition(callback) {
     nightTransitionActive = true;
     // Don't clear nightTransitionQueue here — messages may already be queued
     // from the preceding execution transition. Queue is cleared after replay.
 
-    const pair = NIGHT_MESSAGES[nightMsgIndex % NIGHT_MESSAGES.length];
+    const pair = nightPair(nightMsgIndex);
     nightMsgIndex++;
 
     const overlay = $("suspense-overlay");
@@ -2156,7 +2138,7 @@
 
     overlay.classList.remove("hidden", "fade-out");
     // D5: nightfall = moon centerpiece, navy wash (beat-night tint).
-    setSuspenseStage(MOON_ART, "NIGHTFALL", "beat-night");
+    setSuspenseStage(MOON_ART, t("ui.overlay.nightfall"), "beat-night");
     text.textContent = pair[0];
     text.style.color = "";
     text.style.animation = "none";
@@ -2220,10 +2202,10 @@
     // dedicated stage slots (the writer uses .textContent, so the relayed
     // username never reaches innerHTML \u2014 strictly safer than the prior
     // escapeHtml-into-innerHTML path).
-    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? `A life was saved... but ${victimName} didn\u2019t make it.` : "A life was saved... but others didn\u2019t make it.", color: "var(--role-doctor)", beatClass: "beat-dawn" };
-    if (hasSave) return { art: CROSS_ART, text: "The Doctor saved a life!", color: "var(--role-doctor)", beatClass: "beat-dawn" };
-    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? `${victimName} didn\u2019t survive the night.` : "Several didn\u2019t survive the night.", color: "var(--danger)", beatClass: "beat-death" };
-    return { art: SUN_ART, text: "A peaceful night... somehow.", color: "var(--text-secondary)", beatClass: "beat-dawn" };
+    if (hasSave && hasKill) return { art: CROSS_ART, text: victimName ? t("ui.overlay.savedButDied", { name: victimName }) : t("ui.overlay.savedButOthersDied"), color: "var(--role-doctor)", beatClass: "beat-dawn" };
+    if (hasSave) return { art: CROSS_ART, text: t("ui.overlay.doctorSavedALife"), color: "var(--role-doctor)", beatClass: "beat-dawn" };
+    if (hasKill) return { art: CARD_BACK_DEAD_ART, text: victimName ? t("ui.overlay.didntSurvive", { name: victimName }) : t("ui.overlay.severalDidntSurvive"), color: "var(--danger)", beatClass: "beat-death" };
+    return { art: SUN_ART, text: t("ui.overlay.peacefulNight"), color: "var(--text-secondary)", beatClass: "beat-dawn" };
   }
 
   function showSuspenseTransition(msg, callback) {
@@ -2240,15 +2222,15 @@
     overlay.classList.remove("hidden", "fade-out");
     // D5: dawn opens on the sun centerpiece; the verdict beat re-stages art per
     // outcome (skull on a kill, cross on a save, sun on a peaceful night).
-    setSuspenseStage(SUN_ART, "DAWN", "beat-dawn");
-    text.textContent = "The sun rises...";
+    setSuspenseStage(SUN_ART, t("ui.overlay.dawn"), "beat-dawn");
+    text.textContent = t("ui.overlay.sunRises");
     text.style.color = "";
     text.style.animation = "none";
     void text.offsetWidth;
     text.style.animation = "suspenseFadeIn 0.8s ease";
 
     setTimeout(() => {
-      text.textContent = "What happened last night?";
+      text.textContent = t("ui.overlay.whatHappened");
       text.style.color = "";
       text.style.animation = "none";
       void text.offsetWidth;
@@ -2258,7 +2240,7 @@
     setTimeout(() => {
       const verdict = getNightVerdict(msg);
       // D5: verdict carries an art grid + plain text + tint for the stage.
-      setSuspenseStage(verdict.art, "THE VERDICT", verdict.beatClass);
+      setSuspenseStage(verdict.art, t("ui.overlay.verdict"), verdict.beatClass);
       text.textContent = verdict.text;
       text.style.color = verdict.color;
       text.style.animation = "none";
@@ -2270,8 +2252,8 @@
       setTimeout(() => {
         // D5: heartbreak art into the stage slot; text node carries the sentence
         // (textContent — relayed name stays XSS-inert). Names only the partner.
-        setSuspenseStage(HEARTBREAK_ART, "HEARTBREAK", "beat-heartbreak");
-        text.textContent = msg.loverDeathName + " died of heartbreak.";
+        setSuspenseStage(HEARTBREAK_ART, t("ui.overlay.heartbreakPre"), "beat-heartbreak");
+        text.textContent = t("ui.overlay.diedOfHeartbreak", { name: msg.loverDeathName });
         text.style.color = "var(--role-lover)";
         text.style.animation = "none";
         void text.offsetWidth;
@@ -2309,18 +2291,14 @@
     // sentence, shipped as designed. The COPY stays the app's: Figma's
     // "…reveals jenny NOT a member of the mafia" is ungrammatical.
     const magSvg = '<img class="detective-result-art" src="/img/roles/detective.png" alt="" draggable="false">';
-    const plainText = msg.isMafia
-      ? `Your investigation reveals: ${msg.targetName} IS a member of the Mafia!`
-      : `Your investigation reveals: ${msg.targetName} is NOT a member of the Mafia.`;
+    const detKey = msg.isMafia ? "ui.detective.isMafia" : "ui.detective.notMafia";
+    const plainText = t(detKey, { name: msg.targetName });
     // Escape server-relayed username before interpolating into innerHTML; transcript keeps the
     // un-prefixed plain text (re-escaped at render via escapeHtml in the transcript view).
-    const safeName = escapeHtml(msg.targetName);
-    const htmlText = msg.isMafia
-      ? `Your investigation reveals: ${safeName} IS a member of the Mafia!`
-      : `Your investigation reveals: ${safeName} is NOT a member of the Mafia.`;
+    const htmlText = escapeHtml(plainText);
     el.innerHTML = magSvg + '<span class="detective-result-text">' + htmlText + '</span>';
     el.classList.remove("hidden");
-    narratorTranscript.push(plainText);
+    narratorTranscript.push({ key: detKey, params: { name: msg.targetName }, text: plainText });
     detectiveHistory.push({
       round: parseInt($("round-number").textContent) || 1,
       targetName: msg.targetName,
@@ -2334,14 +2312,68 @@
     el.classList.add("hidden");
   }
 
-  function showNarratorMessage(text) {
-    narratorTranscript.push(text);
+  // `entry` is either a server message REFERENCE ({ text, key, params, seed })
+  // or a plain string (a client-authored line, or a pre-i18n/legacy frame). It is
+  // stored UNRENDERED so a language switch can re-render the whole transcript;
+  // tMsg() resolves it at paint time.
+  function showNarratorMessage(entry) {
+    narratorTranscript.push(entry);
     const container = $("narrator-messages");
     container.innerHTML = "";
     const div = document.createElement("div");
     div.className = "narrator-line animate-in";
-    div.textContent = text;
+    div.textContent = tMsg(entry);
     container.appendChild(div);
+  }
+
+  /** Repaint the narrator block from the LAST transcript entry (or clear it). */
+  function renderNarratorArea() {
+    const container = $("narrator-messages");
+    if (!container) return;
+    container.innerHTML = "";
+    if (narratorTranscript.length === 0) return;
+    const div = document.createElement("div");
+    div.className = "narrator-line";
+    div.textContent = tMsg(narratorTranscript[narratorTranscript.length - 1]);
+    container.appendChild(div);
+  }
+
+  /** Repaint the transcript modal's list from the stored entries. */
+  function renderTranscript() {
+    const list = $("transcript-list");
+    const empty = $("transcript-empty");
+    if (narratorTranscript.length === 0) {
+      list.innerHTML = "";
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+    list.innerHTML = narratorTranscript
+      .map((m) => `<div class="transcript-line">${escapeHtml(tMsg(m))}</div>`)
+      .join("");
+  }
+
+  /**
+   * The phase pill (moon/sun pixel art + label). Extracted so a language switch
+   * can repaint it; `phase` null leaves the pill alone.
+   */
+  function renderPhaseIndicator(phase) {
+    if (!phase) return;
+    const indicator = $("phase-indicator");
+    if (!indicator) return;
+    indicator.className = `phase-indicator ${phase}`;
+    const label = phase === "game_over" ? t("ui.game.gameOver")
+      : phase === "night" ? t("ui.game.night")
+      : phase === "day" ? t("ui.game.day")
+      : phase === "voting" ? t("ui.game.voting")
+      : phase.toUpperCase();
+    if (phase === "night") {
+      indicator.innerHTML = pixelArtToSvg(MOON_ART) + " " + label;
+    } else if (phase === "day" || phase === "voting") {
+      indicator.innerHTML = pixelArtToSvg(SUN_ART) + " " + label;
+    } else {
+      indicator.textContent = label;
+    }
   }
 
   // ============================================================
@@ -2362,17 +2394,17 @@
     // hunter_revenge is already a PUBLIC reveal (the gate announces the Hunter).
     // The end-game history (GAME_HISTORY_LABELS) stays a FULL reveal.
     const EVENT_LABELS = {
-      death: "Died in the night",
-      kill: "Died in the night",
-      save: "Saved by Doctor",
-      execution: "Executed",
-      lover_death: "Died of heartbreak",
-      spared: "Spared by vote",
-      joker_haunt: "Died in the night",
-      hunter_revenge: "Shot by the Hunter",
-      vigilante_shot: "Died in the night",
-      investigation_mafia: "Investigated — MAFIA",
-      investigation_clear: "Investigated — Clear",
+      death: "ui.event.diedInNight",
+      kill: "ui.event.diedInNight",
+      save: "ui.event.savedByDoctor",
+      execution: "ui.event.executed",
+      lover_death: "ui.event.diedOfHeartbreak",
+      spared: "ui.event.sparedByVote",
+      joker_haunt: "ui.event.diedInNight",
+      hunter_revenge: "ui.event.shotByHunter",
+      vigilante_shot: "ui.event.diedInNight",
+      investigation_mafia: "ui.event.investigatedMafia",
+      investigation_clear: "ui.event.investigatedClear",
     };
     // Living clients only ever receive the neutral "death" type for DIRECT night
     // kills (projectEventsForClients), but map any cause-bearing direct-death
@@ -2412,7 +2444,7 @@
 
       const header = document.createElement("div");
       header.className = "event-history-round";
-      header.textContent = `Round ${round}`;
+      header.textContent = t("ui.event.round", { n: round });
       row.appendChild(header);
 
       const cell = document.createElement("div");
@@ -2421,7 +2453,7 @@
         const item = document.createElement("div");
         const cls = NIGHT_DEATH_CLASS.has(ev.type) ? "death" : ev.type;
         item.className = `event-item ${cls}`;
-        item.textContent = `${ev.playerName} — ${EVENT_LABELS[ev.type] || ev.type}`;
+        item.textContent = t("ui.event.line", { name: ev.playerName, label: EVENT_LABELS[ev.type] ? t(EVENT_LABELS[ev.type]) : ev.type });
         cell.appendChild(item);
       }
       row.appendChild(cell);
@@ -2464,7 +2496,7 @@
         // the 14x14 colour ellipse on the RIGHT.
         return `<div class="player-status-item ${status}">
           <span class="player-status-name ${status}">${escapeHtml(p.username)}</span>
-          ${showMafiaTag ? (isGodfatherMember ? '<span class="mafia-tag godfather-tag">&#128081; GODFATHER</span>' : '<span class="mafia-tag">MAFIA</span>') : ''}
+          ${showMafiaTag ? (isGodfatherMember ? '<span class="mafia-tag godfather-tag">&#128081; ' + escapeHtml(t("ui.role.godfather").toUpperCase()) + '</span>' : '<span class="mafia-tag">' + escapeHtml(t("ui.role.mafia").toUpperCase()) + '</span>') : ''}
           ${investigated ? (isMafia ? '<span class="detective-tag mafia">' + pixelArtToSvg(THUMB_DOWN_ART) + '</span>' : '<span class="detective-tag clear">' + pixelArtToSvg(THUMB_UP_ART) + '</span>') : ''}
           <span class="player-status-dot ${status}" ${dotStyle}></span>
         </div>`;
@@ -2525,16 +2557,16 @@
   // the Figma per-frame string: gate vs. target-list frame.
   const NIGHT_GATES = {
     hunter_revenge: {
-      go: "Take revenge",          // 130:573
+      go: "ui.gate.takeRevenge",          // 130:573
       declineId: "btn-decline-revenge",
-      gateDecline: "Spare the others", // 130:573
-      listDecline: "Don't shoot",      // 225:364
+      gateDecline: "ui.gate.spareOthers", // 130:573
+      listDecline: "ui.gate.dontShoot",   // 225:364
     },
     vigilante_shoot: {
-      go: "Shoot",                 // 225:542
+      go: "ui.gate.shoot",                // 225:542
       declineId: "btn-vigilante-pass",
-      gateDecline: "Hold fire",    // 225:542
-      listDecline: "Hold fire",    // 234:1332 — same string on both frames
+      gateDecline: "ui.gate.holdFire",    // 225:542
+      listDecline: "ui.gate.holdFire",    // 234:1332 — same string on both frames
     },
   };
   let activeNightGate = null;
@@ -2552,11 +2584,11 @@
   function openNightGate(actionType) {
     const gate = NIGHT_GATES[actionType];
     activeNightGate = actionType;
-    $("btn-night-gate-go").textContent = gate.go;
+    $("btn-night-gate-go").textContent = t(gate.go);
     $("btn-night-gate-go").classList.remove("hidden");
     $("night-choice").classList.add("gate-mode");
     $("action-list-wrap").classList.add("hidden");
-    $(gate.declineId).textContent = gate.gateDecline;
+    $(gate.declineId).textContent = t(gate.gateDecline);
   }
 
   /** The primary CTA was tapped: reveal the target list (Figma wiring
@@ -2568,7 +2600,7 @@
     $("night-choice").classList.remove("gate-mode");
     $("action-list-wrap").classList.remove("hidden");
     $("btn-night-gate-go").classList.add("hidden");
-    $(gate.declineId).textContent = gate.listDecline;
+    $(gate.declineId).textContent = t(gate.listDecline);
   });
 
   function showNightAction(title, players, actionType, disabledId) {
@@ -2634,9 +2666,9 @@
       list.innerHTML = players
         .map((p) => {
           const isDisabled = disabledId != null && p.id === disabledId;
-          const suffix = isDisabled ? " (protected last night)" : "";
+          const suffix = isDisabled ? " " + t("ui.night.protectedLastNight") : "";
           const note = Object.prototype.hasOwnProperty.call(investigated, p.username)
-            ? `<span class="tl-note${investigated[p.username] ? " tl-note-mafia" : ""}">investigated as ${investigated[p.username] ? "MAFIA" : "NOT MAFIA"}</span>`
+            ? `<span class="tl-note${investigated[p.username] ? " tl-note-mafia" : ""}">${escapeHtml(t("ui.night.investigatedAs", { verdict: t(investigated[p.username] ? "ui.night.verdictMafia" : "ui.night.verdictNotMafia") }))}</span>`
             : "";
           return `<li data-id="${p.id}" class="${isDisabled ? "disabled" : ""}"><span class="tl-name">${escapeHtml(p.username)}${suffix}</span>${note}</li>`;
         })
@@ -2702,7 +2734,7 @@
   // applyPhaseChange's hide-all (the deferred phase_change IS the
   // resolution signal), handleGameOver, and room_closed.
   function showRevengeWait(hunterName) {
-    $("revenge-wait-reveal").textContent = `${hunterName} was the Hunter!`;
+    $("revenge-wait-reveal").textContent = t("ui.hunter.wasTheHunter", { name: hunterName });
     $("btn-skip-revenge").classList.toggle("hidden", !isAdmin);
     $("revenge-wait").classList.remove("hidden");
   }
@@ -2724,7 +2756,7 @@
     $("btn-decline-revenge").classList.add("hidden");
     hideSlideConfirm();
     clearNightGate();
-    $("action-status").textContent = "You lower your bow.";
+    $("action-status").textContent = t("ui.hunter.loweredBow");
   });
 
   // The vigilante holds fire — keep the bullet for a later night (null = pass).
@@ -2740,7 +2772,7 @@
     // (src/server.ts:1489) overwrites this line a moment later, so the transient
     // client copy is unified to the settled server wording instead of flashing
     // a shorter variant first.
-    $("action-status").textContent = "You hold your fire and keep your bullet.";
+    $("action-status").textContent = t("act.vigilanteHoldFire");
   });
 
   function renderSingleMafiaTargets(list, players) {
@@ -2830,17 +2862,17 @@
       if (isObjected) {
         const badge = document.createElement("span");
         badge.className = "mtc-blocked-label";
-        badge.textContent = "Blocked";
+        badge.textContent = t("ui.mafia.blocked");
         header.appendChild(badge);
       } else if (cardState === "unanimous") {
         const badge = document.createElement("span");
         badge.className = "mtc-lock-progress";
-        badge.textContent = "Unanimous";
+        badge.textContent = t("ui.mafia.unanimous");
         header.appendChild(badge);
       } else if (counts.lock > 0) {
         const badge = document.createElement("span");
         badge.className = "mtc-lock-progress";
-        badge.textContent = counts.lock + "/" + aliveMafiaCount + " locked";
+        badge.textContent = t("ui.mafia.lockProgress", { locked: counts.lock, total: aliveMafiaCount });
         header.appendChild(badge);
       }
       card.appendChild(header);
@@ -2849,7 +2881,7 @@
       if (isObjected) {
         const objMsg = document.createElement("div");
         objMsg.className = "mtc-objection-msg";
-        objMsg.textContent = "Objected by " + mafiaObjectedTargets[targetId].join(", ");
+        objMsg.textContent = t("ui.mafia.objectedBy", { names: mafiaObjectedTargets[targetId].join(", ") });
         card.appendChild(objMsg);
       }
 
@@ -2862,7 +2894,7 @@
           if (iMyObjection) {
             const btn = document.createElement("button");
             btn.className = "mtc-btn mtc-btn-remove-objection";
-            btn.textContent = "Remove Objection";
+            btn.textContent = t("ui.mafia.removeObjection");
             btn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (nightActionLocked) return;
@@ -2876,7 +2908,7 @@
           const nomBtn = document.createElement("button");
           nomBtn.className = "mtc-btn mtc-btn-suggest";
           // D3b: pixel POINT icon + Grandstander label — mechanics unchanged
-          nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
+          nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">' + escapeHtml(t("ui.mafia.nominate")) + '</span>';
           nomBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (nightActionLocked) return;
@@ -2887,7 +2919,7 @@
           const spareBtn = document.createElement("button");
           spareBtn.className = "mtc-btn mtc-btn-object";
           // D3b: pixel X icon + Grandstander label
-          spareBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span><span class="mtc-label">Spare</span>';
+          spareBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(X_ART) + '</span><span class="mtc-label">' + escapeHtml(t("ui.mafia.spare")) + '</span>';
           spareBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             if (nightActionLocked) return;
@@ -2899,7 +2931,7 @@
           if (myVoteType === "lock") {
             const unlockBtn = document.createElement("button");
             unlockBtn.className = "mtc-btn mtc-btn-unlock";
-            unlockBtn.textContent = "Unlock";
+            unlockBtn.textContent = t("ui.mafia.unlock");
             unlockBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (nightActionLocked) return;
@@ -2913,14 +2945,14 @@
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
               // D3b: pixel LOCK icon + Grandstander label
-              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">' + escapeHtml(t("ui.mafia.lockedElsewhere")) + '</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
               // D3b: pixel LOCK icon + Grandstander label
-              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">' + escapeHtml(t("ui.mafia.lockIn")) + '</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
@@ -2935,14 +2967,14 @@
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock mtc-btn-disabled";
               // D3b: pixel LOCK icon + Grandstander label
-              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Locked elsewhere</span>';
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">' + escapeHtml(t("ui.mafia.lockedElsewhere")) + '</span>';
               lockBtn.disabled = true;
               actions.appendChild(lockBtn);
             } else {
               const lockBtn = document.createElement("button");
               lockBtn.className = "mtc-btn mtc-btn-lock";
               // D3b: pixel LOCK icon + Grandstander label
-              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">Lock In</span>';
+              lockBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(LOCK_ART) + '</span><span class="mtc-label">' + escapeHtml(t("ui.mafia.lockIn")) + '</span>';
               lockBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 if (nightActionLocked) return;
@@ -2954,7 +2986,7 @@
             const nomBtn = document.createElement("button");
             nomBtn.className = "mtc-btn mtc-btn-suggest";
             // D3b: pixel POINT icon + Grandstander label
-            nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">Nominate</span>';
+            nomBtn.innerHTML = '<span class="mtc-icon">' + pixelArtToSvg(POINT_ART) + '</span><span class="mtc-label">' + escapeHtml(t("ui.mafia.nominate")) + '</span>';
             nomBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (nightActionLocked) return;
@@ -3034,9 +3066,8 @@
       const lines = [];
       for (const [voterName, votes] of Object.entries(msg.voterTargets)) {
         for (const v of votes) {
-          if (v.voteType === "maybe") lines.push(`${escapeHtml(voterName)} nominates ${escapeHtml(v.target)}`);
-          else if (v.voteType === "lock") lines.push(`${escapeHtml(voterName)} locks in ${escapeHtml(v.target)}`);
-          else if (v.voteType === "letsnot") lines.push(`${escapeHtml(voterName)} objects to killing ${escapeHtml(v.target)}`);
+          const feedKey = v.voteType === "maybe" ? "ui.mafia.nominates" : v.voteType === "lock" ? "ui.mafia.locksIn" : v.voteType === "letsnot" ? "ui.mafia.objectsTo" : null;
+          if (feedKey) lines.push(escapeHtml(t(feedKey, { voter: voterName, target: v.target })));
         }
       }
       if (lines.length > 0) {
@@ -3063,12 +3094,12 @@
 
     if (msg.lockedTarget) {
       // Consensus reached — show collapsed "chosen" view
-      $("action-title").textContent = "Mafia has chosen\u2026";
-      list.innerHTML = `<li class="spectator-locked">${escapeHtml(msg.lockedTarget)} \u2014 chosen</li>`;
+      $("action-title").textContent = t("ui.spec.mafiaChosen");
+      list.innerHTML = `<li class="spectator-locked">${escapeHtml(t("ui.spec.chosen", { name: msg.lockedTarget }))}</li>`;
       $("mafia-vote-status").classList.add("hidden");
     } else {
       // Deliberation in progress — show read-only cards
-      $("action-title").textContent = "Mafia is deliberating\u2026";
+      $("action-title").textContent = t("ui.spec.mafiaDeliberating");
 
       // Update spectator-side tracking for chip rendering
       lastVoterTargets = msg.voterTargets || {};
@@ -3083,9 +3114,8 @@
       const lines = [];
       for (const [voterName, votes] of Object.entries(msg.voterTargets || {})) {
         for (const v of votes) {
-          if (v.voteType === "maybe") lines.push(`${escapeHtml(voterName)} nominates ${escapeHtml(v.target)}`);
-          else if (v.voteType === "lock") lines.push(`${escapeHtml(voterName)} locks in ${escapeHtml(v.target)}`);
-          else if (v.voteType === "letsnot") lines.push(`${escapeHtml(voterName)} objects to killing ${escapeHtml(v.target)}`);
+          const feedKey = v.voteType === "maybe" ? "ui.mafia.nominates" : v.voteType === "lock" ? "ui.mafia.locksIn" : v.voteType === "letsnot" ? "ui.mafia.objectsTo" : null;
+          if (feedKey) lines.push(escapeHtml(t(feedKey, { voter: voterName, target: v.target })));
         }
       }
       if (lines.length > 0) {
@@ -3106,23 +3136,23 @@
     $("mafia-vote-status").classList.add("hidden");
     renderSpectatorLog();
 
-    $("action-title").textContent = "Dawn approaches\u2026";
+    $("action-title").textContent = t("ui.spec.dawnApproaches");
     // Cause-neutral for the night batch: the dead-spectator list names WHO died,
     // not by whose hand. (This also fixes the old bug where a vigilante/joker
     // kill was mislabeled "killed by the Mafia".) The full reveal lives on the
     // end-game history screen.
     if (msg.kills && msg.kills.length > 0) {
       $("action-targets").innerHTML = msg.kills.map(k =>
-        `<li class="spectator-kill-result">${escapeHtml(k.name)} \u2014 died in the night</li>`
+        `<li class="spectator-kill-result">${escapeHtml(t("ui.spec.diedInNight", { name: k.name }))}</li>`
       ).join("");
     } else {
       // No kills \u27f9 a save-only night: no one died. Never name msg.targetName here:
       // it carries the SAVED player's name (dead spectators may see it), but the
       // death roll comes from `kills` only \u2014 a save must never imply a death. The
       // save itself is reported by the doctorMessage below.
-      $("action-targets").innerHTML = `<li class="spectator-kill-result">No one died in the night</li>`;
+      $("action-targets").innerHTML = `<li class="spectator-kill-result">${escapeHtml(t("ui.spec.noOneDied"))}</li>`;
     }
-    $("action-status").textContent = msg.doctorMessage || "";
+    $("action-status").textContent = msg.doctorMessageRef ? tMsg(msg.doctorMessageRef) : (msg.doctorMessage || "");
   }
 
   function showSpectatorNightPhase(msg) {
@@ -3137,64 +3167,75 @@
     const list = $("action-targets");
     if (msg.subPhase === "doctor") {
       if (msg.isRoleAlive) {
-        $("action-title").textContent = "Doctor is deliberating\u2026";
-        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing who to protect\u2026</li>`;
+        $("action-title").textContent = t("ui.spec.doctorDeliberating");
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">${escapeHtml(t("ui.spec.doctorChoosing"))}</li>`;
       } else {
-        $("action-title").textContent = "The Doctor has fallen\u2026";
-        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No one will be saved tonight</li>`;
+        $("action-title").textContent = t("ui.spec.doctorFallen");
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">${escapeHtml(t("ui.spec.doctorNoSave"))}</li>`;
       }
     } else if (msg.subPhase === "detective") {
       if (msg.isRoleAlive) {
-        $("action-title").textContent = "Detective is investigating\u2026";
-        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Choosing who to investigate\u2026</li>`;
+        $("action-title").textContent = t("ui.spec.detectiveInvestigating");
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">${escapeHtml(t("ui.spec.detectiveChoosing"))}</li>`;
       } else {
-        $("action-title").textContent = "The Detective has fallen\u2026";
-        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No investigation tonight</li>`;
+        $("action-title").textContent = t("ui.spec.detectiveFallen");
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">${escapeHtml(t("ui.spec.detectiveNoInvestigation"))}</li>`;
       }
     } else if (msg.subPhase === "vigilante") {
       // Phantom-safe: identical when the vigilante is dead vs out of ammo
       // (server sends isRoleAlive=false for both), so state can't be inferred.
       if (msg.isRoleAlive) {
-        $("action-title").textContent = "Vigilante is taking aim\u2026";
-        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">Deciding whether to shoot\u2026</li>`;
+        $("action-title").textContent = t("ui.spec.vigilanteAiming");
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.7">${escapeHtml(t("ui.spec.vigilanteDeciding"))}</li>`;
       } else {
-        $("action-title").textContent = "The night stays quiet\u2026";
-        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">No shot is fired tonight</li>`;
+        $("action-title").textContent = t("ui.spec.quietNight");
+        list.innerHTML = `<li class="spectator-locked" style="opacity:0.5">${escapeHtml(t("ui.spec.noShot"))}</li>`;
       }
     } else if (msg.subPhase === "resolving") {
-      $("action-title").textContent = "Dawn approaches\u2026";
+      $("action-title").textContent = t("ui.spec.dawnApproaches");
       list.innerHTML = "";
     }
+  }
+
+  // Wraps the interpolated name in .log-target while keeping the sentence
+  // translatable: the template is rendered with a sentinel, escaped, then the
+  // sentinel is swapped for the highlighted span. Korean word order can put the
+  // name anywhere in the line and this still works.
+  function specLogHtml(key, name) {
+    const SENTINEL = "\u0001";
+    return escapeHtml(t(key, { name: SENTINEL }))
+      .split(SENTINEL)
+      .join('<span class="log-target">' + escapeHtml(name) + "</span>");
   }
 
   function formatSpectatorLogEntry(entry) {
     const div = document.createElement("div");
     div.className = "spectator-log-entry" + (entry.alive ? "" : " log-dead");
     if (entry.phase === "mafia") {
-      div.innerHTML = `Mafia chose to kill <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+      div.innerHTML = specLogHtml("ui.spec.logMafia", entry.targetName);
     } else if (entry.phase === "doctor") {
       if (entry.alive && entry.targetName) {
-        div.innerHTML = `Doctor chose to protect <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+        div.innerHTML = specLogHtml("ui.spec.logDoctor", entry.targetName);
       } else if (entry.alive) {
         // Official mode: the save is secret \u2014 the target name is withheld, so
         // render an anonymous line (mirrors the vigilante's held-fire phrasing).
-        div.textContent = "Doctor made a choice";
+        div.textContent = t("ui.spec.logDoctorAnon");
       } else {
-        div.textContent = "Doctor has fallen \u2014 no protection tonight";
+        div.textContent = t("ui.spec.logDoctorFallen");
       }
     } else if (entry.phase === "detective") {
       if (entry.alive) {
-        div.innerHTML = `Detective chose to investigate <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+        div.innerHTML = specLogHtml("ui.spec.logDetective", entry.targetName);
       } else {
-        div.textContent = "Detective has fallen \u2014 no investigation tonight";
+        div.textContent = t("ui.spec.logDetectiveFallen");
       }
     } else if (entry.phase === "vigilante") {
       if (entry.alive && entry.targetName) {
-        div.innerHTML = `Vigilante took aim at <span class="log-target">${escapeHtml(entry.targetName)}</span>`;
+        div.innerHTML = specLogHtml("ui.spec.logVigilante", entry.targetName);
       } else if (entry.alive) {
-        div.textContent = "Vigilante held their fire";
+        div.textContent = t("ui.spec.logVigilanteHeld");
       } else {
-        div.textContent = "Vigilante \u2014 no shot tonight";
+        div.textContent = t("ui.spec.logVigilanteNoShot");
       }
     }
     return div;
@@ -3223,7 +3264,7 @@
   function showJokerDeliberating() {
     const el = $("joker-spectator-status");
     if (el) {
-      el.textContent = "Joker is choosing their victim\u2026";
+      el.textContent = t("ui.spec.jokerChoosing");
       el.className = "joker-spectator-status deliberating";
       el.classList.remove("hidden");
     }
@@ -3232,7 +3273,7 @@
   function showJokerResolved(targetName) {
     const el = $("joker-spectator-status");
     if (el) {
-      el.textContent = "Joker has chosen " + targetName;
+      el.textContent = t("ui.spec.jokerChosen", { name: targetName });
       el.className = "joker-spectator-status resolved";
       el.classList.remove("hidden");
     }
@@ -3284,8 +3325,8 @@
     // Update vote count label (Phase 4)
     const label = $("vote-count-label");
     if (dayVoteCount > 0) {
-      label.textContent = `(Vote #${dayVoteCount} done)`;
-      $("admin-status-msg").textContent = "Vote failed. Nominate another player or end the day.";
+      label.textContent = t("ui.admin.voteDone", { n: dayVoteCount });
+      $("admin-status-msg").textContent = t("ui.admin.voteFailed");
     } else {
       label.textContent = "";
       $("admin-status-msg").textContent = "";
@@ -3349,10 +3390,10 @@
       const btn = $("btn-accuse");
       if (iAccusedToday()) {
         btn.disabled = true;
-        btn.textContent = "You've made your accusation";
+        btn.textContent = t("ui.accuse.spent");
       } else {
         btn.disabled = false;
-        btn.textContent = "Accuse someone";
+        btn.textContent = t("ui.accuse.launch");
       }
     }
 
@@ -3363,8 +3404,8 @@
     // A sleep proposal is the SAME object as an accusation (targetId === null);
     // the moon glyph is the mockup's visual marker for it, decoration only.
     return a.targetId === null
-      ? '<span class="acc-moon">\u{1F319}</span>' + escapeHtml(a.accuserName) + " moves that the town sleeps"
-      : escapeHtml(a.accuserName) + " accuses " + escapeHtml(a.targetName);
+      ? '<span class="acc-moon">\u{1F319}</span>' + escapeHtml(t("ui.accuse.movesSleep", { accuser: a.accuserName }))
+      : escapeHtml(t("ui.accuse.accuses", { accuser: a.accuserName, target: a.targetName }));
   }
 
   // Standing accusations — mockup states 3 / 5a / 6 / 7. Rows are the Figma
@@ -3395,18 +3436,18 @@
         && !iSecondedToday();
       const secondBtn = canSecond
         ? '<button class="acc-pill acc-second" data-id="' + a.id + '">'
-          + '<img class="acc-pill-thumb" src="/img/ui/thumb-up.png" alt="" draggable="false">Second</button>'
+          + '<img class="acc-pill-thumb" src="/img/ui/thumb-up.png" alt="" draggable="false">' + escapeHtml(t("ui.accuse.second")) + '</button>'
         : "";
       const withdrawBtn = (mine && !isDead)
-        ? '<button class="acc-pill acc-pill-alt acc-withdraw" data-id="' + a.id + '">Withdraw</button>'
+        ? '<button class="acc-pill acc-pill-alt acc-withdraw" data-id="' + a.id + '">' + escapeHtml(t("ui.accuse.withdraw")) + '</button>'
         : "";
       // Spectators get the label alone (mockup 7); the living get the status line.
       let status = "";
       if (!isDead) {
-        if (mine) status = "Yours — waiting for a second";
-        else if (accused) status = "You're accused — you can't second this";
-        else if (canSecond) status = "Needs a second";
-        else status = "Second spent for today";
+        if (mine) status = t("ui.accuse.statusYours");
+        else if (accused) status = t("ui.accuse.statusAccused");
+        else if (canSecond) status = t("ui.accuse.statusNeedsSecond");
+        else status = t("ui.accuse.statusSpent");
       }
       const rowCls = "accusation-row"
         + (accused && !isDead ? " accusation-row-accused" : "")
@@ -3414,7 +3455,7 @@
       return '<div class="' + rowCls + '" data-id="' + a.id + '">'
         + '<span class="accusation-main">'
         + '<span class="accusation-text">' + accusationLabel(a) + '</span>'
-        + (status ? '<span class="accusation-status">' + status + '</span>' : "")
+        + (status ? '<span class="accusation-status">' + escapeHtml(status) + '</span>' : "")
         + '</span>'
         + '<span class="accusation-actions">' + secondBtn + withdrawBtn + '</span>'
         + '</div>';
@@ -3443,7 +3484,7 @@
       .join("");
     list.innerHTML = rows
       + '<li data-id="sleep" class="accuse-sleep-row">'
-      + '<span class="accuse-dot accuse-dot-moon">\u{1F319}</span>Propose the town sleeps on it</li>';
+      + '<span class="accuse-dot accuse-dot-moon">\u{1F319}</span>' + escapeHtml(t("ui.accuse.proposeSleep")) + '</li>';
     accuseSelectedTarget = null;
     $("btn-accuse-confirm").disabled = true;
     list.querySelectorAll("li").forEach((li) => {
@@ -3472,9 +3513,9 @@
 
   $("btn-force-dawn").addEventListener("click", () => {
     showConfirmSheet(
-      "Force Dawn",
-      "Night actions will be skipped and no one will be killed.",
-      "Force Dawn",
+      t("ui.confirm.forceDawnTitle"),
+      t("ui.confirm.forceDawnBody"),
+      t("ui.confirm.forceDawnTitle"),
       () => { wsSend({ type: "force_dawn" }); },
       { danger: true }
     );
@@ -3482,9 +3523,9 @@
 
   $("btn-end-day").addEventListener("click", () => {
     showConfirmSheet(
-      "End day",
-      "End the day and transition to night?",
-      "End day",
+      t("ui.confirm.endDayTitle"),
+      t("ui.confirm.endDayBody"),
+      t("ui.confirm.endDayTitle"),
       () => {
         // AUDIO GESTURE CHAIN (spec §10): ensureAudioReady() runs FIRST, here,
         // synchronously inside the Confirm-button click handler's call stack —
@@ -3521,13 +3562,12 @@
     // A sleep ballot carries targetName:"" on the wire, so it gets no portrait
     // and its thumbs take labels — a bare thumb is ambiguous with no target.
     if (msg.sleep) {
-      $("voting-title").textContent = "The town considers sleeping. Turn in for the night?";
+      $("voting-title").textContent = t("ui.vote.sleepTitle");
       $("vote-target-art").classList.add("hidden");
       $("vote-target-art").innerHTML = "";
       setVoteButtonFaces(true);
     } else {
-      $("voting-title").innerHTML = 'Execute <span id="vote-target-name"></span>?';
-      $("vote-target-name").textContent = msg.targetName;
+      renderVotingTitle(msg.targetName);
       // 270:1649 "image 1" (78x78) — the generic verdict art, not a per-player
       // portrait (the app has none and the wire carries no image).
       $("vote-target-art").innerHTML = '<img src="/img/roles/dead.png" alt="" draggable="false">';
@@ -3557,11 +3597,27 @@
   // 270:1649 thumb CTAs. A target-less (sleep) ballot adds the invented
   // "Sleep" / "Stay up" labels — Figma's Voting frame has no label slot
   // because it never modelled a no-target ballot.
+  // "Execute {name}?" with the name kept inside its own #vote-target-name span
+  // (CSS targets it). Rendered through a sentinel so Korean can place the name
+  // anywhere in the sentence; textContent stays exactly the template's output.
+  function renderVotingTitle(targetName) {
+    const SENTINEL = "\u0001";
+    const title = $("voting-title");
+    title.textContent = "";
+    const parts = t("ui.vote.execute", { name: SENTINEL }).split(SENTINEL);
+    title.appendChild(document.createTextNode(parts[0] || ""));
+    const span = document.createElement("span");
+    span.id = "vote-target-name";
+    span.textContent = targetName;
+    title.appendChild(span);
+    title.appendChild(document.createTextNode(parts.slice(1).join(SENTINEL)));
+  }
+
   function setVoteButtonFaces(sleep) {
-    const up = '<img class="thumb-art" src="/img/ui/thumb-up.png" alt="Yes" draggable="false">';
-    const down = '<img class="thumb-art" src="/img/ui/thumb-down.png" alt="No" draggable="false">';
-    $("btn-vote-yes").innerHTML = up + (sleep ? '<span class="vote-cta-label">Sleep</span>' : "");
-    $("btn-vote-no").innerHTML = down + (sleep ? '<span class="vote-cta-label">Stay up</span>' : "");
+    const up = '<img class="thumb-art" src="/img/ui/thumb-up.png" alt="' + escapeHtml(t("ui.vote.yes")) + '" draggable="false">';
+    const down = '<img class="thumb-art" src="/img/ui/thumb-down.png" alt="' + escapeHtml(t("ui.vote.no")) + '" draggable="false">';
+    $("btn-vote-yes").innerHTML = up + (sleep ? '<span class="vote-cta-label">' + escapeHtml(t("ui.vote.sleep")) + '</span>' : "");
+    $("btn-vote-no").innerHTML = down + (sleep ? '<span class="vote-cta-label">' + escapeHtml(t("ui.vote.stayUp")) + '</span>' : "");
   }
 
   $("btn-vote-yes").addEventListener("click", () => {
@@ -3594,7 +3650,7 @@
 
   function updateVoteProgress(msg) {
     // 270:1649 tally copy: "2/4 votes cast" (no spaces around the slash).
-    $("vote-progress").textContent = `${msg.totalVotes}/${msg.total} votes cast`;
+    $("vote-progress").textContent = t("ui.vote.tally", { cast: msg.totalVotes, total: msg.total });
   }
 
   function handleVoteResult(msg) {
@@ -3621,24 +3677,14 @@
     // narrated once, by the engine (EXECUTION_SPARED_MESSAGES on the spared
     // phase_change) — the old "{name} has been spared." here was a second,
     // contradicting string for the same event.
-    if (msg.executed) showNarratorMessage(`${msg.targetName} has been executed.`);
+    if (msg.executed) showNarratorMessage({ key: "ui.vote.executed", params: { name: msg.targetName }, text: t("ui.vote.executed", { name: msg.targetName }) });
   }
 
   // ============================================================
   // TRANSCRIPT
   // ============================================================
   $("btn-transcript").addEventListener("click", () => {
-    const list = $("transcript-list");
-    const empty = $("transcript-empty");
-    if (narratorTranscript.length === 0) {
-      list.innerHTML = "";
-      empty.classList.remove("hidden");
-    } else {
-      empty.classList.add("hidden");
-      list.innerHTML = narratorTranscript
-        .map((msg) => `<div class="transcript-line">${escapeHtml(msg)}</div>`)
-        .join("");
-    }
+    renderTranscript();
     $("modal-transcript").classList.remove("hidden");
   });
 
@@ -3669,8 +3715,8 @@
     $("joker-trophy-art").innerHTML = winArtHtml("joker");
     // Winner name comes from the existing payload field only.
     $("joker-win-name").textContent = jokerName
-      ? `${jokerName} had the last laugh`
-      : "You achieved a joint victory!";
+      ? t("ui.joker.lastLaughName", { name: jokerName })
+      : t("ui.joker.jointVictory");
   }
 
   // ============================================================
@@ -3721,28 +3767,28 @@
   // ============================================================
   // ROLES IN PLAY MODAL (public lineup — every player, any time)
   // ============================================================
-  const ROSTER_ROLE_NAMES = { mafia: "Mafia", doctor: "Doctor", detective: "Detective", vigilante: "Vigilante", hunter: "Hunter", joker: "Joker", citizen: "Citizen" };
+  const ROSTER_ROLE_KEYS = { mafia: "ui.role.mafia", doctor: "ui.role.doctor", detective: "ui.role.detective", vigilante: "ui.role.vigilante", hunter: "ui.role.hunter", joker: "ui.role.joker", citizen: "ui.role.citizen" };
 
   function renderRoster(roster) {
     const list = $("roster-list");
     if (!roster || !Array.isArray(roster.roles) || roster.roles.length === 0) {
-      list.innerHTML = `<p class="roster-empty">No roster available.</p>`;
+      list.innerHTML = `<p class="roster-empty">${escapeHtml(t("ui.roster.empty"))}</p>`;
       return;
     }
     const modes = roster.modes || {};
     let html = roster.roles.map((e) => {
       const mode = modes[e.role];
-      const badge = mode ? `<span class="roster-mode-badge roster-mode-${mode}">${mode.toUpperCase()}</span>` : "";
+      const badge = mode ? `<span class="roster-mode-badge roster-mode-${mode}">${escapeHtml(t(mode === "official" ? "ui.mode.official" : "ui.mode.house").toUpperCase())}</span>` : "";
       return `
       <div class="roster-row" data-role="${e.role}" style="--rc:var(--role-${e.role});--rc-ink:var(--role-${e.role}-ink)">
-        <span class="roster-name">${ROSTER_ROLE_NAMES[e.role] || e.role}</span>
+        <span class="roster-name">${escapeHtml(ROSTER_ROLE_KEYS[e.role] ? t(ROSTER_ROLE_KEYS[e.role]) : e.role)}</span>
         ${badge}
-        <span class="roster-count">×${e.count}</span>
+        <span class="roster-count">${escapeHtml(t("ui.roster.count", { n: e.count }))}</span>
       </div>`;
     }).join("");
     const mods = [];
-    if (roster.godfather) mods.push("Godfather");
-    if (roster.lovers) mods.push("Lovers");
+    if (roster.godfather) mods.push(t("ui.role.godfather"));
+    if (roster.lovers) mods.push(t("ui.role.lovers"));
     if (mods.length) html += `<div class="roster-mods">+ ${mods.join(" · ")}</div>`;
     list.innerHTML = html;
   }
@@ -3843,7 +3889,7 @@
     $("confirm-sheet-title").textContent = title;
     $("confirm-sheet-body").textContent = body;
     var ok = $("confirm-sheet-ok");
-    ok.textContent = confirmLabel || "Confirm";
+    ok.textContent = confirmLabel || t("ui.common.confirm");
     // danger styling: swap the amber primary for the blood-red danger fill.
     ok.classList.toggle("btn-danger", !!opts.danger);
     ok.classList.toggle("btn-primary", !opts.danger);
@@ -3965,9 +4011,9 @@
 
   $("btn-end-game").addEventListener("click", () => {
     showConfirmSheet(
-      "End game",
-      "Are you sure you want to end the game?",
-      "End game",
+      t("ui.confirm.endGameTitle"),
+      t("ui.confirm.endGameBody"),
+      t("ui.confirm.endGameTitle"),
       () => {
         wsSend({ type: "end_game" });
         closeSettingsModal();
@@ -3978,9 +4024,9 @@
 
   $("btn-settings-leave").addEventListener("click", () => {
     showConfirmSheet(
-      "Leave game",
-      "Leave the game? You can rejoin later with the same room code.",
-      "Leave game",
+      t("ui.confirm.leaveGameTitle"),
+      t("ui.confirm.leaveGameBody"),
+      t("ui.confirm.leaveGameTitle"),
       () => {
         wsSend({ type: "leave_game" });
         localStorage.removeItem("mafia_game_code");
@@ -4050,26 +4096,28 @@
     if (msg.forceEnded) return "neutral";
     return WIN_ART_SRC[msg.winner] ? msg.winner : "neutral";
   }
-  const WIN_TITLES = { town: "Citizens Win!", mafia: "Mafia Wins!", joker: "Joker Wins!" };
+  const WIN_TITLE_KEYS = { town: "ui.gameover.townWins", mafia: "ui.gameover.mafiaWins", joker: "ui.gameover.jokerWins" };
   // GO-D3b: the canonical Figma narrative is what the SCREEN shows; the
   // narrator's randomised pools (src/narrator.ts TOWN_WIN_MESSAGES /
   // MAFIA_WIN_MESSAGES / JOKER_WIN_MESSAGES) keep feeding the transcript
   // untouched — they still ride phase_change.messages, which is where the
   // transcript is built. Nothing on the wire changes.
-  const FIGMA_WIN_LINES = {
-    town: "The last of the mafia falls. The street lamps come on early, and for the first time in a long time, no one is afraid to walk under them. The town wins.",
-    mafia: "It's over. There aren't enough honest hands left to hold the line. The lamp stays dark on whichever streets they choose. The Mafia wins.",
+  const FIGMA_WIN_KEYS = {
+    town: "ui.gameover.figmaTown",
+    mafia: "ui.gameover.figmaMafia",
     // 332:6071 is name-parameterised, matching Narrator.jokerWin(name)'s shape.
-    joker: "{name} is smiling as the rope goes taut. They wanted this. You gave it to them, and the joke was never yours to get.",
+    joker: "ui.gameover.figmaJoker",
   };
   function gameOverNarrative(band, msg) {
-    const line = FIGMA_WIN_LINES[band];
-    if (!line) return msg.message || "";
-    if (band !== "joker") return line;
+    const key = FIGMA_WIN_KEYS[band];
+    if (!key) return msg.messageRef ? tMsg(msg.messageRef) : (msg.message || "");
+    if (band !== "joker") return t(key);
     // The joker's name is not a wire field on game_over; it is derivable from
     // the reveal roster the same payload already carries.
     const joker = (msg.players || []).find((p) => p.role === "joker");
-    return joker ? line.replace("{name}", joker.username) : (msg.message || line.replace("{name}", "The joker"));
+    if (joker) return t(key, { name: joker.username });
+    if (msg.messageRef) return tMsg(msg.messageRef);
+    return msg.message || t(key, { name: t("ui.gameover.theJoker") });
   }
 
   function showGameOverScreen(msg, admin) {
@@ -4088,7 +4136,7 @@
     $("gameover-pre").classList.toggle("hidden", band === "neutral");
     $("gameover-details-pre").classList.toggle("hidden", band === "neutral");
 
-    const title = band === "neutral" ? "Game over" : WIN_TITLES[msg.winner];
+    const title = band === "neutral" ? t("ui.gameover.gameOver") : t(WIN_TITLE_KEYS[msg.winner]);
     $("gameover-title").textContent = title;
     $("gameover-details-title").textContent = title;
     // Headline ink now rides the screen's band class (--win-ink); clear any
@@ -4096,7 +4144,7 @@
     $("gameover-title").style.color = "";
     // Force-ended games keep the server's explanatory line ("The host has left
     // the game.") — it is information, not narrative.
-    $("gameover-message").textContent = band === "neutral" ? (msg.message || "") : gameOverNarrative(band, msg);
+    $("gameover-message").textContent = band === "neutral" ? (msg.messageRef ? tMsg(msg.messageRef) : (msg.message || "")) : gameOverNarrative(band, msg);
 
     // CTAs animate in only once the reveal has played (Figma animates the same
     // group opacity 0% → 100%).
@@ -4142,17 +4190,31 @@
 
   // Game-over history label map (death causes → readable text).
   const GAME_HISTORY_LABELS = {
-    kill: "Killed by the Mafia",
-    save: "Saved by the Doctor",
-    execution: "Executed by vote",
-    lover_death: "Died of heartbreak",
-    joker_haunt: "Haunted by the Joker",
-    hunter_revenge: "Shot by the Hunter",
-    vigilante_shot: "Shot by the Vigilante",
-    death: "Died in the night", // defensive fallback (see renderGameHistory)
+    kill: "ui.history.killedByMafia",
+    save: "ui.history.savedByDoctor",
+    execution: "ui.history.executedByVote",
+    lover_death: "ui.event.diedOfHeartbreak",
+    joker_haunt: "ui.history.hauntedByJoker",
+    hunter_revenge: "ui.event.shotByHunter",
+    vigilante_shot: "ui.history.shotByVigilante",
+    death: "ui.event.diedInNight", // defensive fallback (see renderGameHistory)
   };
   // Test handle: pins the game-over history labels. Not read by any app code.
-  window.__gameOverHistoryLabels = GAME_HISTORY_LABELS;
+  // The map itself now holds KEYS, but this handle keeps exposing the RENDERED
+  // labels — that is what a player actually sees, so the existing assertions
+  // stay meaningful and automatically follow the active language.
+  Object.defineProperty(window, "__gameOverHistoryLabels", {
+    configurable: true,
+    get() {
+      const out = {};
+      for (const type in GAME_HISTORY_LABELS) {
+        if (Object.prototype.hasOwnProperty.call(GAME_HISTORY_LABELS, type)) {
+          out[type] = t(GAME_HISTORY_LABELS[type]);
+        }
+      }
+      return out;
+    },
+  });
 
   function renderGameHistory() {
     const container = $("game-history");
@@ -4206,7 +4268,7 @@
       for (const ev of evs) {
         const item = document.createElement("div");
         item.className = `game-history-item ${ev.type}`;
-        item.textContent = `${ev.playerName} \u2014 ${LABELS[ev.type] || ev.type}`;
+        item.textContent = t("ui.event.line", { name: ev.playerName, label: LABELS[ev.type] ? t(LABELS[ev.type]) : ev.type });
         list.appendChild(item);
       }
       row.appendChild(list);
@@ -4215,8 +4277,8 @@
 
     for (const round of Object.keys(grouped).sort((a, b) => a - b)) {
       const { night, day } = grouped[round];
-      appendBlock(`Night ${round}`, night);
-      appendBlock(`Day ${round}`, day);
+      appendBlock(t("ui.history.night", { n: round }), night);
+      appendBlock(t("ui.history.day", { n: round }), day);
     }
   }
 
@@ -4252,11 +4314,11 @@
     const winBeat = band === "neutral" ? "beat-gameover" : "beat-win-" + band;
     setSuspenseStage(
       band === "neutral" ? TROPHY_ART : null,
-      "The final verdict",
+      t("ui.overlay.finalVerdict"),
       winBeat,
       band === "neutral" ? "" : winArtHtml(band),
     );
-    text.textContent = "The game is over...";
+    text.textContent = t("ui.overlay.gameIsOver");
     text.style.color = "";
     text.style.animation = "none";
     void text.offsetWidth;
@@ -4265,7 +4327,7 @@
     // The overlay is always black, so the band hex is used directly (its
     // theme-aware --win-*-ink partner is for the game-over screen).
     const winColor = band === "neutral" ? "#FFFFFF" : `var(--win-${band})`;
-    const winText = band === "neutral" ? "Game over" : WIN_TITLES[msg.winner];
+    const winText = band === "neutral" ? t("ui.gameover.gameOver") : t(WIN_TITLE_KEYS[msg.winner]);
 
     // Beat 2: winner reveal
     setTimeout(() => {
@@ -4326,7 +4388,7 @@
       .map((p) => {
         const dead = !p.isAlive;
         const loverText = loverPairs[p.id] ? `<span class="role-reveal-lover">${pixelArtToSvg(HEART_ART)} ${escapeHtml(loverPairs[p.id])}</span>` : "";
-        const deadText = dead ? '<span class="role-reveal-dead">Dead</span>' : "";
+        const deadText = dead ? '<span class="role-reveal-dead">' + escapeHtml(t("ui.gameover.dead")) + '</span>' : "";
         const trophyText = (jokerJointWinner && p.role === "joker") ? `<span class="role-reveal-trophy">${pixelArtToSvg(TROPHY_ART)}</span>` : "";
         // The Godfather reveals as "Godfather" (role stays "mafia" under the hood).
         const revealRole = p.isGodfather ? "godfather" : (p.role || "?");
@@ -4435,9 +4497,9 @@
 
   $("btn-close-room").addEventListener("click", () => {
     showConfirmSheet(
-      "Close room",
-      "All players will be removed.",
-      "Close room",
+      t("ui.confirm.closeRoomTitle"),
+      t("ui.confirm.closeRoomBody"),
+      t("ui.confirm.closeRoomTitle"),
       () => { wsSend({ type: "close_room" }); },
       { danger: true }
     );

@@ -1016,6 +1016,56 @@ input::placeholder { color: var(--text-secondary); }
   color: var(--cta-ink);
 }
 
+/* LANGUAGE PICKER (per-device). Same segmented-control language as the theme
+   switch, so the settings modal reads as one system. Two instances: the
+   settings-modal row and the auth screen (where it sits under the form, since a
+   player picks their language before they have an account).
+   NOT uppercased and NOT letter-spaced: "한국어" must render as normal Hangul —
+   text-transform is a no-op on Hangul but letter-spacing visibly breaks it. */
+.lang-control {
+  display: inline-flex;
+  flex-shrink: 0;
+  --pxb-surface: var(--bg-elevated);
+  position: relative;
+  padding: 2px;
+  background: var(--pxb-surface, var(--bg-card));
+  border: var(--pxb-w, 2px) solid var(--pxb-color, transparent);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.lang-control [data-lang] {
+  min-height: 32px;
+  padding: 7px 11px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.lang-control [data-lang]:last-child { border-right: none; }
+.lang-control [data-lang]:hover { color: var(--text); }
+.lang-control [data-lang].active {
+  background: var(--primary);
+  color: var(--cta-ink);
+}
+
+/* Auth-screen wrapper: a labelled row centred under the sign-in form. */
+.lang-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.lang-picker-label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
 /* PLAYERS LIST — the Figma "Players" card (spec:42-782 lines 65-125):
    one radius-16 card, a "Players … 6/20" head row, a 1px white rule, then
    plain 14px rows (name left, 14px colour ellipse right). The rows are NOT

@@ -307,7 +307,7 @@
       "ui.hunter.loweredBow": "You lower your bow.",
       "ui.gate.takeRevenge": "Take revenge",
       "ui.gate.spareOthers": "Spare the others",
-      "ui.gate.dontShoot": "Don’t shoot",
+      "ui.gate.dontShoot": "Don't shoot",
       "ui.gate.shoot": "Shoot",
       "ui.gate.holdFire": "Hold fire",
       "ui.night.chooseVictim": "Choose a victim",
