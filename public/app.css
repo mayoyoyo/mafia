@@ -1169,6 +1169,40 @@ input::placeholder { color: var(--text-secondary); }
 .round-indicator { font-size: 14px; color: var(--text-secondary); }
 .day-timer { font-size: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; font-family: var(--font-mono); }
 
+/* ---- i18n header robustness ----------------------------------------------
+   The game header is a three-track grid whose tracks defaulted to their content
+   width, so a translation with wider labels ("라운드"/"코드" vs "Round"/"Code")
+   pushed the right-hand cluster out of its track and it painted OVER the round
+   indicator at 390px. Let every track shrink instead, and keep the code chip on
+   one line so its label can never wrap. Layout only — English is unchanged. */
+.game-header { grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto); }
+/* `justify-self: center/end` sizes an item to its CONTENT, so it overflows its
+   track instead of shrinking — which is exactly how the timer came to paint over
+   the round label. Stretch to the track and align INSIDE it, so the round label
+   ellipsizes and the right-hand cluster stays put. */
+.game-header .round-indicator {
+  justify-self: stretch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.game-header-right {
+  justify-self: stretch;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.game-header .room-code { min-width: 0; overflow: hidden; }
+.game-header .day-timer { flex-shrink: 0; }
+.room-code { white-space: nowrap; }
+
+/* Hangul must not inherit the Latin display letter-spacing — it visibly breaks
+   the syllable rhythm and widens every pill. `lang` is kept in sync with the
+   active language by applyStaticI18n(). */
+:lang(ko) .phase-indicator { letter-spacing: 0; }
+:lang(ko) .theme-mode-btn { letter-spacing: 0; }
+:lang(ko) .roster-mode-badge { letter-spacing: 0; }
+
 /* ============================================================
    MEMBERSHIP CARD  —  specs/components/77-528--membership-card.md
    (10 variants) rendered in its APPLIED dark form, which every real

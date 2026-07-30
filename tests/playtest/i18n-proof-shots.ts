@@ -119,14 +119,18 @@ async function main() {
     await dawn;
     console.log("dawn reached");
 
-    // The dawn suspense overlay animates for ~6.3s; wait it out so the shot is
-    // the settled DAY view (narrator line + event log + chrome), not the overlay.
+    // The dawn suspense overlay animates for ~6.3s. Waiting only for "overlay
+    // hidden + some narrator text" is NOT enough: that is briefly true in the
+    // gap between the first-night NIGHTFALL overlay and the dawn overlay, which
+    // captures the NIGHT view instead. Gate on the client's own phase reaching
+    // day, so the shot is the settled dawn view with the death announcement.
     await until(
       page,
-      `document.querySelector('#suspense-overlay').classList.contains('hidden')
+      `document.body.getAttribute('data-phase') === 'day'
+       && document.querySelector('#suspense-overlay').classList.contains('hidden')
        && document.querySelector('#narrator-messages').textContent.trim().length > 0`,
       "settled day view",
-      30000,
+      40000,
     );
     await new Promise((r) => setTimeout(r, 600));
 

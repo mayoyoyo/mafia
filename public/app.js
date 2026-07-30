@@ -53,6 +53,9 @@
    */
   function applyStaticI18n(root) {
     const scope = root || document;
+    // Keep <html lang> truthful: it drives `:lang()` CSS (Hangul needs the
+    // Latin letter-spacing dropped) and screen-reader pronunciation.
+    if (!root && document.documentElement) document.documentElement.setAttribute("lang", currentLang());
     scope.querySelectorAll("[data-i18n]").forEach((el) => {
       el.textContent = t(el.getAttribute("data-i18n"));
     });
