@@ -23,8 +23,21 @@
 // Run ONLY this file:  bun test tests/playtest/death-cause-neutrality.test.ts
 
 import { describe, test, expect } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { runScenario, type PlaytestClient, type ScenarioContext, type WSMessage } from "./harness.ts";
 import type { Role } from "../../src/types.ts";
+import { runtime as i18nRuntime } from "../../src/i18n.ts";
+
+/** The shipped Korean bundle, so the fence covers translations, not just English. */
+const KO_BUNDLE: Record<string, unknown> = (() => {
+  const raw = JSON.parse(
+    readFileSync(join(import.meta.dir, "..", "..", "public", "i18n", "ko.json"), "utf8"),
+  ) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) if (!k.startsWith("$")) out[k] = v;
+  return out;
+})();
 
 // ── Pinned 6-player deal (role[i] → clients[i], join order) ─────────────────
 // clients[0] is the room admin AND a plain citizen, so the assertions below run
@@ -133,6 +146,141 @@ function assertLivingSeeNoCause(
   }
 }
 
+// ── i18n extension of the fence ─────────────────────────────────────────────
+// Death text now travels as an ADDITIVE { key, params, seed } reference beside
+// the rendered English `text`. That reference is a NEW disclosure surface, and
+// the invariant is that it may never reveal more than the English string did:
+//
+//   - a KEY NAME must not encode the cause ("narr.mafiaKill" would leak the
+//     killer's faction to anyone reading the raw frame, even though the
+//     rendered text stayed neutral);
+//   - PARAMS must carry only the victim identities the line already names;
+//   - and every TRANSLATION of the key must be cause-neutral too — a Korean
+//     variant reading "마피아가 …" would leak exactly what the English pool is
+//     carefully built to hide, and no English-only assertion would catch it.
+const CAUSE_TERMS_KO =
+  /(?:마피아|마피오소|자경단|광대|조커|사냥꾼|총알|총|칼|권총|칼날|찔러|찔렀|쏘았|쏘았다|쐈|목을\s*졸|교살|독살|독을)/;
+
+/** Keys a LIVING client may legitimately receive on a death surface. */
+const NEUTRAL_DEATH_KEYS = new Set([
+  "narr.nightDeath.single",
+  "narr.nightDeath.two",
+  "narr.nightDeath.many",
+  "narr.diedInNight",
+]);
+
+/** Param names a neutral death line may carry. Nothing else is allowed. */
+const ALLOWED_DEATH_PARAMS = new Set(["name", "names", "count"]);
+
+interface WireRef { text?: string; key?: string; params?: Record<string, unknown>; seed?: number }
+
+/** Every message reference reachable from one wire frame. */
+function refsIn(m: WSMessage): WireRef[] {
+  const out: WireRef[] = [];
+  const push = (r: unknown) => {
+    if (r && typeof r === "object") out.push(r as WireRef);
+  };
+  push((m as Record<string, unknown>).messageRef);
+  push((m as Record<string, unknown>).doctorMessageRef);
+  for (const arr of ["messageRefs", "narratorHistoryRefs"]) {
+    const v = (m as Record<string, unknown>)[arr];
+    if (Array.isArray(v)) for (const r of v) push(r);
+  }
+  return out;
+}
+
+/**
+ * For every LIVING client: no key name, param set or TRANSLATION on a death
+ * surface may betray the cause. Skips cleanly (asserting nothing) on a server
+ * that does not yet ship refs, so this stays a fence rather than a coupling.
+ */
+function assertLivingDeathRefsNeutral(
+  clients: PlaytestClient[],
+  livingIdxs: number[],
+  victimNames: string[],
+): void {
+  const I18n = i18nRuntime as unknown as {
+    setBundle(l: string, d: unknown): void;
+    setLang(l: string): string;
+    lang(): string;
+    t(k: string, p?: unknown, s?: number): string;
+    has(k: string): boolean;
+  };
+  // Load Korean so the fence covers the shipped translation, not just English.
+  I18n.setBundle("ko", KO_BUNDLE);
+  const previous = I18n.lang();
+
+  try {
+    for (const i of livingIdxs) {
+      const c = clients[i];
+      const surfaces = c.log.filter((m: WSMessage) => DEATH_SURFACES.has(m.type));
+      for (const m of surfaces) {
+        for (const ref of refsIn(m)) {
+          if (!ref.key) continue;
+
+          // A key NAME is itself readable in the raw frame.
+          expect(ref.key, `key on ${m.type}`).not.toMatch(CAUSE_TERMS);
+
+          const namesVictim = victimNames.some((v) =>
+            JSON.stringify(ref.params ?? {}).includes(v) || (ref.text ?? "").includes(v),
+          );
+          if (namesVictim) {
+            // The line that names tonight's victims must come from the neutral
+            // pool — never a cause-specific key.
+            expect(NEUTRAL_DEATH_KEYS.has(ref.key), `victim-naming key ${ref.key}`).toBe(true);
+            for (const p of Object.keys(ref.params ?? {})) {
+              expect(ALLOWED_DEATH_PARAMS.has(p), `param {${p}} on ${ref.key}`).toBe(true);
+            }
+          }
+
+          // Params must not smuggle a cause in a value.
+          expect(JSON.stringify(ref.params ?? {})).not.toMatch(CAUSE_TERMS);
+
+          // English re-render must equal the shipped text: the ref may not say
+          // anything the rendered string did not already say.
+          if (I18n.has(ref.key) && typeof ref.text === "string") {
+            I18n.setLang("en");
+            expect(I18n.t(ref.key, ref.params ?? null, ref.seed)).toBe(ref.text);
+          }
+
+          // And the Korean rendering must be cause-neutral as well.
+          if (I18n.has(ref.key)) {
+            I18n.setLang("ko");
+            const ko = I18n.t(ref.key, ref.params ?? null, ref.seed);
+            expect(ko, `ko render of ${ref.key}`).not.toMatch(CAUSE_TERMS_KO);
+            expect(ko, `ko render of ${ref.key}`).not.toMatch(CAUSE_TERMS);
+          }
+        }
+      }
+    }
+  } finally {
+    I18n.setLang(previous);
+  }
+}
+
+/**
+ * Sweep EVERY Korean death-pool variant for cause terms, independent of which
+ * variants a given scenario happened to roll. A seeded run only exercises one
+ * variant per line, so without this a leaking variant could sit unnoticed.
+ */
+function assertKoreanDeathPoolsNeutral(): void {
+  const bundle = KO_BUNDLE as Record<string, string | string[]>;
+  const offenders: string[] = [];
+  for (const key of NEUTRAL_DEATH_KEYS) {
+    const value = bundle[key];
+    if (value === undefined) continue;
+    for (const variant of Array.isArray(value) ? value : [value]) {
+      if (CAUSE_TERMS_KO.test(variant) || CAUSE_TERMS.test(variant)) offenders.push(`${key}: ${variant}`);
+    }
+  }
+  // The default-mode anonymous save line must also stay anonymous in Korean.
+  const official = bundle["narr.doctorSaveOfficial"];
+  for (const variant of Array.isArray(official) ? official : official ? [official] : []) {
+    if (CAUSE_TERMS_KO.test(variant)) offenders.push(`narr.doctorSaveOfficial: ${variant}`);
+  }
+  expect(offenders).toEqual([]);
+}
+
 /** The victim's own overlay copy is cause-neutral BY CONSTRUCTION. */
 function assertVictimDeathMessageNeutral(victim: PlaytestClient, name: string): void {
   const died = victim.lastOf("you_died")!;
@@ -202,6 +350,7 @@ describe("night deaths are cause-neutral to living clients", () => {
     expect(clients[ADMIN].allOf("player_died").map((m) => m.playerName)).toEqual([victim]);
 
     assertLivingSeeNoCause(clients, [ADMIN, MAF, DOC, DET, VIG], [victim]);
+    assertLivingDeathRefsNeutral(clients, [ADMIN, MAF, DOC, DET, VIG], [victim]);
     // Scenario 3: the victim's own overlay copy.
     assertVictimDeathMessageNeutral(clients[CIT], victim);
   }, 60000);
@@ -228,6 +377,7 @@ describe("night deaths are cause-neutral to living clients", () => {
     expect(clients[VIG].lastOf("night_action_done")!.message).toMatch(/spent/i);
 
     assertLivingSeeNoCause(clients, [ADMIN, MAF, DOC, VIG, CIT], [victim]);
+    assertLivingDeathRefsNeutral(clients, [ADMIN, MAF, DOC, VIG, CIT], [victim]);
     assertVictimDeathMessageNeutral(clients[DET], victim);
 
     // The strongest form of the fence: the vigilante's lone victim is announced
@@ -258,6 +408,7 @@ describe("night deaths are cause-neutral to living clients", () => {
     const vigVictim = nameOf(clients[DET]);
 
     assertLivingSeeNoCause(clients, [ADMIN, MAF, DOC, VIG], [mafiaVictim, vigVictim]);
+    assertLivingDeathRefsNeutral(clients, [ADMIN, MAF, DOC, VIG], [mafiaVictim, vigVictim]);
 
     // ONE combined dawn line names BOTH victims — a per-victim line would let
     // the count/order out which kill was whose.
@@ -282,4 +433,14 @@ describe("night deaths are cause-neutral to living clients", () => {
     // Dead spectators are EXEMPT by design (they watched the night live) — the
     // two victims' own inboxes are deliberately not asserted neutral here.
   }, 60000);
+});
+
+// ── Translation-level fence ────────────────────────────────────────────────
+// Independent of any scripted night: sweep EVERY variant of every Korean death
+// pool. A seeded run only rolls one variant per line, so a leaking variant would
+// otherwise hide until it happened to be selected in production.
+describe("Korean death copy is cause-neutral in every variant", () => {
+  test("no shipped Korean death/anonymous-save variant names a cause", () => {
+    assertKoreanDeathPoolsNeutral();
+  });
 });
