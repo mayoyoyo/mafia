@@ -28,12 +28,12 @@ export function languageFiles(): string[] {
   return ["en", ...langs.filter((l) => l !== "en")].filter((l) => langs.includes(l));
 }
 
-/** Parse a language file, dropping the `$comment` documentation key. */
+/** Parse a language file, dropping `$`-prefixed documentation keys. */
 export function loadLanguage(lang: string): Record<string, string | string[]> {
   const raw = JSON.parse(readFileSync(join(I18N_DIR, `${lang}.json`), "utf8"));
   const out: Record<string, string | string[]> = {};
   for (const [k, v] of Object.entries(raw)) {
-    if (k === "$comment") continue;
+    if (k.startsWith("$")) continue; // translator notes, not strings
     out[k] = v as string | string[];
   }
   return out;

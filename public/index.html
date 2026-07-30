@@ -28,12 +28,21 @@
         <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="auth-form">
-        <div class="input-pxb"><input type="text" id="auth-username" placeholder="Username" maxlength="16" autocomplete="off" autocapitalize="off"></div>
+        <div class="input-pxb"><input type="text" id="auth-username" placeholder="Username" data-i18n-placeholder="ui.auth.username" maxlength="16" autocomplete="off" autocapitalize="off"></div>
         <div class="passcode-row">
-          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4 Digit Pin" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
+          <div class="input-pxb" style="flex:1"><input type="tel" id="auth-passcode" placeholder="4 Digit Pin" data-i18n-placeholder="ui.auth.pin" maxlength="4" pattern="[0-9]{4}" inputmode="numeric"></div>
         </div>
-        <button id="btn-login" class="btn btn-primary btn-large">Log in</button>
-        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc">Create an account</button></div>
+        <button id="btn-login" class="btn btn-primary btn-large" data-i18n="ui.auth.login">Log in</button>
+        <div class="btn-pxb pxc"><button id="btn-register" class="btn btn-secondary btn-large pxc" data-i18n="ui.auth.register">Create an account</button></div>
+      </div>
+      <!-- Per-device language picker. Also lives in the in-game settings modal;
+           both are ".lang-control" groups handled by one delegated listener. -->
+      <div class="lang-picker">
+        <span class="lang-picker-label" data-i18n="ui.auth.language">Language</span>
+        <div class="lang-control" role="group" aria-label="Language" data-i18n-aria-label="ui.auth.language">
+          <button type="button" data-lang="en" aria-pressed="true">English</button>
+          <button type="button" data-lang="ko" aria-pressed="false">한국어</button>
+        </div>
       </div>
       <div id="auth-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
@@ -53,15 +62,15 @@
         <h1>MAFIA<span class="wordmark-dot">.</span></h1>
       </div>
       <div class="header">
-        <h2>Welcome, <span id="menu-username"></span></h2>
-        <button id="btn-logout" class="btn btn-small btn-ghost">Log out</button>
+        <h2><span data-i18n="ui.menu.welcome">Welcome,</span> <span id="menu-username"></span></h2>
+        <button id="btn-logout" class="btn btn-small btn-ghost" data-i18n="ui.menu.logout">Log out</button>
       </div>
       <div id="join-section" class="join-section">
-        <div class="input-pxb"><input type="text" id="join-code" placeholder="Room code" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
+        <div class="input-pxb"><input type="text" id="join-code" placeholder="Room code" data-i18n-placeholder="ui.menu.roomCode" maxlength="4" autocomplete="off" autocapitalize="characters"></div>
       </div>
       <div class="menu-buttons">
-        <button id="btn-join" class="btn btn-primary btn-large" disabled>Join</button>
-        <div class="btn-pxb pxc"><button id="btn-host" class="btn btn-secondary btn-large pxc">Host game</button></div>
+        <button id="btn-join" class="btn btn-primary btn-large" disabled data-i18n="ui.menu.join">Join</button>
+        <div class="btn-pxb pxc"><button id="btn-host" class="btn btn-secondary btn-large pxc" data-i18n="ui.menu.host">Host game</button></div>
       </div>
       <div id="menu-error" class="error-msg"></div>
       <div class="copyright">&copy; DaleWorldwide <span class="app-version"></span></div>
@@ -73,23 +82,23 @@
          a host cannot exit the lobby. -->
     <div id="screen-lobby-admin" class="screen">
       <div class="header lobby-nav">
-        <button id="btn-leave-admin" class="btn btn-small btn-ghost">Leave</button>
-        <h2>Lobby</h2>
+        <button id="btn-leave-admin" class="btn btn-small btn-ghost" data-i18n="ui.common.leave">Leave</button>
+        <h2 data-i18n="ui.lobby.title">Lobby</h2>
         <div class="header-right">
-          <div class="room-code"><span class="room-code-label">Code</span> <span id="lobby-code"></span></div>
-          <button id="btn-roster-lobby-admin" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play">
+          <div class="room-code"><span class="room-code-label" data-i18n="ui.common.code">Code</span> <span id="lobby-code"></span></div>
+          <button id="btn-roster-lobby-admin" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play" data-i18n-title="ui.roster.openTitle" data-i18n-aria-label="ui.roster.openTitle">
             <svg class="icon-people" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7.5" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.9c2.4.6 4 2.5 4 5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           </button>
-          <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings">&#9881;</button>
+          <button id="btn-settings-lobby-admin" class="btn btn-icon" title="Settings" data-i18n-title="ui.settings.title">&#9881;</button>
         </div>
       </div>
 
-      <h2 class="screen-title">Choose how to play</h2>
+      <h2 class="screen-title" data-i18n="ui.lobby.chooseHowToPlay">Choose how to play</h2>
 
       <div class="settings-panel card-primary">
 
         <div class="setting-row">
-          <span>Mafia members</span>
+          <span data-i18n="ui.lobby.mafiaMembers">Mafia members</span>
           <div class="counter">
             <button id="mafia-minus" class="btn btn-counter">-</button>
             <span id="mafia-count">1</span>
@@ -98,51 +107,51 @@
         </div>
 
         <div class="setting-row">
-          <span>Doctor</span>
+          <span data-i18n="ui.role.doctor">Doctor</span>
           <label class="toggle"><input type="checkbox" id="toggle-doctor"><span class="slider"></span></label>
         </div>
         <div id="doctor-mode-row" class="setting-sub-row hidden">
           <div class="rule-tabs" id="doctor-mode-tabs">
-            <button class="rule-tab active" data-mode="official">Official</button>
-            <button class="rule-tab" data-mode="house">House</button>
+            <button class="rule-tab active" data-mode="official" data-i18n="ui.mode.official">Official</button>
+            <button class="rule-tab" data-mode="house" data-i18n="ui.mode.house">House</button>
           </div>
-          <div class="rule-hint" id="doctor-mode-hint">Save is secret from the living &mdash; no living player is told who was saved, not even the victim (the dead see everything)</div>
+          <div class="rule-hint" id="doctor-mode-hint" data-i18n="ui.hint.doctorOfficialLong">Save is secret from the living &mdash; no living player is told who was saved, not even the victim (the dead see everything)</div>
         </div>
 
         <div class="setting-row">
-          <span>Detective</span>
+          <span data-i18n="ui.role.detective">Detective</span>
           <label class="toggle"><input type="checkbox" id="toggle-detective"><span class="slider"></span></label>
         </div>
 
         <div class="setting-row">
-          <span>Joker</span>
+          <span data-i18n="ui.role.joker">Joker</span>
           <label class="toggle"><input type="checkbox" id="toggle-joker"><span class="slider"></span></label>
         </div>
         <div id="joker-mode-row" class="setting-sub-row hidden">
           <div class="rule-tabs" id="joker-mode-tabs">
-            <button class="rule-tab active" data-mode="official">Official</button>
-            <button class="rule-tab" data-mode="house">House</button>
+            <button class="rule-tab active" data-mode="official" data-i18n="ui.mode.official">Official</button>
+            <button class="rule-tab" data-mode="house" data-i18n="ui.mode.house">House</button>
           </div>
-          <div class="rule-hint" id="joker-mode-hint">Game continues &mdash; Joker can haunt a voter</div>
+          <div class="rule-hint" id="joker-mode-hint" data-i18n="ui.hint.jokerOfficial">Game continues &mdash; Joker can haunt a voter</div>
         </div>
 
         <div class="setting-row">
-          <span>Hunter</span>
+          <span data-i18n="ui.role.hunter">Hunter</span>
           <label class="toggle"><input type="checkbox" id="toggle-hunter"><span class="slider"></span></label>
         </div>
 
         <div class="setting-row">
-          <span>Vigilante</span>
+          <span data-i18n="ui.role.vigilante">Vigilante</span>
           <label class="toggle"><input type="checkbox" id="toggle-vigilante"><span class="slider"></span></label>
         </div>
 
         <div class="setting-row">
-          <span>Lovers</span>
+          <span data-i18n="ui.role.lovers">Lovers</span>
           <label class="toggle"><input type="checkbox" id="toggle-lovers"><span class="slider"></span></label>
         </div>
 
         <div class="setting-row">
-          <span>Godfather</span>
+          <span data-i18n="ui.role.godfather">Godfather</span>
           <label class="toggle"><input type="checkbox" id="toggle-godfather"><span class="slider"></span></label>
         </div>
 
@@ -151,16 +160,16 @@
              arrow / accent / arrow stage. The disclosure toggle and the
              outside-click collapse are gone with the collapsed state. -->
         <div id="lobby-accent" class="accent-picker setting-row expanded">
-          <span class="accent-picker-title">Narrator&rsquo;s voice</span>
-          <div id="narrator-gender-control" class="narrator-gender-control" role="group" aria-label="Narrator gender">
-            <button type="button" class="narrator-gender-btn" data-gender="male" aria-pressed="false">Male</button>
-            <button type="button" class="narrator-gender-btn" data-gender="female" aria-pressed="false">Female</button>
+          <span class="accent-picker-title" data-i18n="ui.lobby.narratorVoice">Narrator&rsquo;s voice</span>
+          <div id="narrator-gender-control" class="narrator-gender-control" role="group" aria-label="Narrator gender" data-i18n-aria-label="ui.lobby.narratorGender">
+            <button type="button" class="narrator-gender-btn" data-gender="male" aria-pressed="false" data-i18n="ui.common.male">Male</button>
+            <button type="button" class="narrator-gender-btn" data-gender="female" aria-pressed="false" data-i18n="ui.common.female">Female</button>
           </div>
           <div class="accent-picker-expanded" id="accent-picker-expanded">
             <div class="accent-picker-stage">
-              <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice">&#9664;</button>
+              <button type="button" class="accent-arrow accent-arrow-prev" id="accent-arrow-prev" aria-label="Previous voice" data-i18n-aria-label="ui.lobby.prevVoice">&#9664;</button>
               <span class="accent-picker-label" id="accent-picker-label"></span>
-              <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice">&#9654;</button>
+              <button type="button" class="accent-arrow accent-arrow-next" id="accent-arrow-next" aria-label="Next voice" data-i18n-aria-label="ui.lobby.nextVoice">&#9654;</button>
             </div>
             <p class="accent-picker-desc" id="accent-picker-desc"></p>
           </div>
@@ -172,33 +181,33 @@
            (45:466 lines 182-205) duplicating values the host edits 200px above.
            Dropped as a mock artefact — the editable card is the single source. -->
       <div class="players-section card-primary">
-        <div class="lobby-card-head"><span>Players</span><span><span id="player-count-admin">0</span>/20</span></div>
+        <div class="lobby-card-head"><span data-i18n="ui.common.players">Players</span><span><span id="player-count-admin">0</span>/20</span></div>
         <ul id="players-list-admin" class="players-list"></ul>
       </div>
 
       <div id="color-picker-admin" class="color-picker-section card-primary"></div>
 
-      <button id="btn-start" class="btn btn-primary btn-large">Start game</button>
+      <button id="btn-start" class="btn btn-primary btn-large" data-i18n="ui.lobby.start">Start game</button>
       <div id="lobby-error" class="error-msg"></div>
     </div>
 
     <!-- LOBBY (PLAYER VIEW) — Figma 42:782 -->
     <div id="screen-lobby-player" class="screen">
       <div class="header lobby-nav">
-        <button id="btn-leave-player" class="btn btn-small btn-ghost">Leave</button>
-        <h2>Lobby</h2>
+        <button id="btn-leave-player" class="btn btn-small btn-ghost" data-i18n="ui.common.leave">Leave</button>
+        <h2 data-i18n="ui.lobby.title">Lobby</h2>
         <div class="header-right">
-          <div class="room-code"><span class="room-code-label">Code</span> <span id="lobby-code-player"></span></div>
-          <button id="btn-roster-lobby-player" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play">
+          <div class="room-code"><span class="room-code-label" data-i18n="ui.common.code">Code</span> <span id="lobby-code-player"></span></div>
+          <button id="btn-roster-lobby-player" class="btn btn-icon btn-icon-glyph" title="Roles in play" aria-label="Roles in play" data-i18n-title="ui.roster.openTitle" data-i18n-aria-label="ui.roster.openTitle">
             <svg class="icon-people" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="7.5" r="3.5" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.9c2.4.6 4 2.5 4 5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           </button>
-          <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings">&#9881;</button>
+          <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings" data-i18n-title="ui.settings.title">&#9881;</button>
         </div>
       </div>
-      <p class="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
+      <p class="waiting-text"><span data-i18n="ui.lobby.waitingForPre">Waiting for</span> <span id="admin-name-display"></span> <span data-i18n="ui.lobby.waitingForPost">to start...</span></p>
       <div id="player-lobby-settings" class="player-lobby-settings card-primary"></div>
       <div class="players-section card-primary">
-        <div class="lobby-card-head"><span>Players</span><span><span id="player-count-player">0</span>/20</span></div>
+        <div class="lobby-card-head"><span data-i18n="ui.common.players">Players</span><span><span id="player-count-player">0</span>/20</span></div>
         <ul id="players-list-player" class="players-list"></ul>
       </div>
       <div id="color-picker-player" class="color-picker-section card-primary"></div>
@@ -213,16 +222,16 @@
     <div id="screen-game" class="screen">
       <div class="game-header">
         <div class="phase-indicator" id="phase-indicator">Night</div>
-        <div class="round-indicator">Round <span id="round-number">1</span></div>
+        <div class="round-indicator"><span data-i18n="ui.game.round">Round</span> <span id="round-number">1</span></div>
         <div class="game-header-right">
           <div id="day-timer" class="day-timer hidden">00:00</div>
           <!-- G1: the Figma night Nav carries a room-code chip (Code + E92G in
                orange). The app only had the code inside the settings modal. Not a
                new disclosure — every member of a room already reads it off the
                lobby nav (P3/F9). -->
-          <div class="room-code game-room-code"><span class="room-code-label">Code</span> <span id="game-room-code"></span></div>
-          <button id="btn-roster" class="btn btn-icon" title="Roles in play">&#9776;</button>
-          <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
+          <div class="room-code game-room-code"><span class="room-code-label" data-i18n="ui.common.code">Code</span> <span id="game-room-code"></span></div>
+          <button id="btn-roster" class="btn btn-icon" title="Roles in play" data-i18n-title="ui.roster.openTitle">&#9776;</button>
+          <button id="btn-settings" class="btn btn-icon" title="Settings" data-i18n-title="ui.settings.title">&#9881;</button>
         </div>
       </div>
 
@@ -238,10 +247,10 @@
                eyebrow / name / description in the text column, chibi art beside it. -->
           <div class="card-front">
             <div class="card-text">
-              <div id="role-eyebrow" class="role-eyebrow">Your role is</div>
+              <div id="role-eyebrow" class="role-eyebrow" data-i18n="ui.card.yourRoleIs">Your role is</div>
               <div id="role-name" class="role-name"></div>
               <div id="role-description" class="role-description"></div>
-              <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> Lovers</div>
+              <div id="lover-badge" class="lover-badge hidden"><span class="lover-badge-icon"></span> <span data-i18n="ui.role.lovers">Lovers</span></div>
               <div id="bullet-indicator" class="bullet-indicator hidden"><span id="bullet-status"></span></div>
             </div>
             <div id="role-image" class="role-image"></div>
@@ -264,9 +273,9 @@
           </div>
           <!-- Spec "Role=Default": "Your role is / ? / Peel to reveal". -->
           <div class="card-back">
-            <div class="role-eyebrow">Your role is</div>
+            <div class="role-eyebrow" data-i18n="ui.card.yourRoleIs">Your role is</div>
             <div id="card-back-art" class="card-back-art"></div>
-            <div class="card-back-label">Peel to reveal</div>
+            <div class="card-back-label" data-i18n="ui.card.peelToReveal">Peel to reveal</div>
           </div>
           <div class="peel-flap"></div>
         </div>
@@ -274,8 +283,8 @@
 
       <!-- Awaiting Narrator Ready (Begin Night gate) -->
       <div id="awaiting-ready" class="awaiting-ready hidden">
-        <p id="awaiting-ready-msg">Check your role card!</p>
-        <button id="btn-begin-night" class="btn btn-primary btn-large hidden">Begin Night</button>
+        <p id="awaiting-ready-msg" data-i18n="ui.game.checkRoleCard">Check your role card!</p>
+        <button id="btn-begin-night" class="btn btn-primary btn-large hidden" data-i18n="ui.game.beginNight">Begin Night</button>
       </div>
 
       <!-- Hunter Revenge Wait (C5b: room-wide while the revenge gate is open;
@@ -284,17 +293,17 @@
            plumbing — only the painted chrome changed. -->
       <div id="revenge-wait" class="awaiting-ready revenge-wait hidden">
         <div id="revenge-wait-art" class="revenge-wait-art"></div>
-        <div class="revenge-wait-headline">THE HUNTER FALLS</div>
+        <div class="revenge-wait-headline" data-i18n="ui.hunter.falls">THE HUNTER FALLS</div>
         <p id="revenge-wait-reveal"></p>
-        <p>Waiting for the Hunter&#8230;</p>
-        <button id="btn-skip-revenge" class="btn btn-danger btn-small hidden">Skip revenge</button>
+        <p data-i18n="ui.hunter.waiting">Waiting for the Hunter&#8230;</p>
+        <button id="btn-skip-revenge" class="btn btn-danger btn-small hidden" data-i18n="ui.hunter.skipRevenge">Skip revenge</button>
       </div>
 
       <!-- Night idle line (Figma 74:335 / 130:243) — the neutral status every
            role sees at night once no night panel of its own is up. Gated on
            "no panel active", NOT on role, so a doctor whose sub-phase already
            closed gets the same screen as a citizen (shoulder-surf parity). -->
-      <div id="night-idle" class="night-idle hidden">The town goes to sleep&#8230;&#127769;</div>
+      <div id="night-idle" class="night-idle hidden" data-i18n="ui.night.idle">The town goes to sleep&#8230;&#127769;</div>
 
       <!-- Night Actions -->
       <div id="night-actions" class="action-panel hidden">
@@ -314,12 +323,12 @@
           </div>
           <!-- N-D6: ONE shared style, Figma's per-frame string. The label is
                rewritten by showNightAction / the gate resolve. -->
-          <button id="btn-decline-revenge" class="btn-gate btn-gate-alt hidden">Spare the others</button>
-          <button id="btn-vigilante-pass" class="btn-gate btn-gate-alt hidden">Hold fire</button>
+          <button id="btn-decline-revenge" class="btn-gate btn-gate-alt hidden" data-i18n="ui.gate.spareOthers">Spare the others</button>
+          <button id="btn-vigilante-pass" class="btn-gate btn-gate-alt hidden" data-i18n="ui.gate.holdFire">Hold fire</button>
         </div>
         <div id="action-confirm" class="action-confirm hidden">
-          <button id="btn-action-cancel" class="ac-btn ac-cancel pxc">Cancel</button>
-          <button id="btn-action-confirm" class="ac-btn ac-confirm pxc">Confirm</button>
+          <button id="btn-action-cancel" class="ac-btn ac-cancel pxc" data-i18n="ui.common.cancel">Cancel</button>
+          <button id="btn-action-confirm" class="ac-btn ac-confirm pxc" data-i18n="ui.common.confirm">Confirm</button>
         </div>
         <div id="action-status" class="action-status"></div>
       </div>
@@ -335,18 +344,18 @@
            handleVoteCalled) — the mockups' dim-in-place variant was not
            adopted. -->
       <div id="day-accuse-controls" class="day-accuse-controls hidden">
-        <h3 id="accusations-heading" class="accusations-heading hidden">Standing accusations</h3>
+        <h3 id="accusations-heading" class="accusations-heading hidden" data-i18n="ui.accuse.heading">Standing accusations</h3>
         <div id="accusations-panel" class="accusations-panel"></div>
-        <p id="accuse-spectator-note" class="accuse-spectator-note hidden">You&rsquo;re watching the town. You can&rsquo;t accuse or second.</p>
+        <p id="accuse-spectator-note" class="accuse-spectator-note hidden" data-i18n="ui.accuse.spectatorNote">You&rsquo;re watching the town. You can&rsquo;t accuse or second.</p>
         <div id="accuse-launch" class="accuse-launch">
-          <button id="btn-accuse" class="btn btn-primary btn-large">Accuse someone</button>
+          <button id="btn-accuse" class="btn btn-primary btn-large" data-i18n="ui.accuse.launch">Accuse someone</button>
         </div>
         <div id="accuse-picker" class="accuse-picker hidden">
-          <p class="accuse-picker-title">Point a finger &mdash; or move that the town sleeps:</p>
+          <p class="accuse-picker-title" data-i18n="ui.accuse.pickerTitle">Point a finger &mdash; or move that the town sleeps:</p>
           <ul id="accuse-target-list" class="target-list"></ul>
           <div class="accuse-picker-buttons">
-            <button id="btn-accuse-cancel" class="btn btn-secondary">Cancel</button>
-            <button id="btn-accuse-confirm" class="btn btn-primary" disabled>Confirm</button>
+            <button id="btn-accuse-cancel" class="btn btn-secondary" data-i18n="ui.common.cancel">Cancel</button>
+            <button id="btn-accuse-confirm" class="btn btn-primary" disabled data-i18n="ui.common.confirm">Confirm</button>
           </div>
         </div>
       </div>
@@ -360,20 +369,20 @@
            row and directly beneath it (mockup-spec state 6). -->
       <div id="admin-day-controls" class="admin-controls card-primary hidden">
         <div class="admin-head">
-          <h3>Admin controls</h3>
+          <h3 data-i18n="ui.admin.controls">Admin controls</h3>
           <span id="vote-count-label" class="vote-count-label"></span>
         </div>
         <div id="admin-status-msg" class="admin-status-msg"></div>
         <div class="admin-target-section">
-          <p class="admin-nominate-label">Nominate a player for execution</p>
+          <p class="admin-nominate-label" data-i18n="ui.admin.nominate">Nominate a player for execution</p>
           <ul id="admin-target-list" class="target-list admin-target-list"></ul>
-          <button id="btn-end-day" class="btn btn-primary admin-end-day">End day</button>
+          <button id="btn-end-day" class="btn btn-primary admin-end-day" data-i18n="ui.admin.endDay">End day</button>
         </div>
       </div>
 
       <!-- Mafia Vote Status (for mafia members) -->
       <div id="mafia-vote-status" class="vote-status hidden">
-        <h4>Mafia Votes</h4>
+        <h4 data-i18n="ui.mafia.votes">Mafia Votes</h4>
         <div id="mafia-vote-details"></div>
       </div>
 
@@ -392,7 +401,7 @@
           <button id="btn-vote-yes" class="btn btn-vote btn-vote-yes"></button>
           <button id="btn-vote-no" class="btn btn-vote btn-vote-no"></button>
         </div>
-        <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden">Cancel vote</button>
+        <button id="btn-cancel-vote" class="btn btn-danger btn-small hidden" data-i18n="ui.vote.cancel">Cancel vote</button>
       </div>
 
       <!-- Narrator Messages — N-D1a/R7: no Figma night frame draws a narrator
@@ -403,8 +412,8 @@
            Content, transcript button and message plumbing are untouched. -->
       <div id="narrator-area" class="narrator-area">
         <div class="narrator-header">
-          <span class="narrator-label">Narrator</span>
-          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript"></button>
+          <span class="narrator-label" data-i18n="ui.narrator.label">Narrator</span>
+          <button id="btn-transcript" class="btn btn-icon btn-transcript" title="View Full Transcript" data-i18n-title="ui.transcript.openTitle"></button>
         </div>
         <div id="narrator-messages" class="narrator-messages"></div>
       </div>
@@ -419,8 +428,8 @@
            it carries the applied white 2px stroke via .card-primary. -->
       <div id="event-history" class="event-history card-primary hidden">
         <div class="eh-tabs">
-          <button class="eh-tab active" data-tab="events">Events</button>
-          <button class="eh-tab" data-tab="players">Players</button>
+          <button class="eh-tab active" data-tab="events" data-i18n="ui.tabs.events">Events</button>
+          <button class="eh-tab" data-tab="players" data-i18n="ui.common.players">Players</button>
         </div>
         <div id="eh-panel-events" class="eh-panel">
           <div id="event-history-list" class="event-history-list"></div>
@@ -432,7 +441,7 @@
 
       <!-- Admin Night Controls (Force Dawn) -->
       <div id="admin-night-controls" class="admin-controls hidden">
-        <button id="btn-force-dawn" class="btn btn-primary">Force Dawn</button>
+        <button id="btn-force-dawn" class="btn btn-primary" data-i18n="ui.admin.forceDawn">Force Dawn</button>
       </div>
 
     </div>
@@ -449,7 +458,7 @@
          per R7 — it is the only exit for a player who does not want the lobby. -->
     <div id="screen-gameover" class="screen">
       <div class="gameover-header">
-        <button id="btn-leave-room" class="btn btn-small btn-ghost">Leave room</button>
+        <button id="btn-leave-room" class="btn btn-small btn-ghost" data-i18n="ui.gameover.leaveRoom">Leave room</button>
       </div>
 
       <!-- VIEW 1 — "Game options" (278:2780). Art on its radial faction glow,
@@ -462,21 +471,21 @@
       <div id="gameover-view-options" class="gameover-content">
         <div id="gameover-art" class="gameover-art"></div>
         <div class="gameover-verdict">
-          <p id="gameover-pre" class="gameover-pre">The final verdict</p>
+          <p id="gameover-pre" class="gameover-pre" data-i18n="ui.overlay.finalVerdict">The final verdict</p>
           <h1 id="gameover-title"></h1>
         </div>
         <p id="gameover-message"></p>
         <div id="gameover-ctas" class="gameover-ctas hidden">
           <div id="gameover-buttons" class="gameover-buttons hidden">
-            <button id="btn-play-again-same" class="btn btn-primary btn-large">Play again</button>
-            <button id="btn-play-again-new" class="btn btn-secondary btn-large">Return to lobby</button>
+            <button id="btn-play-again-same" class="btn btn-primary btn-large" data-i18n="ui.gameover.playAgain">Play again</button>
+            <button id="btn-play-again-new" class="btn btn-secondary btn-large" data-i18n="ui.gameover.returnToLobby">Return to lobby</button>
           </div>
           <div id="gameover-buttons-player" class="gameover-buttons hidden">
-            <button id="btn-return-to-lobby-player" class="btn btn-primary btn-large">Return to lobby</button>
+            <button id="btn-return-to-lobby-player" class="btn btn-primary btn-large" data-i18n="ui.gameover.returnToLobby">Return to lobby</button>
           </div>
-          <button id="btn-view-details" class="btn btn-secondary btn-large">View game details</button>
+          <button id="btn-view-details" class="btn btn-secondary btn-large" data-i18n="ui.gameover.viewDetails">View game details</button>
           <div id="gameover-danger" class="gameover-buttons hidden">
-            <button id="btn-close-room" class="btn btn-danger btn-large">Close room</button>
+            <button id="btn-close-room" class="btn btn-danger btn-large" data-i18n="ui.gameover.closeRoom">Close room</button>
           </div>
         </div>
       </div>
@@ -492,13 +501,13 @@
       <div id="gameover-view-details" class="gameover-details hidden">
         <div class="gameover-details-head">
           <div id="gameover-art-sm" class="gameover-art gameover-art-sm"></div>
-          <p id="gameover-details-pre" class="gameover-pre">The final verdict</p>
+          <p id="gameover-details-pre" class="gameover-pre" data-i18n="ui.overlay.finalVerdict">The final verdict</p>
           <h2 id="gameover-details-title" class="gameover-details-title"></h2>
         </div>
         <div class="event-history card-primary">
           <div class="eh-tabs">
-            <button class="go-tab" data-gotab="events">Events</button>
-            <button class="go-tab active" data-gotab="players">Players</button>
+            <button class="go-tab" data-gotab="events" data-i18n="ui.tabs.events">Events</button>
+            <button class="go-tab active" data-gotab="players" data-i18n="ui.common.players">Players</button>
           </div>
           <div id="go-panel-events" class="eh-panel hidden">
             <div id="game-history" class="game-history"></div>
@@ -508,8 +517,8 @@
           </div>
         </div>
         <div class="gameover-ctas">
-          <button id="btn-details-lobby" class="btn btn-primary btn-large">Return to lobby</button>
-          <button id="btn-details-back" class="btn btn-secondary btn-large">Back to game options</button>
+          <button id="btn-details-lobby" class="btn btn-primary btn-large" data-i18n="ui.gameover.returnToLobby">Return to lobby</button>
+          <button id="btn-details-back" class="btn btn-secondary btn-large" data-i18n="ui.gameover.backToOptions">Back to game options</button>
         </div>
       </div>
     </div>
@@ -532,13 +541,13 @@
              alongside the existing art swap. The MESSAGE stays the server's
              cause-neutral pool (R5) — Figma's "stabbed in the night" is
              placeholder copy and would re-open the dawn leak. -->
-        <p id="dead-pre" class="dead-pre">You are</p>
-        <p id="dead-text" class="dead-text">DEAD</p>
+        <p id="dead-pre" class="dead-pre" data-i18n="ui.dead.youAre">You are</p>
+        <p id="dead-text" class="dead-text" data-i18n="ui.dead.dead">DEAD</p>
         <p id="death-message" class="death-message"></p>
         <div class="dither-h dead-div"></div>
-        <p class="dead-note">Stay quiet, you can still watch the town squirm.</p>
-        <button id="btn-watch-town" class="btn-watch pxc">Watch the town</button>
-        <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden">Tap to dismiss</p>
+        <p class="dead-note" data-i18n="ui.dead.note">Stay quiet, you can still watch the town squirm.</p>
+        <button id="btn-watch-town" class="btn-watch pxc" data-i18n="ui.dead.watchTown">Watch the town</button>
+        <p id="dead-dismiss-hint" class="dead-dismiss-hint hidden" data-i18n="ui.common.tapToDismiss">Tap to dismiss</p>
       </div>
     </div>
 
@@ -554,10 +563,10 @@
     <div id="joker-win-overlay" class="joker-win-overlay hidden">
       <div class="joker-poster">
         <div class="joker-trophy" id="joker-trophy-art"></div>
-        <p class="joker-win-pre">The last laugh</p>
-        <h2 class="joker-win-title">Joker wins!</h2>
+        <p class="joker-win-pre" data-i18n="ui.joker.lastLaugh">The last laugh</p>
+        <h2 class="joker-win-title" data-i18n="ui.joker.wins">Joker wins!</h2>
         <p id="joker-win-name" class="joker-win-name"></p>
-        <p class="joker-win-hint">Tap to dismiss</p>
+        <p class="joker-win-hint" data-i18n="ui.common.tapToDismiss">Tap to dismiss</p>
       </div>
     </div>
 
@@ -578,7 +587,7 @@
     <div id="modal-settings" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Settings</h3>
+          <h3 data-i18n="ui.settings.title">Settings</h3>
           <button id="btn-close-settings" class="btn btn-icon">&times;</button>
         </div>
         <div class="settings-modal-body">
@@ -586,29 +595,36 @@
                admin (Figma 130:370 draws it unconditionally). Not a new leak —
                players already read the code off the lobby nav. -->
           <div id="settings-room-code" class="setting-row hidden">
-            <span>Room code</span>
+            <span data-i18n="ui.settings.roomCode">Room code</span>
             <span id="settings-room-code-value" class="settings-room-code-value"></span>
           </div>
           <div class="setting-row">
-            <span>Sound effects</span>
+            <span data-i18n="ui.settings.sound">Sound effects</span>
             <label class="toggle"><input type="checkbox" id="toggle-sound"><span class="slider"></span></label>
           </div>
           <div class="setting-row">
-            <span>Theme</span>
-            <div id="theme-mode-control" class="theme-mode-control" role="group" aria-label="Theme">
-              <button type="button" class="theme-mode-btn" data-mode="dark" aria-pressed="false">Dark</button>
-              <button type="button" class="theme-mode-btn" data-mode="light" aria-pressed="false">Light</button>
+            <span data-i18n="ui.settings.theme">Theme</span>
+            <div id="theme-mode-control" class="theme-mode-control" role="group" aria-label="Theme" data-i18n-aria-label="ui.settings.theme">
+              <button type="button" class="theme-mode-btn" data-mode="dark" aria-pressed="false" data-i18n="ui.settings.dark">Dark</button>
+              <button type="button" class="theme-mode-btn" data-mode="light" aria-pressed="false" data-i18n="ui.settings.light">Light</button>
             </div>
           </div>
           <div class="setting-row">
-            <span>Hide mafia tag</span>
+            <span data-i18n="ui.settings.language">Language</span>
+            <div class="lang-control" role="group" aria-label="Language" data-i18n-aria-label="ui.settings.language">
+              <button type="button" data-lang="en" aria-pressed="true">English</button>
+              <button type="button" data-lang="ko" aria-pressed="false">한국어</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span data-i18n="ui.settings.hideMafiaTag">Hide mafia tag</span>
             <label class="toggle"><input type="checkbox" id="toggle-hide-mafia-tag"><span class="slider"></span></label>
           </div>
           <div id="settings-end-game" class="settings-end-game hidden">
-            <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%">End game</button>
+            <button id="btn-end-game" class="btn btn-danger btn-small" style="width:100%" data-i18n="ui.settings.endGame">End game</button>
           </div>
           <div id="settings-leave-game" class="hidden" style="margin-top:12px">
-            <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%">Leave game</button>
+            <button id="btn-settings-leave" class="btn btn-danger btn-small" style="width:100%" data-i18n="ui.settings.leaveGame">Leave game</button>
           </div>
         </div>
       </div>
@@ -618,11 +634,11 @@
     <div id="modal-roster" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Roles in Play</h3>
+          <h3 data-i18n="ui.roster.title">Roles in Play</h3>
           <button id="btn-close-roster" class="btn btn-icon">&times;</button>
         </div>
         <div id="roster-list" class="roster-list"></div>
-        <p class="roster-hint">Tap outside to dismiss</p>
+        <p class="roster-hint" data-i18n="ui.roster.hint">Tap outside to dismiss</p>
       </div>
     </div>
 
@@ -630,11 +646,11 @@
     <div id="modal-transcript" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Full Transcript</h3>
+          <h3 data-i18n="ui.transcript.title">Full Transcript</h3>
           <button id="btn-close-transcript" class="btn btn-icon">&times;</button>
         </div>
         <div id="transcript-list" class="transcript-list"></div>
-        <p id="transcript-empty" class="empty-text hidden">No messages yet</p>
+        <p id="transcript-empty" class="empty-text hidden" data-i18n="ui.transcript.empty">No messages yet</p>
       </div>
     </div>
 
@@ -644,8 +660,8 @@
         <h3 id="confirm-sheet-title" class="confirm-sheet-title"></h3>
         <p id="confirm-sheet-body" class="confirm-sheet-body"></p>
         <div class="confirm-sheet-actions">
-          <div class="btn-pxb pxc"><button id="confirm-sheet-cancel" class="btn btn-secondary pxc">Cancel</button></div>
-          <button id="confirm-sheet-ok" class="btn btn-primary">Confirm</button>
+          <div class="btn-pxb pxc"><button id="confirm-sheet-cancel" class="btn btn-secondary pxc" data-i18n="ui.common.cancel">Cancel</button></div>
+          <button id="confirm-sheet-ok" class="btn btn-primary" data-i18n="ui.common.confirm">Confirm</button>
         </div>
       </div>
     </div>

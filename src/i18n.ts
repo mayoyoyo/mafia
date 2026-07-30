@@ -39,10 +39,11 @@ const I18n = I18nRuntime as unknown as Runtime;
 // English is the server's only bundle: it renders `text` and nothing else.
 I18n.setBundle("en", stripComments(EN as Record<string, unknown>));
 
+/** Drop `$`-prefixed keys: they are translator notes, never renderable strings. */
 function stripComments(raw: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(raw)) {
-    if (k === "$comment") continue;
+    if (k.startsWith("$")) continue;
     out[k] = v;
   }
   return out;
