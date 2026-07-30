@@ -204,7 +204,10 @@
           <button id="btn-settings-lobby-player" class="btn btn-icon" title="Settings" data-i18n-title="ui.settings.title">&#9881;</button>
         </div>
       </div>
-      <p class="waiting-text"><span data-i18n="ui.lobby.waitingForPre">Waiting for</span> <span id="admin-name-display"></span> <span data-i18n="ui.lobby.waitingForPost">to start...</span></p>
+      <!-- Rendered by renderWaitingText(): ONE sentence template with the host
+           name spliced in, because Korean attaches the honorific directly to the
+           name ("Bob님이 …") and a fixed pre/post split forces a wrong space. -->
+      <p class="waiting-text" id="waiting-text">Waiting for <span id="admin-name-display"></span> to start...</p>
       <div id="player-lobby-settings" class="player-lobby-settings card-primary"></div>
       <div class="players-section card-primary">
         <div class="lobby-card-head"><span data-i18n="ui.common.players">Players</span><span><span id="player-count-player">0</span>/20</span></div>

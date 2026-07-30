@@ -124,6 +124,7 @@
   // straight off lobby_update; neither carries any player→role pairing.
   let lobbySettings = null;
   let lobbyPlayerCount = 0;
+  let lobbyAdminName = null; // host name, re-spliced into the waiting line on a language switch
   let dayVoteCount = 0;
   // Player-initiated accusations (day phase). pendingAccusations mirrors the
   // server's un-seconded list; accusationsMade/secondsMade are the per-day usage
@@ -1253,7 +1254,8 @@
     $("players-list-admin").innerHTML = players.map(renderPlayerItem).join("");
 
     $("player-count-player").textContent = players.length;
-    $("admin-name-display").textContent = adminName;
+    lobbyAdminName = adminName;
+    renderWaitingText();
     $("players-list-player").innerHTML = players.map(renderPlayerItem).join("");
 
     updateSettingsUI(settings);
@@ -2324,6 +2326,26 @@
     div.className = "narrator-line animate-in";
     div.textContent = tMsg(entry);
     container.appendChild(div);
+  }
+
+  /**
+   * "Waiting for <host> to start..." on the player lobby. Rendered from ONE
+   * sentence template with the name spliced into its own #admin-name-display
+   * span, so Korean can attach the honorific directly to the name ("Bob님이 …")
+   * — a fixed pre/name/post split would force a space before 님.
+   */
+  function renderWaitingText() {
+    const p = $("waiting-text");
+    if (!p) return;
+    const SENTINEL = "\u0001";
+    const parts = t("ui.lobby.waitingFor", { name: SENTINEL }).split(SENTINEL);
+    p.textContent = "";
+    p.appendChild(document.createTextNode(parts[0] || ""));
+    const span = document.createElement("span");
+    span.id = "admin-name-display";
+    span.textContent = lobbyAdminName || "";
+    p.appendChild(span);
+    p.appendChild(document.createTextNode(parts.slice(1).join(SENTINEL)));
   }
 
   /** Repaint the narrator block from the LAST transcript entry (or clear it). */
@@ -4979,6 +5001,7 @@
     renderLanguageControls();
     // Read-only lobby settings + accent picker labels are language-dependent too.
     if (lobbySettings) updatePlayerLobbySettings(lobbySettings);
+    renderWaitingText();
     renderAccentPicker();
   }
   I18n.onChange(rerenderForLang);
